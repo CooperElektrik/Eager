@@ -1,0 +1,70 @@
+# Static Validation
+
+`eager_s` includes a static validator that analyzes screenplay scripts before runtime to detect narrative inconsistencies, broken branching links, dead code, and infinite loops.
+
+---
+
+## Checks Performed
+
+| Check | Level | Description |
+| :--- | :--- | :--- |
+| **Undefined Target** | `error` | A jump (`>`), subroutine call (`>>`), or choice option (`?`) points to a non-existent scene label. |
+| **Duplicate Label** | `error` | Two or more scenes declare the same identifier. |
+| **Plain Mode Violations** | `error` | Script contains engine hooks, subroutine calls, text-box controls, or voice tags while running in `--plain` mode. |
+| **Unreturned Subroutine** | `warning` | A subroutine call (`>>`) exists, but the script contains no return instruction (`<<`). |
+| **Dead Code / Unreachable Statements** | `warning` | Statements located after an unconditional jump (`>`), return (`<<`), or choice menu within the same scene. |
+| **Orphan Scene Label** | `warning` | A scene label is declared but never targeted by any jump, call, or choice. |
+| **Unreachable From Entry** | `warning` | A scene exists in the script but cannot be reached by traversing from the first scene (entry point). |
+| **Cyclical Traversal** | `warning` | An unconditional loop exists where scenes jump to one another in an infinite loop without player choices or exit points. |
+
+---
+
+## Python API
+
+```python
+import eager_s
+
+items = eager_s.parse(script)
+result = eager_s.validate(items, plain=False)
+
+if not result.is_valid:
+    print(f"Validation failed with {len(result.errors)} errors.")
+    for err in result.errors:
+        print(f"ERROR: Line {err.line_number}: {err.message}")
+
+for warn in result.warnings:
+    print(f"WARNING: Line {warn.line_number}: {warn.message}")
+```
+
+### Data Structures
+
+- **`ValidationResult`**:
+  - `.errors`: Tuple of `ValidationError` objects with level `"error"`.
+  - `.warnings`: Tuple of `ValidationError` objects with level `"warning"`.
+  - `.is_valid`: Boolean, `True` if `len(errors) == 0`.
+- **`ValidationError`**:
+  - `.message`: Human-readable description of the issue.
+  - `.line_number`: 1-indexed source line number.
+  - `.level`: `"error"` or `"warning"`.
+
+---
+
+## CLI Usage
+
+Validate scripts directly in terminal or CI/CD pipelines:
+
+```bash
+# Validate screenplay DSL
+eager-s check script.es
+
+# Validate using strict Eager-SP rules
+eager-s check --plain manuscript.es
+```
+
+Example output:
+```text
+WARNING: Line 42: Label 'forgotten_shrine' is defined but never targeted by any jump, call, or choice
+✓ Script 'script.es' is valid (68 AST items, 1 warning(s)).
+```
+
+The command exits with `0` when valid (warnings allowed) and `1` on syntax or validation errors.

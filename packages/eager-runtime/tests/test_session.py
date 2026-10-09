@@ -1,0 +1,180 @@
+"""Tests for GameSession, interactions, unified checkpoints, and rollback."""
+
+from __future__ import annotations
+
+import eager_script
+
+from eager_runtime import ChoicePromptEvent, GameSession, InputAction, InputPromptEvent
+
+SAMPLE_STORY = """
+## Intro --- intro
+~ bg castle with cut
+~ show alice cheerful at left with cut
+Alice: Hello traveler!
+~ show bob stern at right with cut
+Bob: What do you want?
+? Ask about castle (castle)
+? Ask about forest (forest)
+
+## Castle --- castle
+~ bg throne_room with cut
+Alice: Welcome to the throne room.
+> end_scene
+
+## Forest --- forest
+~ bg deep_forest with cut
+Bob: The trees are thick here.
+> end_scene
+
+## End Scene --- end_scene
+Narrator: The journey concludes.
+"""
+
+
+def test_session_advance_stops_only_on_interactions() -> None:
+    graph = eager_script.parse_graph(SAMPLE_STORY)
+    session = GameSession(graph)
+
+    # First advance: moves past ~ bg and ~ show, stops at first dialogue
+    evt1 = session.advance()
+    assert evt1 is not None
+    assert evt1.type == "dialogue"
+    assert session.director.ui_state.speaker == "Alice"
+    assert session.director.ui_state.text == "Hello traveler!"
+    # Sprites should already be displayed by the compositor
+    items = session.compositor.render_list()
+    char_items = [it for it in items if it.layer == "characters"]
+    assert len(char_items) == 1
+    assert char_items[0].asset_id == "alice/cheerful"
+
+    # Second advance: moves past ~ show bob, stops at Bob's dialogue
+    evt2 = session.advance()
+    assert evt2 is not None
+    assert evt2.type == "dialogue"
+    assert session.director.ui_state.speaker == "Bob"
+    assert session.director.ui_state.text == "What do you want?"
+    char_items = [it for it in session.compositor.render_list() if it.layer == "characters"]
+    assert len(char_items) == 2
+
+    # Third advance: stops at choice prompt
+    evt3 = session.advance()
+    assert evt3 is not None
+    assert evt3.type == "choice_prompt"
+    assert isinstance(evt3, ChoicePromptEvent)
+    assert len(evt3.options) == 2
+
+
+def test_session_rollback_restores_state_and_visuals() -> None:
+    graph = eager_script.parse_graph(SAMPLE_STORY)
+    session = GameSession(graph)
+
+    # Advance to Alice
+    session.advance()
+    assert len([it for it in session.compositor.render_list() if it.layer == "characters"]) == 1
+
+    # Advance to Bob (spawns second character)
+    session.advance()
+    assert len([it for it in session.compositor.render_list() if it.layer == "characters"]) == 2
+    assert session.director.ui_state.speaker == "Bob"
+
+    # Roll back to Alice
+    ok = session.rollback()
+    assert ok is True
+    assert session.director.ui_state.speaker == "Alice"
+    assert session.director.ui_state.text == "Hello traveler!"
+    char_items = [it for it in session.compositor.render_list() if it.layer == "characters"]
+    assert len(char_items) == 1
+    assert char_items[0].asset_id == "alice/cheerful"
+
+
+def test_session_rollback_onto_choice_reshows_menu() -> None:
+    graph = eager_script.parse_graph(SAMPLE_STORY)
+    session = GameSession(graph)
+
+    session.advance()  # Alice
+    session.advance()  # Bob
+    session.advance()  # Choice prompt
+    assert session.active_choice_prompt is not None
+
+    # Choose option 0 (Castle)
+    session.choose(0)
+    assert session.director.ui_state.speaker == "Alice"
+    assert session.director.ui_state.text == "Welcome to the throne room."
+    assert session.active_choice_prompt is None
+
+    # Roll back onto choice
+    ok = session.rollback()
+    assert ok is True
+    assert session.active_choice_prompt is not None
+    assert len(session.active_choice_prompt.options) == 2
+
+
+def test_session_handle_input_actions() -> None:
+    graph = eager_script.parse_graph(SAMPLE_STORY)
+    session = GameSession(graph)
+
+    session.handle_input(InputAction.ADVANCE)
+    assert session.director.ui_state.speaker == "Alice"
+
+    # Toggle UI hide
+    session.handle_input(InputAction.HIDE_UI)
+    assert session.ui_hidden is True
+    session.handle_input(InputAction.HIDE_UI)
+    assert session.ui_hidden is False
+
+
+def test_session_input_prompt_checkpoint_restoration_and_mode_rollback() -> None:
+    input_script = """
+## Start --- start
+Alice: Hello traveler!
+~ input hero_name "Enter name:" "Traveler"
+Alice: Welcome, [hero_name]!
+"""
+    graph = eager_script.parse_graph(input_script)
+    session = GameSession(graph)
+
+    # 1. Advance to first dialogue (Alice: Hello traveler!)
+    ev1 = session.advance()
+    assert ev1 is not None
+    assert session.director.ui_state.text == "Hello traveler!"
+
+    # 2. Advance to input prompt
+    ev2 = session.advance()
+    assert ev2 is not None
+    assert ev2.type == "input_prompt"
+    assert isinstance(ev2, InputPromptEvent)
+    assert session.active_input_prompt is not None
+    assert session.active_input_prompt.var_name == "hero_name"
+
+    # 3. Submit player input
+    ev3 = session.submit_input("Valiant")
+    assert ev3 is not None
+    assert session.director.ui_state.text == "Welcome, Valiant!"
+    assert session.active_input_prompt is None
+    assert session.mode == "game"
+
+    # 4. Advance to end of story
+    ev4 = session.advance()
+    assert ev4 is not None
+    assert ev4.type == "story_end"
+    assert session.is_finished is True
+    assert session.mode == "ended"
+
+    # 5. Rollback from ended state: mode must reset to != "ended" ("game")
+    ok1 = session.rollback()
+    assert ok1 is True
+    assert session.is_finished is False
+    assert session.mode == "game"
+    assert session.director.ui_state.text == "Welcome, Valiant!"
+
+    # 6. Rollback again onto input prompt: restores active_input_prompt
+    ok2 = session.rollback()
+    assert ok2 is True
+    assert session.mode == "game"
+    assert session.active_input_prompt is not None
+    assert session.active_input_prompt.var_name == "hero_name"
+
+    # 7. Resubmit input with different value
+    session.submit_input("Champion")
+    assert session.director.ui_state.text == "Welcome, Champion!"
+

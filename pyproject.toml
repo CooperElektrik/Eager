@@ -1,0 +1,37 @@
+[project]
+name = "eager-engine"
+version = "0.1.0"
+description = "Unified visual novel engine ecosystem: parser (eager-script), runtime (eager-runtime), and graphics (eager-graphics)."
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Cooper" }]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0",
+    "ruff>=0.4.0",
+    "pyglet>=2.0",
+    "pillow>=10.0",
+    "blessed>=1.20.0",
+]
+
+[tool.uv.sources]
+eager-script = { workspace = true }
+eager-runtime = { workspace = true }
+eager-graphics = { workspace = true }
+eager-core = { workspace = true }
+
+[tool.uv.workspace]
+members = [
+    "packages/eager-script",
+    "packages/eager-runtime",
+    "packages/eager-graphics",
+    "packages/eager-core",
+]
+
+[build-system]
+requires = ["setuptools>=68.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = []

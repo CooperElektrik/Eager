@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=68.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eager-graphics"
+version = "0.1.0"
+description = "Renderer-agnostic, resolution-independent Graphics & Stage Compositor for Eager narrative runtimes."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "Cooper" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Games/Entertainment",
+    "Topic :: Multimedia :: Graphics",
+]
+keywords = [
+    "screenplay",
+    "narrative-engine",
+    "visual-novel",
+    "graphics",
+    "compositor",
+    "stage-management",
+    "headless",
+    "eager",
+]
+
+dependencies = [
+    "eager-core >= 0.1.0",
+    "eager-script >= 0.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4.0",
+    "eager-runtime >= 0.1.0",
+]
+hardware = [
+    "pyglet>=2.0.0",
+]
+software = [
+    "Pillow>=10.0.0",
+]
+raylib = [
+    "raylib>=6.0.0",
+]
+all = [
+    "pyglet>=2.0.0",
+    "Pillow>=10.0.0",
+    "raylib>=6.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.basedpyright]
+typeCheckingMode = "standard"
+include = ["src", "tests"]
+venvPath = "../.."
+venv = ".venv"

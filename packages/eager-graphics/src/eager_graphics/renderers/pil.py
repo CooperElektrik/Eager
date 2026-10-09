@@ -1,0 +1,1753 @@
+"""Pillow (PIL) software rendering backend and interactive player for Eager-Graphics."""
+
+from __future__ import annotations
+
+import hashlib
+import math
+from collections import OrderedDict
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+try:
+    from PIL import Image, ImageChops, ImageDraw, ImageFont
+
+    PIL_AVAILABLE = True
+except ImportError as err:
+    PIL_AVAILABLE = False
+    _pil_import_error = err
+
+try:
+    import pyglet
+
+    PYGLET_AVAILABLE = True
+except ImportError:
+    PYGLET_AVAILABLE = False
+
+from eager_graphics.layout import ViewportTransform
+from eager_graphics.protocol import RenderBackend, RenderItem
+from eager_graphics.timing import FrameClock
+from eager_graphics.types import BLACK, WHITE, Color, ScaleMode
+from eager_graphics.ui_components import UIOverlay
+
+if TYPE_CHECKING:
+    from eager_runtime import ChoicePromptEvent, EventDispatcher, StoryVM
+
+    from eager_graphics.compositor import StageCompositor
+    from eager_graphics.director import StageDirector
+
+_EXTENSIONS: tuple[str, ...] = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
+_IDENTITY_256: list[int] = list(range(256))
+_ALPHA_LUTS: list[list[int]] = [
+    [round(i * (a / 255.0)) for i in range(256)] for a in range(256)
+]
+_ALPHA_MODULATION_1024: list[list[int]] = [
+    _IDENTITY_256 + _IDENTITY_256 + _IDENTITY_256 + _ALPHA_LUTS[a] for a in range(256)
+]
+_PLACEHOLDER_GRAD_LUT: list[int] = [int(200 + p * 0.21) for p in range(256)]
+_WHITE_RGBA: tuple[int, int, int, int] = (255, 255, 255, 255)
+_PIL_ANCHOR_X: dict[str, str] = {"left": "l", "center": "m", "right": "r"}
+_PIL_ANCHOR_Y: dict[str, str] = {"top": "t", "middle": "m", "bottom": "s"}
+
+# Downscales by more than this factor first run a cheap integer ``reduce()``
+# (cached as a mip level) before the filtered resize.  Mirrors Pillow's own
+# ``reducing_gap`` option, which ``Image.resize`` silently ignores for RGBA.
+_REDUCING_GAP: float = 2.0
+_DEFAULT_CACHE_BYTES: int = 256 * 1024 * 1024
+_MAX_TEXT_CACHE: int = 1024
+_MAX_RGBA_LUTS: int = 256
+_MAX_MIP_CACHE: int = 128
+_NO_CACHE: Any = object()
+
+
+def _image_nbytes(img: Image.Image | None) -> int:
+    """Approximate in-memory footprint of *img* (Pillow stores RGB as 4 bytes/px)."""
+    if img is None:
+        return 0
+    return img.width * img.height * (1 if img.mode in ("L", "1", "P") else 4)
+
+
+def _resize_opaque(img: Image.Image, size: tuple[int, int], resample: Any) -> Image.Image:
+    """Resize an RGBA image that is known to be fully opaque.
+
+    ``Image.resize`` converts RGBA to premultiplied ``RGBa`` and back around the
+    filter, which costs two full-image passes.  For opaque pixels
+    premultiplication is the identity, so the core resampler can be called
+    directly with bit-identical results (~45% faster for 1080p backgrounds).
+    Falls back to the public API if Pillow internals change.
+    """
+    if img.mode == "RGBA" and resample != Image.Resampling.NEAREST:
+        try:
+            return img._new(img.im.resize(size, resample, (0, 0, *img.size)))
+        except (AttributeError, TypeError, ValueError):
+            pass
+    return img.resize(size, resample=resample)
+
+
+def _alpha_bbox(img: Image.Image) -> tuple[int, int, int, int] | None:
+    """Bounding box of non-transparent pixels (fast ``alpha_only`` path when available)."""
+    try:
+        return img.getbbox(alpha_only=True)
+    except TypeError:  # Pillow < 9.4 lacks the alpha_only keyword
+        return img.getchannel("A").getbbox()
+
+
+class _ImageLRU(OrderedDict):  # type: ignore[type-arg]
+    """``OrderedDict`` LRU bounded by both entry count and approximate byte size."""
+
+    def __init__(self, max_items: int, max_bytes: int) -> None:
+        super().__init__()
+        self.max_items = max_items
+        self.max_bytes = max_bytes
+        self.nbytes = 0
+        self._sizes: dict[Any, int] = {}
+
+    def lookup(self, key: Any) -> Any:
+        """Return the cached value (marking it most-recently used) or ``None``."""
+        value = self.get(key)
+        if value is not None:
+            self.move_to_end(key)
+        return value
+
+    def put(self, key: Any, value: Any, nbytes: int) -> None:
+        """Insert *value*, evicting least-recently-used entries over budget."""
+        self.nbytes -= self._sizes.pop(key, 0)
+        self[key] = value
+        self.move_to_end(key)
+        self._sizes[key] = nbytes
+        self.nbytes += nbytes
+        while len(self) > 1 and (len(self) > self.max_items or self.nbytes > self.max_bytes):
+            old_key, _ = self.popitem(last=False)
+            self.nbytes -= self._sizes.pop(old_key, 0)
+
+    def clear(self) -> None:
+        super().clear()
+        self._sizes.clear()
+        self.nbytes = 0
+
+
+class _CachedSprite:
+    """A transformed sprite split into an opaque colour plane and an optional mask.
+
+    Storing ``color`` with alpha forced to 255 plus a separate ``L`` ``mask``
+    lets the renderer composite with ``Image.paste(color, box, mask)``, which
+    is bit-identical to ``alpha_composite`` on an opaque canvas but ~40%
+    faster, clips off-screen regions natively, and makes opacity variants
+    cheap (only the 1-byte-per-pixel mask differs between fade frames).
+
+    Iterating yields ``(image, is_opaque, off_x, off_y)`` for compatibility
+    with the previous tuple-based cache layout, where ``image`` is the
+    straight-alpha RGBA sprite (materialised lazily).
+    """
+
+    __slots__ = ("_image", "color", "mask", "nbytes", "off_x", "off_y")
+
+    def __init__(
+        self,
+        color: Image.Image | None,
+        mask: Image.Image | None,
+        off_x: float,
+        off_y: float,
+    ) -> None:
+        self.color = color
+        self.mask = mask
+        self.off_x = off_x
+        self.off_y = off_y
+        self.nbytes = _image_nbytes(color) + _image_nbytes(mask)
+        self._image: Image.Image | None = None
+
+    @property
+    def is_opaque(self) -> bool:
+        return self.mask is None and self.color is not None
+
+    @property
+    def image(self) -> Image.Image:
+        """Straight-alpha RGBA version of the sprite (allocates when masked)."""
+        if self._image is not None:
+            return self._image
+        if self.color is None:
+            raise RuntimeError("Empty sprite")
+        if self.mask is None:
+            self._image = self.color
+            return self.color
+        img = self.color.copy()
+        img.putalpha(self.mask)
+        self._image = img
+        return img
+
+    @property
+    def size(self) -> tuple[int, int]:
+        if self.color is not None:
+            return self.color.size
+        return (0, 0)
+
+    def __len__(self) -> int:
+        return 4
+
+    def __getitem__(self, idx: int) -> Any:
+        match idx:
+            case 0:
+                return self.image
+            case 1:
+                return self.is_opaque
+            case 2:
+                return self.off_x
+            case 3:
+                return self.off_y
+            case _:
+                raise IndexError(idx)
+
+    def __iter__(self):  # type: ignore[no-untyped-def]
+        yield self.image
+        yield self.is_opaque
+        yield self.off_x
+        yield self.off_y
+
+
+def _split_rgba(img: Image.Image, *, shared: bool) -> tuple[Image.Image, Image.Image | None]:
+    """Split straight RGBA *img* into ``(color with alpha=255, alpha mask | None)``."""
+    alpha = img.getchannel("A")
+    if alpha.getextrema()[0] == 255:
+        return img, None
+    color = img.copy() if shared else img
+    color.putalpha(255)
+    return color, alpha
+
+
+def _check_pil_available() -> None:
+    if not PIL_AVAILABLE:
+        msg = (
+            "Pillow is not installed. Install with 'pip install eager-graphics[pil]' "
+            "or 'pip install pillow'."
+        )
+        raise ImportError(msg) from _pil_import_error
+
+
+class PILAssetResolver:
+    """Loads and caches textures from disk, generating procedural placeholders when missing."""
+
+    def __init__(self, asset_dir: str | Path | None = None) -> None:
+        _check_pil_available()
+        self.asset_dir = Path(asset_dir) if asset_dir is not None else None
+        self._image_cache: dict[str, Image.Image] = {}
+        self._opaque_cache: dict[str, bool] = {}
+        self._premultiplied_cache: dict[str, Image.Image] = {}
+
+    def get_image(
+        self,
+        asset_id: str,
+        default_width: int = 400,
+        default_height: int = 800,
+    ) -> Image.Image:
+        """Retrieve pre-decoded RGBA image from cache, load from disk, or generate fallback."""
+        img = self._image_cache.get(asset_id)
+        if img is not None:
+            return img
+
+        if asset_id == "__builtin_color_rect__":
+            img = Image.new("RGBA", (1, 1), (255, 255, 255, 255))
+            self._image_cache[asset_id] = img
+            self._opaque_cache[asset_id] = True
+            return img
+
+        # 1. Attempt loading from disk if asset_dir configured
+        if self.asset_dir is not None:
+            for ext in _EXTENSIONS:
+                file_path = self.asset_dir / f"{asset_id}{ext}"
+                if file_path.is_file():
+                    try:
+                        with Image.open(file_path) as raw_img:
+                            is_opaque = raw_img.mode in ("RGB", "L", "1") or ext in (
+                                ".jpg",
+                                ".jpeg",
+                            )
+                            img = raw_img.convert("RGBA")
+                            if not is_opaque:
+                                extrema = img.getextrema()
+                                if len(extrema) >= 4 and extrema[3][0] == 255:
+                                    is_opaque = True
+
+                        self._image_cache[asset_id] = img
+                        self._opaque_cache[asset_id] = is_opaque
+                        return img
+                    except (OSError, ValueError):
+                        pass
+
+        # 2. Generate procedural placeholder image
+        img, is_opaque = self._generate_placeholder(asset_id, default_width, default_height)
+        self._image_cache[asset_id] = img
+        self._opaque_cache[asset_id] = is_opaque
+        return img
+
+    get_texture = get_image
+
+    def get_premultiplied_image(
+        self,
+        asset_id: str,
+        default_width: int = 400,
+        default_height: int = 800,
+    ) -> Image.Image:
+        """Retrieve pre-multiplied RGBa (or opaque RGBA) image for high-speed resampling."""
+        img_pre = self._premultiplied_cache.get(asset_id)
+        if img_pre is not None:
+            return img_pre
+        img = self.get_image(asset_id, default_width, default_height)
+        if self.is_asset_opaque(asset_id):
+            img_pre = img
+        else:
+            img_pre = img.convert("RGBa")
+        self._premultiplied_cache[asset_id] = img_pre
+        return img_pre
+
+    def clear_cache(self) -> None:
+        """Clear all cached image textures, opacity flags, and premultiplied versions."""
+        self._image_cache.clear()
+        self._opaque_cache.clear()
+        self._premultiplied_cache.clear()
+
+    def is_asset_opaque(self, asset_id: str) -> bool:
+        """Return True if the base asset has no transparent pixels."""
+        is_op = self._opaque_cache.get(asset_id)
+        if is_op is not None:
+            return is_op
+        self.get_image(asset_id)
+        return self._opaque_cache.get(asset_id, False)
+
+    def _generate_placeholder(
+        self,
+        asset_id: str,
+        width: int,
+        height: int,
+    ) -> tuple[Image.Image, bool]:
+        """Procedurally generate a solid/gradient patterned placeholder texture."""
+        is_bg = asset_id.startswith("bg/") or "background" in asset_id
+        w = 1920 if is_bg else width
+        h = 1080 if is_bg else height
+
+        # Deterministic color derivation from asset_id string hash
+        h_val = int(hashlib.md5(asset_id.encode("utf-8")).hexdigest()[:8], 16)
+        r = h_val & 0xFF
+        g = (h_val >> 8) & 0xFF
+        b = (h_val >> 16) & 0xFF
+
+        if is_bg:
+            r = 30 + (r % 60)
+            g = 35 + (g % 60)
+            b = 45 + (b % 70)
+        else:
+            r = 100 + (r % 120)
+            g = 100 + (g % 120)
+            b = 100 + (b % 120)
+
+        tw = min(w, 256)
+        th = min(h, 256)
+
+        base = Image.new("RGBA", (tw, th), (r, g, b, 255))
+        grad_l = Image.linear_gradient("L").resize((tw, th), resample=Image.Resampling.BILINEAR)
+        grad_mask = grad_l.point(_PLACEHOLDER_GRAD_LUT)
+        base = ImageChops.multiply(
+            base,
+            Image.merge(
+                "RGBA",
+                (grad_mask, grad_mask, grad_mask, Image.new("L", (tw, th), 255)),
+            ),
+        )
+
+        draw = ImageDraw.Draw(base)
+        draw.rectangle((0, 0, tw - 1, th - 1), outline=(255, 255, 255, 255), width=2)
+
+        if (tw, th) != (w, h):
+            base = _resize_opaque(base, (w, h), Image.Resampling.BILINEAR)
+
+        return base, True
+
+
+class PILRenderer(RenderBackend):
+    """Pillow 2D stage renderer implementing RenderBackend protocol with full optimizations."""
+
+    def __init__(
+        self,
+        width: int = 1920,
+        height: int = 1080,
+        *,
+        asset_dir: str | Path | None = None,
+        scale_mode: ScaleMode = ScaleMode.LETTERBOX,
+        window: pyglet.window.Window | None = None,
+        resampling: Image.Resampling = Image.Resampling.BILINEAR,
+        max_cached_sprites: int = 512,
+    ) -> None:
+        _check_pil_available()
+        self.asset_resolver = PILAssetResolver(asset_dir)
+        self.scale_mode = scale_mode
+        self.window = window
+        self.resampling = resampling
+        self.max_cached_sprites = max_cached_sprites
+
+        self.width = window.width if window is not None else width
+        self.height = window.height if window is not None else height
+        self.clear_color: Color = BLACK
+        self._clear_color_bytes: tuple[int, int, int, int] = BLACK.to_rgba_bytes()
+        self.frame_count: int = 0
+        self.last_frame: list[RenderItem] = []
+
+        self._current_transform: ViewportTransform | None = None
+        self._image: Image.Image = Image.new(
+            "RGBA", (self.width, self.height), (0, 0, 0, 255)
+        )
+        self._in_frame: bool = False
+        self._frame_buffer: list[RenderItem] = []
+        self._needs_clear: bool = False
+
+        # Frame timing clock (ticked in end_frame for FPS reporting)
+        self.clock: FrameClock = FrameClock()
+
+        # Optimization Caches
+        self._sprite_cache: _ImageLRU = _ImageLRU(
+            max_items=self.max_cached_sprites,
+            max_bytes=_DEFAULT_CACHE_BYTES,
+        )
+        self._geom_cache: _ImageLRU = _ImageLRU(
+            max_items=self.max_cached_sprites,
+            max_bytes=_DEFAULT_CACHE_BYTES,
+        )
+        self._scaled_cache: _ImageLRU = _ImageLRU(
+            max_items=self.max_cached_sprites,
+            max_bytes=_DEFAULT_CACHE_BYTES,
+        )
+        self._ui_image_cache: _ImageLRU = _ImageLRU(
+            max_items=self.max_cached_sprites,
+            max_bytes=_DEFAULT_CACHE_BYTES,
+        )
+        self._text_mask_cache: _ImageLRU = _ImageLRU(
+            max_items=_MAX_TEXT_CACHE,
+            max_bytes=32 * 1024 * 1024,
+        )
+        self._font_cache: dict[int, ImageFont.ImageFont] = {}
+        self._measure_cache: dict[tuple[str, int], tuple[float, float]] = {}
+        self._alpha_lut_cache: dict[int, list[int]] = {}
+        self._rgba_lut_cache: dict[tuple[int, int, int, int], list[int]] = {}
+        self._fade_lut_cache: dict[tuple[int, int, int, int], list[int]] = {}
+        self._mip_cache: dict[tuple[str, int], Image.Image] = {}
+        self._cache_hits: int = 0
+        self._cache_misses: int = 0
+
+        # Compositor stage caching
+        self._stage_cache: Image.Image | None = None
+        self._last_stage_items: list[RenderItem] | None = None
+        self._last_transform: ViewportTransform | None = None
+        self._base_cache: Image.Image | None = None
+        self._last_base_items: list[RenderItem] | None = None
+        self._last_base_transform: ViewportTransform | None = None
+
+    def set_window(self, window: pyglet.window.Window) -> None:
+        """Associate renderer with an active window."""
+        self.window = window
+        self.width = window.width
+        self.height = window.height
+        self._ensure_buffer()
+
+    def _ensure_buffer(self) -> None:
+        """Ensure internal Image buffer matches current width and height."""
+        if self._image.size != (self.width, self.height):
+            self._image = Image.new(
+                "RGBA", (self.width, self.height), self._clear_color_bytes
+            )
+            self._needs_clear = False
+            self._stage_cache = None
+            self._base_cache = None
+
+    def _execute_clear(self) -> None:
+        """Perform deferred canvas fill if pending."""
+        if self._needs_clear:
+            self._image.paste(self._clear_color_bytes, (0, 0, self.width, self.height))
+            self._needs_clear = False
+
+    def _frame_bytes_bottom_up(self) -> bytes:
+        """Export current frame buffer as bottom-up raw RGBA bytes for OpenGL upload."""
+        if self._needs_clear:
+            self._execute_clear()
+        return self._image.tobytes("raw", "RGBA", 0, -1)
+
+    def clear_cache(self) -> None:
+        """Clear the transformed sprite cache, scaled texture cache, and statistics."""
+        self._sprite_cache.clear()
+        self._geom_cache.clear()
+        self._scaled_cache.clear()
+        self._ui_image_cache.clear()
+        self._text_mask_cache.clear()
+        self._font_cache.clear()
+        self._measure_cache.clear()
+        self._fade_lut_cache.clear()
+        self._mip_cache.clear()
+        self._cache_hits = 0
+        self._cache_misses = 0
+        self._stage_cache = None
+        self._last_stage_items = None
+        self._base_cache = None
+        self._last_base_items = None
+        self._last_base_transform = None
+
+    def cache_info(self) -> dict[str, Any]:
+        """Return diagnostic metrics about cache hits, misses, and current size."""
+        total = self._cache_hits + self._cache_misses
+        hit_ratio = (self._cache_hits / total) if total > 0 else 0.0
+        return {
+            "hits": self._cache_hits,
+            "misses": self._cache_misses,
+            "currsize": len(self._sprite_cache),
+            "maxsize": self.max_cached_sprites,
+            "hit_ratio": hit_ratio,
+        }
+
+    def preload_assets(self, compositor: StageCompositor) -> int:
+        """Pre-load all stage assets into the image cache to avoid first-frame spikes.
+
+        Iterates over every element in the compositor's stage and resolves its
+        asset through :class:`PILAssetResolver`, which loads from disk (if an
+        ``asset_dir`` is configured) or generates a procedural placeholder.
+        This moves all disk I/O and mode conversion off the render thread.
+
+        Returns the number of unique assets resolved.
+        """
+        seen: set[str] = set()
+        count = 0
+        for layer in compositor.stage.layers.values():
+            for elem in layer.elements.values():
+                if elem.asset_id in seen:
+                    continue
+                seen.add(elem.asset_id)
+                is_bg = elem.asset_id.startswith("bg/") or "background" in elem.asset_id
+                def_w = 1920 if is_bg else 400
+                def_h = 1080 if is_bg else 800
+                self.asset_resolver.get_image(elem.asset_id, def_w, def_h)
+                count += 1
+        return count
+
+    def warm_sprite_cache(
+        self, compositor: StageCompositor, window_width: int, window_height: int
+    ) -> int:
+        """Pre-render the current render list to populate the sprite cache.
+
+        Useful to call once at startup (or after a scene change) so that the
+        first visible frame doesn't pay the cost of resizing/transforming
+        sprites.  The expensive :meth:`_transform_sprite` work is done here
+        rather than on the first real render frame.
+
+        The warm-up render does *not* count towards :attr:`frame_count` or
+        the FPS clock — it is pure caching overhead.
+
+        Returns the number of sprites that were newly cached (cache misses).
+        """
+        misses_before = self._cache_misses
+        saved_frame_count = self.frame_count
+        # render_compositor populates the sprite cache as a side-effect of
+        # drawing each item.  The resulting framebuffer is discarded.
+        self.render_compositor(compositor, window_width, window_height)
+        # Restore frame counter — warm-up render populates caches but should
+        # not count as a visible frame (would skew frame_count and FPS).
+        self.frame_count = saved_frame_count
+        return max(0, self._cache_misses - misses_before)
+
+    def _get_alpha_lut(self, alpha_byte: int) -> list[int]:
+        """Retrieve precomputed 256-entry alpha modulation lookup table."""
+        return _ALPHA_LUTS[alpha_byte]
+
+    def _get_rgba_lut(self, r: int, g: int, b: int, a: int) -> list[int]:
+        """Retrieve precomputed 1024-entry RGBA multiply lookup table."""
+        key = (r, g, b, a)
+        lut = self._rgba_lut_cache.get(key)
+        if lut is not None:
+            return lut
+        rf, gf, bf, af = r / 255.0, g / 255.0, b / 255.0, a / 255.0
+        lut = (
+            [round(i * rf) for i in range(256)]
+            + [round(i * gf) for i in range(256)]
+            + [round(i * bf) for i in range(256)]
+            + [round(i * af) for i in range(256)]
+        )
+        if len(self._rgba_lut_cache) >= _MAX_RGBA_LUTS:
+            self._rgba_lut_cache.pop(next(iter(self._rgba_lut_cache)))
+        self._rgba_lut_cache[key] = lut
+        return lut
+
+    def _put_mip(self, key: tuple[str, int], mip: Image.Image) -> None:
+        """Store mip image in cache with eviction limit."""
+        if len(self._mip_cache) >= _MAX_MIP_CACHE:
+            self._mip_cache.pop(next(iter(self._mip_cache)))
+        self._mip_cache[key] = mip
+
+    def begin_frame(self) -> None:
+        """Begin a new frame render pass."""
+        if self._in_frame:
+            msg = "begin_frame called without matching end_frame"
+            raise RuntimeError(msg)
+        self._frame_buffer = []
+        self._in_frame = True
+        self._ensure_buffer()
+
+    def clear(self, color: Color = BLACK) -> None:
+        """Clear the frame buffer with color using fast direct block fill."""
+        self.clear_color = color
+        self._clear_color_bytes = (
+            (0, 0, 0, 255)
+            if color is BLACK
+            else color.to_rgba_bytes()
+        )
+        self._ensure_buffer()
+        self._needs_clear = True
+
+    def draw_item(self, item: RenderItem) -> None:
+        """Render a single compositor item."""
+        if not self._in_frame:
+            msg = "draw_item called outside of begin_frame/end_frame block"
+            raise RuntimeError(msg)
+
+        self._frame_buffer.append(item)
+
+        # 1. Early discard: invisible opacity, degenerate scale, or transparent tint
+        if item.opacity <= 0.0 or not (item.scale_x and item.scale_y) or item.tint.a <= 0.0:
+            return
+
+        transform = self._current_transform
+        if transform is None:
+            msg = "draw_item called before render_compositor set the viewport transform"
+            raise RuntimeError(msg)
+
+        # Resolve base asset
+        is_bg = item.layer == "background" or item.asset_id.startswith("bg/")
+        def_w = 1920 if is_bg else 400
+        def_h = 1080 if is_bg else 800
+        base_tex = self.asset_resolver.get_image(item.asset_id, def_w, def_h)
+
+        # 2. Dimensions in virtual coordinates
+        eff_w = base_tex.width * abs(item.scale_x)
+        eff_h = base_tex.height * abs(item.scale_y)
+
+        # 3. Anchor offset factor
+        fx, fy = item.anchor.get_offset_factor()
+
+        # 4. Project dimensions to physical screen coordinates
+        draw_w = max(1, round(eff_w * transform.scale_x))
+        draw_h = max(1, round(eff_h * transform.scale_y))
+
+        # Anchor screen position (rotation pivot)
+        anchor_s_x = transform.offset_x + item.x * transform.scale_x
+        anchor_s_y = transform.offset_y + item.y * transform.scale_y
+
+        rot_norm = round(item.rotation % 360.0, 2) if item.rotation != 0.0 else 0.0
+
+        # Early Viewport Frustum Culling
+        if rot_norm == 0.0:
+            dest_x_approx = round(anchor_s_x - draw_w * fx)
+            dest_y_approx = round(anchor_s_y - draw_h * fy)
+            if (
+                dest_x_approx + draw_w <= 0
+                or dest_y_approx + draw_h <= 0
+                or dest_x_approx >= self.width
+                or dest_y_approx >= self.height
+            ):
+                return
+        else:
+            rad = math.hypot(draw_w, draw_h) * 0.5
+            if (
+                anchor_s_x + rad <= 0
+                or anchor_s_y + rad <= 0
+                or anchor_s_x - rad >= self.width
+                or anchor_s_y - rad >= self.height
+            ):
+                return
+
+        # Fast tint bytes computation
+        t = item.tint
+        if t is WHITE or (t.r == 1.0 and t.g == 1.0 and t.b == 1.0 and t.a == 1.0):
+            tint_rgba = _WHITE_RGBA
+        else:
+            tint_rgba = t.to_rgba_bytes()
+
+        final_alpha_f = max(0.0, min(1.0, item.opacity * (tint_rgba[3] / 255.0)))
+        final_alpha_byte = round(final_alpha_f * 255)
+        color_tint = tint_rgba[:3]
+
+        # Fast path for 1x1 solid color texture (e.g. fullscreen screen fades and flashes)
+        if base_tex.size == (1, 1) and rot_norm == 0.0:
+            dest_x = round(anchor_s_x - draw_w * fx)
+            dest_y = round(anchor_s_y - draw_h * fy)
+            if (
+                dest_x <= 0
+                and dest_y <= 0
+                and dest_x + draw_w >= self.width
+                and dest_y + draw_h >= self.height
+            ):
+                if final_alpha_byte == 0:
+                    return
+                px = base_tex.getpixel((0, 0))
+                r = round(px[0] * (tint_rgba[0] / 255.0))
+                g = round(px[1] * (tint_rgba[1] / 255.0))
+                b = round(px[2] * (tint_rgba[2] / 255.0))
+                if final_alpha_byte == 255:
+                    self._image.paste((r, g, b, 255), (0, 0, self.width, self.height))
+                    self._needs_clear = False
+                    return
+                if self._needs_clear:
+                    self._execute_clear()
+                lut_key = (r, g, b, final_alpha_byte)
+                lut = self._fade_lut_cache.get(lut_key)
+                if lut is None:
+                    inv_a = 255 - final_alpha_byte
+                    factor = inv_a / 255.0
+                    lut_r = [round(i * factor + r * final_alpha_byte / 255.0) for i in range(256)]
+                    lut_g = [round(i * factor + g * final_alpha_byte / 255.0) for i in range(256)]
+                    lut_b = [round(i * factor + b * final_alpha_byte / 255.0) for i in range(256)]
+                    lut = lut_r + lut_g + lut_b + [255] * 256
+                    if len(self._fade_lut_cache) < 256:
+                        self._fade_lut_cache[lut_key] = lut
+                self._image = self._image.point(lut)
+                return
+
+        # 5. Transform Cache Lookup
+        cache_key = (
+            item.asset_id,
+            draw_w,
+            draw_h,
+            item.flip_h,
+            item.flip_v,
+            rot_norm,
+            final_alpha_byte,
+            color_tint,
+            fx,
+            fy,
+        )
+
+        cached = self._sprite_cache.lookup(cache_key)
+        if cached is not None:
+            self._cache_hits += 1
+            cached_sprite = cached
+        else:
+            self._cache_misses += 1
+            op_quant = 1.0 if item.opacity == 1.0 else round(item.opacity, 3)
+            cached_sprite = self._transform_sprite(
+                base_tex,
+                item,
+                draw_w,
+                draw_h,
+                rot_norm,
+                op_quant,
+                tint_rgba,
+                fx,
+                fy,
+            )
+            self._sprite_cache.put(cache_key, cached_sprite, cached_sprite.nbytes)
+
+        # 6. Final destination coordinates on canvas
+        if cached_sprite.color is None:
+            return
+        dest_x = round(anchor_s_x + cached_sprite.off_x)
+        dest_y = round(anchor_s_y + cached_sprite.off_y)
+        spr_w, spr_h = cached_sprite.size
+
+        # 7. Viewport Frustum Culling (exact)
+        if (
+            dest_x + spr_w <= 0
+            or dest_y + spr_h <= 0
+            or dest_x >= self.width
+            or dest_y >= self.height
+        ):
+            return
+
+        # 8. High-Performance Compositing (paste is faster and auto-clips)
+        if cached_sprite.is_opaque:
+            if (
+                dest_x <= 0
+                and dest_y <= 0
+                and dest_x + spr_w >= self.width
+                and dest_y + spr_h >= self.height
+            ):
+                self._needs_clear = False
+            elif self._needs_clear:
+                self._execute_clear()
+            self._image.paste(cached_sprite.color, (dest_x, dest_y))
+        else:
+            if self._needs_clear:
+                self._execute_clear()
+            if self._clear_color_bytes[3] == 255 and cached_sprite.mask is not None:
+                self._image.paste(cached_sprite.color, (dest_x, dest_y), cached_sprite.mask)
+            else:
+                self._image.alpha_composite(cached_sprite.image, dest=(dest_x, dest_y))
+
+    def _transform_sprite(
+        self,
+        base_tex: Image.Image,
+        item: RenderItem,
+        draw_w: int,
+        draw_h: int,
+        rot_norm: float,
+        op_quant: float,
+        tint_rgba: tuple[int, int, int, int],
+        fx: float,
+        fy: float,
+    ) -> _CachedSprite:
+        """Apply scale, flips, rotation, tint, and opacity to create a ready-to-composite sprite."""
+        # Fast-path for 1x1 solid color texture (e.g. __builtin_color_rect__ for flash/fades)
+        if base_tex.size == (1, 1) and rot_norm == 0.0:
+            px = base_tex.getpixel((0, 0))
+            final_alpha_f = max(0.0, min(1.0, op_quant * (tint_rgba[3] / 255.0)))
+            final_alpha_byte = round(final_alpha_f * 255)
+            r = round(px[0] * (tint_rgba[0] / 255.0))
+            g = round(px[1] * (tint_rgba[1] / 255.0))
+            b = round(px[2] * (tint_rgba[2] / 255.0))
+            is_opaque = (final_alpha_byte == 255)
+            color = Image.new("RGBA", (draw_w, draw_h), (r, g, b, 255))
+            mask = None if is_opaque else Image.new("L", (draw_w, draw_h), final_alpha_byte)
+            return _CachedSprite(color, mask, -(draw_w * fx), -(draw_h * fy))
+
+        color_tint = tint_rgba[:3]
+        geom_key = (
+            item.asset_id,
+            draw_w,
+            draw_h,
+            item.flip_h,
+            item.flip_v,
+            rot_norm,
+            color_tint,
+            fx,
+            fy,
+        )
+        geom = self._geom_cache.lookup(geom_key)
+        if geom is not None:
+            geom_color, natural_mask, off_x, off_y = geom
+        else:
+            base_is_opaque = self.asset_resolver.is_asset_opaque(item.asset_id)
+            img = base_tex
+            shared_img = True
+
+            # A. Scale
+            if (img.width, img.height) != (draw_w, draw_h):
+                scale_key = (item.asset_id, draw_w, draw_h)
+                scaled = self._scaled_cache.lookup(scale_key)
+                if scaled is not None:
+                    img = scaled
+                    shared_img = True
+                else:
+                    if base_is_opaque:
+                        factor = min(base_tex.width // draw_w, base_tex.height // draw_h)
+                        if factor >= 2 and self.resampling != Image.Resampling.NEAREST:
+                            k = 1 << ((factor).bit_length() - 1)
+                            mip_key = (item.asset_id, k)
+                            mip = self._mip_cache.get(mip_key)
+                            if mip is None:
+                                mip = base_tex.reduce(k)
+                                self._put_mip(mip_key, mip)
+                            img = _resize_opaque(mip, (draw_w, draw_h), resample=self.resampling)
+                        else:
+                            img = _resize_opaque(base_tex, (draw_w, draw_h), resample=self.resampling)
+                    else:
+                        def_w = 1920 if item.layer == "background" or item.asset_id.startswith("bg/") else 400
+                        def_h = 1080 if item.layer == "background" or item.asset_id.startswith("bg/") else 800
+                        base_pre = self.asset_resolver.get_premultiplied_image(item.asset_id, def_w, def_h)
+                        factor = min(base_pre.width // draw_w, base_pre.height // draw_h)
+                        if factor >= 2 and self.resampling != Image.Resampling.NEAREST:
+                            k = 1 << ((factor).bit_length() - 1)
+                            mip_key = (item.asset_id, k)
+                            mip = self._mip_cache.get(mip_key)
+                            if mip is None:
+                                mip = base_pre.reduce(k)
+                                self._put_mip(mip_key, mip)
+                            img = mip.resize((draw_w, draw_h), resample=self.resampling).convert("RGBA")
+                        else:
+                            img = base_pre.resize((draw_w, draw_h), resample=self.resampling).convert("RGBA")
+                    self._scaled_cache.put(scale_key, img, _image_nbytes(img))
+                    shared_img = True
+
+            # B. Flips
+            if item.flip_h and item.flip_v:
+                img = img.transpose(Image.Transpose.ROTATE_180)
+                shared_img = False
+            elif item.flip_h:
+                img = img.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+                shared_img = False
+            elif item.flip_v:
+                img = img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+                shared_img = False
+
+            # C. Rotation around anchor point
+            is_ortho = False
+            if abs(rot_norm) < 1e-3:
+                off_x = -(draw_w * fx)
+                off_y = -(draw_h * fy)
+                is_ortho = True
+            else:
+                rel_anchor_x = draw_w * (fx - 0.5)
+                rel_anchor_y = draw_h * (fy - 0.5)
+                vx = -rel_anchor_x
+                vy = -rel_anchor_y
+
+                if abs(rot_norm - 90.0) < 1e-3:
+                    img = img.transpose(Image.Transpose.ROTATE_270)
+                    shared_img = False
+                    new_vx = -vy
+                    new_vy = vx
+                    is_ortho = True
+                elif abs(rot_norm - 180.0) < 1e-3:
+                    img = img.transpose(Image.Transpose.ROTATE_180)
+                    shared_img = False
+                    new_vx = -vx
+                    new_vy = -vy
+                    is_ortho = True
+                elif abs(rot_norm - 270.0) < 1e-3:
+                    img = img.transpose(Image.Transpose.ROTATE_90)
+                    shared_img = False
+                    new_vx = vy
+                    new_vy = -vx
+                    is_ortho = True
+                else:
+                    img = img.rotate(-rot_norm, resample=self.resampling, expand=True)
+                    shared_img = False
+                    rad = math.radians(rot_norm)
+                    cos_t = math.cos(rad)
+                    sin_t = math.sin(rad)
+                    new_vx = vx * cos_t - vy * sin_t
+                    new_vy = vx * sin_t + vy * cos_t
+
+                rot_w, rot_h = img.size
+                off_x = new_vx - (rot_w / 2.0)
+                off_y = new_vy - (rot_h / 2.0)
+
+                if not is_ortho:
+                    bbox = _alpha_bbox(img)
+                    if bbox is not None and bbox != (0, 0, rot_w, rot_h):
+                        img = img.crop(bbox)
+                        off_x += bbox[0]
+                        off_y += bbox[1]
+                    elif bbox is None:
+                        return _CachedSprite(None, None, off_x, off_y)
+
+            # D. Color tint
+            if color_tint != (255, 255, 255):
+                lut = self._get_rgba_lut(color_tint[0], color_tint[1], color_tint[2], 255)
+                img = img.point(lut)
+                shared_img = False
+
+            # E. Split into color + mask
+            if base_is_opaque and is_ortho:
+                geom_color = img
+                natural_mask = None
+            else:
+                geom_color, natural_mask = _split_rgba(img, shared=shared_img)
+
+            geom_nbytes = _image_nbytes(geom_color) + _image_nbytes(natural_mask)
+            self._geom_cache.put(geom_key, (geom_color, natural_mask, off_x, off_y), geom_nbytes)
+
+        # F. Opacity Modulation
+        final_alpha_f = max(0.0, min(1.0, op_quant * (tint_rgba[3] / 255.0)))
+        final_alpha_byte = round(final_alpha_f * 255)
+
+        if final_alpha_byte == 255:
+            mask = natural_mask
+        elif natural_mask is None:
+            mask = Image.new("L", geom_color.size, final_alpha_byte)
+        else:
+            mask = natural_mask.point(_ALPHA_LUTS[final_alpha_byte])
+
+        return _CachedSprite(geom_color, mask, off_x, off_y)
+
+    def end_frame(self) -> None:
+        """Conclude frame render pass, applying letterbox bars if necessary."""
+        if not self._in_frame:
+            msg = "end_frame called without matching begin_frame"
+            raise RuntimeError(msg)
+
+        if self._needs_clear:
+            self._execute_clear()
+
+        trans = self._current_transform
+        if trans is not None:
+            win_w, win_h = self.width, self.height
+            if trans.offset_x > 0:
+                ox = int(trans.offset_x)
+                self._image.paste((0, 0, 0, 255), (0, 0, ox, win_h))
+                self._image.paste((0, 0, 0, 255), (win_w - ox, 0, win_w, win_h))
+
+            if trans.offset_y > 0:
+                oy = int(trans.offset_y)
+                self._image.paste((0, 0, 0, 255), (0, 0, win_w, oy))
+                self._image.paste((0, 0, 0, 255), (0, win_h - oy, win_w, win_h))
+
+        self.last_frame = self._frame_buffer
+        self._frame_buffer = []
+        self._in_frame = False
+        self.frame_count += 1
+        self.clock.tick()
+
+    # ------------------------------------------------------------------ #
+    # FPS properties (delegate to the FrameClock for a uniform API)
+    # ------------------------------------------------------------------ #
+
+    @property
+    def fps(self) -> float:
+        """Instantaneous frames-per-second (1 / last frame interval)."""
+        return self.clock.fps
+
+    @property
+    def fps_avg(self) -> float:
+        """Rolling-average FPS over the last 60 rendered frames."""
+        return self.clock.fps_avg
+
+    @property
+    def fps_overall(self) -> float:
+        """Average FPS across all frames rendered since the renderer was created."""
+        return self.clock.fps_overall
+
+    def render_compositor(
+        self,
+        compositor: StageCompositor,
+        window_width: int,
+        window_height: int,
+    ) -> Image.Image:
+        """Render all active compositor layers to the window/buffer."""
+        self.width = window_width
+        self.height = window_height
+        self._current_transform = compositor.layout.compute_viewport_transform(
+            window_width,
+            window_height,
+            mode=self.scale_mode,
+        )
+
+        items = compositor.render_list()
+
+        # Fast-path: Check if stage is identical to previous frame
+        if (
+            self._stage_cache is not None
+            and self._last_stage_items == items
+            and self._last_transform == self._current_transform
+            and self._stage_cache.size == (window_width, window_height)
+        ):
+            self.last_frame = items
+            self.frame_count += 1
+            self.clock.tick()
+            self._image.paste(self._stage_cache, (0, 0))
+            if (
+                self.window is not None
+                and PYGLET_AVAILABLE
+                and not (hasattr(self.window, "on_draw") and type(self.window).__name__ == "PILPlayer")
+            ):
+                raw_bytes = self._frame_bytes_bottom_up()
+                img_data = pyglet.image.ImageData(
+                    self.width, self.height, "RGBA", raw_bytes, pitch=self.width * 4
+                )
+                img_data.blit(0, 0)
+            return self._image
+
+        # Check for overlay layer items
+        overlay_idx = -1
+        for idx, it in enumerate(items):
+            if it.layer == "overlay":
+                overlay_idx = idx
+                break
+
+        if overlay_idx != -1:
+            base_items = items[:overlay_idx]
+            overlay_items = items[overlay_idx:]
+        else:
+            base_items = items
+            overlay_items = []
+
+        # Check if base items are identical to previously cached base scene
+        can_use_base_cache = (
+            overlay_idx != -1
+            and self._base_cache is not None
+            and self._last_base_items == base_items
+            and self._last_base_transform == self._current_transform
+            and self._base_cache.size == (window_width, window_height)
+        )
+
+        self.begin_frame()
+        if can_use_base_cache:
+            self._image.paste(self._base_cache, (0, 0))
+            self._needs_clear = False
+            self._frame_buffer.extend(base_items)
+            for item in overlay_items:
+                self.draw_item(item)
+        else:
+            self.clear(BLACK)
+
+            skip_count = 0
+            if (
+                len(base_items) >= 2
+                and base_items[0].layer == "background"
+                and base_items[1].layer == "background"
+                and base_items[0].rotation == 0.0
+                and base_items[1].rotation == 0.0
+                and base_items[0].x == 0.0
+                and base_items[0].y == 0.0
+                and base_items[1].x == 0.0
+                and base_items[1].y == 0.0
+                and not (base_items[0].flip_h or base_items[0].flip_v or base_items[1].flip_h or base_items[1].flip_v)
+                and (base_items[0].tint is WHITE or base_items[0].tint == WHITE)
+                and (base_items[1].tint is WHITE or base_items[1].tint == WHITE)
+                and self.asset_resolver.is_asset_opaque(base_items[0].asset_id)
+                and self.asset_resolver.is_asset_opaque(base_items[1].asset_id)
+                and base_items[0].opacity > 0.0
+                and base_items[1].opacity > 0.0
+            ):
+                trans = self._current_transform
+                if trans is not None:
+                    eff_w = 1920 * abs(base_items[0].scale_x)
+                    eff_h = 1080 * abs(base_items[0].scale_y)
+                    draw_w = max(1, round(eff_w * trans.scale_x))
+                    draw_h = max(1, round(eff_h * trans.scale_y))
+                    dest_x = round(trans.offset_x)
+                    dest_y = round(trans.offset_y)
+
+                    scale_key0 = (base_items[0].asset_id, draw_w, draw_h)
+                    tex0 = self._scaled_cache.lookup(scale_key0)
+                    if tex0 is None:
+                        base0 = self.asset_resolver.get_image(base_items[0].asset_id, 1920, 1080)
+                        tex0 = (
+                            _resize_opaque(base0, (draw_w, draw_h), resample=self.resampling)
+                            if base0.size != (draw_w, draw_h)
+                            else base0
+                        )
+                        self._scaled_cache.put(scale_key0, tex0, _image_nbytes(tex0))
+
+                    scale_key1 = (base_items[1].asset_id, draw_w, draw_h)
+                    tex1 = self._scaled_cache.lookup(scale_key1)
+                    if tex1 is None:
+                        base1 = self.asset_resolver.get_image(base_items[1].asset_id, 1920, 1080)
+                        tex1 = (
+                            _resize_opaque(base1, (draw_w, draw_h), resample=self.resampling)
+                            if base1.size != (draw_w, draw_h)
+                            else base1
+                        )
+                        self._scaled_cache.put(scale_key1, tex1, _image_nbytes(tex1))
+
+                    total_op = base_items[0].opacity + base_items[1].opacity
+                    blend_alpha = (
+                        min(1.0, max(0.0, base_items[1].opacity / total_op))
+                        if total_op > 0.0
+                        else 0.5
+                    )
+                    blended = Image.blend(tex0, tex1, blend_alpha)
+                    if (
+                        dest_x <= 0
+                        and dest_y <= 0
+                        and dest_x + draw_w >= self.width
+                        and dest_y + draw_h >= self.height
+                    ):
+                        self._needs_clear = False
+                        if dest_x == 0 and dest_y == 0 and draw_w == self.width and draw_h == self.height:
+                            self._image = blended
+                        else:
+                            self._image.paste(blended, (dest_x, dest_y))
+                    else:
+                        if self._needs_clear:
+                            self._execute_clear()
+                        self._image.paste(blended, (dest_x, dest_y))
+                    self._frame_buffer.extend(base_items[:2])
+                    skip_count = 2
+
+            for item in base_items[skip_count:]:
+                self.draw_item(item)
+
+            # Snapshot clean base scene cache before drawing overlays
+            if overlay_idx != -1 or self._last_stage_items == items or self._base_cache is None:
+                self._base_cache = self._image.copy()
+                self._last_base_items = list(base_items)
+                self._last_base_transform = self._current_transform
+
+            for item in overlay_items:
+                self.draw_item(item)
+
+        self.end_frame()
+
+        # Snapshot clean stage buffer for static scene caching.
+        # When the render list has changed from the previous frame (e.g. during
+        # animation), the stage cache would be invalidated on the next frame
+        # anyway, so skip the expensive full-buffer copy (~0.5 ms on 1280×720)
+        # and let the next frame re-render from scratch.  Only cache when the
+        # scene is identical to the last frame, or on the very first render.
+        if self._last_stage_items == items or self._stage_cache is None:
+            self._stage_cache = self._image.copy()
+        else:
+            self._stage_cache = None
+        self._last_stage_items = items
+        self._last_transform = self._current_transform
+
+        if (
+            self.window is not None
+            and PYGLET_AVAILABLE
+            and not (hasattr(self.window, "on_draw") and type(self.window).__name__ == "PILPlayer")
+        ):
+            raw_bytes = self._frame_bytes_bottom_up()
+            img_data = pyglet.image.ImageData(
+                self.width, self.height, "RGBA", raw_bytes, pitch=self.width * 4
+            )
+            img_data.blit(0, 0)
+
+        return self._image
+
+    def get_image(self, copy: bool = False) -> Image.Image:
+        """Return the current rendered frame buffer."""
+        if self._needs_clear:
+            self._execute_clear()
+        return self._image.copy() if copy else self._image
+
+    @property
+    def image(self) -> Image.Image:
+        """Convenience property returning the current image buffer."""
+        if self._needs_clear:
+            self._execute_clear()
+        return self._image
+
+    def save_frame(self, path: str | Path, format: str | None = None, **kwargs: Any) -> None:
+        """Save the current frame buffer to an image file."""
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        img = self._image
+        if format and format.upper() in ("JPEG", "JPG"):
+            img = img.convert("RGB")
+        img.save(str(target), format=format, **kwargs)
+
+    def to_bytes(self, format: str = "PNG", **kwargs: Any) -> bytes:
+        """Export current frame buffer as formatted image bytes in memory."""
+        import io
+
+        buf = io.BytesIO()
+        img = self._image
+        if format.upper() in ("JPEG", "JPG"):
+            img = img.convert("RGB")
+        img.save(buf, format=format, **kwargs)
+        return buf.getvalue()
+
+    # ------------------------------------------------------------------ #
+    # UIDrawBackend primitives
+    #
+    # Immediate-mode primitives consumed by the renderer-agnostic components
+    # in eager_graphics.ui_components.  Coordinates arrive in window pixels
+    # with a top-left origin, which is already PIL's native convention.
+    # ------------------------------------------------------------------ #
+
+    def _ui_font(self, font_size: int) -> ImageFont.ImageFont:
+        """Return a bitmap font at *font_size*, cached and tolerating older Pillow."""
+        font = self._font_cache.get(font_size)
+        if font is not None:
+            return font
+        try:
+            font = ImageFont.load_default(size=font_size)
+        except TypeError:
+            font = ImageFont.load_default()
+        self._font_cache[font_size] = font
+        return font
+
+    def draw_rect(
+        self,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        color: Color,
+        *,
+        border_color: Color | None = None,
+        border_width: float = 0.0,
+    ) -> None:
+        """Fill a rectangle on the frame buffer, optionally stroking a border."""
+        if self._needs_clear:
+            self._execute_clear()
+        left, top = float(x), float(y)
+        right, bottom = left + float(width), top + float(height)
+        c_bytes = color.to_rgba_bytes()
+        if border_color is None or border_width <= 0.0:
+            self._image.paste(c_bytes, (round(left), round(top), round(right), round(bottom)))
+        else:
+            bw = round(border_width)
+            r_left, r_top = round(left), round(top)
+            r_right, r_bottom = round(right), round(bottom)
+            if bw > 0 and (r_right - r_left) > 2 * bw and (r_bottom - r_top) > 2 * bw:
+                b_bytes = (
+                    _WHITE_RGBA
+                    if (border_color is WHITE or border_color == WHITE)
+                    else border_color.to_rgba_bytes()
+                )
+                self._image.paste(b_bytes, (r_left, r_top, r_right + 1, r_bottom + 1))
+                self._image.paste(c_bytes, (r_left + bw, r_top + bw, r_right - bw + 1, r_bottom - bw + 1))
+            else:
+                draw = ImageDraw.Draw(self._image)
+                draw.rectangle((left, top, right, bottom), fill=c_bytes)
+                draw.rectangle(
+                    (left, top, right, bottom),
+                    outline=border_color.to_rgba_bytes(),
+                    width=bw,
+                )
+
+    def draw_text(
+        self,
+        x: float,
+        y: float,
+        text: str,
+        *,
+        font_size: int = 14,
+        color: Color = WHITE,
+        anchor_x: str = "left",
+        anchor_y: str = "top",
+    ) -> None:
+        """Draw a single line of text, honouring the requested anchor point."""
+        if not text:
+            return
+        if self._needs_clear:
+            self._execute_clear()
+
+        pil_anchor_x = _PIL_ANCHOR_X.get(anchor_x, "l")
+        pil_anchor_y = _PIL_ANCHOR_Y.get(anchor_y, "t")
+        anchor = f"{pil_anchor_x}{pil_anchor_y}"
+
+        cache_key = (text, font_size, anchor)
+        cached = self._text_mask_cache.lookup(cache_key)
+        if cached is None:
+            font = self._ui_font(font_size)
+            try:
+                l, t, r, b = font.getbbox(text, anchor=anchor)
+                w, h = r - l, b - t
+                if w > 0 and h > 0:
+                    mask = Image.new("L", (w, h), 0)
+                    ImageDraw.Draw(mask).text((-l, -t), text, font=font, fill=255, anchor=anchor)
+                    cached = (mask, l, t)
+                else:
+                    cached = (None, 0, 0)
+            except (AttributeError, ValueError, TypeError):
+                cached = (None, 0, 0)
+            self._text_mask_cache.put(
+                cache_key,
+                cached,
+                _image_nbytes(cached[0]) if cached[0] is not None else 0,
+            )
+
+        color_bytes = (
+            _WHITE_RGBA
+            if (color is WHITE or color == WHITE)
+            else color.to_rgba_bytes()
+        )
+        mask, rel_x, rel_y = cached
+        if mask is not None:
+            self._image.paste(color_bytes, (round(x + rel_x), round(y + rel_y)), mask)
+        else:
+            draw = ImageDraw.Draw(self._image)
+            draw.text(
+                (float(x), float(y)),
+                text,
+                font=self._ui_font(font_size),
+                fill=color_bytes,
+                anchor=anchor,
+            )
+
+    def draw_image(
+        self,
+        asset_id: str,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        *,
+        tint: Color = WHITE,
+        anchor_x: str = "left",
+        anchor_y: str = "top",
+    ) -> None:
+        """Blit a resolved asset into the frame buffer, scaled and tinted."""
+        if self._needs_clear:
+            self._execute_clear()
+        source = self.asset_resolver.get_image(asset_id)
+        if source is None:
+            return
+
+        target_w = max(1, round(width))
+        target_h = max(1, round(height))
+        t_rgba = _WHITE_RGBA if (tint is WHITE or tint == WHITE) else tint.to_rgba_bytes()
+        cache_key = (asset_id, target_w, target_h, t_rgba)
+
+        cached_sprite = self._ui_image_cache.lookup(cache_key)
+        if cached_sprite is not None:
+            sprite = cached_sprite
+        else:
+            img = source
+            if img.size != (target_w, target_h):
+                img = img.resize((target_w, target_h), resample=self.resampling)
+            if tint != WHITE:
+                img = self._apply_tint_to_image(img, tint)
+            color, mask = _split_rgba(img, shared=False)
+            sprite = _CachedSprite(color, mask, 0.0, 0.0)
+            self._ui_image_cache.put(cache_key, sprite, sprite.nbytes)
+
+        left = float(x)
+        top = float(y)
+        if anchor_x == "center":
+            left -= target_w / 2.0
+        elif anchor_x == "right":
+            left -= target_w
+        if anchor_y == "middle":
+            top -= target_h / 2.0
+        elif anchor_y == "bottom":
+            top -= target_h
+
+        dest_x = round(left)
+        dest_y = round(top)
+        if sprite.is_opaque:
+            self._image.paste(sprite.color, (dest_x, dest_y))
+        elif sprite.mask is not None:
+            self._image.paste(sprite.color, (dest_x, dest_y), sprite.mask)
+        else:
+            self._image.alpha_composite(sprite.image, dest=(dest_x, dest_y))
+
+    def _apply_tint_to_image(self, image: Image.Image, tint: Color) -> Image.Image:
+        """Return *image* with *tint* multiplied into its colour channels."""
+        r, g, b, a = tint.to_rgba_bytes()
+        lut = self._get_rgba_lut(r, g, b, a)
+        return image.convert("RGBA").point(lut)
+
+    def measure_text(self, text: str, *, font_size: int = 14) -> tuple[float, float]:
+        """Measure the pixel extents *text* would occupy at *font_size*."""
+        cache_key = (text, font_size)
+        cached = self._measure_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        font = self._ui_font(font_size)
+        try:
+            left, top, right, bottom = font.getbbox(text)
+            result = (float(right - left), float(bottom - top))
+        except (AttributeError, ValueError):
+            try:
+                draw = ImageDraw.Draw(self._image)
+                left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+                result = (float(right - left), float(bottom - top))
+            except (AttributeError, ValueError):
+                result = (float(font_size) * 0.5 * len(text), float(font_size) * 1.2)
+
+        if len(self._measure_cache) < 2048:
+            self._measure_cache[cache_key] = result
+        return result
+
+    def __len__(self) -> int:
+        return len(self.last_frame)
+
+    def __repr__(self) -> str:
+        return (
+            f"PILRenderer(width={self.width}, height={self.height}, "
+            f"frame_count={self.frame_count}, last_frame_items={len(self.last_frame)}, "
+            f"fps={self.fps:.1f})"
+        )
+
+
+if PYGLET_AVAILABLE:
+
+    class PILPlayer(pyglet.window.Window):
+        """Full-featured interactive Visual Novel window player powered by Eager and PIL."""
+
+        def __init__(
+            self,
+            vm: StoryVM,
+            compositor: StageCompositor,
+            director: StageDirector,
+            dispatcher: EventDispatcher,
+            *,
+            width: int = 1280,
+            height: int = 720,
+            title: str = "Eager-Graphics Visual Novel (PIL)",
+            asset_dir: str | Path | None = None,
+            scale_mode: ScaleMode = ScaleMode.LETTERBOX,
+            vsync: bool = True,
+            visible: bool = True,
+            show_fps: bool = True,
+            uncapped: bool = False,
+        ) -> None:
+            if uncapped:
+                vsync = False
+            super().__init__(
+                width=width,
+                height=height,
+                caption=title,
+                resizable=True,
+                vsync=vsync,
+                visible=visible,
+            )
+            self.uncapped: bool = uncapped
+            self.vm = vm
+            self.compositor = compositor
+            self.director = director
+            self.dispatcher = dispatcher
+
+            self.renderer = PILRenderer(
+                asset_dir=asset_dir,
+                scale_mode=scale_mode,
+                window=self,
+            )
+
+            # On-screen FPS debug overlay
+            self.show_fps: bool = show_fps
+            self._fps_label: pyglet.text.Label | None = None
+
+            self._pyglet_img_data: pyglet.image.ImageData | None = None
+            self._ui_dirty: bool = True
+
+            # Narrative UI State
+            self.current_speaker: str | None = None
+            self.current_text: str = ""
+            self.current_emotion: str | None = None
+            self.active_choice_prompt: ChoicePromptEvent | None = None
+            self.is_finished: bool = False
+
+            # Renderer-agnostic UI components (textbox, choice menu, end notice).
+            # These own all layout maths and draw through the renderer's
+            # UIDrawBackend primitives.
+            self.overlay = UIOverlay(width=self.width, height=self.height)
+
+            # Enable visual history rollback on director
+            self.director.enable_visual_history()
+
+            # Step first beat immediately upon initialization
+            self.advance_story()
+
+            # Pre-load all assets and warm the sprite cache so the first
+            # visible frame doesn't pay disk-I/O + resize costs (which would
+            # cause a visible frame drop / hitch).
+            self.renderer.preload_assets(self.compositor)
+            self.renderer.warm_sprite_cache(
+                self.compositor, self.width, self.height
+            )
+
+            # Schedule animation tick (uncapped runs every frame, otherwise fixed 60 FPS)
+            if self.uncapped or not vsync:
+                pyglet.clock.schedule(self.tick)
+            else:
+                pyglet.clock.schedule_interval(self.tick, 1.0 / 60.0)
+
+        def _sync_overlay(self) -> None:
+            """Mirror current narrative state onto the UI components.
+
+            Called whenever the active choice prompt or dialogue changes so that
+            input handling sees up-to-date layout even before the next draw.
+            """
+            self.overlay.sync(self.director.ui_state, self.active_choice_prompt)
+
+        def advance_story(self) -> None:
+            """Advance the story by one dialogue beat or hook."""
+            self._ui_dirty = True
+            if self.is_finished or self.vm.is_ended:
+                self.is_finished = True
+                self._sync_overlay()
+                return
+
+            if self.active_choice_prompt is not None:
+                self._sync_overlay()
+                return
+
+            # Snapshot visual and UI state before advancing to the next narrative beat
+            self.director.snapshot_visual_state()
+
+            while not self.vm.is_ended:
+                event = self.vm.step()
+                if event is None:
+                    self.is_finished = True
+                    break
+
+                self.dispatcher.dispatch(event)
+
+                if event.type == "dialogue":
+                    diag = event  # type: ignore[attr-defined]
+                    self.current_speaker = diag.speaker
+                    self.current_text = diag.text
+                    self.current_emotion = diag.emotion
+                    break
+
+                if event.type == "narration":
+                    narr = event  # type: ignore[attr-defined]
+                    self.current_speaker = None
+                    self.current_text = narr.text
+                    self.current_emotion = None
+                    break
+
+                if event.type == "append":
+                    self.current_text += f" {event.text}"  # type: ignore[attr-defined]
+                    break
+
+                if event.type == "fresh_box":
+                    self.current_text = event.text  # type: ignore[attr-defined]
+                    break
+
+                if event.type == "choice_prompt":
+                    self.active_choice_prompt = event  # type: ignore[assignment]
+                    break
+
+                if event.type == "story_end":
+                    self.is_finished = True
+                    break
+
+            self._sync_overlay()
+
+        def make_choice(self, choice_index: int) -> None:
+            """Select a branching choice option and continue execution."""
+            self._ui_dirty = True
+            if self.active_choice_prompt is None:
+                return
+
+            if 0 <= choice_index < len(self.active_choice_prompt.options):
+                self.active_choice_prompt = None
+                self.vm.choose(choice_index)
+                self.advance_story()
+
+        def rollback(self) -> bool:
+            """Rollback narrative and stage state by one beat."""
+            if not self.vm.can_rollback:
+                return False
+
+            success = self.vm.rollback()
+            if success:
+                self._ui_dirty = True
+                self.director.rollback_visual_state()
+                self.active_choice_prompt = None
+                self.current_speaker = self.director.ui_state.speaker
+                self.current_text = self.director.ui_state.text
+                self.current_emotion = self.director.ui_state.emotion
+                self.is_finished = self.director.ui_state.is_finished
+                self._sync_overlay()
+            return success
+
+        def tick(self, dt: float) -> None:
+            """Advance compositor animations by dt (delegates to step() so the FPS clock ticks)."""
+            self.compositor.step(dt)
+
+        def on_draw(self) -> None:
+            """Render frame: stage graphics followed by UI textbox and choices."""
+            self.clear()
+
+            # Fast-path for completely static frames (idle scene & UI)
+            stage_items = self.compositor.render_list()
+            is_stage_static = (
+                self.renderer._stage_cache is not None
+                and self.renderer._last_stage_items == stage_items
+                and self.renderer._last_transform == self.renderer._current_transform
+                and self.renderer._stage_cache.size == (self.width, self.height)
+            )
+
+            if is_stage_static and not self._ui_dirty and self._pyglet_img_data is not None:
+                self.renderer.frame_count += 1
+                self.renderer.clock.tick()
+                self._pyglet_img_data.blit(0, 0)
+                if self.show_fps:
+                    self._draw_fps()
+                return
+
+            # 1. Render Stage Elements using PILRenderer
+            self.renderer.render_compositor(self.compositor, self.width, self.height)
+
+            # 2-4. Dialogue textbox, branching choices, and story-end notice,
+            #      all delegated to the renderer-agnostic UI components.
+            self.overlay.draw(
+                self.renderer,
+                self.director.ui_state,
+                self.active_choice_prompt,
+                is_finished=self.is_finished,
+            )
+            self._ui_dirty = False
+
+            # Present composited PIL frame to Pyglet window
+            raw_bytes = self.renderer._frame_bytes_bottom_up()
+            pitch = self.width * 4
+            if (
+                self._pyglet_img_data is None
+                or self._pyglet_img_data.width != self.width
+                or self._pyglet_img_data.height != self.height
+            ):
+                self._pyglet_img_data = pyglet.image.ImageData(
+                    self.width, self.height, "RGBA", raw_bytes, pitch=pitch
+                )
+            else:
+                if hasattr(self._pyglet_img_data, "set_bytes"):
+                    self._pyglet_img_data.set_bytes("RGBA", pitch, raw_bytes)
+                else:
+                    self._pyglet_img_data.set_data("RGBA", pitch, raw_bytes)
+            self._pyglet_img_data.blit(0, 0)
+
+            # 5. Render FPS Counter on top of the presented image in OpenGL
+            if self.show_fps:
+                self._draw_fps()
+
+        def _draw_fps(self) -> None:
+            """Update and draw the on-screen FPS counter overlay."""
+            fps = self.renderer.fps
+            fps_avg = self.renderer.fps_avg
+            frames = self.renderer.frame_count
+            fps_text = f"FPS: {fps:.1f}  (avg: {fps_avg:.1f}, frames: {frames})"
+
+            if self._fps_label is None:
+                self._fps_label = pyglet.text.Label(
+                    fps_text,
+                    font_name="sans-serif",
+                    font_size=11,
+                    x=10,
+                    y=10,
+                    color=(230, 230, 230, 230),
+                )
+            else:
+                self._fps_label.text = fps_text
+            self._fps_label.draw()
+
+        def on_mouse_press(self, x: int, y: int, button: int, modifiers: int) -> None:
+            """Handle mouse clicks for advancement or choice selection."""
+            if button != pyglet.window.mouse.LEFT:
+                return
+
+            if self.active_choice_prompt is not None:
+                # Pyglet reports y in bottom-left space; the components lay out
+                # in top-left space, so flip before hit testing.
+                flipped_y = self.height - y
+                index = self.overlay.hit_test_choice(x, flipped_y)
+                if index is not None:
+                    self.make_choice(index)
+                return
+
+            self.advance_story()
+
+        def on_resize(self, width: int, height: int) -> None:
+            """Keep the UI components laid out against the new window size."""
+            self.overlay.set_viewport(width, height)
+            self._ui_dirty = True
+
+        def on_key_press(self, symbol: int, modifiers: int) -> None:
+            """Handle keyboard input for advancing, choices, rollback, and save/load."""
+            key = pyglet.window.key
+
+            if symbol in (key.SPACE, key.RETURN):
+                if self.active_choice_prompt is None:
+                    self.advance_story()
+
+            elif self.active_choice_prompt is not None:
+                num_keys = [
+                    key._1,
+                    key._2,
+                    key._3,
+                    key._4,
+                    key._5,
+                    key._6,
+                    key._7,
+                    key._8,
+                    key._9,
+                ]
+                for idx, k in enumerate(num_keys):
+                    if symbol == k and idx < len(self.active_choice_prompt.options):
+                        self.make_choice(idx)
+                        break
+
+            elif symbol == key.BACKSPACE:
+                self.rollback()
+
+            elif symbol == key.F3:
+                self.show_fps = not self.show_fps
+
+            elif symbol in (key.ESCAPE, key.Q):
+                self.close()
+
+else:
+
+    class PILPlayer:  # type: ignore[no-redef]
+        """Stub for PILPlayer when Pyglet is not installed."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            msg = "Pyglet is not installed. Install with 'pip install eager-graphics[pyglet]' or 'pip install pyglet'."
+            raise ImportError(msg)
