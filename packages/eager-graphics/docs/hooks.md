@@ -48,6 +48,13 @@ Clears the active background.
 ~ bg_clear with fade duration=0.5
 ```
 
+### `~ scene <asset_name> [with <transition>] [duration=<seconds>]`
+Starts a new scene: removes every character sprite from the stage, then sets the background exactly like `~ bg` (same arguments and asset convention).
+
+```es
+~ scene rooftop_dawn with crossfade duration=1.0
+```
+
 ---
 
 ## 3. Character Sprite Hooks
@@ -99,6 +106,14 @@ Changes a character's expression without affecting their position or playing ent
 
 ```es
 ~ expr alice surprised
+```
+
+### `~ image <name> <asset> [at <position>] [z=<int>]`
+Places an arbitrary named image on the foreground layer (props, overlays, letterbox bars). Unlike `~ show`, the element is not tied to a character. Defaults: `at center`, `z=50`. The asset ID is used verbatim (no prefix added); positions are the same named set as `~ show`.
+
+```es
+~ image letterbox_top black_bar at center
+~ image clue_photo photo_clue at right z=60
 ```
 
 ---
@@ -169,3 +184,55 @@ Fades the screen overlay from solid color to fully transparent.
 - `ease_in_expo`, `ease_out_expo`, `ease_in_out_expo`
 - `ease_in_back`, `ease_out_back`, `ease_in_out_back`
 - `ease_in_bounce`, `ease_out_bounce`, `ease_in_out_bounce`
+
+---
+
+## 7. Audio Hooks
+
+Audio hooks drive the injected `AudioMixer` over its channels (`music`, `ambient`, `sound`, `voice`, plus custom channels). They are no-ops when no mixer is attached (e.g. pure headless runs).
+
+### `~ play <channel> <track> [fade=<seconds>] [volume=<level>] [loop=true|false]`
+Plays a track on a channel. `fade` (also accepted as `fade_in`) fades the volume in over that many seconds; `volume` defaults to `1.0`. `loop` overrides the channel default (`music`/`ambient` loop; `sound`/`voice` do not).
+
+```es
+~ play music theme.ogg fade=2.0 volume=0.8
+~ play sound thunder.ogg
+~ play voice greeting.ogg volume=1.0
+```
+
+### `~ stop [<channel>|all] [fade=<seconds>]`
+Stops a channel, or every channel with `all` (the default when no channel is given). `fade` (also accepted as `fade_out`) fades out over that many seconds.
+
+```es
+~ stop music fade=1.5
+~ stop all
+```
+
+### `~ volume <channel> <level>`
+Sets a channel's volume immediately (`0.0`–`1.0`).
+
+```es
+~ volume music 0.5
+```
+
+---
+
+## 8. NVL Mode
+
+NVL mode replaces the single dialogue box with a full-screen scrolling backlog: while it is on, dialogue and narration lines accumulate in `UIState.nvl_entries` instead of only filling the textbox.
+
+### `~ nvl [on|off|clear]`
+Enables NVL mode (the default when no argument is given). `off` (also `false`, `0`) returns to dialogue-box (ADV) mode. `clear` wipes the NVL backlog without changing the mode.
+
+```es
+~ nvl
+~ nvl off
+~ nvl clear
+```
+
+### `~ nvl_clear`
+Clears the NVL backlog.
+
+```es
+~ nvl_clear
+```

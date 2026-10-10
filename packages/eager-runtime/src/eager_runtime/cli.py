@@ -417,7 +417,8 @@ def _run_interactive_player(engine: Any, *, backend: str) -> None:
     Both PygletPlayer and PILPlayer share a common interface:
     ``advance_story()``, ``make_choice(idx)``, ``on_draw()``,
     ``active_choice_prompt``, ``is_finished``, and ``close()``.
-    RaylibPlayer follows the same interface but runs its own event loop.
+    RaylibPlayer and PILPlayer run their own event loops (``run()``);
+    PygletPlayer is driven by ``pyglet.app.run()``.
     """
     if backend == "raylib":
         from eager_graphics.renderers.raylib import RaylibPlayer
@@ -435,6 +436,22 @@ def _run_interactive_player(engine: Any, *, backend: str) -> None:
         player.run()
         return
 
+    if backend == "pil":
+        from eager_graphics.renderers.pil import PILPlayer
+
+        player = PILPlayer(
+            vm=engine.vm,
+            compositor=engine.compositor,
+            director=engine.director,
+            dispatcher=engine.dispatcher,
+            width=1280,
+            height=720,
+            title="Eager Visual Novel (PIL)",
+            asset_dir=str(engine.asset_dir) if engine.asset_dir else None,
+        )
+        player.run()
+        return
+
     if backend == "pyglet":
         from eager_graphics.renderers.pyglet import PygletPlayer
 
@@ -446,19 +463,6 @@ def _run_interactive_player(engine: Any, *, backend: str) -> None:
             width=engine.renderer.width if hasattr(engine.renderer, "width") else 1280,
             height=720,
             title="Eager Visual Novel",
-            asset_dir=str(engine.asset_dir) if engine.asset_dir else None,
-        )
-    elif backend == "pil":
-        from eager_graphics.renderers.pil import PILPlayer
-
-        PILPlayer(
-            vm=engine.vm,
-            compositor=engine.compositor,
-            director=engine.director,
-            dispatcher=engine.dispatcher,
-            width=1280,
-            height=720,
-            title="Eager Visual Novel (PIL)",
             asset_dir=str(engine.asset_dir) if engine.asset_dir else None,
         )
     else:

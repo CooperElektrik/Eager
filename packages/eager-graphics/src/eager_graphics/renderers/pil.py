@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -17,11 +18,12 @@ except ImportError as err:
     _pil_import_error = err
 
 try:
-    import pyglet
+    import tkinter as tk
 
-    PYGLET_AVAILABLE = True
+    TKINTER_AVAILABLE = True
 except ImportError:
-    PYGLET_AVAILABLE = False
+    tk = None  # type: ignore[assignment]
+    TKINTER_AVAILABLE = False
 
 from eager_graphics.layout import ViewportTransform
 from eager_graphics.protocol import RenderBackend, RenderItem
@@ -371,7 +373,7 @@ class PILRenderer(RenderBackend):
         *,
         asset_dir: str | Path | None = None,
         scale_mode: ScaleMode = ScaleMode.LETTERBOX,
-        window: pyglet.window.Window | None = None,
+        window: Any | None = None,
         resampling: Image.Resampling = Image.Resampling.BILINEAR,
         max_cached_sprites: int = 512,
     ) -> None:
@@ -438,8 +440,8 @@ class PILRenderer(RenderBackend):
         self._last_base_items: list[RenderItem] | None = None
         self._last_base_transform: ViewportTransform | None = None
 
-    def set_window(self, window: pyglet.window.Window) -> None:
-        """Associate renderer with an active window."""
+    def set_window(self, window: Any) -> None:
+        """Associate renderer with a player window (any object with .width/.height)."""
         self.window = window
         self.width = window.width
         self.height = window.height
@@ -1024,16 +1026,6 @@ class PILRenderer(RenderBackend):
             self.frame_count += 1
             self.clock.tick()
             self._image.paste(self._stage_cache, (0, 0))
-            if (
-                self.window is not None
-                and PYGLET_AVAILABLE
-                and not (hasattr(self.window, "on_draw") and type(self.window).__name__ == "PILPlayer")
-            ):
-                raw_bytes = self._frame_bytes_bottom_up()
-                img_data = pyglet.image.ImageData(
-                    self.width, self.height, "RGBA", raw_bytes, pitch=self.width * 4
-                )
-                img_data.blit(0, 0)
             return self._image
 
         # Check for overlay layer items
@@ -1170,17 +1162,6 @@ class PILRenderer(RenderBackend):
             self._stage_cache = None
         self._last_stage_items = items
         self._last_transform = self._current_transform
-
-        if (
-            self.window is not None
-            and PYGLET_AVAILABLE
-            and not (hasattr(self.window, "on_draw") and type(self.window).__name__ == "PILPlayer")
-        ):
-            raw_bytes = self._frame_bytes_bottom_up()
-            img_data = pyglet.image.ImageData(
-                self.width, self.height, "RGBA", raw_bytes, pitch=self.width * 4
-            )
-            img_data.blit(0, 0)
 
         return self._image
 
@@ -1434,10 +1415,18 @@ class PILRenderer(RenderBackend):
         )
 
 
-if PYGLET_AVAILABLE:
+if PIL_AVAILABLE:
 
-    class PILPlayer(pyglet.window.Window):
-        """Full-featured interactive Visual Novel window player powered by Eager and PIL."""
+    class PILPlayer:
+        """Interactive visual-novel window player: Pillow software frames in a tkinter window.
+
+        Only Pillow is required to construct and drive the player — story logic
+        (``advance_story`` / ``make_choice`` / ``rollback``) and frame rendering
+        (``on_draw``) all work headless, which keeps the player fully testable
+        without a display.  The tkinter window itself is created lazily by
+        :meth:`run`, so constructing the player never needs Tk bindings either;
+        only entering the event loop does.
+        """
 
         def __init__(
             self,
@@ -1458,31 +1447,29 @@ if PYGLET_AVAILABLE:
         ) -> None:
             if uncapped:
                 vsync = False
-            super().__init__(
-                width=width,
-                height=height,
-                caption=title,
-                resizable=True,
-                vsync=vsync,
-                visible=visible,
-            )
             self.uncapped: bool = uncapped
+            self.vsync: bool = vsync
+            self.visible: bool = visible
+            self.title: str = title
+            self.width: int = width
+            self.height: int = height
             self.vm = vm
             self.compositor = compositor
             self.director = director
             self.dispatcher = dispatcher
 
             self.renderer = PILRenderer(
+                width=width,
+                height=height,
                 asset_dir=asset_dir,
                 scale_mode=scale_mode,
-                window=self,
             )
 
-            # On-screen FPS debug overlay
+            # On-screen FPS debug overlay (a tkinter label managed in run()).
             self.show_fps: bool = show_fps
-            self._fps_label: pyglet.text.Label | None = None
+            self._fps_widget: Any = None
 
-            self._pyglet_img_data: pyglet.image.ImageData | None = None
+            self._photo: Any = None
             self._ui_dirty: bool = True
 
             # Narrative UI State
@@ -1495,7 +1482,14 @@ if PYGLET_AVAILABLE:
             # Renderer-agnostic UI components (textbox, choice menu, end notice).
             # These own all layout maths and draw through the renderer's
             # UIDrawBackend primitives.
-            self.overlay = UIOverlay(width=self.width, height=self.height)
+            self.overlay = UIOverlay(width=width, height=height)
+
+            # tkinter window objects — created lazily by run() so that
+            # construction and story logic stay headless-safe.
+            self._root: Any = None
+            self._label: Any = None
+            self._closed: bool = False
+            self._last_tick: float = 0.0
 
             # Enable visual history rollback on director
             self.director.enable_visual_history()
@@ -1510,12 +1504,6 @@ if PYGLET_AVAILABLE:
             self.renderer.warm_sprite_cache(
                 self.compositor, self.width, self.height
             )
-
-            # Schedule animation tick (uncapped runs every frame, otherwise fixed 60 FPS)
-            if self.uncapped or not vsync:
-                pyglet.clock.schedule(self.tick)
-            else:
-                pyglet.clock.schedule_interval(self.tick, 1.0 / 60.0)
 
         def _sync_overlay(self) -> None:
             """Mirror current narrative state onto the UI components.
@@ -1614,9 +1602,8 @@ if PYGLET_AVAILABLE:
 
         def on_draw(self) -> None:
             """Render frame: stage graphics followed by UI textbox and choices."""
-            self.clear()
-
-            # Fast-path for completely static frames (idle scene & UI)
+            # Fast-path for completely static frames (idle scene & UI):
+            # skip re-rendering and re-present the cached frame.
             stage_items = self.compositor.render_list()
             is_stage_static = (
                 self.renderer._stage_cache is not None
@@ -1625,12 +1612,11 @@ if PYGLET_AVAILABLE:
                 and self.renderer._stage_cache.size == (self.width, self.height)
             )
 
-            if is_stage_static and not self._ui_dirty and self._pyglet_img_data is not None:
+            if is_stage_static and not self._ui_dirty and self._photo is not None:
                 self.renderer.frame_count += 1
                 self.renderer.clock.tick()
-                self._pyglet_img_data.blit(0, 0)
-                if self.show_fps:
-                    self._draw_fps()
+                self._present_cached()
+                self._draw_fps()
                 return
 
             # 1. Render Stage Elements using PILRenderer
@@ -1646,108 +1632,169 @@ if PYGLET_AVAILABLE:
             )
             self._ui_dirty = False
 
-            # Present composited PIL frame to Pyglet window
-            raw_bytes = self.renderer._frame_bytes_bottom_up()
-            pitch = self.width * 4
-            if (
-                self._pyglet_img_data is None
-                or self._pyglet_img_data.width != self.width
-                or self._pyglet_img_data.height != self.height
-            ):
-                self._pyglet_img_data = pyglet.image.ImageData(
-                    self.width, self.height, "RGBA", raw_bytes, pitch=pitch
-                )
-            else:
-                if hasattr(self._pyglet_img_data, "set_bytes"):
-                    self._pyglet_img_data.set_bytes("RGBA", pitch, raw_bytes)
-                else:
-                    self._pyglet_img_data.set_data("RGBA", pitch, raw_bytes)
-            self._pyglet_img_data.blit(0, 0)
+            # Present the composited PIL frame to the tkinter window
+            # (no-op when running headless).
+            self._present()
+            self._draw_fps()
 
-            # 5. Render FPS Counter on top of the presented image in OpenGL
-            if self.show_fps:
-                self._draw_fps()
+        def _present(self) -> None:
+            """Push the current PIL frame to the tkinter label (no-op headless)."""
+            if self._root is None or self._label is None:
+                return
+            from PIL import ImageTk
+
+            self._photo = ImageTk.PhotoImage(self.renderer.get_image())
+            self._label.configure(image=self._photo)
+
+        def _present_cached(self) -> None:
+            """Re-display the cached frame without re-rendering (no-op headless)."""
+            if self._root is None or self._label is None or self._photo is None:
+                return
+            self._label.configure(image=self._photo)
 
         def _draw_fps(self) -> None:
-            """Update and draw the on-screen FPS counter overlay."""
-            fps = self.renderer.fps
-            fps_avg = self.renderer.fps_avg
-            frames = self.renderer.frame_count
-            fps_text = f"FPS: {fps:.1f}  (avg: {fps_avg:.1f}, frames: {frames})"
-
-            if self._fps_label is None:
-                self._fps_label = pyglet.text.Label(
-                    fps_text,
-                    font_name="sans-serif",
-                    font_size=11,
-                    x=10,
-                    y=10,
-                    color=(230, 230, 230, 230),
+            """Update the on-screen FPS counter overlay (no-op headless)."""
+            if self._root is None:
+                return
+            if self._fps_widget is None:
+                self._fps_widget = tk.Label(
+                    self._root,
+                    font=("TkDefaultFont", 9),
+                    fg="#e6e6e6",
+                    bg="#000000",
                 )
+            if self.show_fps:
+                fps = self.renderer.fps
+                fps_avg = self.renderer.fps_avg
+                frames = self.renderer.frame_count
+                self._fps_widget.configure(
+                    text=f"FPS: {fps:.1f}  (avg: {fps_avg:.1f}, frames: {frames})"
+                )
+                self._fps_widget.place(x=10, y=10)
             else:
-                self._fps_label.text = fps_text
-            self._fps_label.draw()
+                self._fps_widget.place_forget()
 
-        def on_mouse_press(self, x: int, y: int, button: int, modifiers: int) -> None:
-            """Handle mouse clicks for advancement or choice selection."""
-            if button != pyglet.window.mouse.LEFT:
+        def run(self) -> None:
+            """Create the tkinter window and run the event loop (blocking).
+
+            Requires Tk bindings in this Python (e.g. the ``python3-tk``
+            system package on Debian/Ubuntu).  All story state prepared
+            before this call is preserved.
+            """
+            if not TKINTER_AVAILABLE or tk is None:
+                raise ImportError(
+                    "tkinter is not available in this Python. "
+                    "Install Tk bindings (e.g. 'apt install python3-tk') to use PILPlayer windows."
+                )
+            if self._root is not None:
+                self._root.mainloop()
                 return
 
+            root = tk.Tk()
+            root.title(self.title)
+            root.geometry(f"{self.width}x{self.height}")
+            root.resizable(True, True)
+            root.protocol("WM_DELETE_WINDOW", self.close)
+
+            label = tk.Label(root, borderwidth=0, highlightthickness=0)
+            label.pack(fill="both", expand=True)
+
+            root.bind("<Button-1>", self._on_click)
+            root.bind("<Key>", self._on_key)
+            root.bind("<Configure>", self._on_configure)
+
+            self._root = root
+            self._label = label
+            if not self.visible:
+                root.withdraw()
+
+            # Present the already-stepped first beat, then enter the loop.
+            self.on_draw()
+            self._last_tick = time.perf_counter()
+            self._tick_loop()
+            root.mainloop()
+
+        def _tick_loop(self) -> None:
+            """Advance animations, redraw, and reschedule (drives itself via after)."""
+            if self._closed or self._root is None:
+                return
+            now = time.perf_counter()
+            self.tick(now - self._last_tick)
+            self._last_tick = now
+            self.on_draw()
+            interval = 16 if (self.vsync and not self.uncapped) else 1
+            self._root.after(interval, self._tick_loop)
+
+        def close(self) -> None:
+            """Close the player window (marks closed when running headless)."""
+            self._closed = True
+            root, self._root = self._root, None
+            self._label = None
+            if root is None:
+                return
+            # Best-effort teardown: the window may already be half-destroyed
+            # (e.g. close from inside an event callback).
+            for op in (root.quit, root.destroy):
+                try:
+                    op()
+                except Exception:  # noqa: BLE001, S110
+                    pass
+
+        def _on_click(self, event: Any) -> None:
+            """Handle mouse clicks for advancement or choice selection."""
+            # tkinter reports coordinates in top-left space, matching the
+            # UI components' layout space — no flip needed.
             if self.active_choice_prompt is not None:
-                # Pyglet reports y in bottom-left space; the components lay out
-                # in top-left space, so flip before hit testing.
-                flipped_y = self.height - y
-                index = self.overlay.hit_test_choice(x, flipped_y)
+                index = self.overlay.hit_test_choice(event.x, event.y)
                 if index is not None:
                     self.make_choice(index)
                 return
 
             self.advance_story()
 
-        def on_resize(self, width: int, height: int) -> None:
+        def _on_configure(self, event: Any) -> None:
             """Keep the UI components laid out against the new window size."""
+            if event.widget is not self._root:
+                return
+            width, height = event.width, event.height
+            if width <= 0 or height <= 0:
+                return
+            if width == self.width and height == self.height:
+                return
+            self.width = width
+            self.height = height
             self.overlay.set_viewport(width, height)
+            self.renderer.set_window(self)
             self._ui_dirty = True
 
-        def on_key_press(self, symbol: int, modifiers: int) -> None:
-            """Handle keyboard input for advancing, choices, rollback, and save/load."""
-            key = pyglet.window.key
+        def _on_key(self, event: Any) -> None:
+            """Handle keyboard input for advancing, choices, rollback, and toggles."""
+            keysym = event.keysym
 
-            if symbol in (key.SPACE, key.RETURN):
+            if keysym in ("space", "Return"):
                 if self.active_choice_prompt is None:
                     self.advance_story()
 
             elif self.active_choice_prompt is not None:
-                num_keys = [
-                    key._1,
-                    key._2,
-                    key._3,
-                    key._4,
-                    key._5,
-                    key._6,
-                    key._7,
-                    key._8,
-                    key._9,
-                ]
-                for idx, k in enumerate(num_keys):
-                    if symbol == k and idx < len(self.active_choice_prompt.options):
+                if len(keysym) == 1 and keysym in "123456789":
+                    idx = int(keysym) - 1
+                    if idx < len(self.active_choice_prompt.options):
                         self.make_choice(idx)
-                        break
 
-            elif symbol == key.BACKSPACE:
+            elif keysym == "BackSpace":
                 self.rollback()
 
-            elif symbol == key.F3:
+            elif keysym == "F3":
                 self.show_fps = not self.show_fps
 
-            elif symbol in (key.ESCAPE, key.Q):
+            elif keysym in ("Escape", "q"):
                 self.close()
 
 else:
 
     class PILPlayer:  # type: ignore[no-redef]
-        """Stub for PILPlayer when Pyglet is not installed."""
+        """Stub for PILPlayer when Pillow is not installed."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
-            msg = "Pyglet is not installed. Install with 'pip install eager-graphics[pyglet]' or 'pip install pyglet'."
+            msg = "Pillow is not installed. Install with 'pip install eager-graphics[software]' or 'pip install Pillow'."
             raise ImportError(msg)

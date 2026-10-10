@@ -2,7 +2,7 @@
 
 Eager-X is a **headless, renderer-agnostic, resolution-independent Graphics & Stage Compositor** designed for the [Eager](https://github.com/CooperElektrik/Eager) visual novel engine ecosystem.
 
-- **FPS monitoring**: Every render backend and the `StageCompositor` itself own a `FrameClock` (`eager_x.timing`) that tracks real wall-clock frame intervals, computing instantaneous, rolling-average, and overall FPS for debug HUDs and headless benchmarks.
+- **FPS monitoring**: Every render backend and the `StageCompositor` itself own a `FrameClock` (`eager_graphics.timing`) that tracks real wall-clock frame intervals, computing instantaneous, rolling-average, and overall FPS for debug HUDs and headless benchmarks.
 
 ---
 
@@ -153,8 +153,8 @@ Backends implement the lightweight `RenderBackend` protocol:
 
 ```python
 from typing import Protocol
-from eager_x.protocol import RenderItem
-from eager_x.types import Color
+from eager_graphics.protocol import RenderItem
+from eager_graphics.types import Color
 
 class RenderBackend(Protocol):
     def begin_frame(self) -> None: ...
@@ -182,7 +182,7 @@ Backends additionally implement `UIDrawBackend`, used by the components in
 
 ```python
 from typing import Protocol
-from eager_x.protocol import UIDrawBackend
+from eager_graphics.protocol import UIDrawBackend
 
 class UIDrawBackend(Protocol):
     def draw_rect(self, x, y, width, height, color, *,
@@ -202,7 +202,7 @@ different native origin flip `y` themselves. Anchors are strings:
 
 ## 7. First-Party Renderers
 
-### NullRenderer (`eager_x.renderers.null`)
+### NullRenderer (`eager_graphics.renderers.null`)
 Always available — no optional dependencies.
 
 - Pure-Python, zero-GPU/headless rendering backend.
@@ -212,7 +212,7 @@ Always available — no optional dependencies.
 - Ideal for CI, automated testing, and headless game loops.
 
 ```python
-from eager_x import NullRenderer, StageCompositor
+from eager_graphics import NullRenderer, StageCompositor
 
 comp = StageCompositor(1920, 1080)
 backend = NullRenderer()
@@ -225,7 +225,7 @@ print(f"FPS: {backend.fps:.1f}  (overall: {backend.fps_overall:.1f})")
 Inspecting the UI layer headlessly:
 
 ```python
-from eager_x import NullRenderer, UIOverlay, UIState
+from eager_graphics import NullRenderer, UIOverlay, UIState
 
 backend = NullRenderer()
 UIOverlay(1280, 720).draw(backend, UIState(speaker="Meris", text="Choose."), prompt)
@@ -234,24 +234,24 @@ for call in backend.ui_calls:
     print(call["kind"], call.get("text") or call.get("color"))
 ```
 
-### Pyglet (`eager_x.renderers.pyglet`)
-Install via `pip install eager-x[pyglet]`.
+### Pyglet (`eager_graphics.renderers.pyglet`)
+Install via `pip install eager-graphics[hardware]`.
 
 - Hardware-accelerated OpenGL 2D rendering.
 - `PygletRenderer`: Implements `RenderBackend`, handles viewport scaling, letterbox borders, flips, and tinting.
 - `PygletPlayer`: Ready-to-use interactive game window supporting dialogue, choices, rollback, and custom assets.
 - Built-in procedural placeholder generator for zero-asset prototyping.
 
-### PIL / Pillow (`eager_x.renderers.pil`)
-Install via `pip install eager-x[pil]` or `pip install pillow`.
+### PIL / Pillow (`eager_graphics.renderers.pil`)
+Install via `pip install eager-graphics[software]` or `pip install pillow`. (Player windows additionally need Tk bindings in your Python, e.g. `apt install python3-tk`.)
 
 - High-performance software rendering backend with all optimizations.
 - `PILRenderer`: Implements `RenderBackend`, viewport scaling (`LETTERBOX`, `STRETCH`, etc.), LRU sprite transform caching, opaque direct-blit fast-path (13x speedup), and precomputed LUT tinting.
-- `PILPlayer`: Interactive game window supporting dialogue, choices, rollback, and custom assets, matching `PygletPlayer` with all graphics rendered via PIL.
+- `PILPlayer`: Interactive game window supporting dialogue, choices, rollback, and custom assets. Frames are rendered in software via PIL and presented in a tkinter window (`run()`); story logic works headless, so only Pillow is required unless a window is opened.
 - Procedural placeholder generator for zero-asset prototyping.
 
 ```python
-from eager_x.renderers.pil import PILRenderer
+from eager_graphics.renderers.pil import PILRenderer
 renderer = PILRenderer(1280, 720)
 image = renderer.render_compositor(compositor, 1280, 720)
 renderer.save_frame("screenshot.png")

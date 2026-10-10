@@ -1,9 +1,9 @@
 # Eager-X API Reference
 
-All primary classes, protocols, and data structures are exported from the top-level `eager_x` package.
+All primary classes, protocols, and data structures are exported from the top-level `eager_graphics` package.
 
 ```python
-from eager_x import (
+from eager_graphics import (
     StageCompositor,
     StageDirector,
     LayoutResolver,
@@ -79,7 +79,7 @@ print(f"FPS: {compositor.fps:.1f}  (overall: {compositor.fps_overall:.1f})")
 ### Example: headless FPS measurement
 
 ```python
-from eager_x import StageCompositor, NullRenderer
+from eager_graphics import StageCompositor, NullRenderer
 
 comp = StageCompositor(1920, 1080)
 comp.set_background("bg/demo", transition="cut")
@@ -162,7 +162,7 @@ Each backend iterates over `compositor.render_list()` and draws each `RenderItem
 
 ## 4.2 `FrameClock` — FPS Measurement
 
-`FrameClock` is a lightweight, zero-dependency utility (`eager_x.timing`) that records wall-clock frame timestamps via `time.perf_counter()` and derives three FPS views:
+`FrameClock` is a lightweight, zero-dependency utility (`eager_graphics.timing`) that records wall-clock frame timestamps via `time.perf_counter()` and derives three FPS views:
 
 | Property | Description |
 |---|---|
@@ -174,7 +174,7 @@ Each backend iterates over `compositor.render_list()` and draws each `RenderItem
 | `elapsed` | Total wall-clock seconds since the clock started or was reset. |
 
 ```python
-from eager_x import FrameClock
+from eager_graphics import FrameClock
 
 clock = FrameClock(rolling_window=30)
 clock.tick()       # first call returns dt=0.0
@@ -201,7 +201,7 @@ FrameClock(rolling_window: int = 60)
 
 ---
 
-## 5. Pyglet Backend (`eager_x.renderers.pyglet`)
+## 5. Pyglet Backend (`eager_graphics.renderers.pyglet`)
 
 Provides hardware-accelerated 2D stage rendering and an interactive visual novel window runner using Pyglet.
 
@@ -246,13 +246,13 @@ PygletPlayer(
 
 ---
 
-## 6. Headless Backend (`eager_x.renderers.null`)
+## 6. Headless Backend (`eager_graphics.renderers.null`)
 
 A pure-Python, zero-dependency renderer that implements the `RenderBackend` protocol without requiring a GPU, display server, or third-party graphics library. Instead of drawing pixels it records every `RenderItem` submitted during a frame for programmatic inspection — ideal for CI pipelines, headless game loops, automated testing, and debug snapshots.
 
 ### `NullRenderer`
 ```python
-from eager_x.renderers.null import NullRenderer
+from eager_graphics.renderers.null import NullRenderer
 
 backend = NullRenderer()
 ```
@@ -280,4 +280,4 @@ for item in backend.last_frame:
     print(f"  [{item.layer}] {item.asset_id} @ ({item.x}, {item.y}) opacity={item.opacity:.2f}")
 ```
 
-The `NullRenderer` is always available (imported unconditionally from `eager_x`), even when no graphical backend is installed. This makes Eager-X's full compositor logic testable and usable in pure-headless environments.
+The `NullRenderer` is always available (imported unconditionally from `eager_graphics`), even when no graphical backend is installed. This makes Eager-X's full compositor logic testable and usable in pure-headless environments.

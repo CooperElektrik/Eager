@@ -592,7 +592,7 @@ def main(argv: list[str] | None = None) -> int:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--save-load", action="store_true", help="Demonstrate save/load with branching paths.")
     group.add_argument("--rollback", action="store_true", help="Demonstrate synchronized rollback of story + visuals.")
-    group.add_argument("--play", action="store_true", help="Launch interactive PIL visual novel window (requires Pillow).")
+    group.add_argument("--play", action="store_true", help="Launch interactive PIL visual novel window (requires Pillow + Tk bindings).")
     parser.add_argument("--no-color", action="store_true", help="Disable ANSI colour output.")
     parser.add_argument(
         "--uncapped",
@@ -632,13 +632,16 @@ def launch_interactive(
     *,
     uncapped: bool = False,
 ) -> None:
-    """Launch an interactive PIL visual novel window."""
+    """Launch an interactive PIL visual novel window (tkinter)."""
     try:
-        import pyglet
-    except ImportError:
+        from eager_graphics.renderers.pil import TKINTER_AVAILABLE
+    except ImportError as exc:
+        print(f"Error: PIL renderer unavailable: {exc}", file=sys.stderr)
+        sys.exit(1)
+    if not TKINTER_AVAILABLE:
         print(
-            "Error: pyglet is required for interactive mode.\n"
-            "Install with: pip install pyglet",
+            "Error: tkinter is required for interactive mode.\n"
+            "Install Tk bindings (e.g. 'apt install python3-tk').",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -672,10 +675,7 @@ def launch_interactive(
         vsync=not uncapped,
         uncapped=uncapped,
     )
-    if uncapped:
-        pyglet.app.run(interval=0)
-    else:
-        pyglet.app.run()
+    player.run()
     player.close()
 
 

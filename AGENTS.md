@@ -183,7 +183,7 @@ eager-mono/                          # uv workspace root
 |---|---|---|
 | `__init__.py` | All public classes & functions | Top-level package re-exports. Core API **including the text module** (`TextReveal`, `FormattedText`, `parse_text_tags`, `TextSegment`, `PausePoint`) is imported eagerly. Audio moved out to `eager_core` and screenplay hook-arg parsing to `eager_script` in the presentation-layer split. `NullRenderer` and `FrameClock` always available. Optional backends (Pyglet, PIL, Raylib) resolved lazily via `renderers.__getattr__` to avoid import side effects. `__version__ = "0.1.0"`. |
 | `compositor.py` | `StageCompositor` | **Core orchestrator.** Manages layers, drives the `Timeline`, applies camera shake, generates the `RenderItem` list, tracks FPS via `FrameClock`, and provides `save_state`/`load_state`/`debug_info`/`debug_repr`/`step`/`run_headless`. |
-| `director.py` | `StageDirector`, `CharacterConfig` | Bridges Eager's `EventDispatcher` to the compositor. Registers screenplay hooks via `bind()` (`~ bg`, `~ bg_clear`, `~ scene`, `~ image`, `~ show`, `~ hide`, `~ move`, `~ expr`, `~ fade_in`/`~ fade_out`, `~ flash`, `~ shake`, `~ play`/`~ stop`/`~ volume` for audio, `~ nvl`/`~ nvl_clear`). `bind()`'s `_wrap_hook` no longer auto-snapshots; visual history is driven explicitly via `snapshot_visual_state()`/`on_beat_step()` (the session calls it before advancing a beat) and `rollback_visual_state()`. The wildcard `on_any_event` listener translates narrative events (dialogue/append/fresh_box/narration, choices, scene enter/exit, story end) into `UIState` updates; auto-syncs character expressions from emotion tags, resolves side images (`<asset>_<emotion>`), and routes `~ play` to the `AudioMixer` (skipped in skip mode). Owns `UIState` and `VisualHistoryManager` for `save_visual_state`/`load_visual_state`. |
+| `director.py` | `StageDirector`, `CharacterConfig` | Bridges Eager's `EventDispatcher` to the compositor. Registers screenplay hooks via `bind()` (`~ bg`, `~ bg_clear`, `~ scene`, `~ image`, `~ show`, `~ hide`, `~ move`, `~ expr`, `~ fade_in`/`~ fade_out`, `~ flash`, `~ shake`, `~ play`/`~ stop`/`~ volume` for audio, `~ nvl`/`~ nvl_clear`). `bind()`'s `_wrap_hook` no longer auto-snapshots; visual history is driven explicitly via `snapshot_visual_state()`/`on_beat_step()` (the session calls it before advancing a beat) and `rollback_visual_state()`. The wildcard `on_any_event` listener translates narrative events (dialogue/append/fresh_box/narration, choices, scene enter/exit, story end) into `UIState` updates; auto-syncs character expressions from emotion tags, resolves side images (`<asset>_<emotion>`), and routes `~ play` to the `AudioMixer`. Owns `UIState` and `VisualHistoryManager` for `save_visual_state`/`load_visual_state`. |
 | `text.py` | `TextReveal`, `FormattedText`, `TextSegment`, `PausePoint`, `parse_text_tags` | Text tag parsing + typewriter reveal. `parse_text_tags(raw)` parses `{b}/{i}/{u}/{s}/{color=#hex}/{size=N}/{w}`/`{p}`/`{fast}`/`{{`-escape into `FormattedText` (plain text + `tuple[TextSegment]` + `tuple[PausePoint]`). `TextReveal(formatted, cps)`: `update(dt)`, `visible_chars`, `is_complete`, `complete_immediately()`, `{w}`/`{p}` pause points; cps=0 → instant. |
 | `stage.py` | `Stage`, `Layer`, `StageElement`, `ElementState` | Visual hierarchy: ordered layers → named elements → mutable element state. All serializable via `to_dict`/`from_dict`. |
 | `layout.py` | `LayoutResolver`, `ViewportTransform` | Virtual stage resolution, semantic position names (`left`, `center`, etc., custom), viewport scaling modes (`LETTERBOX`, `STRETCH`, `CROP`, `FIT_WIDTH`, `FIT_HEIGHT`). `compute_viewport()` is aliased as `compute_viewport_transform()`. |
@@ -197,7 +197,7 @@ eager-mono/                          # uv workspace root
 | `protocol.py` | `RenderItem`, `RenderBackend`, `UIDrawBackend` | `RenderItem` is a frozen, slots dataclass (the draw command) with `asset_id, x, y, opacity, scale_x, scale_y, rotation, anchor, tint, flip_h, flip_v, layer, z_order`, plus `to_dict`/`from_dict`. `RenderBackend` and `UIDrawBackend` are `Protocol`s backends implement. |
 | `renderers/__init__.py` | `NullRenderer` (+ Pyglet/PIL/Raylib lazy via `__getattr__`) | Exports `NullRenderer` always. Optional backends (Pyglet, PIL, Raylib) are **not** eagerly imported — they are resolved lazily via `__getattr__` to avoid side effects (e.g. Pyglet initialises GTK/EGL on Wayland, which conflicts with other backends). `__all__` includes all backend names for type-checking; accessing a missing backend raises `ImportError` at access time. |
 | `renderers/null.py` | `NullRenderer` | Headless, zero-dependency renderer. Records `RenderItem`s into `last_frame` and UI primitives into `ui_calls`. Implements both `RenderBackend` and `UIDrawBackend`. Also implements `render_compositor()` for API parity. |
-| `renderers/pil.py` | `PILRenderer`, `PILPlayer`, `PILAssetResolver` | Software rendering backend with LRU sprite-transform caching, opaque direct-blit fast-path, precomputed LUT tinting, and `preload_assets`/`warm_sprite_cache`. |
+| `renderers/pil.py` | `PILRenderer`, `PILPlayer`, `PILAssetResolver` | Software rendering backend with LRU sprite-transform caching, opaque direct-blit fast-path, precomputed LUT tinting, and `preload_assets`/`warm_sprite_cache`. `PILPlayer` presents Pillow frames in a tkinter window (`run()`); construction and story logic are headless-safe, so the `software` (Pillow) extra carries no windowing dependency. |
 | `renderers/pyglet.py` | `PygletRenderer`, `PygletPlayer`, `PygletAssetResolver` | Hardware-accelerated OpenGL 2D backend + interactive visual novel window. |
 | `renderers/raylib.py` | `RaylibRenderer`, `RaylibPlayer`, `RaylibAssetResolver` | Hardware-accelerated OpenGL 2D backend (via `pyray`/raylib) + interactive visual novel window. |
 | `screens/__init__.py` | `Screen`, `ScreenManager`, `Theme`, `Button`, `Label`, `Slider`, `TitleScreen`, `SaveLoadScreen` | Convenience re-exports for the built-in screens/widgets package. |
@@ -407,7 +407,7 @@ eager test-run script.es                    # headless dry-run (auto-chooses 1st
 eager test-run script.es --all-paths        # exhaustively explore every branch
 eager test-run script.es --max-steps 200      # cap total steps in a dry-run
 
-eager-x play script.es --backend pil        # interactive visual novel (requires Pillow)
+eager-x play script.es --backend pil        # interactive visual novel (requires Pillow + Tk bindings, e.g. python3-tk)
 eager-x play script.es --backend pyglet     # interactive visual novel (requires pyglet)
 eager-x play script.es --backend raylib     # interactive visual novel (requires pyray)
 eager-x play script.es --warp intro         # jump directly to a scene label
@@ -450,7 +450,7 @@ ruff check packages/                # lint library code (examples/ excluded)
 | eager-core | 0.1.0 | `README.md` | Shared leaf package: audio mixing (`AudioBackend`/`NullAudioBackend`/`ChannelState`/`AudioMixer`) and the rationale for the layer split |
 | eager-graphics | 0.1.0 | `docs/architecture.md` | Design pillars, rendering pipeline diagram, two-layer architecture, layer hierarchy, viewport scaling, camera shake, backend protocol, first-party renderers, UI components |
 | eager-graphics | 0.1.0 | `docs/api.md` | Full API reference for `StageCompositor`, `StageDirector`, `LayoutResolver`/`ViewportTransform`, `RenderItem`, `Timeline`/`Tween`, `FrameClock`, `RenderBackend`, `UIDrawBackend`, first-party renderers |
-| eager-graphics | 0.1.0 | `docs/hooks.md` | Screenplay hook syntax reference: `~ bg`, `~ bg_clear`, `~ show`, `~ hide`, `~ move`, `~ expr`, `~ fade_in`/`~ fade_out`, `~ flash`, `~ shake`, transitions & easing curves. Gaps (registered in `StageDirector.bind()` but undocumented): `~ scene`, `~ image`, `~ play`/`~ stop`/`~ volume` (audio), `~ nvl`/`~ nvl_clear` |
+| eager-graphics | 0.1.0 | `docs/hooks.md` | Screenplay hook syntax reference: `~ bg`, `~ bg_clear`, `~ scene`, `~ image`, `~ show`, `~ hide`, `~ move`, `~ expr`, `~ fade_in`/`~ fade_out`, `~ flash`, `~ shake`, `~ play`/`~ stop`/`~ volume` (audio), `~ nvl`/`~ nvl_clear`, transitions & easing curves |
 
 ---
 
@@ -538,7 +538,7 @@ Optionally provide a `render_compositor(compositor, window_width, window_height)
 
 1. Add a `_BACKEND_*` constant and a branch in `VisualEngine._create_renderer()`.
 2. Add CLI support in `cli.py`'s `_run_interactive_player()` if the backend has a player class.
-3. The player class must implement: `advance_story()`, `make_choice(idx)`, `on_draw()`, `active_choice_prompt`, `is_finished`, `close()`.
+3. The player class must implement: `advance_story()`, `make_choice(idx)`, `on_draw()`, `active_choice_prompt`, `is_finished`, `close()` — plus `run()` if it owns its event loop (tkinter/raylib) rather than using `pyglet.app.run()`.
 
 ### 8.9 Adding a new UI screen or widget (eager-graphics)
 

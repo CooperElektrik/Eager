@@ -19,7 +19,6 @@ from eager_graphics import (
 )
 from eager_graphics.renderers.pil import (
     PIL_AVAILABLE,
-    PYGLET_AVAILABLE,
     PILAssetResolver,
     PILPlayer,
     PILRenderer,
@@ -432,8 +431,9 @@ def test_pil_renderer_save_and_bytes(tmp_path: Path) -> None:
     assert file_path.stat().st_size > 0
 
 
-@pytest.mark.skipif(not PYGLET_AVAILABLE, reason="Pyglet not installed")
+@pytest.mark.skipif(not PIL_AVAILABLE, reason="Pillow is not installed")
 def test_pil_player_story_progression() -> None:
+    """PILPlayer story logic runs headless (tkinter only needed for run())."""
     screenplay = """
     ## Start --- start
     ~ bg tavern with cut

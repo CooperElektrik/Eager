@@ -324,10 +324,7 @@ def test_pil_player_idle_frame_skipping():
     from eager_script import parse_graph
 
     from eager_graphics import StageDirector
-    from eager_graphics.renderers.pil import PYGLET_AVAILABLE, PILPlayer
-
-    if not PYGLET_AVAILABLE:
-        pytest.skip("Pyglet is not available")
+    from eager_graphics.renderers.pil import PILPlayer
 
     graph = parse_graph("## Start --- start\nAlice: Hello!\n")
     vm = StoryVM(graph)
@@ -370,10 +367,7 @@ def test_pil_player_uncapped_mode():
     from eager_script import parse_graph
 
     from eager_graphics import StageDirector
-    from eager_graphics.renderers.pil import PYGLET_AVAILABLE, PILPlayer
-
-    if not PYGLET_AVAILABLE:
-        pytest.skip("Pyglet is not available")
+    from eager_graphics.renderers.pil import PILPlayer
 
     graph = parse_graph("## Start --- start\nAlice: Hello!\n")
     vm = StoryVM(graph)

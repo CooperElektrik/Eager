@@ -216,14 +216,15 @@ class TestPILRendererFPS:
 
     def test_pil_player_fps_toggle(self) -> None:
         try:
-            import pyglet
+            from types import SimpleNamespace
+
             from eager_runtime import EventDispatcher, StoryVM
             from eager_script import parse_graph
 
             from eager_graphics import StageDirector
             from eager_graphics.renderers.pil import PILPlayer
         except ImportError:
-            pytest.skip("Pyglet or Pillow is not installed")
+            pytest.skip("Pillow is not installed")
 
         graph = parse_graph("## Start --- start\nAlice: Hi!\n")
         vm = StoryVM(graph)
@@ -252,8 +253,7 @@ class TestPILRendererFPS:
             assert player.renderer.frame_count == 1
 
             # Toggle with F3
-            key = pyglet.window.key
-            player.on_key_press(key.F3, 0)
+            player._on_key(SimpleNamespace(keysym="F3"))
             assert player.show_fps is False
             player.on_draw()
             assert player.renderer.frame_count == 2
