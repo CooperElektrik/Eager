@@ -1,6 +1,6 @@
 # Eager
 
-Lightweight, headless narrative runtime and state machine for [Eager-S](https://github.com/CooperElektrik/Eager-S) screenplays.
+Lightweight, headless narrative runtime and state machine for [Eager-S](https://github.com/CooperElektrik/Eager) screenplays.
 
 Eager is a render-agnostic story virtual machine (VM). It handles execution flow, choice branching, subroutine call stacks (`>>` and `<<`), engine hooks (`~`), save/load snapshots, and time-travel rollbacks.
 

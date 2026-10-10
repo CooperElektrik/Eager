@@ -1,6 +1,6 @@
 # DSL Syntax Reference
 
-`eager_s` screenplay scripts are plain UTF-8 text files (conventionally with a `.es` extension) designed to be human-readable, fast to write, and simple to parse.
+`eager_script` screenplay scripts are plain UTF-8 text files (conventionally with a `.es` extension) designed to be human-readable, fast to write, and simple to parse.
 
 ---
 

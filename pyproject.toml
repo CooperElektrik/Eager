@@ -3,10 +3,16 @@ name = "eager-engine"
 version = "0.1.0"
 description = "Unified visual novel engine ecosystem: parser (eager-script), runtime (eager-runtime), and graphics (eager-graphics)."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Cooper" }]
 urls = { Homepage = "https://github.com/CooperElektrik/Eager", Repository = "https://github.com/CooperElektrik/Eager" }
+dependencies = [
+    "eager-core",
+    "eager-graphics",
+    "eager-runtime",
+    "eager-script",
+]
 
 [tool.uv]
 dev-dependencies = [
@@ -14,6 +20,7 @@ dev-dependencies = [
     "ruff>=0.4.0",
     "pyglet>=2.0",
     "pillow>=10.0",
+    "raylib>=6.0.0",
     "blessed>=1.20.0",
 ]
 

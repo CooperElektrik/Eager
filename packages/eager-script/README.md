@@ -16,13 +16,13 @@ It parses screenplay text into an abstract syntax tree (AST) and directed scene 
 ## Installation
 
 ```bash
-pip install eager-s
+pip install eager-script
 ```
 
 To install the optional terminal editor:
 
 ```bash
-pip install "eager-s[editor]"
+pip install "eager-script[editor]"
 ```
 
 ## DSL Example
@@ -54,7 +54,7 @@ Narrator: The gates close behind you.
 ## Quickstart
 
 ```python
-import eager_s
+import eager_script
 
 script = """
 ## Courtyard --- courtyard
@@ -73,14 +73,14 @@ Narrator: The end.
 """
 
 # Parse into AST items
-items = eager_s.parse(script)
+items = eager_script.parse(script)
 
 # Validate links
-result = eager_s.validate(items)
+result = eager_script.validate(items)
 print("Valid:", result.is_valid)
 
 # Build directed scene graph
-graph = eager_s.to_graph(items)
+graph = eager_script.to_graph(items)
 print("Entry:", graph.entry)
 print("Successors:", graph.successors("courtyard"))
 print("Terminal scenes:", graph.terminal_scenes())
@@ -90,25 +90,25 @@ print("Terminal scenes:", graph.terminal_scenes())
 
 ```bash
 # Validate script
-eager-s check script.es
+eager-script check script.es
 
 # Parse to JSON AST
-eager-s parse script.es -o script.json
+eager-script parse script.es -o script.json
 
 # Export scene graph
-eager-s graph script.es -o graph.json
-eager-s graph script.es --format dot -o story.dot
-eager-s graph script.es --format mermaid
+eager-script graph script.es -o graph.json
+eager-script graph script.es --format dot -o story.dot
+eager-script graph script.es --format mermaid
 
 # Open terminal editor
-eager-s edit script.es
+eager-script edit script.es
 ```
 
 ## Documentation
 
 Detailed guides are in [docs/](docs/):
 
-- [DSL Syntax Reference](docs/dsl-syntax.md): Syntax rules, Eager-SP mode, escaping
+- [DSL Syntax Reference](docs/syntax.md): Syntax rules, Eager-SP mode, escaping
 - [Directed Scene Graph](docs/scene-graph.md): Graph model, queries, DOT and Mermaid exports
 - [Static Validation](docs/validation.md): Checks, errors, warnings
 - [Terminal Editor](docs/editor.md): Editor controls, keybindings
@@ -118,7 +118,7 @@ Detailed guides are in [docs/](docs/):
 ## Tests
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -p "test_*.py"
+cd packages/eager-script && pytest -q --tb=short -x
 ```
 
 ## License

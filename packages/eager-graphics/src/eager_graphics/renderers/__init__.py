@@ -25,6 +25,7 @@ __all__ = [
     "PILAssetResolver",
     "PILPlayer",
     "PILRenderer",
+    "PygletAssetResolver",
     "PygletPlayer",
     "PygletRenderer",
     "RaylibAssetResolver",
@@ -36,7 +37,7 @@ __all__ = [
 if TYPE_CHECKING:
     # For type-checkers only — the real names are resolved lazily at runtime.
     from eager_graphics.renderers.pil import PILAssetResolver, PILPlayer, PILRenderer
-    from eager_graphics.renderers.pyglet import PygletPlayer, PygletRenderer
+    from eager_graphics.renderers.pyglet import PygletAssetResolver, PygletPlayer, PygletRenderer
     from eager_graphics.renderers.raylib import (
         RaylibAssetResolver,
         RaylibPlayer,
@@ -47,6 +48,7 @@ if TYPE_CHECKING:
 # Map of lazy-backend class name → (module path, imported name).
 # Resolved on first access via ``__getattr__``.
 _LAZY: dict[str, tuple[str, str]] = {
+    "PygletAssetResolver": ("eager_graphics.renderers.pyglet", "PygletAssetResolver"),
     "PygletPlayer": ("eager_graphics.renderers.pyglet", "PygletPlayer"),
     "PygletRenderer": ("eager_graphics.renderers.pyglet", "PygletRenderer"),
     "PILAssetResolver": ("eager_graphics.renderers.pil", "PILAssetResolver"),

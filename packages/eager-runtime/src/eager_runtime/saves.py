@@ -99,7 +99,7 @@ class SaveManager:
 
     def save_slot(self, slot_name: str, checkpoint: Checkpoint, metadata_extra: dict[str, Any] | None = None) -> SaveMetadata:
         """Save a checkpoint to a named slot."""
-        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        now = datetime.datetime.now(datetime.UTC).isoformat()
         
         # Extract scene_id, dialogue_snippet from checkpoint
         story_state = checkpoint.story

@@ -1,6 +1,6 @@
 # Directed Scene Graph
 
-While `eager_s.parse()` produces a flat list of AST items (ideal for step-by-step game execution), `eager_s.to_graph()` transforms that list into a **directed graph** representing the narrative topology.
+While `eager_script.parse()` produces a flat list of AST items (ideal for step-by-step game execution), `eager_script.to_graph()` transforms that list into a **directed graph** representing the narrative topology.
 
 ---
 
@@ -20,14 +20,14 @@ While `eager_s.parse()` produces a flat list of AST items (ideal for step-by-ste
 ### Creating a SceneGraph
 
 ```python
-import eager_s
+import eager_script
 
 # Direct parse to graph
-graph = eager_s.parse_graph(script_text)
+graph = eager_script.parse_graph(script_text)
 
 # Or transform from existing AST items
-items = eager_s.parse(script_text)
-graph = eager_s.to_graph(items)
+items = eager_script.parse(script_text)
+graph = eager_script.to_graph(items)
 ```
 
 ### Topological Queries
@@ -138,14 +138,14 @@ Generate graph exports directly from the command line:
 
 ```bash
 # Export scene graph as JSON
-eager-s graph script.es -o graph.json
+eager-script graph script.es -o graph.json
 
 # Export lightweight JSON without AST bodies
-eager-s graph script.es --no-body -o structure.json
+eager-script graph script.es --no-body -o structure.json
 
 # Export Graphviz DOT file
-eager-s graph script.es --format dot -o story.dot
+eager-script graph script.es --format dot -o story.dot
 
 # Render to Mermaid flowchart
-eager-s graph script.es --format mermaid
+eager-script graph script.es --format mermaid
 ```

@@ -283,6 +283,7 @@ def build_x_parser() -> argparse.ArgumentParser:
         default=None,
         help="Automatically select this choice index when a choice prompt appears",
     )
+    render_p.set_defaults(func=_cmd_render)
     # run
     run_p = subparsers.add_parser(
         "run",

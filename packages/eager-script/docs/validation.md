@@ -1,6 +1,6 @@
 # Static Validation
 
-`eager_s` includes a static validator that analyzes screenplay scripts before runtime to detect narrative inconsistencies, broken branching links, dead code, and infinite loops.
+`eager_script` includes a static validator that analyzes screenplay scripts before runtime to detect narrative inconsistencies, broken branching links, dead code, and infinite loops.
 
 ---
 
@@ -22,10 +22,10 @@
 ## Python API
 
 ```python
-import eager_s
+import eager_script
 
-items = eager_s.parse(script)
-result = eager_s.validate(items, plain=False)
+items = eager_script.parse(script)
+result = eager_script.validate(items, plain=False)
 
 if not result.is_valid:
     print(f"Validation failed with {len(result.errors)} errors.")
@@ -55,10 +55,10 @@ Validate scripts directly in terminal or CI/CD pipelines:
 
 ```bash
 # Validate screenplay DSL
-eager-s check script.es
+eager-script check script.es
 
 # Validate using strict Eager-SP rules
-eager-s check --plain manuscript.es
+eager-script check --plain manuscript.es
 ```
 
 Example output:

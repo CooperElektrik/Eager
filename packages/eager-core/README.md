@@ -17,7 +17,7 @@ dependencies (standard library only).
 
 2. **Core Types & Geometry** (`eager_core.types`):
    - `Vec2` — immutable 2D vector with arithmetic, distance, and `lerp`.
-   - `Rect` — axis-aligned 2D rectangle with bounds, center, `contains`, and intersection tests.
+   - `Rect` — axis-aligned 2D rectangle with bounds, center, `contains`, and `intersects` tests.
    - `Color` — immutable RGBA float color with hex parsing (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`), `lerp`, clamping, and byte conversions.
 
 3. **Easing Curves** (`eager_core.easing`):
@@ -28,7 +28,7 @@ dependencies (standard library only).
    - `FrameClock` — wall-clock delta-time (`dt`) measurement, instantaneous FPS, rolling average FPS, and elapsed time tracking.
 
 5. **Input Abstractions** (`eager_core.input`):
-   - `InputAction` — 21 backend-neutral semantic actions (`ADVANCE`, `ROLLBACK`, `CHOOSE`, `GAME_MENU`, `SKIP_TOGGLE`, etc.).
+   - `InputAction` — 29 backend-neutral semantic actions (`ADVANCE`, `ROLLBACK`, `CHOOSE`, `GAME_MENU`, `SKIP_TOGGLE`, etc.).
    - `Keymap` — configurable mapping of normalized key names to semantic actions.
 
 6. **Filesystem Storage Helpers** (`eager_core.storage`):

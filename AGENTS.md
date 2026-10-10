@@ -72,7 +72,7 @@ eager-mono/                          # uv workspace root
     │   ├── pyproject.toml           # name = "eager-script", 0 runtime deps
     │   ├── README.md
     │   ├── src/eager_script/        # import: eager_script
-    │   ├── tests/                   # 5 files, 99 tests
+    │   ├── tests/                   # 5 files, 100 tests
     │   ├── docs/                    # syntax.md, scene-graph.md, validation.md,
     │   │                              # api-reference.md, editor.md, benchmarks.md
     │   └── benchmarks/              # benchmark.py
@@ -85,7 +85,7 @@ eager-mono/                          # uv workspace root
     │   ├── pyproject.toml           # name = "eager-runtime", deps: eager-script, eager-core
     │   ├── README.md
     │   ├── src/eager_runtime/       # import: eager_runtime
-    │   ├── tests/                   # 12 files, 63 tests
+    │   ├── tests/                   # 12 files, 70 tests
     │   └── (no docs/)               # docs live in eager-script + README
     └── eager-graphics/              # ← stage compositor + presentation layer
         ├── pyproject.toml           # name = "eager-graphics", deps: eager-core, eager-script
@@ -95,7 +95,7 @@ eager-mono/                          # uv workspace root
         │   │                          #   builtin screens (Title, Save/Load, …)
         │   ├── renderers/           # NullRenderer + lazy Pyglet/PIL/Raylib
         │   └── ...                  # (text.py, compositor.py, director.py, …)
-        ├── tests/                   # 22 files, 234 tests
+        ├── tests/                   # 23 files, 242 tests
         ├── docs/                    # architecture.md, api.md, hooks.md
         └── examples/                # stage_demo.py, pyglet_visual_novel.py,
                                      #               pil_visual_novel.py
@@ -105,10 +105,10 @@ eager-mono/                          # uv workspace root
 
 | Package | Import | Runtime Deps | Extras | Tests |
 |---|---|---|---|---|
-| `eager-script` | `eager_script` | none | `editor` (blessed), `dev` (pytest, ruff) | 99 in 5 files |
+| `eager-script` | `eager_script` | none | `editor` (blessed), `dev` (pytest, ruff) | 100 in 5 files |
 | `eager-core` | `eager_core` | none | `dev` (pytest, ruff) | 26 in 8 files |
-| `eager-runtime` | `eager_runtime` | `eager-script`, `eager-core` | `graphics` (eager-graphics), `dev` (pytest, ruff, pyglet, blessed) | 63 in 12 files |
-| `eager-graphics` | `eager_graphics` | `eager-core`, `eager-script` | `dev` (pytest, ruff, eager-runtime), `hardware` (pyglet), `software` (Pillow), `raylib` (raylib≥6.0.0), `all` (all three) | 234 in 22 files |
+| `eager-runtime` | `eager_runtime` | `eager-script`, `eager-core` | `graphics` (eager-graphics), `dev` (pytest, ruff, pyglet, blessed) | 70 in 12 files |
+| `eager-graphics` | `eager_graphics` | `eager-core`, `eager-script` | `dev` (pytest, ruff, eager-runtime), `hardware` (pyglet), `software` (Pillow), `raylib` (raylib≥6.0.0), `all` (all three) | 242 in 23 files |
 
 > **Counts drift.** The test counts above are accurate as of the last update but
 > will rot as tests are added. Regenerate with:
@@ -150,7 +150,7 @@ eager-mono/                          # uv workspace root
 | `types.py` | `Vec2`, `Rect`, `Color`, `WHITE`, `BLACK`, `TRANSPARENT`, `RED`, `GREEN`, `BLUE` | Immutable 2D vectors, axis-aligned bounding rectangles, and RGBA float colors with hex parsing and byte conversions. |
 | `easing.py` | `linear`, all `ease_in_*`/`ease_out_*`/`ease_in_out_*`, `get_easing`, `EASING_MAP`, `EasingFunc` | Mathematical easing curves for animations, audio fades, and transitions. |
 | `timing.py` | `FrameClock` | Lightweight wall-clock delta-time (`dt`) measurement, instantaneous and rolling average FPS tracker. |
-| `input.py` | `InputAction`, `Keymap` | Backend-neutral 21-action semantic input enum and key identifier mapping dictionary. |
+| `input.py` | `InputAction`, `Keymap` | Backend-neutral 29-action semantic input enum and key identifier mapping dictionary. |
 | `storage.py` | `get_default_save_dir`, `atomic_write_json`, `safe_read_json` | Platform save directory resolution, crash-safe atomic JSON file writing and safe reading. |
 | `events.py` | `StoryEvent`, `SceneEnterEvent`, `DialogueEvent`, `AppendEvent`, `FreshBoxEvent`, `NarrationEvent`, `ChoiceOption`, `ChoicePromptEvent`, `HookEvent`, `SceneExitEvent`, `StoryEndEvent`, `InputPromptEvent` | Discrete narrative engine events and choice option structures. |
 | `text.py` | `parse_text_tags`, `FormattedText`, `TextSegment`, `PausePoint`, `TextReveal` | Inline dialogue text tag parser and typewriter reveal pacing controller. |
@@ -161,20 +161,20 @@ eager-mono/                          # uv workspace root
 |---|---|---|
 | `__init__.py` | `EventDispatcher`, all `StoryEvent` types (incl. `InputPromptEvent`), `ChoiceOption`, `TerminalPlayer`, `StoryVM`, `StoryRuntimeError`, `StorySnapshot`, `HistoryManager`, `CallFrame`, `InputAction`, `Keymap` (eager). Lazy: `VisualEngine`, `SaveSlot`, `StateCorruptionError` (`engine.py`); `GameSession`, `Checkpoint`, `CheckpointHistory` (`session.py`); `SaveManager`, `SaveMetadata`, `SaveData` (`saves.py`); `PersistentData` (`persistent.py`); `Preferences` (`preferences.py`); `Backlog`, `BacklogEntry` (`backlog.py`) via `_LAZY_EXPORTS` dict + `__getattr__`. `__version__ = "0.1.0"`. | Top-level re-exports. Bare `import eager_runtime` is headless-only (no graphics) — the graphics-dependent `GameSession`/`engine` modules are lazy-exported so the headless VM, dispatcher, events, state, input, and terminal player incur zero graphics import cost. |
 | `runtime.py` | `StoryVM`, `StoryRuntimeError` | Headless story VM executing a `SceneGraph`. Properties: `graph`, `current_scene_id`, `beat_index`, `is_ended`, `pending_choice`, `variables`, `visited_scenes`, `can_rollback`. Methods: `set_variable`, `get_variable`, `save()→StorySnapshot`, `load(snapshot)`, `rollback()→bool`, `jump(scene_id)`, `call(scene_id)`, `choose(choice:int\|str)`, `step()→StoryEvent\|None`. Executes `ParsedSet` (`$`), `ParsedCondJump`/`ParsedLocalJump` (lowered `@if`) silently per beat; evaluates expressions via `compile_expr` against a per-VM `random.Random` (state persisted in `StorySnapshot.rng_state`); interpolates `[var]` with `[[`/`]]` literal escapes (missing var → leaves `[name]`, records runtime warning). Manages `_call_stack: list[CallFrame]`, `_visited_scenes: set[str]`, `_history: HistoryManager`. Emits `SceneEnterEvent` on entry, `SceneExitEvent` on transitions, `StoryEndEvent` (incl. `reason="no_entry"` for empty graphs) at termination. |
-| `events.py` | `StoryEvent` (TypeAlias union of 10 frozen slots dataclasses), `SceneEnterEvent`, `DialogueEvent`, `AppendEvent`, `FreshBoxEvent`, `NarrationEvent`, `ChoiceOption`, `ChoicePromptEvent`, `HookEvent`, `SceneExitEvent`, `StoryEndEvent`, `InputPromptEvent` | Discrete narrative events. Each has `.type: str` property and `.to_dict()`. `ChoiceOption` carries `condition: str \| None` + `enabled: bool`; `ChoicePromptEvent.options` is a `tuple`. `SceneExitEvent.transition_kind ∈ {"jump","call","choice","return","fallthrough"}`; `StoryEndEvent.reason ∈ {"terminal","dead_end","completed","interrupted"}`; new `InputPromptEvent` (`var_name`, `prompt`, `default`) emitted from `~ input`. |
+| `events.py` | `StoryEvent` (TypeAlias union of 10 frozen slots dataclasses), `SceneEnterEvent`, `DialogueEvent`, `AppendEvent`, `FreshBoxEvent`, `NarrationEvent`, `ChoiceOption`, `ChoicePromptEvent`, `HookEvent`, `SceneExitEvent`, `StoryEndEvent`, `InputPromptEvent` | Thin re-export of `eager_core.events` — the dataclasses are defined there (see §3.2), not here. Each has `.type: str` property and `.to_dict()`. `ChoiceOption` carries `condition: str \| None` + `enabled: bool`; `ChoicePromptEvent.options` is a `tuple`. `SceneExitEvent.transition_kind ∈ {"jump","call","choice","return","fallthrough"}`; `StoryEndEvent.reason ∈ {"terminal","dead_end","completed","interrupted"}`; new `InputPromptEvent` (`var_name`, `prompt`, `default`) emitted from `~ input`. |
 | `dispatcher.py` | `EventDispatcher` | Bridges VM → callbacks. Registration: `on_hook(hook_name)` decorator (passes `event.args` to handler), `on_event(event_type)` decorator, `on_any_hook(func)`, `on_any_event(func)`. Dispatch: `dispatch(event)` fires global → type-specific → hook-specific listeners. `run_until_pause(vm)` steps VM and dispatches events, pausing on `ChoicePromptEvent` or `StoryEndEvent`. |
 | `state.py` | `CallFrame`, `StorySnapshot`, `HistoryManager` | `CallFrame` (frozen slots: `scene_id`, `beat_index`; `to_dict`/`from_dict`). `StorySnapshot` (frozen slots: `current_scene, beat_index, call_stack, variables, visited_scenes, pending_choice_beat, next_transition_target, just_entered_scene, is_ended, rng_state`; `to_dict`/`to_json`/`from_dict`/`from_json` with `.get()` defaults for forward compatibility). `HistoryManager` — list-backed, `max_history=500`; `push`, `pop()→StorySnapshot\|None`, `clear`, `can_rollback`, `depth`. |
 | `engine.py` | `VisualEngine`, `SaveSlot`, `StateCorruptionError` | Backward-compatible visual-novel façade. `VisualEngine` now **wraps a `GameSession`** (stored as `self.session`) while preserving its prior public API (`advance`, `step_frame`, `render`, `render_items`, `run_headless`, `make_choice`, `can_rollback`, `save_slot`, `load_save_slot`, `rollback`). Backend selection: `"null"` (NullRenderer, always), `"pyglet"`, `"pil"` (lazy import), `"raylib"` (lazy import). Params: `script_path, *, backend="null", asset_dir=None, virtual_width=1920, virtual_height=1080, plain=False, max_history=500`. `SaveSlot` is a frozen dataclass (`story_state: dict`, `visual_state: dict`). |
-| `session.py` | `GameSession`, `Checkpoint`, `CheckpointHistory` | **Central controller** for interactive novels. Owns `vm`, `dispatcher`, `compositor`, `director`, `audio` (`AudioMixer` from `eager_core`), `backlog`, `screens`, `prefs`, `persistent`, `save_manager`, `keymap`, `overlay`. State flags: `mode ∈ {"title","game","menu","ended"}`, `skip_mode`, `auto_mode`, `ui_hidden`, `is_finished`, `active_choice_prompt`, `active_input_prompt`. Core API: `advance()` (runs VM to the next interaction, dispatches all events, then **checkpoints**), `choose(choice)`, `submit_input(value)`, `rollback()→bool`, `update(dt)`, `draw(backend, w, h)`, `handle_input(action, **payload)`. `Checkpoint = {story, visual, audio, backlog_len, ui}`; `CheckpointHistory` is a bounded deque (default 100). Save/load: `save_game/load_game/quicksave/quickload` on `SaveManager`. `advance()` pushes a `Checkpoint` after each interaction; `rollback()` pops to the previous one and **re-materializes pending choices** so the menu reappears (fixes B4). Imports `eager_graphics` at module top — but it's lazy-exported from `__init__`, so bare `import eager_runtime` stays headless. |
-| `input.py` | `InputAction`, `Keymap` | Backend-neutral input layer (zero graphics imports). `InputAction` — 21-value `str, Enum` (`ADVANCE, ROLLBACK, ROLL_FORWARD, CHOOSE, POINTER_MOVE/CLICK, SCROLL, NAV_UP/DOWN/LEFT/RIGHT, CONFIRM, CANCEL, SKIP_TOGGLE/HOLD/RELEASE, AUTO_TOGGLE, QUICK_SAVE/LOAD, GAME_MENU, HISTORY, HIDE_UI, SCREENSHOT, FULLSCREEN, TEXT_CHAR/BACKSPACE, RELOAD, DEBUG_OVERLAY, QUIT`). `Keymap.DEFAULT_BINDINGS` maps Ren'Py-style key names (`space`, `enter`, `mouse_left`, `pageup`, `mouse_wheel_up`, `ctrl`, `tab`, `a`, `escape`, `f5`, `f9`, `s`, `f`, `shift+r`, `f3`, `q`) → `InputAction`; `map_key(name)→InputAction\|None`. |
+| `session.py` | `GameSession`, `Checkpoint`, `CheckpointHistory` | **Central controller** for interactive novels. Owns `vm`, `dispatcher`, `compositor`, `director`, `audio` (`AudioMixer` from `eager_core`), `backlog`, `screens`, `preferences`, `persistent`, `save_manager`, `keymap`, `overlay`. State flags: `mode ∈ {"title","game","menu","ended"}`, `skip_mode`, `auto_mode`, `ui_hidden`, `is_finished`, `active_choice_prompt`, `active_input_prompt`. Core API: `advance()` (runs VM to the next interaction, dispatches all events, then **checkpoints**), `choose(choice)`, `submit_input(value)`, `rollback()→bool`, `update(dt)`, `draw(ui_backend, width, height)`, `handle_input(action, **payload)`. `Checkpoint = {story, visual, audio, backlog_len, ui}`; `CheckpointHistory` is a bounded deque (default 100). Save/load: `save_game/load_game/quicksave/quickload` on `SaveManager`. `advance()` pushes a `Checkpoint` after each interaction; `rollback()` pops to the previous one and **re-materializes pending choices** so the menu reappears (fixes B4). Imports `eager_graphics` at module top — but it's lazy-exported from `__init__`, so bare `import eager_runtime` stays headless. |
+| `input.py` | `InputAction`, `Keymap` | Backend-neutral input layer (zero graphics imports; re-exports `eager_core.input`). `InputAction` — 29-value `str, Enum` (`ADVANCE, ROLLBACK, ROLL_FORWARD, CHOOSE, POINTER_MOVE/CLICK, SCROLL, NAV_UP/DOWN/LEFT/RIGHT, CONFIRM, CANCEL, SKIP_TOGGLE/HOLD/RELEASE, AUTO_TOGGLE, QUICK_SAVE/LOAD, GAME_MENU, HISTORY, HIDE_UI, SCREENSHOT, FULLSCREEN, TEXT_CHAR/BACKSPACE, RELOAD, DEBUG_OVERLAY, QUIT`). `Keymap.DEFAULT_BINDINGS` maps Ren'Py-style key names (`space`, `enter`, `mouse_left`, `pageup`, `mouse_wheel_up`, `ctrl`, `tab`, `a`, `escape`, `f5`, `f9`, `s`, `f`, `shift+r`, `f3`, `q`) → `InputAction`; `map_key(name)→InputAction\|None`. |
 | `backlog.py` | `Backlog`, `BacklogEntry` | Bounded chronological dialogue/narration log (`max_entries=200`): `add(speaker, text, voice, emotion)`, `append_to_last(text)` (for `-` continuations), `clear`, `to_list`/`from_list`. Truncated on rollback to the checkpoint's `backlog_len`. |
 | `saves.py` | `SaveManager`, `SaveData`, `SaveMetadata` | On-disk save-slot system. `SaveManager(save_dir, max_autosaves=5, max_quicksaves=5)`: `save_slot/load_slot/get_slot_metadata/delete_slot/list_slots/quicksave/quickload/autosave/autoload`. Files are `<sanitized_slot>.json` of `{metadata, checkpoint}`; `SaveMetadata` (frozen: `slot_name, timestamp, scene_id, scene_name, dialogue_snippet, playtime_seconds`). Atomic via `storage.atomic_write_json` (tmp + `os.replace`); `safe_read_json` falls back on missing/corrupt. |
 | `persistent.py` | `PersistentData` | `MutableMapping` for cross-playthrough state (`persistent.*`). Loads/saves `persistent.json` atomically; `unlock_gallery`/`is_gallery_unlocked`, `unlock_achievement`/`has_achievement`; attribute-style access. **Not** rolled back. |
 | `preferences.py` | `Preferences` | `@dataclass`: `text_speed` (cps, 0=instant), `auto_forward_time`, `master_volume`, `music_volume`, `sfx_volume`, `voice_volume`, `skip_unseen`, `fullscreen`, `resolution_scale`; `load(file)`/`save(file)` atomic JSON with field filtering. |
 | `project.py` | `ProjectConfig`, `merge_graphs` | `game.toml` loader via stdlib `tomllib` (`title/version/author/entry_script/virtual_width/virtual_height/theme`). `merge_graphs(graphs)` merges multi-file `SceneGraph`s (nodes/edges/preamble/characters/defaults; duplicate scene IDs flagged by validator). |
-| `storage.py` | `get_default_save_dir`, `atomic_write_json`, `safe_read_json` | Platform save dir (`$EAGER_SAVE_DIR` → XDG `~/.local/share/eager/<id>` / macOS `~/Library/Application Support/eager/<id>` / Windows `%APPDATA%\eager\<id>`); `atomic_write_json` (tmp + `os.replace`); `safe_read_json` (returns default on missing/corrupt). Stdlib only. |
+| `storage.py` | `get_default_save_dir`, `atomic_write_json`, `safe_read_json` | Re-export of `eager_core.storage` (see §3.2): platform save dir (`$EAGER_SAVE_DIR` → XDG `~/.local/share/eager/<id>` / macOS `~/Library/Application Support/eager/<id>` / Windows `%APPDATA%\eager\<id>`); `atomic_write_json` (tmp + `os.replace`); `safe_read_json` (returns default on missing/corrupt). Stdlib only. |
 | `player.py` | `TerminalPlayer` | Interactive terminal runner. `TerminalPlayer(vm, *, input_stream, output_stream, use_colors)`. `play()` loops until `vm.is_ended`, printing SceneEnterEvent, DialogueEvent, NarrationEvent, AppendEvent, FreshBoxEvent, HookEvent, ChoicePromptEvent, StoryEndEvent. `_handle_choice_input` supports `:save`, `:load`, `:undo`/`:rollback`, `:vars`, `:q`/`:quit`, plus numeric and text choice matching. |
-| `cli.py` | `build_parser`, `build_x_parser`, `main`, `main_x` | Two CLIs: `eager` (text-only: `play`, `inspect`, `test-run [--all-paths]`, `--choices`) and `eager-x` (visual novel: `play [--backend pyglet\|pil\|raylib] [--warp scene] [--plain]`, `render [--auto-choose]`, `run <project_dir>`, `new <name>`, `check <script\|dir>`, `build [--out]`). `_ensure_graphics()` raises a helpful `ImportError`. `_run_interactive_player` drives `GameSession`/`VisualEngine` through `PygletPlayer`/`PILPlayer`/`RaylibPlayer`. |
+| `cli.py` | `build_parser`, `build_x_parser`, `main`, `main_x` | Two CLIs: `eager` (text-only: `play`, `inspect`, `test-run [--all-paths] [--max-steps]`) and `eager-x` (visual novel: `play [--backend pyglet\|pil\|raylib] [--warp scene] [--plain]`, `render [--auto-choose]`, `run <project_dir>`, `new <name>`, `check <script\|dir>`, `build [-o/--output]`). `_ensure_graphics()` raises a helpful `ImportError`. `_run_interactive_player` drives `GameSession`/`VisualEngine` through `PygletPlayer`/`PILPlayer`/`RaylibPlayer`. |
 | `__main__.py` | — | `from eager_runtime.cli import main; sys.exit(main())` |
 
 ### 3.4 eager-graphics (`packages/eager-graphics/src/eager_graphics/`)
@@ -202,7 +202,7 @@ eager-mono/                          # uv workspace root
 | `renderers/raylib.py` | `RaylibRenderer`, `RaylibPlayer`, `RaylibAssetResolver` | Hardware-accelerated OpenGL 2D backend (via `pyray`/raylib) + interactive visual novel window. |
 | `screens/__init__.py` | `Screen`, `ScreenManager`, `Theme`, `Button`, `Label`, `Slider`, `TitleScreen`, `SaveLoadScreen` | Convenience re-exports for the built-in screens/widgets package. |
 | `screens/screen.py` | `Screen`, `ScreenManager` | `Screen` base (rect, `build`, `handle_input`, `modal`, `visible`); `ScreenManager` stack (`register`/`show`/`hide`/`draw`, input routed to top; game input blocked under modal screens). |
-| `screens/theme.py` | `Theme` | Frozen dataclass of palette colors + font sizes (textbox, nameplate, buttons, choices) loadable from `game.toml [theme]`; defaults reproduce the legacy look. |
+| `screens/theme.py` | `Theme` | Frozen dataclass of palette colors + font sizes (textbox, nameplate, buttons, choices); defaults reproduce the legacy look. |
 | `screens/widgets.py` | `Button`, `Label`, `Slider` | Immediate-mode renderer-agnostic widgets via `UIDrawBackend` (`hit_test`, hover/focus/disabled states, value-change callbacks). |
 | `screens/builtin.py` | `TitleScreen`, `SaveLoadScreen` | Built-in screens: `TitleScreen` (Start Game / Load Game / Preferences / Quit) and `SaveLoadScreen` (paged 6-slot grid wired to `GameSession.save_game`/`load_game`). |
 
@@ -293,10 +293,10 @@ Test counts and files per package (regenerate counts with the snippet in §2):
 
 | Package | Files | Tests | Wall time |
 |---|---|---|---|
-| eager-graphics | 22 | 234 | ~5s |
-| eager-runtime | 12 | 63 | — |
-| eager-script | 5 | 99 | — |
-| eager-core | 1 | 3 | — |
+| eager-graphics | 23 | 242 | ~5s |
+| eager-runtime | 12 | 70 | — |
+| eager-script | 5 | 100 | — |
+| eager-core | 8 | 26 | — |
 
 > **Optional-dependency guards.** `eager-runtime` tests that require
 > `eager_graphics`, `pyglet`, or `Pillow` are guarded with `pytest.mark.skipif`.
@@ -328,6 +328,13 @@ pytest -q --tb=long -s           # disable output capture
 | Package | Test File | Covers |
 |---|---|---|
 | eager-core | `test_audio.py` | `AudioMixer`, `NullAudioBackend`, `AudioBackend` protocol, fades, save/load restores music |
+| eager-core | `test_core_easing.py` | `eager_core.easing`: curve boundaries, `get_easing`, `EASING_MAP` |
+| eager-core | `test_core_events.py` | `eager_core.events`: event dataclasses, `ChoiceOption`, `StoryEvent` union |
+| eager-core | `test_core_input.py` | `eager_core.input`: `InputAction` members, `Keymap` bindings |
+| eager-core | `test_core_storage.py` | `eager_core.storage`: save-dir resolution, atomic write, safe read |
+| eager-core | `test_core_text.py` | `eager_core.text`: `parse_text_tags`, `TextReveal` pacing |
+| eager-core | `test_core_timing.py` | `eager_core.timing`: `FrameClock` dt/FPS tracking |
+| eager-core | `test_core_types.py` | `eager_core.types`: `Vec2`, `Rect`, `Color` |
 | eager-graphics | `test_director_audio.py` | `StageDirector` audio-hook wiring (`~ play`/`~ stop`/`~ volume`) against an `eager_core` `AudioMixer` |
 | eager-graphics | `test_compositor.py` | `StageCompositor`: backgrounds, characters, slides, save/load, shake, flash, fade |
 | eager-graphics | `test_debug.py` | `StageCompositor` `debug_info`/`debug_repr` structure, JSON serializability, compact/full mode |
@@ -359,7 +366,7 @@ pytest -q --tb=long -s           # disable output capture
 | eager-runtime | `test_rollback.py` | `StoryVM.rollback()` + `HistoryManager` across choice selections and step-by-step rewind |
 | eager-runtime | `test_runtime_choices.py` | Choice branching: selection by index, by target ID, error cases |
 | eager-runtime | `test_runtime_linear.py` | Linear story execution, empty graph handling, visited-scenes tracking |
-| eager-runtime | `test_saves.py` | Phase 3 `SaveManager` round-trip (pending choice preserved), list ordering/meta, atomic-write crash survival, corrupt JSON → `StateCorruptionError`, `PersistentData`, `seen()` |
+| eager-runtime | `test_saves.py` | Phase 3 `SaveManager` CRUD, quicksave/autosave rotation, legacy slots, corrupt persistent-JSON backup, `PersistentData`, `Preferences`, session save/load |
 | eager-runtime | `test_session.py` | Phase 1 `GameSession` advance/checkpoints, rollback restores sprites+text, rollback onto choice re-shows menu, `handle_input` |
 | eager-runtime | `test_state_and_save.py` | `StorySnapshot`/`CallFrame` serialization round-trips, variable get/set, load-restore |
 | eager-runtime | `test_subroutines.py` | `>>` / `<<` call stack: nested subroutine calls |
@@ -389,16 +396,16 @@ cd packages/eager-script
 PYTHONPATH=src python3 benchmarks/benchmark.py
 
 # 5. CLI usage
-eager-s parse script.es -o ast.json          # parse to JSON AST
-eager-s graph script.es --format mermaid    # export scene graph to Mermaid
-eager-s check script.es                     # validate script
-eager-s edit script.es                      # open terminal editor (requires blessed)
+eager-script parse script.es -o ast.json          # parse to JSON AST
+eager-script graph script.es --format mermaid    # export scene graph to Mermaid
+eager-script check script.es                     # validate script
+eager-script edit script.es                      # open terminal editor (requires blessed)
 
 eager play script.es                        # interactive terminal play
 eager inspect script.es                     # inspect scene topology
 eager test-run script.es                    # headless dry-run (auto-chooses 1st)
 eager test-run script.es --all-paths        # exhaustively explore every branch
-eager test-run script.es --choices 0,2,1    # scripted choice path; --json for a report
+eager test-run script.es --max-steps 200      # cap total steps in a dry-run
 
 eager-x play script.es --backend pil        # interactive visual novel (requires Pillow)
 eager-x play script.es --backend pyglet     # interactive visual novel (requires pyglet)
@@ -408,7 +415,7 @@ eager-x render script.es --auto-choose 0    # headless render with NullRenderer
 eager-x run <project_dir> --backend pil     # run a project dir (game.toml)
 eager-x new myproject                       # scaffold game.toml + main.es + assets/
 eager-x check script.es                     # validate script syntax + scene graph
-eager-x build . --out dist.zip              # bundle project into a distribution archive
+eager-x build . --output dist.zip             # bundle project into a distribution archive
 
 # 6. Type check (config in each package's pyproject.toml, basedpyright)
 cd packages/eager-graphics && basedpyright
@@ -416,8 +423,7 @@ cd packages/eager-runtime && basedpyright
 cd packages/eager-script && basedpyright
 
 # 7. Lint
-ruff check .
-ruff format --check .
+ruff check packages/                # lint library code (examples/ excluded)
 
 # 8. Release / CI
 #    CI workflows live in .github/workflows/ (lint → typecheck → test → build).
@@ -444,7 +450,7 @@ ruff format --check .
 | eager-core | 0.1.0 | `README.md` | Shared leaf package: audio mixing (`AudioBackend`/`NullAudioBackend`/`ChannelState`/`AudioMixer`) and the rationale for the layer split |
 | eager-graphics | 0.1.0 | `docs/architecture.md` | Design pillars, rendering pipeline diagram, two-layer architecture, layer hierarchy, viewport scaling, camera shake, backend protocol, first-party renderers, UI components |
 | eager-graphics | 0.1.0 | `docs/api.md` | Full API reference for `StageCompositor`, `StageDirector`, `LayoutResolver`/`ViewportTransform`, `RenderItem`, `Timeline`/`Tween`, `FrameClock`, `RenderBackend`, `UIDrawBackend`, first-party renderers |
-| eager-graphics | 0.1.0 | `docs/hooks.md` | Screenplay hook syntax reference: `~ bg`, `~ bg_clear`, `~ scene`, `~ image`, `~ show`, `~ hide`, `~ move`, `~ expr`, `~ fade_in`/`~ fade_out`, `~ flash`, `~ shake`, `~ play`/`~ stop`/`~ volume` (audio), `~ nvl`/`~ nvl_clear`, transitions & easing curves |
+| eager-graphics | 0.1.0 | `docs/hooks.md` | Screenplay hook syntax reference: `~ bg`, `~ bg_clear`, `~ show`, `~ hide`, `~ move`, `~ expr`, `~ fade_in`/`~ fade_out`, `~ flash`, `~ shake`, transitions & easing curves. Gaps (registered in `StageDirector.bind()` but undocumented): `~ scene`, `~ image`, `~ play`/`~ stop`/`~ volume` (audio), `~ nvl`/`~ nvl_clear` |
 
 ---
 
@@ -500,9 +506,9 @@ ruff format --check .
 
 ### 8.5 Adding a new StoryEvent type (eager-runtime)
 
-1. Add a `frozen=True, slots=True` dataclass in `events.py` with a `.type`
-   property and `.to_dict()`.
-2. Add it to the `StoryEvent` TypeAlias union.
+1. Add a `frozen=True, slots=True` dataclass in `eager_core/events.py` with a `.type`
+   property and `.to_dict()` (re-export it from `eager_runtime/events.py`).
+2. Add it to the `StoryEvent` TypeAlias union (in `eager_core/events.py`).
 3. Emit it from `StoryVM.step()` in `runtime.py` where appropriate. If it is an
    *interaction* (pauses for the player, e.g. choices/input), add its `type`
    string to `GameSession.INTERACTION_TYPES` so `advance()` checkpoints & returns it.
@@ -732,7 +738,7 @@ from eager_runtime import VisualEngine, SaveSlot, StateCorruptionError
 ```python
 from eager_graphics import (
     StageCompositor,          # core orchestrator
-    StageDirector,            # narrative bridge
+    StageDirector, CharacterConfig,  # narrative bridge
     Stage,                    # visual hierarchy
     LayoutResolver, ViewportTransform,
     Timeline, Tween,
@@ -744,16 +750,19 @@ from eager_graphics import (
     UIOverlay, DialogueBox, ChoiceMenu, EndNotice,
     TextboxStyle, ChoiceMenuStyle,
     get_easing, EasingFunc, linear, ease_in_out_quad,
-    TextReveal, FormattedText, parse_text_tags, TextSegment, PausePoint, wrap_text,
+    TextReveal, FormattedText, parse_text_tags, TextSegment, PausePoint,
     VisualHistoryManager,
     # always available:
     NullRenderer,
 )
+
+# NOT top-level — import from the defining submodule:
+# from eager_graphics.ui_components import wrap_text
 ```
 
 ```
 # Optional — only if a backend library is installed:
-# PygletRenderer, PygletPlayer             (requires pyglet)
+# PygletRenderer, PygletPlayer, PygletAssetResolver (requires pyglet)
 # PILRenderer, PILPlayer, PILAssetResolver  (requires Pillow)
 # RaylibRenderer, RaylibPlayer, RaylibAssetResolver  (requires pyray)
 

@@ -1,6 +1,6 @@
 # Terminal Text Editor
 
-`eager_s` includes an optional full-screen terminal text editor built specifically for screenplay authoring, featuring real-time syntax highlighting, live static diagnostics, and scene outline navigation.
+`eager_script` includes an optional full-screen terminal text editor built specifically for screenplay authoring, featuring real-time syntax highlighting, live static diagnostics, and scene outline navigation.
 
 ---
 
@@ -9,7 +9,7 @@
 The editor is powered by [`blessed`](https://github.com/jquast/blessed) and is completely optional:
 
 ```bash
-pip install "eager-s[editor]"
+pip install "eager-script[editor]"
 ```
 
 ---
@@ -18,13 +18,13 @@ pip install "eager-s[editor]"
 
 ```bash
 # Open an existing or new script
-eager-s edit screenplay.es
+eager-script edit screenplay.es
 
 # Open in Eager-SP mode
-eager-s edit --plain manuscript.es
+eager-script edit --plain manuscript.es
 
 # Open in read-only mode
-eager-s edit --read-only screenplay.es
+eager-script edit --read-only screenplay.es
 ```
 
 ---

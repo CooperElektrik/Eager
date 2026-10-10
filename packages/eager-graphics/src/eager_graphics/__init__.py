@@ -154,6 +154,7 @@ __all__.extend([
     "PILAssetResolver",
     "PILPlayer",
     "PILRenderer",
+    "PygletAssetResolver",
     "PygletPlayer",
     "PygletRenderer",
     "RaylibAssetResolver",

@@ -1,6 +1,6 @@
 # AST & API Reference
 
-All parsed nodes in `eager_s` are immutable dataclasses exported directly at the top level of the package.
+All parsed nodes in `eager_script` are immutable dataclasses exported directly at the top level of the package.
 
 ---
 
