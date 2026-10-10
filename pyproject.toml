@@ -2,9 +2,11 @@
 name = "eager-engine"
 version = "0.1.0"
 description = "Unified visual novel engine ecosystem: parser (eager-script), runtime (eager-runtime), and graphics (eager-graphics)."
+readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Cooper" }]
+urls = { Homepage = "https://github.com/CooperElektrik/Eager", Repository = "https://github.com/CooperElektrik/Eager" }
 
 [tool.uv]
 dev-dependencies = [
