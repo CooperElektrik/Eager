@@ -98,13 +98,13 @@ Eager comes with a built-in command-line tool for inspecting and testing screenp
 
 ```bash
 # Play a screenplay interactively in the terminal
-eager play adventure.es
+eager play ../../examples/demo_story.es
 
 # Inspect screenplay scene topology, hubs, dead-ends
-eager inspect adventure.es
+eager inspect ../../examples/demo_story.es
 
 # Perform an automated headless dry-run
-eager test-run adventure.es
+eager test-run ../../examples/demo_story.es
 ```
 
 During interactive terminal play, the following built-in commands are available:

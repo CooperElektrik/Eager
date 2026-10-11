@@ -96,9 +96,7 @@ eager-mono/                          # uv workspace root
         │   ├── renderers/           # NullRenderer + lazy Pyglet/PIL/Raylib
         │   └── ...                  # (text.py, compositor.py, director.py, …)
         ├── tests/                   # 23 files, 242 tests
-        ├── docs/                    # architecture.md, api.md, hooks.md
-        └── examples/                # stage_demo.py, pyglet_visual_novel.py,
-                                     #               pil_visual_novel.py
+        └── docs/                    # architecture.md, api.md, hooks.md
 ```
 
 ### Package Summary
