@@ -80,12 +80,12 @@ eager-mono/                          # uv workspace root
     │   ├── pyproject.toml           # name = "eager-core", 0 runtime deps
     │   ├── README.md
     │   ├── src/eager_core/          # import: eager_core
-    │   └── tests/                   # 8 files, 26 tests
+    │   └── tests/                   # 8 files, 27 tests
     ├── eager-runtime/               # ← Eager narrative runtime (VM + session)
     │   ├── pyproject.toml           # name = "eager-runtime", deps: eager-script, eager-core
     │   ├── README.md
     │   ├── src/eager_runtime/       # import: eager_runtime
-    │   ├── tests/                   # 12 files, 70 tests
+    │   └── tests/                   # 12 files, 70 tests
     │   └── (no docs/)               # docs live in eager-script + README
     └── eager-graphics/              # ← stage compositor + presentation layer
         ├── pyproject.toml           # name = "eager-graphics", deps: eager-core, eager-script
@@ -93,9 +93,9 @@ eager-mono/                          # uv workspace root
         ├── src/eager_graphics/      # import: eager_graphics
         │   ├── screens/             # Screen, ScreenManager, Theme, widgets,
         │   │                          #   builtin screens (Title, Save/Load, …)
-        │   ├── renderers/           # NullRenderer + lazy Pyglet/PIL/Raylib
+        │   ├── renderers/           # NullRenderer + lazy Pyglet/PIL/Raylib + Pyglet/Raylib/Miniaudio audio
         │   └── ...                  # (text.py, compositor.py, director.py, …)
-        ├── tests/                   # 23 files, 242 tests
+        ├── tests/                   # 24 files, 248 tests
         └── docs/                    # architecture.md, api.md, hooks.md
 ```
 
@@ -104,9 +104,9 @@ eager-mono/                          # uv workspace root
 | Package | Import | Runtime Deps | Extras | Tests |
 |---|---|---|---|---|
 | `eager-script` | `eager_script` | none | `editor` (blessed), `dev` (pytest, ruff) | 100 in 5 files |
-| `eager-core` | `eager_core` | none | `dev` (pytest, ruff) | 26 in 8 files |
+| `eager-core` | `eager_core` | none | `dev` (pytest, ruff) | 27 in 8 files |
 | `eager-runtime` | `eager_runtime` | `eager-script`, `eager-core` | `graphics` (eager-graphics), `dev` (pytest, ruff, pyglet, blessed) | 70 in 12 files |
-| `eager-graphics` | `eager_graphics` | `eager-core`, `eager-script` | `dev` (pytest, ruff, eager-runtime), `hardware` (pyglet), `software` (Pillow), `raylib` (raylib≥6.0.0), `all` (all three) | 242 in 23 files |
+| `eager-graphics` | `eager_graphics` | `eager-core`, `eager-script` | `dev` (pytest, ruff, eager-runtime), `hardware` (pyglet), `software` (Pillow), `raylib` (raylib≥6.0.0), `audio` (miniaudio≥0.12.4), `all` (all four) | 248 in 24 files |
 
 > **Counts drift.** The test counts above are accurate as of the last update but
 > will rot as tests are added. Regenerate with:
@@ -144,7 +144,7 @@ eager-mono/                          # uv workspace root
 | Module | Key Exports | Purpose |
 |---|---|---|
 | `__init__.py` | All core public classes and functions | Top-level re-exports. Zero-dependency leaf package consumed by higher layers. `__version__ = "0.1.0"`. |
-| `audio.py` | `AudioBackend`, `AudioMixer`, `ChannelState`, `NullAudioBackend` | Low-level audio provider protocol, channel management, volume hierarchy, and fade interpolation ramps. |
+| `audio.py` | `AudioBackend`, `BaseAudioBackend`, `AudioMixer`, `ChannelState`, `NullAudioBackend` | Low-level audio provider protocol (play/stop/volume/pause/resume/update/shutdown, loop_start/loop_end), BaseAudioBackend default no-ops, channel management, volume hierarchy, and fade interpolation ramps. |
 | `types.py` | `Vec2`, `Rect`, `Color`, `WHITE`, `BLACK`, `TRANSPARENT`, `RED`, `GREEN`, `BLUE` | Immutable 2D vectors, axis-aligned bounding rectangles, and RGBA float colors with hex parsing and byte conversions. |
 | `easing.py` | `linear`, all `ease_in_*`/`ease_out_*`/`ease_in_out_*`, `get_easing`, `EASING_MAP`, `EasingFunc` | Mathematical easing curves for animations, audio fades, and transitions. |
 | `timing.py` | `FrameClock` | Lightweight wall-clock delta-time (`dt`) measurement, instantaneous and rolling average FPS tracker. |
@@ -162,8 +162,8 @@ eager-mono/                          # uv workspace root
 | `events.py` | `StoryEvent` (TypeAlias union of 10 frozen slots dataclasses), `SceneEnterEvent`, `DialogueEvent`, `AppendEvent`, `FreshBoxEvent`, `NarrationEvent`, `ChoiceOption`, `ChoicePromptEvent`, `HookEvent`, `SceneExitEvent`, `StoryEndEvent`, `InputPromptEvent` | Thin re-export of `eager_core.events` — the dataclasses are defined there (see §3.2), not here. Each has `.type: str` property and `.to_dict()`. `ChoiceOption` carries `condition: str \| None` + `enabled: bool`; `ChoicePromptEvent.options` is a `tuple`. `SceneExitEvent.transition_kind ∈ {"jump","call","choice","return","fallthrough"}`; `StoryEndEvent.reason ∈ {"terminal","dead_end","completed","interrupted"}`; new `InputPromptEvent` (`var_name`, `prompt`, `default`) emitted from `~ input`. |
 | `dispatcher.py` | `EventDispatcher` | Bridges VM → callbacks. Registration: `on_hook(hook_name)` decorator (passes `event.args` to handler), `on_event(event_type)` decorator, `on_any_hook(func)`, `on_any_event(func)`. Dispatch: `dispatch(event)` fires global → type-specific → hook-specific listeners. `run_until_pause(vm)` steps VM and dispatches events, pausing on `ChoicePromptEvent` or `StoryEndEvent`. |
 | `state.py` | `CallFrame`, `StorySnapshot`, `HistoryManager` | `CallFrame` (frozen slots: `scene_id`, `beat_index`; `to_dict`/`from_dict`). `StorySnapshot` (frozen slots: `current_scene, beat_index, call_stack, variables, visited_scenes, pending_choice_beat, next_transition_target, just_entered_scene, is_ended, rng_state`; `to_dict`/`to_json`/`from_dict`/`from_json` with `.get()` defaults for forward compatibility). `HistoryManager` — list-backed, `max_history=500`; `push`, `pop()→StorySnapshot\|None`, `clear`, `can_rollback`, `depth`. |
-| `engine.py` | `VisualEngine`, `SaveSlot`, `StateCorruptionError` | Backward-compatible visual-novel façade. `VisualEngine` now **wraps a `GameSession`** (stored as `self.session`) while preserving its prior public API (`advance`, `step_frame`, `render`, `render_items`, `run_headless`, `make_choice`, `can_rollback`, `save_slot`, `load_save_slot`, `rollback`). Backend selection: `"null"` (NullRenderer, always), `"pyglet"`, `"pil"` (lazy import), `"raylib"` (lazy import). Params: `script_path, *, backend="null", asset_dir=None, virtual_width=1920, virtual_height=1080, plain=False, max_history=500`. `SaveSlot` is a frozen dataclass (`story_state: dict`, `visual_state: dict`). |
-| `session.py` | `GameSession`, `Checkpoint`, `CheckpointHistory` | **Central controller** for interactive novels. Owns `vm`, `dispatcher`, `compositor`, `director`, `audio` (`AudioMixer` from `eager_core`), `backlog`, `screens`, `preferences`, `persistent`, `save_manager`, `keymap`, `overlay`. State flags: `mode ∈ {"title","game","menu","ended"}`, `skip_mode`, `auto_mode`, `ui_hidden`, `is_finished`, `active_choice_prompt`, `active_input_prompt`. Core API: `advance()` (runs VM to the next interaction, dispatches all events, then **checkpoints**), `choose(choice)`, `submit_input(value)`, `rollback()→bool`, `update(dt)`, `draw(ui_backend, width, height)`, `handle_input(action, **payload)`. `Checkpoint = {story, visual, audio, backlog_len, ui}`; `CheckpointHistory` is a bounded deque (default 100). Save/load: `save_game/load_game/quicksave/quickload` on `SaveManager`. `advance()` pushes a `Checkpoint` after each interaction; `rollback()` pops to the previous one and **re-materializes pending choices** so the menu reappears (fixes B4). Imports `eager_graphics` at module top — but it's lazy-exported from `__init__`, so bare `import eager_runtime` stays headless. |
+| `engine.py` | `VisualEngine`, `SaveSlot`, `StateCorruptionError` | Backward-compatible visual-novel façade. `VisualEngine` now **wraps a `GameSession`** (stored as `self.session`) while preserving its prior public API (`advance`, `step_frame`, `render`, `render_items`, `run_headless`, `make_choice`, `can_rollback`, `save_slot`, `load_save_slot`, `rollback`). Accepts `audio_backend` parameter forwarding to session. Backend selection: `"null"` (NullRenderer, always), `"pyglet"`, `"pil"` (lazy import), `"raylib"` (lazy import). Params: `script_path, *, backend="null", asset_dir=None, virtual_width=1920, virtual_height=1080, plain=False, max_history=500, audio_backend=None`. `SaveSlot` is a frozen dataclass (`story_state: dict`, `visual_state: dict`). |
+| `session.py` | `GameSession`, `Checkpoint`, `CheckpointHistory` | **Central controller** for interactive novels. Owns `vm`, `dispatcher`, `compositor`, `director`, `audio` (`AudioMixer` from `eager_core` over pluggable `audio_backend`), `backlog`, `screens`, `preferences`, `persistent`, `save_manager`, `keymap`, `overlay`. State flags: `mode ∈ {"title","game","menu","ended"}`, `skip_mode`, `auto_mode`, `ui_hidden`, `is_finished`, `active_choice_prompt`, `active_input_prompt`. Core API: `advance()` (runs VM to the next interaction, dispatches all events, then **checkpoints**), `choose(choice)`, `submit_input(value)`, `rollback()→bool`, `update(dt)`, `draw(ui_backend, width, height)`, `handle_input(action, **payload)`. `Checkpoint = {story, visual, audio, backlog_len, ui}`; `CheckpointHistory` is a bounded deque (default 100). Save/load: `save_game/load_game/quicksave/quickload` on `SaveManager`. `advance()` pushes a `Checkpoint` after each interaction; `rollback()` pops to the previous one and **re-materializes pending choices** so the menu reappears (fixes B4). Imports `eager_graphics` at module top — but it's lazy-exported from `__init__`, so bare `import eager_runtime` stays headless. |
 | `input.py` | `InputAction`, `Keymap` | Backend-neutral input layer (zero graphics imports; re-exports `eager_core.input`). `InputAction` — 29-value `str, Enum` (`ADVANCE, ROLLBACK, ROLL_FORWARD, CHOOSE, POINTER_MOVE/CLICK, SCROLL, NAV_UP/DOWN/LEFT/RIGHT, CONFIRM, CANCEL, SKIP_TOGGLE/HOLD/RELEASE, AUTO_TOGGLE, QUICK_SAVE/LOAD, GAME_MENU, HISTORY, HIDE_UI, SCREENSHOT, FULLSCREEN, TEXT_CHAR/BACKSPACE, RELOAD, DEBUG_OVERLAY, QUIT`). `Keymap.DEFAULT_BINDINGS` maps Ren'Py-style key names (`space`, `enter`, `mouse_left`, `pageup`, `mouse_wheel_up`, `ctrl`, `tab`, `a`, `escape`, `f5`, `f9`, `s`, `f`, `shift+r`, `f3`, `q`) → `InputAction`; `map_key(name)→InputAction\|None`. |
 | `backlog.py` | `Backlog`, `BacklogEntry` | Bounded chronological dialogue/narration log (`max_entries=200`): `add(speaker, text, voice, emotion)`, `append_to_last(text)` (for `-` continuations), `clear`, `to_list`/`from_list`. Truncated on rollback to the checkpoint's `backlog_len`. |
 | `saves.py` | `SaveManager`, `SaveData`, `SaveMetadata` | On-disk save-slot system. `SaveManager(save_dir, max_autosaves=5, max_quicksaves=5)`: `save_slot/load_slot/get_slot_metadata/delete_slot/list_slots/quicksave/quickload/autosave/autoload`. Files are `<sanitized_slot>.json` of `{metadata, checkpoint}`; `SaveMetadata` (frozen: `slot_name, timestamp, scene_id, scene_name, dialogue_snippet, playtime_seconds`). Atomic via `storage.atomic_write_json` (tmp + `os.replace`); `safe_read_json` falls back on missing/corrupt. |
@@ -172,7 +172,7 @@ eager-mono/                          # uv workspace root
 | `project.py` | `ProjectConfig`, `merge_graphs` | `game.toml` loader via stdlib `tomllib` (`title/version/author/entry_script/virtual_width/virtual_height/theme`). `merge_graphs(graphs)` merges multi-file `SceneGraph`s (nodes/edges/preamble/characters/defaults; duplicate scene IDs flagged by validator). |
 | `storage.py` | `get_default_save_dir`, `atomic_write_json`, `safe_read_json` | Re-export of `eager_core.storage` (see §3.2): platform save dir (`$EAGER_SAVE_DIR` → XDG `~/.local/share/eager/<id>` / macOS `~/Library/Application Support/eager/<id>` / Windows `%APPDATA%\eager\<id>`); `atomic_write_json` (tmp + `os.replace`); `safe_read_json` (returns default on missing/corrupt). Stdlib only. |
 | `player.py` | `TerminalPlayer` | Interactive terminal runner. `TerminalPlayer(vm, *, input_stream, output_stream, use_colors)`. `play()` loops until `vm.is_ended`, printing SceneEnterEvent, DialogueEvent, NarrationEvent, AppendEvent, FreshBoxEvent, HookEvent, ChoicePromptEvent, StoryEndEvent. `_handle_choice_input` supports `:save`, `:load`, `:undo`/`:rollback`, `:vars`, `:q`/`:quit`, plus numeric and text choice matching. |
-| `cli.py` | `build_parser`, `build_x_parser`, `main`, `main_x` | Two CLIs: `eager` (text-only: `play`, `inspect`, `test-run [--all-paths] [--max-steps]`) and `eager-x` (visual novel: `play [--backend pyglet\|pil\|raylib] [--warp scene] [--plain]`, `render [--auto-choose]`, `run <project_dir>`, `new <name>`, `check <script\|dir>`, `build [-o/--output]`). `_ensure_graphics()` raises a helpful `ImportError`. `_run_interactive_player` drives `GameSession`/`VisualEngine` through `PygletPlayer`/`PILPlayer`/`RaylibPlayer`. |
+| `cli.py` | `build_parser`, `build_x_parser`, `main`, `main_x` | Two CLIs: `eager` (text-only: `play`, `inspect`, `test-run [--all-paths] [--max-steps]`) and `eager-x` (visual novel: `play [--backend pyglet\|pil\|raylib] [--no-audio] [--warp scene] [--plain]`, `render [--auto-choose]`, `run <project_dir> [--no-audio]`, `new <name>`, `check <script\|dir>`, `build [-o/--output]`). `_ensure_graphics()` raises a helpful `ImportError`. `_run_interactive_player` maps render backend to matching audio backend (`pyglet`→`PygletAudioBackend`, `raylib`→`RaylibAudioBackend`, `pil`→`MiniaudioAudioBackend`/fallback Null) and drives `GameSession`/`VisualEngine` through `PygletPlayer`/`PILPlayer`/`RaylibPlayer`. |
 | `__main__.py` | — | `from eager_runtime.cli import main; sys.exit(main())` |
 
 ### 3.4 eager-graphics (`packages/eager-graphics/src/eager_graphics/`)
@@ -181,7 +181,7 @@ eager-mono/                          # uv workspace root
 |---|---|---|
 | `__init__.py` | All public classes & functions | Top-level package re-exports. Core API **including the text module** (`TextReveal`, `FormattedText`, `parse_text_tags`, `TextSegment`, `PausePoint`) is imported eagerly. Audio moved out to `eager_core` and screenplay hook-arg parsing to `eager_script` in the presentation-layer split. `NullRenderer` and `FrameClock` always available. Optional backends (Pyglet, PIL, Raylib) resolved lazily via `renderers.__getattr__` to avoid import side effects. `__version__ = "0.1.0"`. |
 | `compositor.py` | `StageCompositor` | **Core orchestrator.** Manages layers, drives the `Timeline`, applies camera shake, generates the `RenderItem` list, tracks FPS via `FrameClock`, and provides `save_state`/`load_state`/`debug_info`/`debug_repr`/`step`/`run_headless`. |
-| `director.py` | `StageDirector`, `CharacterConfig` | Bridges Eager's `EventDispatcher` to the compositor. Registers screenplay hooks via `bind()` (`~ bg`, `~ bg_clear`, `~ scene`, `~ image`, `~ show`, `~ hide`, `~ move`, `~ expr`, `~ fade_in`/`~ fade_out`, `~ flash`, `~ shake`, `~ play`/`~ stop`/`~ volume` for audio, `~ nvl`/`~ nvl_clear`). `bind()`'s `_wrap_hook` no longer auto-snapshots; visual history is driven explicitly via `snapshot_visual_state()`/`on_beat_step()` (the session calls it before advancing a beat) and `rollback_visual_state()`. The wildcard `on_any_event` listener translates narrative events (dialogue/append/fresh_box/narration, choices, scene enter/exit, story end) into `UIState` updates; auto-syncs character expressions from emotion tags, resolves side images (`<asset>_<emotion>`), and routes `~ play` to the `AudioMixer`. Owns `UIState` and `VisualHistoryManager` for `save_visual_state`/`load_visual_state`. |
+| `director.py` | `StageDirector`, `CharacterConfig` | Bridges Eager's `EventDispatcher` to the compositor. Registers screenplay hooks via `bind()` (`~ bg`, `~ bg_clear`, `~ scene`, `~ image`, `~ show`, `~ hide`, `~ move`, `~ expr`, `~ fade_in`/`~ fade_out`, `~ flash`, `~ shake`, `~ play`/`~ stop`/`~ volume` for audio, `~ nvl`/`~ nvl_clear`). `bind()`'s `_wrap_hook` no longer auto-snapshots; visual history is driven explicitly via `snapshot_visual_state()`/`on_beat_step()` (the session calls it before advancing a beat) and `rollback_visual_state()`. The wildcard `on_any_event` listener translates narrative events into `UIState` updates; auto-syncs character expressions, routes `~ play` (with `loop_start`/`loop_end` seamless looping) to the `AudioMixer`, automatically triggers voice playback on `DialogueEvent.voice` and auto-stops voice on next line/narration/exit, and suppresses sound/voice during skip mode. Owns `UIState` and `VisualHistoryManager` for `save_visual_state`/`load_visual_state`. |
 | `text.py` | `TextReveal`, `FormattedText`, `TextSegment`, `PausePoint`, `parse_text_tags` | Text tag parsing + typewriter reveal. `parse_text_tags(raw)` parses `{b}/{i}/{u}/{s}/{color=#hex}/{size=N}/{w}`/`{p}`/`{fast}`/`{{`-escape into `FormattedText` (plain text + `tuple[TextSegment]` + `tuple[PausePoint]`). `TextReveal(formatted, cps)`: `update(dt)`, `visible_chars`, `is_complete`, `complete_immediately()`, `{w}`/`{p}` pause points; cps=0 → instant. |
 | `stage.py` | `Stage`, `Layer`, `StageElement`, `ElementState` | Visual hierarchy: ordered layers → named elements → mutable element state. All serializable via `to_dict`/`from_dict`. |
 | `layout.py` | `LayoutResolver`, `ViewportTransform` | Virtual stage resolution, semantic position names (`left`, `center`, etc., custom), viewport scaling modes (`LETTERBOX`, `STRETCH`, `CROP`, `FIT_WIDTH`, `FIT_HEIGHT`). `compute_viewport()` is aliased as `compute_viewport_transform()`. |
@@ -193,11 +193,12 @@ eager-mono/                          # uv workspace root
 | `ui_components.py` | `UIOverlay`, `DialogueBox`, `ChoiceMenu`, `EndNotice`, `TextboxStyle`, `ChoiceMenuStyle`, `DialogueBoxLayout`, `TextAnchor`, `wrap_text` | Renderer-agnostic front-end UI chrome. Lays out in window pixels (top-left origin), draws via `UIDrawBackend`. `DialogueBox` (bottom-docked textbox + nameplate + advance cue + optional side-image slot) draws **word-wrapped** lines via `wrap_text`/`_get_wrapped_lines` (greedy wrap, respects `\n`, hard-breaks overlong words, cached); `ChoiceMenu` has `hit_test()`; `EndNotice` is a bottom banner; `UIOverlay` owns all three and delegates to a `UIDrawBackend` + `UIState`. |
 | `timing.py` | `FrameClock` | Zero-dependency FPS tracker (instantaneous, rolling-60 average, overall). Tick once per frame. |
 | `protocol.py` | `RenderItem`, `RenderBackend`, `UIDrawBackend` | `RenderItem` is a frozen, slots dataclass (the draw command) with `asset_id, x, y, opacity, scale_x, scale_y, rotation, anchor, tint, flip_h, flip_v, layer, z_order`, plus `to_dict`/`from_dict`. `RenderBackend` and `UIDrawBackend` are `Protocol`s backends implement. |
-| `renderers/__init__.py` | `NullRenderer` (+ Pyglet/PIL/Raylib lazy via `__getattr__`) | Exports `NullRenderer` always. Optional backends (Pyglet, PIL, Raylib) are **not** eagerly imported — they are resolved lazily via `__getattr__` to avoid side effects (e.g. Pyglet initialises GTK/EGL on Wayland, which conflicts with other backends). `__all__` includes all backend names for type-checking; accessing a missing backend raises `ImportError` at access time. |
+| `renderers/__init__.py` | `NullRenderer` (+ Pyglet/PIL/Raylib renderers & audio lazy via `__getattr__`) | Exports `NullRenderer` always. Optional backends (Pyglet, PIL, Raylib renderers, and Pyglet/Raylib/Miniaudio audio backends) are **not** eagerly imported — they are resolved lazily via `__getattr__` to avoid side effects. `__all__` includes all backend names for type-checking; accessing a missing backend raises `ImportError` at access time. |
 | `renderers/null.py` | `NullRenderer` | Headless, zero-dependency renderer. Records `RenderItem`s into `last_frame` and UI primitives into `ui_calls`. Implements both `RenderBackend` and `UIDrawBackend`. Also implements `render_compositor()` for API parity. |
 | `renderers/pil.py` | `PILRenderer`, `PILPlayer`, `PILAssetResolver` | Software rendering backend with LRU sprite-transform caching, opaque direct-blit fast-path, precomputed LUT tinting, and `preload_assets`/`warm_sprite_cache`. `PILPlayer` presents Pillow frames in a tkinter window (`run()`); construction and story logic are headless-safe, so the `software` (Pillow) extra carries no windowing dependency. |
-| `renderers/pyglet.py` | `PygletRenderer`, `PygletPlayer`, `PygletAssetResolver` | Hardware-accelerated OpenGL 2D backend + interactive visual novel window. |
-| `renderers/raylib.py` | `RaylibRenderer`, `RaylibPlayer`, `RaylibAssetResolver` | Hardware-accelerated OpenGL 2D backend (via `pyray`/raylib) + interactive visual novel window. |
+| `renderers/pyglet.py` | `PygletRenderer`, `PygletPlayer`, `PygletAssetResolver`, `PygletAudioBackend` | Hardware-accelerated OpenGL 2D backend + interactive visual novel window + Pyglet per-channel audio backend with seamless intro/loop point support. |
+| `renderers/raylib.py` | `RaylibRenderer`, `RaylibPlayer`, `RaylibAssetResolver`, `RaylibAudioBackend` | Hardware-accelerated OpenGL 2D backend (via `pyray`/raylib) + interactive visual novel window + Raylib music streaming audio backend with loop points. |
+| `renderers/miniaudio.py` | `MiniaudioAudioBackend` | Low-latency PCM soft-mixing callback audio backend with loop points (requires `miniaudio`, degrades to `NullAudioBackend` with notice if missing). |
 | `screens/__init__.py` | `Screen`, `ScreenManager`, `Theme`, `Button`, `Label`, `Slider`, `TitleScreen`, `SaveLoadScreen` | Convenience re-exports for the built-in screens/widgets package. |
 | `screens/screen.py` | `Screen`, `ScreenManager` | `Screen` base (rect, `build`, `handle_input`, `modal`, `visible`); `ScreenManager` stack (`register`/`show`/`hide`/`draw`, input routed to top; game input blocked under modal screens). |
 | `screens/theme.py` | `Theme` | Frozen dataclass of palette colors + font sizes (textbox, nameplate, buttons, choices); defaults reproduce the legacy look. |
@@ -269,7 +270,7 @@ The Eager engine is structured as a three-layer stack:
 - **Camera shake**: Non-destructive. `shake_offset` is computed in `update()` and applied during `render_list()` to non-exempt layers. Default exempt set: `{"ui", "overlay"}`. Element base positions are never modified.
 - **Render items are frozen**: `RenderItem` is `@dataclass(frozen=True, slots=True)`. The compositor clones state into them at `render_list()` time. `global_z` sort key is computed as `layer.z_order * 1000 + elem.z_index` during `render_list()`; invisible layers and elements with `opacity <= 0` are skipped.
 - **State snapshots**: `StageCompositor.save_state()` / `load_state()` serialize the entire stage hierarchy; `StageDirector.save_visual_state()` / `load_visual_state()` also capture `UIState` and the `VisualHistoryManager` stack.
-- **Audio** (`eager_core.audio`): `AudioMixer` over a pluggable `AudioBackend` (default `NullAudioBackend` for headless tests) now lives in the shared leaf package **eager-core**, not in eager-graphics. Channels `music` (loop), `ambient` (loop), `sound` (polyphonic one-shot), `voice` (single) plus dynamic custom channels; per-call × channel-type × master volume; `fade_in`/`fade_out` ramps in `update(dt)`; `save_state`/`load_state` for save/resume. The runtime's `GameSession` constructs it; `StageDirector` receives it and wires `~ play`/`~ stop`/`~ volume`; skip mode suppresses `sound`/`voice`.
+- **Audio** (`eager_core.audio` & `eager_graphics.renderers`): `AudioMixer` over a pluggable `AudioBackend` protocol lives in **eager-core**; concrete hardware implementations live in `eager-graphics.renderers` (`PygletAudioBackend`, `RaylibAudioBackend`, `MiniaudioAudioBackend`, and default `NullAudioBackend`). Channels `music` (loop), `ambient` (loop), `sound` (polyphonic one-shot), `voice` (single) plus dynamic custom channels; per-call × channel-type × master volume; `fade_in`/`fade_out` ramps and loop-point wrapping in `update(dt)`; `save_state`/`load_state` for save/resume. Screenplay `~ play` supports seamless intro/loop points via `loop_start`/`loop_end`. `StageDirector` auto-plays `DialogueEvent.voice`, stops `voice` on subsequent unvoiced lines, narration, or scene changes, and suppresses `sound`/`voice` playback during skip mode.
 - **Text presentation** (`text.py`): `parse_text_tags` parses `{b}/{i}/{color=...}/{size=...}/{w}/{p}/{fast}` markup into `FormattedText` (segments + pause points); `TextReveal` does typewriter pacing driven by `Preferences.text_speed` (0 = instant) with click-to-complete to the next `{w}`/`{p}` boundary. `wrap_text` in `ui_components.py` performs greedy, cached word-wrap for multi-line dialogue (fixes B5).
 - **Screens & theme** (`screens/`): `Screen` base + `ScreenManager` stack (modal input blocking); `Theme` (palette + fonts from `game.toml [theme]`); widgets `Button`/`Label`/`Slider`; built-in `TitleScreen` and `SaveLoadScreen` (wired to `SaveManager`). `GameSession.draw()` layers the active screen on top of the stage + UI.
 - **NVL mode & side images**: `~ nvl on|off|clear` drives `UIState.nvl_mode`/`nvl_entries`; character `side=` side images render in the textbox (`<asset>_<emotion>`); `kind=nvl` characters always NVL.
@@ -291,10 +292,10 @@ Test counts and files per package (regenerate counts with the snippet in §2):
 
 | Package | Files | Tests | Wall time |
 |---|---|---|---|
-| eager-graphics | 23 | 242 | ~5s |
+| eager-graphics | 24 | 248 | ~5s |
 | eager-runtime | 12 | 70 | — |
 | eager-script | 5 | 100 | — |
-| eager-core | 8 | 26 | — |
+| eager-core | 8 | 27 | — |
 
 > **Optional-dependency guards.** `eager-runtime` tests that require
 > `eager_graphics`, `pyglet`, or `Pillow` are guarded with `pytest.mark.skipif`.
@@ -325,7 +326,7 @@ pytest -q --tb=long -s           # disable output capture
 
 | Package | Test File | Covers |
 |---|---|---|
-| eager-core | `test_audio.py` | `AudioMixer`, `NullAudioBackend`, `AudioBackend` protocol, fades, save/load restores music |
+| eager-core | `test_audio.py` | `AudioMixer`, `NullAudioBackend`, `AudioBackend` protocol, loop points, `update` delegation, `shutdown`, fades, save/load restores music |
 | eager-core | `test_core_easing.py` | `eager_core.easing`: curve boundaries, `get_easing`, `EASING_MAP` |
 | eager-core | `test_core_events.py` | `eager_core.events`: event dataclasses, `ChoiceOption`, `StoryEvent` union |
 | eager-core | `test_core_input.py` | `eager_core.input`: `InputAction` members, `Keymap` bindings |
@@ -333,7 +334,8 @@ pytest -q --tb=long -s           # disable output capture
 | eager-core | `test_core_text.py` | `eager_core.text`: `parse_text_tags`, `TextReveal` pacing |
 | eager-core | `test_core_timing.py` | `eager_core.timing`: `FrameClock` dt/FPS tracking |
 | eager-core | `test_core_types.py` | `eager_core.types`: `Vec2`, `Rect`, `Color` |
-| eager-graphics | `test_director_audio.py` | `StageDirector` audio-hook wiring (`~ play`/`~ stop`/`~ volume`) against an `eager_core` `AudioMixer` |
+| eager-graphics | `test_audio_backends.py` | `PygletAudioBackend`, `RaylibAudioBackend`, `MiniaudioAudioBackend` playback, loop points, and updates |
+| eager-graphics | `test_director_audio.py` | `StageDirector` audio wiring: loop points, voice playback, voice auto-stop, and skip-mode suppression |
 | eager-graphics | `test_compositor.py` | `StageCompositor`: backgrounds, characters, slides, save/load, shake, flash, fade |
 | eager-graphics | `test_debug.py` | `StageCompositor` `debug_info`/`debug_repr` structure, JSON serializability, compact/full mode |
 | eager-graphics | `test_director.py` | `StageDirector`: hook dispatch, emotion auto-sync, scene bg mapping, visual-state save/load |
@@ -694,6 +696,7 @@ from eager_script.expr import compile_expr, CompiledExpr, ExprError
 # Shared, zero-dependency leaf subsystems
 from eager_core import (
     AudioBackend,       # Protocol
+    BaseAudioBackend,   # Base class with lifecycle no-ops
     AudioMixer,         # channel mixer (music/ambient/sound/voice)
     ChannelState,
     NullAudioBackend,   # headless default
@@ -760,9 +763,10 @@ from eager_graphics import (
 
 ```
 # Optional — only if a backend library is installed:
-# PygletRenderer, PygletPlayer, PygletAssetResolver (requires pyglet)
+# PygletRenderer, PygletPlayer, PygletAssetResolver, PygletAudioBackend (requires pyglet)
 # PILRenderer, PILPlayer, PILAssetResolver  (requires Pillow)
-# RaylibRenderer, RaylibPlayer, RaylibAssetResolver  (requires pyray)
+# RaylibRenderer, RaylibPlayer, RaylibAssetResolver, RaylibAudioBackend (requires pyray)
+# MiniaudioAudioBackend (requires miniaudio)
 
 # Screens & widgets (Phase 8) — import from the screens subpackage:
 # from eager_graphics.screens import (

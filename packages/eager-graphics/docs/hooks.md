@@ -191,14 +191,19 @@ Fades the screen overlay from solid color to fully transparent.
 
 Audio hooks drive the injected `AudioMixer` over its channels (`music`, `ambient`, `sound`, `voice`, plus custom channels). They are no-ops when no mixer is attached (e.g. pure headless runs).
 
-### `~ play <channel> <track> [fade=<seconds>] [volume=<level>] [loop=true|false]`
-Plays a track on a channel. `fade` (also accepted as `fade_in`) fades the volume in over that many seconds; `volume` defaults to `1.0`. `loop` overrides the channel default (`music`/`ambient` loop; `sound`/`voice` do not).
+### `~ play <channel> <track> [fade=<seconds>] [volume=<level>] [loop=true|false] [loop_start=<seconds>] [loop_end=<seconds>]`
+Plays a track on a channel. `fade` (also accepted as `fade_in`) fades the volume in over that many seconds; `volume` defaults to `1.0`. `loop` overrides the channel default (`music`/`ambient` loop; `sound`/`voice` do not). `loop_start` and `loop_end` specify intro-to-loop seamless boundaries in seconds.
 
 ```es
-~ play music theme.ogg fade=2.0 volume=0.8
+~ play music theme.ogg fade=2.0 volume=0.8 loop=true loop_start=12.5 loop_end=95.0
 ~ play sound thunder.ogg
 ~ play voice greeting.ogg volume=1.0
 ```
+
+### Voice Playback & Management
+When dialogue events specify a voice tag (e.g. `{voice=alice_01.ogg}`), `StageDirector` automatically plays the audio clip on the `voice` channel. When subsequent dialogue lines or narration events lack voice tags, the voice channel is automatically stopped to prevent audio bleed. Exiting scenes or ending the story also stops any active voice clip.
+
+During fast skip mode (`skip_mode`), one-shot sound effects (`sound`) and voice playback (`voice`) are automatically suppressed, while background music (`music`) and ambient tracks continue playing.
 
 ### `~ stop [<channel>|all] [fade=<seconds>]`
 Stops a channel, or every channel with `all` (the default when no channel is given). `fade` (also accepted as `fade_out`) fades out over that many seconds.

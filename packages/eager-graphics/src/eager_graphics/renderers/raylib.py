@@ -46,6 +46,7 @@ from eager_graphics.types import BLACK, WHITE, Color, ScaleMode
 from eager_graphics.ui_components import UIOverlay
 
 if TYPE_CHECKING:
+    from eager_core.audio import AudioMixer
     from eager_runtime import ChoicePromptEvent, EventDispatcher, StoryVM
 
     from eager_graphics.compositor import StageCompositor
@@ -540,6 +541,128 @@ class RaylibRenderer(RenderBackend, UIDrawBackend):
         )
 
 
+class RaylibAudioBackend:
+    """Raylib audio backend using LoadMusicStream and UpdateAudioStream.
+
+    Manages audio devices via pyray.init_audio_device/close_audio_device and
+    streams per-channel audio using Raylib's Music streams.
+    """
+
+    def __init__(self) -> None:
+        _check_raylib_available()
+        self._device_initialized = False
+        if not pyray.is_audio_device_ready():
+            pyray.init_audio_device()
+            self._device_initialized = True
+        self._streams: dict[str, Any] = {}
+        self._loop_points: dict[str, tuple[float | None, float | None]] = {}
+        self._paused: set[str] = set()
+
+    def play(
+        self,
+        channel: str,
+        asset_path: str | Path,
+        *,
+        loop: bool = False,
+        volume: float = 1.0,
+        fade_in: float = 0.0,
+        loop_start: float | None = None,
+        loop_end: float | None = None,
+    ) -> None:
+        path_str = str(asset_path)
+        if channel in self._streams:
+            old_stream = self._streams[channel]
+            try:
+                pyray.stop_music_stream(old_stream)
+                pyray.unload_music_stream(old_stream)
+            except Exception:  # noqa: BLE001, S110
+                pass
+
+        try:
+            stream = pyray.load_music_stream(path_str)
+        except Exception:  # noqa: BLE001
+            return
+
+        stream.looping = loop
+        # Check for raylib SetMusicLoopPoints / set_music_loop_points if available
+        if hasattr(pyray, "set_music_loop_points") and loop_start is not None and loop_end is not None:
+            try:
+                pyray.set_music_loop_points(stream, float(loop_start), float(loop_end))
+            except Exception:  # noqa: BLE001, S110
+                pass
+        elif hasattr(pyray, "SetMusicLoopPoints") and loop_start is not None and loop_end is not None:
+            try:
+                pyray.SetMusicLoopPoints(stream, float(loop_start), float(loop_end))
+            except Exception:  # noqa: BLE001, S110
+                pass
+
+        pyray.set_music_volume(stream, max(0.0, min(1.0, volume)))
+        pyray.play_music_stream(stream)
+        self._streams[channel] = stream
+        self._loop_points[channel] = (loop_start, loop_end)
+        self._paused.discard(channel)
+
+    def stop(self, channel: str, *, fade_out: float = 0.0) -> None:
+        stream = self._streams.get(channel)
+        if stream is not None:
+            try:
+                pyray.stop_music_stream(stream)
+                pyray.unload_music_stream(stream)
+            except Exception:  # noqa: BLE001, S110
+                pass
+            del self._streams[channel]
+            self._loop_points.pop(channel, None)
+            self._paused.discard(channel)
+
+    def set_volume(self, channel: str, volume: float) -> None:
+        stream = self._streams.get(channel)
+        if stream is not None:
+            pyray.set_music_volume(stream, max(0.0, min(1.0, volume)))
+
+    def pause(self, channel: str) -> None:
+        stream = self._streams.get(channel)
+        if stream is not None:
+            pyray.pause_music_stream(stream)
+            self._paused.add(channel)
+
+    def resume(self, channel: str) -> None:
+        stream = self._streams.get(channel)
+        if stream is not None:
+            pyray.resume_music_stream(stream)
+            self._paused.discard(channel)
+
+    def is_playing(self, channel: str) -> bool:
+        stream = self._streams.get(channel)
+        if stream is None or channel in self._paused:
+            return False
+        return bool(pyray.is_music_stream_playing(stream))
+
+    def update(self, dt: float) -> None:
+        for ch, stream in list(self._streams.items()):
+            if ch not in self._paused:
+                pyray.update_music_stream(stream)
+                loop_start, loop_end = self._loop_points.get(ch, (None, None))
+                if loop_end is not None:
+                    time_played = pyray.get_music_time_played(stream)
+                    if time_played >= loop_end:
+                        seek_pos = loop_start if loop_start is not None else 0.0
+                        pyray.seek_music_stream(stream, float(seek_pos))
+
+    def shutdown(self) -> None:
+        for stream in list(self._streams.values()):
+            try:
+                pyray.stop_music_stream(stream)
+                pyray.unload_music_stream(stream)
+            except Exception:  # noqa: BLE001, S110
+                pass
+        self._streams.clear()
+        self._loop_points.clear()
+        self._paused.clear()
+        if self._device_initialized and pyray.is_audio_device_ready():
+            pyray.close_audio_device()
+            self._device_initialized = False
+
+
 # ---------------------------------------------------------------------- #
 # Interactive Player
 # ---------------------------------------------------------------------- #
@@ -562,6 +685,7 @@ class RaylibPlayer:
         director: StageDirector,
         dispatcher: EventDispatcher,
         *,
+        audio: AudioMixer | None = None,
         width: int = 1280,
         height: int = 720,
         title: str = "Eager Visual Novel (Raylib)",
@@ -582,6 +706,7 @@ class RaylibPlayer:
         self.compositor = compositor
         self.director = director
         self.dispatcher = dispatcher
+        self.audio = audio
         self.width = width
         self.height = height
         self.active_choice_prompt: ChoicePromptEvent | None = None
@@ -697,8 +822,10 @@ class RaylibPlayer:
         return success
 
     def tick(self, dt: float) -> None:
-        """Advance compositor animations by dt."""
+        """Advance compositor animations by dt and pump audio."""
         self.compositor.step(dt)
+        if self.audio is not None:
+            self.audio.update(dt)
 
     # ------------------------------------------------------------------ #
     # Rendering
@@ -794,8 +921,10 @@ class RaylibPlayer:
             self._handle_input()
             self.on_draw()
 
-        pyray.close_window()
+        self.close()
 
     def close(self) -> None:
         """Close the Raylib window and free resources."""
+        if self.audio is not None:
+            self.audio.shutdown()
         pyray.close_window()

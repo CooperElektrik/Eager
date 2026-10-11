@@ -76,6 +76,7 @@ class VisualEngine:
         script_path: str | Path,
         *,
         backend: str = "null",
+        audio_backend: Any = None,
         asset_dir: str | Path | None = None,
         virtual_width: int = 1920,
         virtual_height: int = 1080,
@@ -86,46 +87,38 @@ class VisualEngine:
 
         self.script_path = Path(script_path)
         self.backend = backend
+        self.audio_backend = audio_backend
         self.asset_dir = Path(asset_dir) if asset_dir is not None else None
         self.plain = plain
         # --- 1. Parse the screenplay into a SceneGraph ---------------
         text = self.script_path.read_text(encoding="utf-8")
         graph = parse_graph(text, plain=plain)
 
-        # --- 2. Create the story VM ----------------------------------
-        self.vm: StoryVM = StoryVM(graph)
-
-        # --- 3. Create the event dispatcher --------------------------
-        self.dispatcher: EventDispatcher = EventDispatcher()
-
-        # --- 4. Create the stage compositor --------------------------
-        self.compositor: StageCompositor = StageCompositor(
-            virtual_width=virtual_width,
-            virtual_height=virtual_height,
-        )
-
-        # --- 5. Create and bind the director -------------------------
-        self.director: StageDirector = StageDirector(self.compositor)
-        if max_history > 0:
-            self.director.enable_visual_history(max_history=max_history)
-        self.director.bind(self.dispatcher)
-
-        # --- 6. Instantiate the rendering backend --------------------
-        self._renderer = self._create_renderer(backend)
-
-        # Cached render list for quick inspection without re-rendering
-        self._last_render_list: list[Any] = []
-
         # Create session wrapping the VM and director
         self.session = GameSession(
             graph,
             backend=backend,
+            audio_backend=audio_backend,
             asset_dir=self.asset_dir,
             virtual_width=virtual_width,
             virtual_height=virtual_height,
             plain=plain,
             rollback_limit=max_history,
         )
+
+        # Mirror session components on VisualEngine for backwards compatibility
+        self.vm: StoryVM = self.session.vm
+        self.dispatcher: EventDispatcher = self.session.dispatcher
+        self.compositor: StageCompositor = self.session.compositor
+        self.director: StageDirector = self.session.director
+        if max_history > 0:
+            self.director.enable_visual_history(max_history=max_history)
+
+        # --- 6. Instantiate the rendering backend --------------------
+        self._renderer = self._create_renderer(backend)
+
+        # Cached render list for quick inspection without re-rendering
+        self._last_render_list: list[Any] = []
 
     def _create_renderer(self, backend: str) -> Any:
         if backend == self._BACKEND_NULL:

@@ -10,10 +10,11 @@ dependencies (standard library only).
 ## Subsystems
 
 1. **Audio Mixing** (`eager_core.audio`):
-   - `AudioBackend` — protocol for low-level playback (`play`, `stop`, `set_volume`, `pause`, `resume`, `is_playing`).
-   - `NullAudioBackend` — headless no-op backend recording calls.
-   - `ChannelState` — per-channel volume, looping, and fade state.
-   - `AudioMixer` — channel routing (`music`, `ambient`, `sound`, `voice`, custom), volume hierarchy, fade interpolation ramps, and state serialization.
+   - `AudioBackend` — protocol for low-level playback (`play`, `stop`, `set_volume`, `pause`, `resume`, `is_playing`, `update`, `shutdown`).
+   - `BaseAudioBackend` — base class providing no-op default implementations for optional lifecycle methods.
+   - `NullAudioBackend` — headless no-op backend recording calls and loop points.
+   - `ChannelState` — per-channel volume, looping, loop points (`loop_start`, `loop_end`), and fade state.
+   - `AudioMixer` — channel routing (`music`, `ambient`, `sound`, `voice`, custom), loop points forwarding, volume hierarchy, fade interpolation ramps, and state serialization.
 
 2. **Core Types & Geometry** (`eager_core.types`):
    - `Vec2` — immutable 2D vector with arithmetic, distance, and `lerp`.

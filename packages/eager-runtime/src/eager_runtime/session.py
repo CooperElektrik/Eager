@@ -109,6 +109,7 @@ class GameSession:
         project_or_script: str | Path | Any,
         *,
         backend: str = "null",
+        audio_backend: Any = None,
         asset_dir: str | Path | None = None,
         virtual_width: int = 1920,
         virtual_height: int = 1080,
@@ -146,8 +147,12 @@ class GameSession:
             virtual_width=virtual_width,
             virtual_height=virtual_height,
         )
-        self.audio = AudioMixer(asset_dir=self.asset_dir)
-        self.director = StageDirector(self.compositor, audio=self.audio)
+        self.audio = AudioMixer(backend=audio_backend, asset_dir=self.asset_dir)
+        self.director = StageDirector(
+            self.compositor,
+            audio=self.audio,
+            skip_mode_cb=lambda: self.skip_mode,
+        )
         self.director.bind(self.dispatcher)
 
         self.checkpoints = CheckpointHistory(max_history=rollback_limit)

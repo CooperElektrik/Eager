@@ -21,14 +21,17 @@ from typing import TYPE_CHECKING
 from eager_graphics.renderers.null import NullRenderer
 
 __all__ = [
+    "MiniaudioAudioBackend",
     "NullRenderer",
     "PILAssetResolver",
     "PILPlayer",
     "PILRenderer",
     "PygletAssetResolver",
+    "PygletAudioBackend",
     "PygletPlayer",
     "PygletRenderer",
     "RaylibAssetResolver",
+    "RaylibAudioBackend",
     "RaylibPlayer",
     "RaylibRenderer",
 ]
@@ -36,10 +39,17 @@ __all__ = [
 
 if TYPE_CHECKING:
     # For type-checkers only — the real names are resolved lazily at runtime.
+    from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
     from eager_graphics.renderers.pil import PILAssetResolver, PILPlayer, PILRenderer
-    from eager_graphics.renderers.pyglet import PygletAssetResolver, PygletPlayer, PygletRenderer
+    from eager_graphics.renderers.pyglet import (
+        PygletAssetResolver,
+        PygletAudioBackend,
+        PygletPlayer,
+        PygletRenderer,
+    )
     from eager_graphics.renderers.raylib import (
         RaylibAssetResolver,
+        RaylibAudioBackend,
         RaylibPlayer,
         RaylibRenderer,
     )
@@ -48,13 +58,16 @@ if TYPE_CHECKING:
 # Map of lazy-backend class name → (module path, imported name).
 # Resolved on first access via ``__getattr__``.
 _LAZY: dict[str, tuple[str, str]] = {
+    "MiniaudioAudioBackend": ("eager_graphics.renderers.miniaudio", "MiniaudioAudioBackend"),
     "PygletAssetResolver": ("eager_graphics.renderers.pyglet", "PygletAssetResolver"),
+    "PygletAudioBackend": ("eager_graphics.renderers.pyglet", "PygletAudioBackend"),
     "PygletPlayer": ("eager_graphics.renderers.pyglet", "PygletPlayer"),
     "PygletRenderer": ("eager_graphics.renderers.pyglet", "PygletRenderer"),
     "PILAssetResolver": ("eager_graphics.renderers.pil", "PILAssetResolver"),
     "PILPlayer": ("eager_graphics.renderers.pil", "PILPlayer"),
     "PILRenderer": ("eager_graphics.renderers.pil", "PILRenderer"),
     "RaylibAssetResolver": ("eager_graphics.renderers.raylib", "RaylibAssetResolver"),
+    "RaylibAudioBackend": ("eager_graphics.renderers.raylib", "RaylibAudioBackend"),
     "RaylibPlayer": ("eager_graphics.renderers.raylib", "RaylibPlayer"),
     "RaylibRenderer": ("eager_graphics.renderers.raylib", "RaylibRenderer"),
 }

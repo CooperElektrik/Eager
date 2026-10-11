@@ -49,9 +49,11 @@ class StageDirector:
         compositor: StageCompositor,
         *,
         audio: AudioMixer | None = None,
+        skip_mode_cb: Any = None,
     ) -> None:
         self.compositor = compositor
         self.audio = audio
+        self.skip_mode_cb = skip_mode_cb
         self.characters: dict[str, CharacterConfig] = {}
         self.scene_backgrounds: dict[str, tuple[str, str, float]] = {}
         self.ui_state: UIState = UIState()
@@ -341,8 +343,16 @@ class StageDirector:
         duration = parsed.get_float("duration", 0.3)
         self.compositor.shake(intensity=intensity, duration=duration)
 
+    def _is_skip_active(self) -> bool:
+        if self.skip_mode_cb is not None:
+            try:
+                return bool(self.skip_mode_cb())
+            except Exception:  # noqa: BLE001
+                return False
+        return False
+
     def handle_play(self, args: str) -> None:
-        """Handle '~ play channel track [fade=X] [volume=Y] [loop=True/False]'."""
+        """Handle '~ play channel track [fade=X] [volume=Y] [loop=True/False] [loop_start=Z] [loop_end=W]'."""
         if self.audio is None:
             return
         parsed = parse_hook_args(args)
@@ -350,11 +360,26 @@ class StageDirector:
             return
         channel = parsed.positional[0].strip().lower()
         track = parsed.positional[1].strip()
+
+        # In skip mode, drop sound and voice playback (music and ambient keep playing)
+        if self._is_skip_active() and channel in ("sound", "voice"):
+            return
+
         fade_in = parsed.get_float("fade", 0.0) or parsed.get_float("fade_in", 0.0)
         volume = parsed.get_float("volume", 1.0)
         loop_arg = parsed.get_bool("loop", None)
+        loop_start = parsed.get_float("loop_start", None)
+        loop_end = parsed.get_float("loop_end", None)
 
-        self.audio.play(channel, track, loop=loop_arg, fade_in=fade_in, volume=volume)
+        self.audio.play(
+            channel,
+            track,
+            loop=loop_arg,
+            fade_in=fade_in,
+            volume=volume,
+            loop_start=loop_start,
+            loop_end=loop_end,
+        )
 
     def handle_stop(self, args: str) -> None:
         """Handle '~ stop channel [fade=X]' or '~ stop all'."""
@@ -414,10 +439,11 @@ class StageDirector:
         return None
 
     def handle_dialogue_event(self, event: Any) -> None:
-        """Update UI state and auto-synchronize character sprite expression from DialogueEvent."""
+        """Update UI state, sync sprite, and play dialogue voice audio on the voice channel."""
         speaker = getattr(event, "speaker", None)
         text = getattr(event, "text", "")
         emotion = getattr(event, "emotion", None)
+        voice = getattr(event, "voice", None)
 
         self.ui_state.speaker = speaker
         self.ui_state.text = text
@@ -431,6 +457,13 @@ class StageDirector:
         if speaker and emotion:
             char_id = speaker.strip().lower()
             self.compositor.set_expression(char_id, emotion.strip().lower())
+
+        # Voice audio management
+        if self.audio is not None:
+            if voice and not self._is_skip_active():
+                self.audio.play("voice", str(voice), loop=False)
+            else:
+                self.audio.stop("voice")
 
     def handle_append_event(self, event: Any) -> None:
         """Append text to current UI dialogue buffer."""
@@ -452,7 +485,7 @@ class StageDirector:
             self.ui_state.nvl_entries.append(NVLEntry(speaker=self.ui_state.speaker, text=self.ui_state.text, emotion=self.ui_state.emotion))
 
     def handle_narration_event(self, event: Any) -> None:
-        """Update UI state with narration text."""
+        """Update UI state with narration text and stop active voice."""
         self.ui_state.speaker = None
         self.ui_state.text = getattr(event, "text", "")
         self.ui_state.emotion = None
@@ -462,6 +495,8 @@ class StageDirector:
         if self.ui_state.nvl_mode:
             self.ui_state.nvl_entries.append(NVLEntry(speaker=None, text=self.ui_state.text))
 
+        if self.audio is not None:
+            self.audio.stop("voice")
 
     def handle_scene_enter_event(self, event: Any) -> None:
         """Trigger registered background transitions when entering new scenes."""
@@ -471,9 +506,11 @@ class StageDirector:
             self.compositor.set_background(asset_id, transition=trans, duration=dur)
 
     def handle_scene_exit_event(self, event: Any) -> None:
-        """Clear dialogue and choices on scene exit."""
+        """Clear dialogue and choices on scene exit and stop voice channel."""
         self.ui_state.clear_dialogue()
         self.ui_state.clear_choices()
+        if self.audio is not None:
+            self.audio.stop("voice")
 
     def handle_choice_prompt_event(self, event: Any) -> None:
         """Populate UI state choices from ChoicePromptEvent."""
@@ -490,8 +527,10 @@ class StageDirector:
         ]
 
     def handle_story_end_event(self, event: Any) -> None:
-        """Mark UI state as finished."""
+        """Mark UI state as finished and stop voice channel."""
         self.ui_state.is_finished = True
+        if self.audio is not None:
+            self.audio.stop("voice")
 
     def handle_generic_event(self, event: Any) -> None:
         """Fallback handler if Eager classes were not directly importable at bind time."""

@@ -22,6 +22,7 @@ from eager_graphics.types import BLACK, WHITE, Color, ScaleMode
 from eager_graphics.ui_components import UIOverlay
 
 if TYPE_CHECKING:
+    from eager_core.audio import AudioMixer
     from eager_runtime import ChoicePromptEvent, EventDispatcher, StoryVM
 
     from eager_graphics.compositor import StageCompositor
@@ -484,6 +485,124 @@ class PygletRenderer(RenderBackend):
         return (width, height)
 
 
+class PygletAudioBackend:
+    """Pyglet-based audio backend implementing AudioBackend protocol.
+
+    Uses a `pyglet.media.Player` per channel for playback, volume, and looping.
+    Supports whole-file looping and seamless loop points (loop_start/loop_end).
+    """
+
+    def __init__(self) -> None:
+        self._players: dict[str, pyglet.media.Player] = {}
+        self._loop_points: dict[str, tuple[float | None, float | None]] = {}
+
+    def play(
+        self,
+        channel: str,
+        asset_path: str | Path,
+        *,
+        loop: bool = False,
+        volume: float = 1.0,
+        fade_in: float = 0.0,
+        loop_start: float | None = None,
+        loop_end: float | None = None,
+    ) -> None:
+        path_str = str(asset_path)
+        if channel in self._players:
+            old_player = self._players[channel]
+            try:
+                old_player.pause()
+                old_player.delete()
+            except Exception:  # noqa: BLE001, S110
+                pass
+
+        try:
+            source = pyglet.media.load(path_str, streaming=True)
+        except Exception:  # noqa: BLE001
+            try:
+                source = pyglet.media.load(path_str, streaming=False)
+            except Exception:  # noqa: BLE001
+                return
+
+        player = pyglet.media.Player()
+        player.queue(source)
+        player.volume = max(0.0, min(1.0, volume))
+        self._loop_points[channel] = (loop_start, loop_end)
+
+        if loop:
+            if loop_start is None and loop_end is None:
+                player.loop = True
+            else:
+                player.loop = False
+
+                @player.event
+                def on_player_eos() -> None:
+                    seek_pos = loop_start if loop_start is not None else 0.0
+                    try:
+                        player.seek(seek_pos)
+                        player.play()
+                    except Exception:  # noqa: BLE001, S110
+                        pass
+        else:
+            player.loop = False
+
+        self._players[channel] = player
+        player.play()
+
+    def stop(self, channel: str, *, fade_out: float = 0.0) -> None:
+        player = self._players.get(channel)
+        if player is not None:
+            try:
+                player.pause()
+                player.delete()
+            except Exception:  # noqa: BLE001, S110
+                pass
+            del self._players[channel]
+            self._loop_points.pop(channel, None)
+
+    def set_volume(self, channel: str, volume: float) -> None:
+        player = self._players.get(channel)
+        if player is not None:
+            player.volume = max(0.0, min(1.0, volume))
+
+    def pause(self, channel: str) -> None:
+        player = self._players.get(channel)
+        if player is not None:
+            player.pause()
+
+    def resume(self, channel: str) -> None:
+        player = self._players.get(channel)
+        if player is not None:
+            player.play()
+
+    def is_playing(self, channel: str) -> bool:
+        player = self._players.get(channel)
+        return bool(player is not None and player.playing)
+
+    def update(self, dt: float) -> None:
+        for ch, player in list(self._players.items()):
+            if not player.playing:
+                continue
+            loop_start, loop_end = self._loop_points.get(ch, (None, None))
+            if loop_end is not None and player.time >= loop_end:
+                seek_pos = loop_start if loop_start is not None else 0.0
+                try:
+                    player.seek(seek_pos)
+                    player.play()
+                except Exception:  # noqa: BLE001, S110
+                    pass
+
+    def shutdown(self) -> None:
+        for player in list(self._players.values()):
+            try:
+                player.pause()
+                player.delete()
+            except Exception:  # noqa: BLE001, S110
+                pass
+        self._players.clear()
+        self._loop_points.clear()
+
+
 class PygletPlayer(pyglet.window.Window):
     """Full-featured interactive Visual Novel window player powered by Eager and Eager-Graphics."""
 
@@ -494,6 +613,7 @@ class PygletPlayer(pyglet.window.Window):
         director: StageDirector,
         dispatcher: EventDispatcher,
         *,
+        audio: AudioMixer | None = None,
         width: int = 1280,
         height: int = 720,
         title: str = "Eager-Graphics Visual Novel",
@@ -515,6 +635,7 @@ class PygletPlayer(pyglet.window.Window):
         self.compositor = compositor
         self.director = director
         self.dispatcher = dispatcher
+        self.audio = audio
 
         self.renderer = PygletRenderer(
             asset_dir=asset_dir,
@@ -654,8 +775,16 @@ class PygletPlayer(pyglet.window.Window):
         return success
 
     def tick(self, dt: float) -> None:
-        """Advance compositor animations by dt (delegates to step() so the FPS clock ticks)."""
+        """Advance compositor animations by dt and pump audio mixer."""
         self.compositor.step(dt)
+        if self.audio is not None:
+            self.audio.update(dt)
+
+    def close(self) -> None:
+        """Close window and release audio mixer resources."""
+        if self.audio is not None:
+            self.audio.shutdown()
+        super().close()
 
     def on_draw(self) -> None:
         """Render frame: stage graphics followed by UI textbox and choices."""

@@ -255,6 +255,7 @@ def build_x_parser() -> argparse.ArgumentParser:
     play_p.add_argument("--asset-dir", default=None, help="Directory containing sprite/background assets.")
     play_p.add_argument("--plain", action="store_true", help="Parse script in Eager-SP plain mode.")
     play_p.add_argument("--warp", default=None, help="Fast-forward / jump directly to scene label.")
+    play_p.add_argument("--no-audio", action="store_true", help="Disable audio playback (use NullAudioBackend).")
     play_p.set_defaults(func=_cmd_play)
 
     # render
@@ -291,6 +292,7 @@ def build_x_parser() -> argparse.ArgumentParser:
     )
     run_p.add_argument("project_dir", nargs="?", default=".", help="Project directory (default: current directory)")
     run_p.add_argument("--backend", choices=["pyglet", "pil", "raylib"], default="pil", help="Rendering backend")
+    run_p.add_argument("--no-audio", action="store_true", help="Disable audio playback (use NullAudioBackend).")
     run_p.set_defaults(func=_cmd_run)
 
     # new
@@ -321,6 +323,38 @@ def build_x_parser() -> argparse.ArgumentParser:
 
     return parser
 
+
+
+def _create_audio_backend(backend: str, *, no_audio: bool = False) -> Any:
+    """Instantiate the matching audio backend for the given render backend."""
+    from eager_core import NullAudioBackend
+
+    if no_audio:
+        return NullAudioBackend()
+
+    if backend == "pyglet":
+        try:
+            from eager_graphics.renderers.pyglet import PygletAudioBackend
+
+            return PygletAudioBackend()
+        except Exception:  # noqa: BLE001
+            return NullAudioBackend()
+    if backend == "raylib":
+        try:
+            from eager_graphics.renderers.raylib import RaylibAudioBackend
+
+            return RaylibAudioBackend()
+        except Exception:  # noqa: BLE001
+            return NullAudioBackend()
+    if backend == "pil":
+        try:
+            from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
+
+            return MiniaudioAudioBackend()
+        except Exception:  # noqa: BLE001
+            return NullAudioBackend()
+
+    return NullAudioBackend()
 
 
 def _cmd_play(args: argparse.Namespace) -> int:
@@ -358,9 +392,15 @@ def _cmd_play(args: argparse.Namespace) -> int:
 
     from eager_runtime.engine import VisualEngine
 
+    audio_backend = _create_audio_backend(
+        args.backend,
+        no_audio=getattr(args, "no_audio", False),
+    )
+
     engine = VisualEngine(
         script_path=args.script,
         backend=args.backend,
+        audio_backend=audio_backend,
         asset_dir=args.asset_dir,
         plain=args.plain,
     )
@@ -420,6 +460,8 @@ def _run_interactive_player(engine: Any, *, backend: str) -> None:
     RaylibPlayer and PILPlayer run their own event loops (``run()``);
     PygletPlayer is driven by ``pyglet.app.run()``.
     """
+    audio_mixer = getattr(engine.session, "audio", None)
+
     if backend == "raylib":
         from eager_graphics.renderers.raylib import RaylibPlayer
 
@@ -428,6 +470,7 @@ def _run_interactive_player(engine: Any, *, backend: str) -> None:
             compositor=engine.compositor,
             director=engine.director,
             dispatcher=engine.dispatcher,
+            audio=audio_mixer,
             width=1280,
             height=720,
             title="Eager Visual Novel (Raylib)",
@@ -444,6 +487,7 @@ def _run_interactive_player(engine: Any, *, backend: str) -> None:
             compositor=engine.compositor,
             director=engine.director,
             dispatcher=engine.dispatcher,
+            audio=audio_mixer,
             width=1280,
             height=720,
             title="Eager Visual Novel (PIL)",
@@ -460,6 +504,7 @@ def _run_interactive_player(engine: Any, *, backend: str) -> None:
             compositor=engine.compositor,
             director=engine.director,
             dispatcher=engine.dispatcher,
+            audio=audio_mixer,
             width=engine.renderer.width if hasattr(engine.renderer, "width") else 1280,
             height=720,
             title="Eager Visual Novel",
@@ -476,6 +521,7 @@ def _run_interactive_player(engine: Any, *, backend: str) -> None:
 def _cmd_run(args: argparse.Namespace) -> int:
     """Run an Eager visual novel project directory."""
     _ensure_graphics()
+    from eager_runtime.engine import VisualEngine
     from eager_runtime.project import ProjectConfig
 
     proj_dir = Path(args.project_dir)
@@ -492,13 +538,19 @@ def _cmd_run(args: argparse.Namespace) -> int:
         script_path = es_files[0]
 
     asset_dir = proj_dir / "assets" if (proj_dir / "assets").exists() else None
-    from eager_runtime.engine import VisualEngine
+
+    audio_backend = _create_audio_backend(
+        args.backend,
+        no_audio=getattr(args, "no_audio", False),
+    )
+
     engine = VisualEngine(
         str(script_path),
         backend=args.backend,
+        audio_backend=audio_backend,
         asset_dir=str(asset_dir) if asset_dir else None,
     )
-    _run_interactive_player(engine, args.backend)
+    _run_interactive_player(engine, backend=args.backend)
     return 0
 
 

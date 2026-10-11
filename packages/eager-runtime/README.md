@@ -92,9 +92,25 @@ if vm.can_rollback:
     vm.rollback()
 ```
 
+## GameSession & Audio Wiring
+
+For full interactive games, `GameSession` serves as the central controller connecting narrative VM state, audio, visuals, screens, backlog, and preferences:
+
+```python
+from eager_core import NullAudioBackend
+from eager_runtime import GameSession
+
+# Create session with a custom audio backend (or headless default)
+session = GameSession(
+    graph,
+    audio_backend=NullAudioBackend(),
+)
+session.advance()
+```
+
 ## CLI Usage
 
-Eager comes with a built-in command-line tool for inspecting and testing screenplays:
+Eager provides two command-line tools: `eager` (headless / text-only) and `eager-x` (graphical visual novel runner):
 
 ```bash
 # Play a screenplay interactively in the terminal
@@ -105,6 +121,10 @@ eager inspect ../../examples/demo_story.es
 
 # Perform an automated headless dry-run
 eager test-run ../../examples/demo_story.es
+
+# Launch interactive visual novel player with selected backend (and optional --no-audio)
+eager-x play ../../examples/demo_story.es --backend pyglet
+eager-x play ../../examples/demo_story.es --backend pil --no-audio
 ```
 
 During interactive terminal play, the following built-in commands are available:

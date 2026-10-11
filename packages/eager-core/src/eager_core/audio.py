@@ -19,6 +19,8 @@ class AudioBackend(Protocol):
         loop: bool = False,
         volume: float = 1.0,
         fade_in: float = 0.0,
+        loop_start: float | None = None,
+        loop_end: float | None = None,
     ) -> None:
         ...
 
@@ -37,6 +39,22 @@ class AudioBackend(Protocol):
     def is_playing(self, channel: str) -> bool:
         ...
 
+    def update(self, dt: float) -> None:
+        ...
+
+    def shutdown(self) -> None:
+        ...
+
+
+class BaseAudioBackend:
+    """Base class providing default no-op implementations for optional lifecycle hooks."""
+
+    def update(self, dt: float) -> None:
+        """Periodic per-frame audio pump/update tick."""
+
+    def shutdown(self) -> None:
+        """Free low-level audio resources and devices."""
+
 
 @dataclass
 class ChannelState:
@@ -49,6 +67,8 @@ class ChannelState:
     is_playing: bool = False
     is_paused: bool = False
     queue: list[str] = dataclasses.field(default_factory=list)
+    loop_start: float | None = None
+    loop_end: float | None = None
 
     # Fade automation
     fade_timer: float = 0.0
@@ -66,6 +86,8 @@ class ChannelState:
             "is_playing": self.is_playing,
             "is_paused": self.is_paused,
             "queue": list(self.queue),
+            "loop_start": self.loop_start,
+            "loop_end": self.loop_end,
             "fade_timer": self.fade_timer,
             "fade_duration": self.fade_duration,
             "fade_start_vol": self.fade_start_vol,
@@ -83,6 +105,8 @@ class ChannelState:
             is_playing=bool(data.get("is_playing", False)),
             is_paused=bool(data.get("is_paused", False)),
             queue=list(data.get("queue", [])),
+            loop_start=data.get("loop_start"),
+            loop_end=data.get("loop_end"),
             fade_timer=float(data.get("fade_timer", 0.0)),
             fade_duration=float(data.get("fade_duration", 0.0)),
             fade_start_vol=float(data.get("fade_start_vol", 0.0)),
@@ -91,12 +115,13 @@ class ChannelState:
         )
 
 
-class NullAudioBackend:
+class NullAudioBackend(BaseAudioBackend):
     """Headless no-op audio backend recording calls for test inspection."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[Any, ...]] = []
         self._playing_channels: set[str] = set()
+        self.shutdown_called: bool = False
 
     def play(
         self,
@@ -106,8 +131,10 @@ class NullAudioBackend:
         loop: bool = False,
         volume: float = 1.0,
         fade_in: float = 0.0,
+        loop_start: float | None = None,
+        loop_end: float | None = None,
     ) -> None:
-        self.calls.append(("play", channel, str(asset_path), loop, volume, fade_in))
+        self.calls.append(("play", channel, str(asset_path), loop, volume, fade_in, loop_start, loop_end))
         self._playing_channels.add(channel)
 
     def stop(self, channel: str, *, fade_out: float = 0.0) -> None:
@@ -125,6 +152,13 @@ class NullAudioBackend:
 
     def is_playing(self, channel: str) -> bool:
         return channel in self._playing_channels
+
+    def update(self, dt: float) -> None:
+        self.calls.append(("update", dt))
+
+    def shutdown(self) -> None:
+        self.shutdown_called = True
+        self.calls.append(("shutdown",))
 
 
 class AudioMixer:
@@ -174,6 +208,8 @@ class AudioMixer:
         loop: bool | None = None,
         fade_in: float = 0.0,
         volume: float = 1.0,
+        loop_start: float | None = None,
+        loop_end: float | None = None,
     ) -> None:
         """Play an audio asset on the specified channel."""
         if channel not in self.channels:
@@ -185,6 +221,8 @@ class AudioMixer:
         chan.current_asset = asset_path
         chan.loop = is_loop
         chan.volume = volume
+        chan.loop_start = loop_start
+        chan.loop_end = loop_end
         chan.is_playing = True
         chan.is_paused = False
 
@@ -196,6 +234,8 @@ class AudioMixer:
             loop=is_loop,
             volume=final_vol,
             fade_in=fade_in,
+            loop_start=loop_start,
+            loop_end=loop_end,
         )
 
     def stop(self, channel: str, *, fade_out: float = 0.0) -> None:
@@ -264,7 +304,7 @@ class AudioMixer:
             chan.queue.append(asset_path)
 
     def update(self, dt: float) -> None:
-        """Process fade automations and channel queues."""
+        """Process fade automations and channel queues, and pump audio backend."""
         for chan in self.channels.values():
             if chan.fade_duration > 0.0:
                 chan.fade_timer += dt
@@ -291,6 +331,14 @@ class AudioMixer:
                 next_asset = chan.queue.pop(0)
                 self.play(chan.name, next_asset)
 
+        if hasattr(self.backend, "update"):
+            self.backend.update(dt)
+
+    def shutdown(self) -> None:
+        """Shut down the audio backend and release audio resources."""
+        if hasattr(self.backend, "shutdown"):
+            self.backend.shutdown()
+
     def save_state(self) -> dict[str, Any]:
         """Save mixer state for checkpoints and saves."""
         return {
@@ -311,6 +359,13 @@ class AudioMixer:
             chan = ChannelState.from_dict(data)
             self.channels[name] = chan
             if chan.is_playing and chan.current_asset:
-                self.play(name, chan.current_asset, loop=chan.loop, volume=chan.volume)
+                self.play(
+                    name,
+                    chan.current_asset,
+                    loop=chan.loop,
+                    volume=chan.volume,
+                    loop_start=chan.loop_start,
+                    loop_end=chan.loop_end,
+                )
             else:
                 self.stop(name)

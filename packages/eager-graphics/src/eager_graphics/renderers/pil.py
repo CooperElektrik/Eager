@@ -32,6 +32,7 @@ from eager_graphics.types import BLACK, WHITE, Color, ScaleMode
 from eager_graphics.ui_components import UIOverlay
 
 if TYPE_CHECKING:
+    from eager_core.audio import AudioMixer
     from eager_runtime import ChoicePromptEvent, EventDispatcher, StoryVM
 
     from eager_graphics.compositor import StageCompositor
@@ -1435,6 +1436,7 @@ if PIL_AVAILABLE:
             director: StageDirector,
             dispatcher: EventDispatcher,
             *,
+            audio: AudioMixer | None = None,
             width: int = 1280,
             height: int = 720,
             title: str = "Eager-Graphics Visual Novel (PIL)",
@@ -1457,6 +1459,7 @@ if PIL_AVAILABLE:
             self.compositor = compositor
             self.director = director
             self.dispatcher = dispatcher
+            self.audio = audio
 
             self.renderer = PILRenderer(
                 width=width,
@@ -1597,8 +1600,10 @@ if PIL_AVAILABLE:
             return success
 
         def tick(self, dt: float) -> None:
-            """Advance compositor animations by dt (delegates to step() so the FPS clock ticks)."""
+            """Advance compositor animations by dt and pump audio."""
             self.compositor.step(dt)
+            if self.audio is not None:
+                self.audio.update(dt)
 
         def on_draw(self) -> None:
             """Render frame: stage graphics followed by UI textbox and choices."""
@@ -1728,6 +1733,8 @@ if PIL_AVAILABLE:
         def close(self) -> None:
             """Close the player window (marks closed when running headless)."""
             self._closed = True
+            if self.audio is not None:
+                self.audio.shutdown()
             root, self._root = self._root, None
             self._label = None
             if root is None:

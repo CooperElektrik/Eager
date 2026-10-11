@@ -45,6 +45,7 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.4.0",
     "eager-runtime >= 0.1.0",
+    "miniaudio>=0.12.4",
 ]
 hardware = [
     "pyglet>=2.0.0",
@@ -59,6 +60,10 @@ all = [
     "pyglet>=2.0.0",
     "Pillow>=10.0.0",
     "raylib>=6.0.0",
+    "miniaudio>=0.12.4",
+]
+audio = [
+    "miniaudio>=0.12.4",
 ]
 
 [tool.setuptools.packages.find]

@@ -14,7 +14,12 @@ Eager-Graphics is the **presentation layer** of the Eager visual novel engine. I
   - `PygletRenderer` / `RaylibRenderer`: Hardware-accelerated OpenGL 2D backends for high-framerate visual novel gaming.
 - **Stage Compositor & Transitions**: Backgrounds, character sprites, z-ordering, viewport letterboxing/scaling, fades, and camera shake.
 - **Renderer-Agnostic UI Chrome**: Bottom-docked dialogue boxes, speaker nameplates, side images, branch selection menus, and full-screen NVL novel mode.
-- **Audio Hooks**: `~ play` / `~ stop` / `~ volume` are wired to an `AudioMixer` injected into the director — the mixer itself lives in [`eager-core`](../eager-core/README.md).
+- **Pluggable Audio Backends**:
+  - `PygletAudioBackend`: Per-channel streaming and seamless looping via `pyglet.media.Player`.
+  - `RaylibAudioBackend`: Low-level music stream playback and loop points via Raylib audio device.
+  - `MiniaudioAudioBackend`: Low-latency PCM soft-mixing engine and loop points via `miniaudio` (`pip install eager-graphics[audio]`).
+  - `NullAudioBackend`: Headless no-op audio backend recording calls for CI and tests.
+- **Audio Hooks & Voice**: `~ play` / `~ stop` / `~ volume` with seamless intro/loop points (`loop_start`, `loop_end`), automatic dialogue voice playback and auto-stop, and skip-mode sound/voice suppression. Driven by `AudioMixer` from [`eager-core`](../eager-core/README.md).
 - **UI Screen System & Themes**: Customizable ScreenManager with TitleScreen, Save/Load screen, backlog, and preferences.
 - **CLI Commands (`eager-x`)**:
   - `eager-x new <project_name>` — Scaffolds a new visual novel project.

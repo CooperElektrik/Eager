@@ -5,6 +5,7 @@ from __future__ import annotations
 from eager_core.audio import (
     AudioBackend,
     AudioMixer,
+    BaseAudioBackend,
     ChannelState,
     NullAudioBackend,
 )
@@ -76,6 +77,7 @@ __all__ = [
     # Audio
     "AudioBackend",
     "AudioMixer",
+    "BaseAudioBackend",
     "ChannelState",
     "ChoiceOption",
     "ChoicePromptEvent",
