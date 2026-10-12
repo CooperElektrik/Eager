@@ -25,6 +25,8 @@ except ImportError:
     tk = None  # type: ignore[assignment]
     TKINTER_AVAILABLE = False
 
+from eager_core.input import InputAction, Keymap
+
 from eager_graphics.layout import ViewportTransform
 from eager_graphics.protocol import RenderBackend, RenderItem
 from eager_graphics.timing import FrameClock
@@ -1431,11 +1433,12 @@ if PIL_AVAILABLE:
 
         def __init__(
             self,
-            vm: StoryVM,
-            compositor: StageCompositor,
-            director: StageDirector,
-            dispatcher: EventDispatcher,
+            vm: StoryVM | None = None,
+            compositor: StageCompositor | None = None,
+            director: StageDirector | None = None,
+            dispatcher: EventDispatcher | None = None,
             *,
+            session: Any | None = None,
             audio: AudioMixer | None = None,
             width: int = 1280,
             height: int = 720,
@@ -1455,11 +1458,24 @@ if PIL_AVAILABLE:
             self.title: str = title
             self.width: int = width
             self.height: int = height
-            self.vm = vm
-            self.compositor = compositor
-            self.director = director
-            self.dispatcher = dispatcher
-            self.audio = audio
+
+            self.session = session
+            if session is not None:
+                self.vm = session.vm
+                self.compositor = session.compositor
+                self.director = session.director
+                self.dispatcher = session.dispatcher
+                self.audio = getattr(session, "audio", audio)
+                self.keymap = getattr(session, "keymap", None) or Keymap()
+                self.overlay = getattr(session, "overlay", None) or UIOverlay(width=width, height=height)
+            else:
+                self.vm = vm  # type: ignore[assignment]
+                self.compositor = compositor  # type: ignore[assignment]
+                self.director = director  # type: ignore[assignment]
+                self.dispatcher = dispatcher  # type: ignore[assignment]
+                self.audio = audio
+                self.keymap = Keymap()
+                self.overlay = UIOverlay(width=width, height=height)
 
             self.renderer = PILRenderer(
                 width=width,
@@ -1482,11 +1498,6 @@ if PIL_AVAILABLE:
             self.active_choice_prompt: ChoicePromptEvent | None = None
             self.is_finished: bool = False
 
-            # Renderer-agnostic UI components (textbox, choice menu, end notice).
-            # These own all layout maths and draw through the renderer's
-            # UIDrawBackend primitives.
-            self.overlay = UIOverlay(width=width, height=height)
-
             # tkinter window objects — created lazily by run() so that
             # construction and story logic stay headless-safe.
             self._root: Any = None
@@ -1497,8 +1508,10 @@ if PIL_AVAILABLE:
             # Enable visual history rollback on director
             self.director.enable_visual_history()
 
-            # Step first beat immediately upon initialization
-            self.advance_story()
+            # Step first beat if not starting in active menu
+            has_active_screen = getattr(getattr(self.session, "screens", None), "is_active", False)
+            if not has_active_screen:
+                self.advance_story()
 
             # Pre-load all assets and warm the sprite cache so the first
             # visible frame doesn't pay disk-I/O + resize costs (which would
@@ -1519,6 +1532,13 @@ if PIL_AVAILABLE:
         def advance_story(self) -> None:
             """Advance the story by one dialogue beat or hook."""
             self._ui_dirty = True
+            if self.session is not None:
+                self.session.advance()
+                self.active_choice_prompt = self.session.active_choice_prompt
+                self.is_finished = self.session.is_finished
+                self._sync_overlay()
+                return
+
             if self.is_finished or self.vm.is_ended:
                 self.is_finished = True
                 self._sync_overlay()
@@ -1574,6 +1594,13 @@ if PIL_AVAILABLE:
         def make_choice(self, choice_index: int) -> None:
             """Select a branching choice option and continue execution."""
             self._ui_dirty = True
+            if self.session is not None:
+                self.session.choose(choice_index)
+                self.active_choice_prompt = self.session.active_choice_prompt
+                self.is_finished = self.session.is_finished
+                self._sync_overlay()
+                return
+
             if self.active_choice_prompt is None:
                 return
 
@@ -1584,6 +1611,14 @@ if PIL_AVAILABLE:
 
         def rollback(self) -> bool:
             """Rollback narrative and stage state by one beat."""
+            if self.session is not None:
+                self._ui_dirty = True
+                success = self.session.rollback()
+                self.active_choice_prompt = self.session.active_choice_prompt
+                self.is_finished = self.session.is_finished
+                self._sync_overlay()
+                return success
+
             if not self.vm.can_rollback:
                 return False
 
@@ -1601,6 +1636,12 @@ if PIL_AVAILABLE:
 
         def tick(self, dt: float) -> None:
             """Advance compositor animations by dt and pump audio."""
+            if self.session is not None:
+                self.session.update(dt)
+                self.active_choice_prompt = self.session.active_choice_prompt
+                self.is_finished = self.session.is_finished
+                return
+
             self.compositor.step(dt)
             if self.audio is not None:
                 self.audio.update(dt)
@@ -1624,17 +1665,20 @@ if PIL_AVAILABLE:
                 self._draw_fps()
                 return
 
-            # 1. Render Stage Elements using PILRenderer
-            self.renderer.render_compositor(self.compositor, self.width, self.height)
+            if self.session is not None:
+                self.session.draw(self.renderer, self.width, self.height)
+            else:
+                # 1. Render Stage Elements using PILRenderer
+                self.renderer.render_compositor(self.compositor, self.width, self.height)
 
-            # 2-4. Dialogue textbox, branching choices, and story-end notice,
-            #      all delegated to the renderer-agnostic UI components.
-            self.overlay.draw(
-                self.renderer,
-                self.director.ui_state,
-                self.active_choice_prompt,
-                is_finished=self.is_finished,
-            )
+                # 2-4. Dialogue textbox, branching choices, and story-end notice,
+                #      all delegated to the renderer-agnostic UI components.
+                self.overlay.draw(
+                    self.renderer,
+                    self.director.ui_state,
+                    self.active_choice_prompt,
+                    is_finished=self.is_finished,
+                )
             self._ui_dirty = False
 
             # Present the composited PIL frame to the tkinter window
@@ -1705,6 +1749,7 @@ if PIL_AVAILABLE:
             label.pack(fill="both", expand=True)
 
             root.bind("<Button-1>", self._on_click)
+            root.bind("<Motion>", self._on_motion)
             root.bind("<Key>", self._on_key)
             root.bind("<Configure>", self._on_configure)
 
@@ -1747,10 +1792,21 @@ if PIL_AVAILABLE:
                 except Exception:  # noqa: BLE001, S110
                     pass
 
+        def _on_motion(self, event: Any) -> None:
+            """Handle mouse movement for screen and button hover states."""
+            if self.session is not None:
+                self.session.handle_input(InputAction.POINTER_MOVE, x=float(event.x), y=float(event.y))
+
         def _on_click(self, event: Any) -> None:
             """Handle mouse clicks for advancement or choice selection."""
-            # tkinter reports coordinates in top-left space, matching the
-            # UI components' layout space — no flip needed.
+            self._ui_dirty = True
+            if self.session is not None:
+                self.session.handle_input(InputAction.POINTER_CLICK, x=float(event.x), y=float(event.y))
+                self.active_choice_prompt = self.session.active_choice_prompt
+                self.is_finished = self.session.is_finished
+                self._sync_overlay()
+                return
+
             if self.active_choice_prompt is not None:
                 index = self.overlay.hit_test_choice(event.x, event.y)
                 if index is not None:
@@ -1776,9 +1832,45 @@ if PIL_AVAILABLE:
 
         def _on_key(self, event: Any) -> None:
             """Handle keyboard input for advancing, choices, rollback, and toggles."""
-            keysym = event.keysym
+            keysym = event.keysym.lower()
+            if keysym == "return":
+                keysym = "enter"
+            elif keysym == "backspace":
+                keysym = "backspace"
+            elif keysym == "prior":
+                keysym = "pageup"
+            elif keysym == "next":
+                keysym = "pagedown"
 
-            if keysym in ("space", "Return"):
+            if self.session is not None:
+                # 1-9 choice keys
+                if self.active_choice_prompt is not None and keysym in "123456789":
+                    idx = int(keysym) - 1
+                    if idx < len(self.active_choice_prompt.options):
+                        self._ui_dirty = True
+                        self.session.handle_input(InputAction.CHOOSE, index=idx)
+                        self.active_choice_prompt = self.session.active_choice_prompt
+                        self.is_finished = self.session.is_finished
+                        self._sync_overlay()
+                        return
+
+                action = self.keymap.map_key(keysym)
+                if action == InputAction.QUIT:
+                    self.close()
+                    return
+                elif action == InputAction.DEBUG_OVERLAY:
+                    self.show_fps = not self.show_fps
+                    return
+                elif action:
+                    self._ui_dirty = True
+                    self.session.handle_input(action)
+                    self.active_choice_prompt = self.session.active_choice_prompt
+                    self.is_finished = self.session.is_finished
+                    self._sync_overlay()
+                    return
+
+            # Fallback if running without session
+            if keysym in ("space", "enter"):
                 if self.active_choice_prompt is None:
                     self.advance_story()
 
@@ -1788,13 +1880,13 @@ if PIL_AVAILABLE:
                     if idx < len(self.active_choice_prompt.options):
                         self.make_choice(idx)
 
-            elif keysym == "BackSpace":
+            elif keysym == "backspace":
                 self.rollback()
 
-            elif keysym == "F3":
+            elif keysym == "f3":
                 self.show_fps = not self.show_fps
 
-            elif keysym in ("Escape", "q"):
+            elif keysym in ("escape", "q"):
                 self.close()
 
 else:

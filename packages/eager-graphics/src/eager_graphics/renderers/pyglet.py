@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 try:
     import pyglet
@@ -14,6 +14,8 @@ try:
 except ImportError as err:
     msg = "Pyglet is not installed. Install with 'pip install eager-graphics[pyglet]' or 'pip install pyglet'."
     raise ImportError(msg) from err
+
+from eager_core.input import InputAction, Keymap
 
 from eager_graphics.layout import ViewportTransform
 from eager_graphics.protocol import RenderBackend, RenderItem
@@ -608,11 +610,12 @@ class PygletPlayer(pyglet.window.Window):
 
     def __init__(
         self,
-        vm: StoryVM,
-        compositor: StageCompositor,
-        director: StageDirector,
-        dispatcher: EventDispatcher,
+        vm: StoryVM | None = None,
+        compositor: StageCompositor | None = None,
+        director: StageDirector | None = None,
+        dispatcher: EventDispatcher | None = None,
         *,
+        session: Any | None = None,
         audio: AudioMixer | None = None,
         width: int = 1280,
         height: int = 720,
@@ -631,11 +634,23 @@ class PygletPlayer(pyglet.window.Window):
             vsync=vsync,
             visible=visible,
         )
-        self.vm = vm
-        self.compositor = compositor
-        self.director = director
-        self.dispatcher = dispatcher
-        self.audio = audio
+        self.session = session
+        if session is not None:
+            self.vm = session.vm
+            self.compositor = session.compositor
+            self.director = session.director
+            self.dispatcher = session.dispatcher
+            self.audio = getattr(session, "audio", audio)
+            self.keymap = getattr(session, "keymap", None) or Keymap()
+            self.overlay = getattr(session, "overlay", None) or UIOverlay(width=width, height=height)
+        else:
+            self.vm = vm  # type: ignore[assignment]
+            self.compositor = compositor  # type: ignore[assignment]
+            self.director = director  # type: ignore[assignment]
+            self.dispatcher = dispatcher  # type: ignore[assignment]
+            self.audio = audio
+            self.keymap = Keymap()
+            self.overlay = UIOverlay(width=width, height=height)
 
         self.renderer = PygletRenderer(
             asset_dir=asset_dir,
@@ -675,7 +690,10 @@ class PygletPlayer(pyglet.window.Window):
         # Enable visual history rollback on director
         self.director.enable_visual_history()
 
-        self.advance_story()
+        # Step first beat if not starting in active menu
+        has_active_screen = getattr(getattr(self.session, "screens", None), "is_active", False)
+        if not has_active_screen:
+            self.advance_story()
 
         # Schedule animation tick at 60 FPS
         pyglet.clock.schedule_interval(self.tick, 1.0 / 60.0)
@@ -694,6 +712,13 @@ class PygletPlayer(pyglet.window.Window):
 
     def advance_story(self) -> None:
         """Advance the story by one dialogue beat or hook."""
+        if self.session is not None:
+            self.session.advance()
+            self.active_choice_prompt = self.session.active_choice_prompt
+            self.is_finished = self.session.is_finished
+            self._sync_overlay()
+            return
+
         if self.is_finished or self.vm.is_ended:
             self.is_finished = True
             self._sync_overlay()
@@ -750,6 +775,13 @@ class PygletPlayer(pyglet.window.Window):
 
     def make_choice(self, choice_index: int) -> None:
         """Select a branching choice option and continue execution."""
+        if self.session is not None:
+            self.session.choose(choice_index)
+            self.active_choice_prompt = self.session.active_choice_prompt
+            self.is_finished = self.session.is_finished
+            self._sync_overlay()
+            return
+
         if self.active_choice_prompt is None:
             return
 
@@ -760,6 +792,13 @@ class PygletPlayer(pyglet.window.Window):
 
     def rollback(self) -> bool:
         """Rollback narrative and stage state by one beat."""
+        if self.session is not None:
+            success = self.session.rollback()
+            self.active_choice_prompt = self.session.active_choice_prompt
+            self.is_finished = self.session.is_finished
+            self._sync_overlay()
+            return success
+
         if not self.vm.can_rollback:
             return False
 
@@ -775,7 +814,13 @@ class PygletPlayer(pyglet.window.Window):
         return success
 
     def tick(self, dt: float) -> None:
-        """Advance compositor animations by dt and pump audio mixer."""
+        """Advance animations and pump audio mixer / session logic."""
+        if self.session is not None:
+            self.session.update(dt)
+            self.active_choice_prompt = self.session.active_choice_prompt
+            self.is_finished = self.session.is_finished
+            return
+
         self.compositor.step(dt)
         if self.audio is not None:
             self.audio.update(dt)
@@ -787,20 +832,22 @@ class PygletPlayer(pyglet.window.Window):
         super().close()
 
     def on_draw(self) -> None:
-        """Render frame: stage graphics followed by UI textbox and choices."""
+        """Render frame: stage graphics followed by UI textbox, choices, screens, and FPS."""
         self.clear()
 
-        # 1. Render Stage Elements
-        self.renderer.render_compositor(self.compositor, self.width, self.height)
+        if self.session is not None:
+            self.session.draw(self.renderer, self.width, self.height)
+        else:
+            # 1. Render Stage Elements
+            self.renderer.render_compositor(self.compositor, self.width, self.height)
 
-        # 2-4. Dialogue textbox, branching choices, and story-end notice,
-        #      all delegated to the renderer-agnostic UI components.
-        self.overlay.draw(
-            self.renderer,
-            self.director.ui_state,
-            self.active_choice_prompt,
-            is_finished=self.is_finished,
-        )
+            # 2-4. Dialogue textbox, branching choices, and story-end notice
+            self.overlay.draw(
+                self.renderer,
+                self.director.ui_state,
+                self.active_choice_prompt,
+                is_finished=self.is_finished,
+            )
 
         # 5. Render FPS counter
         if self._fps_label is not None:
@@ -812,47 +859,81 @@ class PygletPlayer(pyglet.window.Window):
             return
         fps = self.renderer.fps
         fps_avg = self.renderer.fps_avg
-        # Use compositor clock for overall frame count context
         frames = self.compositor.clock.frame_count
         self._fps_label.text = f"FPS: {fps:.1f}  (avg: {fps_avg:.1f}, frames: {frames})"
         self._fps_label.draw()
 
+    def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
+        """Handle mouse movement for screen and button hover states."""
+        flipped_y = self.height - y
+        if self.session is not None:
+            self.session.handle_input(InputAction.POINTER_MOVE, x=x, y=flipped_y)
+
     def on_mouse_press(self, x: int, y: int, button: int, modifiers: int) -> None:
-        """Handle mouse clicks for advancement or choice selection."""
+        """Handle mouse clicks for advancement, screens, or choice selection."""
         if button != pyglet.window.mouse.LEFT:
             return
 
-        # If choices are presented, check button click bounds
+        flipped_y = self.height - y
+        if self.session is not None:
+            self.session.handle_input(InputAction.POINTER_CLICK, x=x, y=flipped_y)
+            self.active_choice_prompt = self.session.active_choice_prompt
+            self.is_finished = self.session.is_finished
+            self._sync_overlay()
+            return
+
+        # Fallback if running without session
         if self.active_choice_prompt is not None:
-            # Pyglet reports y in bottom-left space; the components lay out in
-            # top-left space, so flip before hit testing.
-            flipped_y = self.height - y
             index = self.overlay.hit_test_choice(x, flipped_y)
             if index is not None:
                 self.make_choice(index)
             return
 
-        # Otherwise click advances story
         self.advance_story()
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
-        """Handle keyboard input for advancing, choices, rollback, and save/load."""
+        """Handle keyboard input for advancing, choices, rollback, save/load, and menus."""
         key = pyglet.window.key
+        sym_str = key.symbol_string(symbol).lower()
+        if sym_str.startswith("_") and len(sym_str) == 2 and sym_str[1].isdigit():
+            sym_str = sym_str[1]
 
+        if self.session is not None:
+            # 1-9 choice keys
+            if self.active_choice_prompt is not None and sym_str in "123456789":
+                idx = int(sym_str) - 1
+                if idx < len(self.active_choice_prompt.options):
+                    self.session.handle_input(InputAction.CHOOSE, index=idx)
+                    self.active_choice_prompt = self.session.active_choice_prompt
+                    self.is_finished = self.session.is_finished
+                    self._sync_overlay()
+                    return
+
+            action = self.keymap.map_key(sym_str)
+            if action == InputAction.QUIT:
+                self.close()
+                return
+            elif action == InputAction.DEBUG_OVERLAY:
+                self.show_fps = not self.show_fps
+                return
+            elif action:
+                self.session.handle_input(action)
+                self.active_choice_prompt = self.session.active_choice_prompt
+                self.is_finished = self.session.is_finished
+                self._sync_overlay()
+                return
+
+        # Fallback if running without session
         if symbol in (key.SPACE, key.RETURN):
             if self.active_choice_prompt is None:
                 self.advance_story()
-
         elif self.active_choice_prompt is not None:
-            # 1-9 keys to pick choice
             num_keys = [key._1, key._2, key._3, key._4, key._5, key._6, key._7, key._8, key._9]
             for idx, k in enumerate(num_keys):
                 if symbol == k and idx < len(self.active_choice_prompt.options):
                     self.make_choice(idx)
                     break
-
         elif symbol == key.BACKSPACE:
             self.rollback()
-
-        elif symbol == key.ESCAPE or symbol == key.Q:
+        elif symbol in (key.ESCAPE, key.Q):
             self.close()

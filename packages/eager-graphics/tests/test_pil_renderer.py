@@ -498,6 +498,43 @@ def test_pil_player_story_progression() -> None:
         player.close()
 
 
+@pytest.mark.skipif(not PIL_AVAILABLE, reason="Pillow is not installed")
+def test_pil_player_with_session() -> None:
+    """PILPlayer operates correctly when wired with GameSession."""
+    from eager_runtime import GameSession
+
+    screenplay = """
+    ## Start --- start
+    Alice: Welcome from session!
+    Alice: Second line.
+    """
+    graph = parse_graph(screenplay)
+    session = GameSession(graph)
+
+    player = PILPlayer(
+        session=session,
+        width=800,
+        height=450,
+        visible=False,
+    )
+    try:
+        assert session.director.ui_state.text == "Welcome from session!"
+        player.advance_story()
+        assert session.director.ui_state.text == "Second line!" or "Second line." in session.director.ui_state.text
+
+        # Test on_key routing through keymap (Backspace -> ROLLBACK)
+        class FakeKeyEvent:
+            keysym = "BackSpace"
+
+        player._on_key(FakeKeyEvent())
+        assert "Welcome from session!" in session.director.ui_state.text
+
+        # Test on_draw
+        player.on_draw()
+    finally:
+        player.close()
+
+
 def test_pil_renderer_lazy_clear() -> None:
     """Lazy clear defers buffer clear until needed, skipping redundant fills."""
     renderer = PILRenderer(200, 200)

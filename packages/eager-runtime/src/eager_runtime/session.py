@@ -170,12 +170,20 @@ class GameSession:
         self.vm.set_variable("persistent", self.persistent)
 
         # Screens and Theme
-        from eager_graphics.screens import SaveLoadScreen, ScreenManager, TitleScreen
+        from eager_graphics.screens import (
+            HistoryScreen,
+            PreferencesScreen,
+            SaveLoadScreen,
+            ScreenManager,
+            TitleScreen,
+        )
 
         self.screens = ScreenManager()
         self.screens.register(TitleScreen(title=getattr(config, "title", "Eager Visual Novel")))
         self.screens.register(SaveLoadScreen("save"))
         self.screens.register(SaveLoadScreen("load"))
+        self.screens.register(PreferencesScreen())
+        self.screens.register(HistoryScreen())
 
         from eager_runtime.backlog import Backlog
 
@@ -393,14 +401,57 @@ class GameSession:
                 self.director.ui_state,
                 self.active_choice_prompt,
                 is_finished=self.is_finished,
+                show_quick_menu=True,
             )
 
         # Draw active screen on top
         if hasattr(self, "screens") and self.screens.active_screen:
             self.screens.draw(ui_backend, width, height)
 
+    def _handle_quick_action(self, action_name: str) -> Any:
+        """Handle clicks on the in-game quick menu buttons."""
+        if action_name == "log":
+            if hasattr(self, "screens"):
+                return self.screens.show("history", self)
+        elif action_name == "skip":
+            self.skip_mode = not self.skip_mode
+            return self.skip_mode
+        elif action_name == "auto":
+            self.auto_mode = not self.auto_mode
+            return self.auto_mode
+        elif action_name == "save":
+            if hasattr(self, "screens"):
+                return self.screens.show("save", self)
+        elif action_name == "load":
+            if hasattr(self, "screens"):
+                return self.screens.show("load", self)
+        elif action_name == "quicksave":
+            return self.quicksave()
+        elif action_name == "quickload":
+            return self.quickload()
+        elif action_name == "prefs" and hasattr(self, "screens"):
+            return self.screens.show("preferences", self)
+        return None
+
     def handle_input(self, action: InputAction, **payload: Any) -> Any:
         """Process semantic InputAction events."""
+        # 1. Screen active intercepts:
+        if hasattr(self, "screens") and self.screens.is_active:
+            if action in (InputAction.GAME_MENU, InputAction.CANCEL):
+                self.screens.hide(self)
+                return True
+            if action == InputAction.POINTER_CLICK:
+                x = payload.get("x", 0.0)
+                y = payload.get("y", 0.0)
+                return self.screens.handle_mouse_click(x, y)
+            if action == InputAction.POINTER_MOVE:
+                x = payload.get("x", 0.0)
+                y = payload.get("y", 0.0)
+                self.screens.handle_mouse_move(x, y)
+                return True
+            return None
+
+        # 2. In-game interactions:
         if action == InputAction.ADVANCE:
             if self.active_choice_prompt is None:
                 return self.advance()
@@ -419,4 +470,33 @@ class GameSession:
         elif action == InputAction.AUTO_TOGGLE:
             self.auto_mode = not self.auto_mode
             return self.auto_mode
+        elif action == InputAction.QUICK_SAVE:
+            return self.quicksave()
+        elif action == InputAction.QUICK_LOAD:
+            return self.quickload()
+        elif action == InputAction.GAME_MENU:
+            if hasattr(self, "screens"):
+                return self.screens.show("save", self)
+        elif action == InputAction.HISTORY:
+            if hasattr(self, "screens"):
+                return self.screens.show("history", self)
+        elif action == InputAction.POINTER_CLICK:
+            x = payload.get("x", 0.0)
+            y = payload.get("y", 0.0)
+            # Check quick action bar in UIOverlay
+            if not self.ui_hidden:
+                qa = self.overlay.hit_test_quick_action(x, y)
+                if qa:
+                    return self._handle_quick_action(qa)
+            # Check choices
+            if self.active_choice_prompt is not None:
+                idx = self.overlay.hit_test_choice(x, y)
+                if idx is not None:
+                    return self.choose(idx)
+                return None
+            # Otherwise advance
+            if self.active_choice_prompt is None and self.active_input_prompt is None:
+                return self.advance()
+        elif action == InputAction.POINTER_MOVE:
+            return None
         return None

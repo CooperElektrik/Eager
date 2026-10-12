@@ -43,6 +43,7 @@ __all__ = [
     "DialogueBox",
     "DialogueBoxLayout",
     "EndNotice",
+    "QuickMenu",
     "TextAnchor",
     "TextboxStyle",
     "UIOverlay",
@@ -567,6 +568,75 @@ class EndNotice:
         )
 
 
+class QuickMenu:
+    """Bottom quick-access toolbar (Log, Skip, Auto, Save, Load, Q.Save, Q.Load, Prefs)."""
+
+    ACTIONS = (
+        ("log", "Log"),
+        ("skip", "Skip"),
+        ("auto", "Auto"),
+        ("save", "Save"),
+        ("load", "Load"),
+        ("quicksave", "Q.Save"),
+        ("quickload", "Q.Load"),
+        ("prefs", "Prefs"),
+    )
+
+    def __init__(self, viewport_width: int = 1280, viewport_height: int = 720) -> None:
+        self.viewport_width = viewport_width
+        self.viewport_height = viewport_height
+
+    def set_viewport(self, width: int, height: int) -> None:
+        self.viewport_width = width
+        self.viewport_height = height
+
+    def layout(self) -> list[tuple[str, str, float, float, float, float]]:
+        """Return list of (action_id, label, x, y, width, height) items."""
+        item_w = 60.0
+        item_h = 22.0
+        gap = 8.0
+        total_w = len(self.ACTIONS) * item_w + (len(self.ACTIONS) - 1) * gap
+        margin_right = max(20.0, float(self.viewport_width) * 0.05)
+        start_x = float(self.viewport_width) - margin_right - total_w
+        # Position right at the bottom edge above gap
+        y = float(self.viewport_height) - item_h - 6.0
+
+        items = []
+        for i, (act_id, label) in enumerate(self.ACTIONS):
+            ix = start_x + i * (item_w + gap)
+            items.append((act_id, label, ix, y, item_w, item_h))
+        return items
+
+    def hit_test(self, x: float, y: float) -> str | None:
+        """Return action_id under (x, y) coordinates or None."""
+        for act_id, _, bx, by, bw, bh in self.layout():
+            if bx <= x <= bx + bw and by <= y <= by + bh:
+                return act_id
+        return None
+
+    def draw(self, backend: UIDrawBackend) -> None:
+        """Render quick action buttons."""
+        fill = Color(0.08, 0.1, 0.14, 0.85)
+        border = Color(0.35, 0.45, 0.6, 0.9)
+        text_col = Color(0.9, 0.92, 0.95, 0.9)
+
+        for _, label, bx, by, bw, bh in self.layout():
+            if hasattr(backend, "draw_rect_outline"):
+                backend.draw_rect(bx, by, bw, bh, fill)
+                backend.draw_rect_outline(bx, by, bw, bh, border, line_width=1.0)
+            else:
+                backend.draw_rect(bx, by, bw, bh, fill, border_color=border, border_width=1.0)
+            backend.draw_text(
+                bx + bw / 2.0,
+                by + bh / 2.0,
+                label,
+                font_size=11,
+                color=text_col,
+                anchor_x=TextAnchor.CENTER,
+                anchor_y=TextAnchor.MIDDLE,
+            )
+
+
 @dataclass
 class UIOverlay:
     """Container that owns the front-end UI components and draws them in order.
@@ -590,11 +660,13 @@ class UIOverlay:
     dialogue_box: DialogueBox = field(init=False)
     choice_menu: ChoiceMenu = field(init=False)
     end_notice: EndNotice = field(init=False)
+    quick_menu: QuickMenu = field(init=False)
 
     def __post_init__(self) -> None:
         self.dialogue_box = DialogueBox(self.width, self.height)
         self.choice_menu = ChoiceMenu(self.width, self.height)
         self.end_notice = EndNotice(self.width, self.height)
+        self.quick_menu = QuickMenu(self.width, self.height)
 
     # ── state ──────────────────────────────────────────────────────────
 
@@ -605,6 +677,7 @@ class UIOverlay:
         self.dialogue_box.set_viewport(width, height)
         self.choice_menu.set_viewport(width, height)
         self.end_notice.set_viewport(width, height)
+        self.quick_menu.set_viewport(width, height)
 
     def sync(self, ui_state: UIState, choice_prompt: Any | None = None) -> None:
         """Mirror narrative state onto the child components."""
@@ -685,8 +758,9 @@ class UIOverlay:
         choice_prompt: Any | None = None,
         *,
         is_finished: bool | None = None,
+        show_quick_menu: bool = False,
     ) -> None:
-        """Draw the dialogue box or NVL display, choice menu, and end notice."""
+        """Draw the dialogue box or NVL display, choice menu, quick menu, and end notice."""
         self.sync(ui_state, choice_prompt)
         finished = ui_state.is_finished if is_finished is None else is_finished
 
@@ -695,6 +769,8 @@ class UIOverlay:
                 self.draw_nvl(backend, ui_state, choice_prompt)
             elif self.dialogue_box.text:
                 self.dialogue_box.draw(backend)
+                if show_quick_menu and not self.choice_menu.options:
+                    self.quick_menu.draw(backend)
 
         if self.choice_menu.options:
             self.choice_menu.draw(backend)
@@ -708,3 +784,9 @@ class UIOverlay:
     def hit_test_choice(self, x: float, y: float) -> int | None:
         """Return the option index under the point, or *None*."""
         return self.choice_menu.hit_test(x, y)
+
+    def hit_test_quick_action(self, x: float, y: float) -> str | None:
+        """Return the quick menu action under the point (e.g. 'save', 'load'), or None."""
+        if not self.dialogue_box.text:
+            return None
+        return self.quick_menu.hit_test(x, y)

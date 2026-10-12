@@ -460,21 +460,18 @@ def _run_interactive_player(engine: Any, *, backend: str) -> None:
     RaylibPlayer and PILPlayer run their own event loops (``run()``);
     PygletPlayer is driven by ``pyglet.app.run()``.
     """
-    audio_mixer = getattr(engine.session, "audio", None)
+    session = getattr(engine, "session", engine)
+    asset_dir = str(engine.asset_dir) if getattr(engine, "asset_dir", None) else None
 
     if backend == "raylib":
         from eager_graphics.renderers.raylib import RaylibPlayer
 
         player = RaylibPlayer(
-            vm=engine.vm,
-            compositor=engine.compositor,
-            director=engine.director,
-            dispatcher=engine.dispatcher,
-            audio=audio_mixer,
+            session=session,
             width=1280,
             height=720,
             title="Eager Visual Novel (Raylib)",
-            asset_dir=str(engine.asset_dir) if engine.asset_dir else None,
+            asset_dir=asset_dir,
         )
         player.run()
         return
@@ -483,15 +480,11 @@ def _run_interactive_player(engine: Any, *, backend: str) -> None:
         from eager_graphics.renderers.pil import PILPlayer
 
         player = PILPlayer(
-            vm=engine.vm,
-            compositor=engine.compositor,
-            director=engine.director,
-            dispatcher=engine.dispatcher,
-            audio=audio_mixer,
+            session=session,
             width=1280,
             height=720,
             title="Eager Visual Novel (PIL)",
-            asset_dir=str(engine.asset_dir) if engine.asset_dir else None,
+            asset_dir=asset_dir,
         )
         player.run()
         return
@@ -500,15 +493,11 @@ def _run_interactive_player(engine: Any, *, backend: str) -> None:
         from eager_graphics.renderers.pyglet import PygletPlayer
 
         PygletPlayer(
-            vm=engine.vm,
-            compositor=engine.compositor,
-            director=engine.director,
-            dispatcher=engine.dispatcher,
-            audio=audio_mixer,
-            width=engine.renderer.width if hasattr(engine.renderer, "width") else 1280,
+            session=session,
+            width=getattr(engine.renderer, "width", 1280) if hasattr(engine, "renderer") else 1280,
             height=720,
             title="Eager Visual Novel",
-            asset_dir=str(engine.asset_dir) if engine.asset_dir else None,
+            asset_dir=asset_dir,
         )
     else:
         return

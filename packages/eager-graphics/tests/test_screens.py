@@ -91,6 +91,110 @@ height = 720
         self.assertIn("p1", merged.nodes)
         self.assertIn("p2", merged.nodes)
 
+    def test_widgets_bar_and_grid(self):
+        from eager_graphics.screens import Bar, Grid
+        from eager_graphics.types import Color, Rect
+
+        bar = Bar(Rect(10, 10, 100, 20), value=0.5, max_value=1.0)
+        backend = MockUIDrawBackend()
+        bar.draw(backend, Color(0.1, 0.1, 0.1, 1.0), Color(0.8, 0.2, 0.2, 1.0), border_color=Color(1, 1, 1, 1))
+        self.assertTrue(len(backend.rects) >= 2)
+
+        grid = Grid(Rect(0, 0, 300, 200), rows=2, cols=3, padding=0.0, spacing_x=0.0, spacing_y=0.0)
+        c0 = grid.cell_rect(0, 0)
+        self.assertEqual((c0.x, c0.y, c0.width, c0.height), (0, 0, 100, 100))
+        c4 = grid.cell_rect_by_index(4)
+        self.assertEqual((c4.x, c4.y, c4.width, c4.height), (100, 100, 100, 100))
+
+    def test_preferences_screen(self):
+        from eager_graphics.screens import PreferencesScreen
+
+        class DummyPreferences:
+            master_volume = 1.0
+            music_volume = 0.8
+            sfx_volume = 1.0
+            voice_volume = 1.0
+            text_speed = 50.0
+            auto_forward_time = 3.0
+
+        class DummySession:
+            def __init__(self):
+                self.preferences = DummyPreferences()
+                self.applied = False
+                self.screens = ScreenManager()
+
+            def apply_preferences(self):
+                self.applied = True
+
+        session = DummySession()
+        pref_screen = PreferencesScreen()
+        session.screens.register(pref_screen)
+        session.screens.show("preferences", session)
+
+        # Hit test slider
+        slider = pref_screen.sliders[0]
+        pref_screen.handle_mouse_click(slider.rect.x + slider.rect.width * 0.5, slider.rect.y + 5)
+        self.assertTrue(session.applied)
+
+        # Back button
+        back_btn = pref_screen.buttons[0]
+        self.assertTrue(pref_screen.handle_mouse_click(back_btn.rect.x + 5, back_btn.rect.y + 5))
+        self.assertFalse(session.screens.is_active)
+
+    def test_history_screen(self):
+        from eager_graphics.screens import HistoryScreen
+
+        class DummyEntry:
+            speaker = "Alice"
+            text = "Hello world"
+
+        class DummyBacklog:
+            def __init__(self):
+                self.entries = [DummyEntry() for _ in range(10)]
+
+        class DummySession:
+            def __init__(self):
+                self.backlog = DummyBacklog()
+                self.screens = ScreenManager()
+
+        session = DummySession()
+        history_screen = HistoryScreen()
+        session.screens.register(history_screen)
+        session.screens.show("history", session)
+
+        history_screen.scroll_up()
+        self.assertGreater(history_screen.scroll_offset, 0)
+        history_screen.scroll_down()
+        self.assertEqual(history_screen.scroll_offset, 0)
+
+        backend = MockUIDrawBackend()
+        history_screen.draw(backend, 1280, 720)
+        self.assertTrue(any("Dialogue History" in t[0] for t in backend.texts))
+
+    def test_screen_manager_navigation_and_input(self):
+        from eager_graphics.screens import Screen
+
+        s1 = Screen("s1")
+        s2 = Screen("s2")
+        mgr = ScreenManager()
+        mgr.register(s1)
+        mgr.register(s2)
+
+        mgr.show("s1", None)
+        self.assertTrue(mgr.is_active)
+        self.assertEqual(mgr.active_screen.name, "s1")
+
+        mgr.show("s2", None)
+        self.assertEqual(mgr.active_screen.name, "s2")
+
+        # Esc dismisses to previous
+        self.assertTrue(mgr.handle_key("escape", None))
+        self.assertEqual(mgr.active_screen.name, "s1")
+
+        # Esc dismisses final
+        self.assertTrue(mgr.handle_key("escape", None))
+        self.assertFalse(mgr.is_active)
+
 
 if __name__ == "__main__":
     unittest.main()

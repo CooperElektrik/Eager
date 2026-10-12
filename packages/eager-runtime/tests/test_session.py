@@ -178,3 +178,50 @@ Alice: Welcome, [hero_name]!
     session.submit_input("Champion")
     assert session.director.ui_state.text == "Welcome, Champion!"
 
+
+def test_session_screens_and_extended_inputs() -> None:
+    test_script = """
+## Start --- start
+Alice: Hello traveler!
+Alice: Another day, another adventure.
+"""
+    graph = eager_script.parse_graph(test_script)
+    session = GameSession(graph)
+
+    # Built-in screens registered
+    assert "title" in session.screens.screens
+    assert "save" in session.screens.screens
+    assert "load" in session.screens.screens
+    assert "preferences" in session.screens.screens
+    assert "history" in session.screens.screens
+
+    session.advance()
+    assert session.director.ui_state.text == "Hello traveler!"
+
+    # Quicksave / Quickload via InputAction
+    session.handle_input(InputAction.QUICK_SAVE)
+    session.advance()
+    assert session.director.ui_state.text == "Another day, another adventure."
+
+    session.handle_input(InputAction.QUICK_LOAD)
+    assert session.director.ui_state.text == "Hello traveler!"
+
+    # Open / close menus via InputAction
+    session.handle_input(InputAction.GAME_MENU)
+    assert session.screens.is_active
+    assert session.screens.active_screen.name == "save"
+
+    # Pointer click on Back button in save screen
+    back_btn = session.screens.active_screen.buttons[-1]
+    session.handle_input(InputAction.POINTER_CLICK, x=back_btn.rect.x + 5, y=back_btn.rect.y + 5)
+    assert not session.screens.is_active
+
+    # Open history screen via InputAction.HISTORY
+    session.handle_input(InputAction.HISTORY)
+    assert session.screens.is_active
+    assert session.screens.active_screen.name == "history"
+
+    session.handle_input(InputAction.CANCEL)
+    assert not session.screens.is_active
+
+
