@@ -192,12 +192,14 @@ class GameSession:
         # State flags
         self.mode: str = "game"  # "title", "game", "menu", "ended"
         self.skip_mode: bool = False
+        self.skip_timer: float = 0.0
         self.auto_mode: bool = False
         self.auto_timer: float = 0.0
         self.ui_hidden: bool = False
         self.is_finished: bool = False
         self.active_choice_prompt: ChoicePromptEvent | None = None
         self.active_input_prompt: Any | None = None
+        self.text_reveal: Any | None = None
 
         self._last_event: StoryEvent | None = None
 
@@ -255,6 +257,25 @@ class GameSession:
         self.is_finished = self.vm.is_ended
         self.mode = "ended" if self.is_finished else "game"
 
+    def _setup_text_reveal(self, text: str) -> None:
+        """Initialize typewriter text reveal based on user preferences."""
+        if self.skip_mode or not text:
+            self.text_reveal = None
+            self.director.ui_state.visible_chars = None
+            return
+
+        cps = float(getattr(self.preferences, "text_speed", 50.0))
+        if cps <= 0.0:
+            self.text_reveal = None
+            self.director.ui_state.visible_chars = None
+            return
+
+        from eager_core.text import TextReveal, parse_text_tags
+
+        fmt = parse_text_tags(text)
+        self.text_reveal = TextReveal(fmt, chars_per_second=cps)
+        self.director.ui_state.visible_chars = int(self.text_reveal.visible_chars)
+
     def advance(self) -> StoryEvent | None:
         """Step the VM forward until the next interactive event, dispatching all
         intermediate events, and record a checkpoint at the new interaction point.
@@ -291,6 +312,14 @@ class GameSession:
                 self.backlog.append_to_last(event.text)
 
             if event.type in self.INTERACTION_TYPES:
+                if event.type in ("dialogue", "narration", "fresh_box"):
+                    self._setup_text_reveal(getattr(event, "text", ""))
+                elif event.type == "append":
+                    self._setup_text_reveal(self.director.ui_state.text)
+                elif event.type in ("choice_prompt", "input_prompt", "story_end"):
+                    self.text_reveal = None
+                    self.director.ui_state.visible_chars = None
+
                 if event.type == "choice_prompt":
                     self.active_choice_prompt = event
                 elif event.type == "input_prompt":
@@ -371,15 +400,28 @@ class GameSession:
             return False
 
         self._restore_checkpoint(prev)
+        self.text_reveal = None
+        self.director.ui_state.visible_chars = None
         return True
 
     def update(self, dt: float) -> None:
-        """Update animation timelines, compositor, audio, and timers."""
+        """Update animation timelines, compositor, audio, typewriter reveal, and timers."""
         self.compositor.step(dt)
         self.audio.update(dt)
 
+        # Update typewriter text reveal
+        if self.text_reveal is not None and not self.text_reveal.is_complete:
+            self.text_reveal.update(dt)
+            if self.text_reveal.is_complete:
+                self.director.ui_state.visible_chars = None
+            else:
+                self.director.ui_state.visible_chars = int(self.text_reveal.visible_chars)
+
         # Skip mode advances immediately until player choices or story ends
         if self.skip_mode and not self.is_finished:
+            if self.text_reveal is not None:
+                self.text_reveal.complete_immediately()
+                self.director.ui_state.visible_chars = None
             while self.skip_mode and not self.is_finished and self.active_choice_prompt is None:
                 self.advance()
         elif self.auto_mode and not self.is_finished and self.active_choice_prompt is None:
@@ -387,12 +429,21 @@ class GameSession:
             threshold = getattr(self.preferences, "auto_forward_time", 3.0)
             if self.auto_timer >= threshold:
                 self.auto_timer = 0.0
+                if self.text_reveal is not None:
+                    self.text_reveal.complete_immediately()
+                    self.director.ui_state.visible_chars = None
                 self.advance()
 
     def draw(self, ui_backend: Any, width: int, height: int) -> None:
         """Draw the stage compositor and UI chrome through the given renderer / backend."""
         if hasattr(ui_backend, "render_compositor"):
             ui_backend.render_compositor(self.compositor, width, height)
+
+        status_badge: str | None = None
+        if self.skip_mode:
+            status_badge = "SKIP >>"
+        elif self.auto_mode:
+            status_badge = "AUTO >"
 
         if not self.ui_hidden:
             self.overlay.set_viewport(width, height)
@@ -402,6 +453,7 @@ class GameSession:
                 self.active_choice_prompt,
                 is_finished=self.is_finished,
                 show_quick_menu=True,
+                status_badge=status_badge,
             )
 
         # Draw active screen on top
@@ -440,6 +492,16 @@ class GameSession:
             if action in (InputAction.GAME_MENU, InputAction.CANCEL):
                 self.screens.hide(self)
                 return True
+            if action in (InputAction.ROLLBACK, InputAction.NAV_UP):
+                active = self.screens.active_screen
+                if hasattr(active, "scroll_up"):
+                    active.scroll_up()
+                    return True
+            if action in (InputAction.ROLL_FORWARD, InputAction.NAV_DOWN):
+                active = self.screens.active_screen
+                if hasattr(active, "scroll_down"):
+                    active.scroll_down()
+                    return True
             if action == InputAction.POINTER_CLICK:
                 x = payload.get("x", 0.0)
                 y = payload.get("y", 0.0)
@@ -452,8 +514,36 @@ class GameSession:
             return None
 
         # 2. In-game interactions:
-        if action == InputAction.ADVANCE:
-            if self.active_choice_prompt is None:
+        # Choice menu keyboard navigation
+        if self.active_choice_prompt is not None and self.active_choice_prompt.options:
+            opts_count = len(self.active_choice_prompt.options)
+            if action == InputAction.NAV_UP:
+                cur = self.overlay.choice_menu.selected_index
+                self.overlay.choice_menu.selected_index = (
+                    opts_count - 1 if cur is None else (cur - 1) % opts_count
+                )
+                return True
+            elif action == InputAction.NAV_DOWN:
+                cur = self.overlay.choice_menu.selected_index
+                self.overlay.choice_menu.selected_index = (
+                    0 if cur is None else (cur + 1) % opts_count
+                )
+                return True
+            elif action in (InputAction.ADVANCE, InputAction.CONFIRM):
+                if self.overlay.choice_menu.selected_index is not None:
+                    idx = self.overlay.choice_menu.selected_index
+                    self.overlay.choice_menu.selected_index = None
+                    return self.choose(idx)
+
+        # Advance / Typewriter completion
+        if action in (InputAction.ADVANCE, InputAction.CONFIRM):
+            if self.text_reveal is not None and not self.text_reveal.is_complete:
+                self.text_reveal.complete_immediately()
+                self.director.ui_state.visible_chars = None
+                self.overlay.dialogue_box.visible_chars = None
+                self.overlay.dialogue_box.show_advance_arrow = (self.active_choice_prompt is None)
+                return True
+            if self.active_choice_prompt is None and self.active_input_prompt is None:
                 return self.advance()
         elif action == InputAction.ROLLBACK:
             return self.rollback()
@@ -467,6 +557,12 @@ class GameSession:
         elif action == InputAction.SKIP_TOGGLE:
             self.skip_mode = not self.skip_mode
             return self.skip_mode
+        elif action == InputAction.SKIP_HOLD:
+            self.skip_mode = True
+            return True
+        elif action == InputAction.SKIP_RELEASE:
+            self.skip_mode = False
+            return True
         elif action == InputAction.AUTO_TOGGLE:
             self.auto_mode = not self.auto_mode
             return self.auto_mode
@@ -494,6 +590,13 @@ class GameSession:
                 if idx is not None:
                     return self.choose(idx)
                 return None
+            # Check typewriter reveal completion
+            if self.text_reveal is not None and not self.text_reveal.is_complete:
+                self.text_reveal.complete_immediately()
+                self.director.ui_state.visible_chars = None
+                self.overlay.dialogue_box.visible_chars = None
+                self.overlay.dialogue_box.show_advance_arrow = (self.active_choice_prompt is None)
+                return True
             # Otherwise advance
             if self.active_choice_prompt is None and self.active_input_prompt is None:
                 return self.advance()

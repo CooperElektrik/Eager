@@ -524,3 +524,55 @@ def test_pyglet_renderer_implements_uidraw_backend() -> None:
     renderer = PygletRenderer()
     for method in ("draw_rect", "draw_text", "draw_image", "measure_text"):
         assert callable(getattr(renderer, method))
+
+
+def test_dialogue_box_typewriter_reveal_draws_partial_text_and_hides_arrow() -> None:
+    backend = NullRenderer()
+    box = DialogueBox(1280, 720)
+    box.set_content("Alice", "Hello brave new world!", visible_chars=5)
+
+    box.draw(backend)
+
+    texts = [c for c in backend.ui_calls if c["kind"] == "text"]
+    # Nameplate + dialogue line
+    assert any(t["text"] == "Alice" for t in texts)
+    assert any(t["text"] == "Hello" for t in texts)
+    # Advance arrow should be hidden while typing
+    assert not any(t["text"] == "▼" for t in texts)
+
+    # When reveal completes, arrow appears
+    backend.ui_calls.clear()
+    box.set_content("Alice", "Hello brave new world!", visible_chars=None)
+    box.draw(backend)
+    texts_after = [c for c in backend.ui_calls if c["kind"] == "text"]
+    assert any(t["text"] == "▼" for t in texts_after)
+
+
+def test_choice_menu_selection_highlight_and_prefix() -> None:
+    backend = NullRenderer()
+    menu = ChoiceMenu(1280, 720)
+    opts = [ChoiceOption(0, "Fight"), ChoiceOption(1, "Flee")]
+    menu.set_options(opts)
+
+    # By default, not selected
+    menu.draw(backend)
+    texts_unselected = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
+    assert texts_unselected == ["[1]  Fight", "[2]  Flee"]
+
+    # Select first option
+    backend.ui_calls.clear()
+    menu.selected_index = 0
+    menu.draw(backend)
+    texts_selected = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
+    assert texts_selected == ["> [1]  Fight", "[2]  Flee"]
+
+
+def test_ui_overlay_status_badge_rendering() -> None:
+    backend = NullRenderer()
+    overlay = UIOverlay(1280, 720)
+    state = UIState(speaker="Narrator", text="Testing status badge.")
+
+    overlay.draw(backend, state, status_badge="SKIP >>")
+    texts = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
+    assert "SKIP >>" in texts
+

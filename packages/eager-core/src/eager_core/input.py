@@ -54,6 +54,8 @@ class Keymap:
         "pagedown": InputAction.ROLL_FORWARD,
         "mouse_wheel_down": InputAction.ROLL_FORWARD,
         "ctrl": InputAction.SKIP_HOLD,
+        "lctrl": InputAction.SKIP_HOLD,
+        "rctrl": InputAction.SKIP_HOLD,
         "tab": InputAction.SKIP_TOGGLE,
         "a": InputAction.AUTO_TOGGLE,
         "h": InputAction.HIDE_UI,

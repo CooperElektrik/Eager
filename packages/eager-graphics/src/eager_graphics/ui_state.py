@@ -44,6 +44,7 @@ class UIState:
     side_image: str | None = None
     nvl_mode: bool = False
     nvl_entries: list[NVLEntry] = field(default_factory=list)
+    visible_chars: int | None = None
 
     def clear_dialogue(self) -> None:
         """Clear active dialogue and speaker information."""
@@ -51,6 +52,7 @@ class UIState:
         self.text = ""
         self.emotion = None
         self.side_image = None
+        self.visible_chars = None
 
     def clear_nvl(self) -> None:
         """Clear NVL mode accumulated text lines."""
@@ -71,6 +73,7 @@ class UIState:
             "side_image": self.side_image,
             "nvl_mode": self.nvl_mode,
             "nvl_entries": [e.to_dict() for e in self.nvl_entries],
+            "visible_chars": self.visible_chars,
         }
 
     @classmethod
@@ -95,5 +98,6 @@ class UIState:
             side_image=data.get("side_image"),
             nvl_mode=bool(data.get("nvl_mode", False)),
             nvl_entries=nvl_entries,
+            visible_chars=data.get("visible_chars"),
         )
 

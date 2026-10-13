@@ -938,3 +938,21 @@ class PygletPlayer(pyglet.window.Window):
             self.rollback()
         elif symbol in (key.ESCAPE, key.Q):
             self.close()
+
+    def on_key_release(self, symbol: int, modifiers: int) -> None:
+        """Handle key releases (e.g. releasing Ctrl stops fast-forward skip)."""
+        key = pyglet.window.key
+        sym_str = key.symbol_string(symbol).lower()
+        if sym_str in ("ctrl", "lctrl", "rctrl") and self.session is not None:
+            self.session.handle_input(InputAction.SKIP_RELEASE)
+
+    def on_mouse_scroll(self, x: int, y: int, scroll_x: float, scroll_y: float) -> None:
+        """Handle mouse wheel scrolling for rollback, roll-forward, or screen scrolling."""
+        if self.session is not None:
+            if scroll_y > 0:
+                self.session.handle_input(InputAction.ROLLBACK)
+            elif scroll_y < 0:
+                self.session.handle_input(InputAction.ROLL_FORWARD)
+            self.active_choice_prompt = self.session.active_choice_prompt
+            self.is_finished = self.session.is_finished
+            self._sync_overlay()

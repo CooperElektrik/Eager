@@ -195,6 +195,56 @@ height = 720
         self.assertTrue(mgr.handle_key("escape", None))
         self.assertFalse(mgr.is_active)
 
+    def test_saveload_screen_renders_slot_metadata(self):
+        from eager_graphics.screens import SaveLoadScreen
+
+        class DummyMeta:
+            slot_name = "slot_1"
+            timestamp = "2026-10-13T15:30:00Z"
+            scene_id = "throne_room"
+            scene_name = "The Throne Room"
+            dialogue_snippet = "Welcome traveler to the kingdom."
+
+        class DummySaveManager:
+            def get_slot_metadata(self, slot_name: str):
+                if slot_name == "slot_1":
+                    return DummyMeta()
+                return None
+
+        class DummySession:
+            def __init__(self):
+                self.save_manager = DummySaveManager()
+                self.screens = ScreenManager()
+
+        session = DummySession()
+        screen = SaveLoadScreen("save")
+        screen.on_enter(session)
+
+        # Slot 1 button should contain title, timestamp, and snippet
+        slot1_btn = screen.buttons[0]
+        self.assertIn("Slot 1: The Throne Room", slot1_btn.text)
+        self.assertIn("2026-10-13 15:30", slot1_btn.text)
+        self.assertIn("Welcome traveler to the kingdom.", slot1_btn.text)
+
+        # Slot 2 should show empty
+        slot2_btn = screen.buttons[1]
+        self.assertIn("[Empty Slot]", slot2_btn.text)
+
+        # Draw screen
+        backend = MockUIDrawBackend()
+        screen.draw(backend, 1280, 720)
+        self.assertTrue(any("Slot 1: The Throne Room" in t[0] for t in backend.texts))
+
+    def test_button_multiline_card_draw(self):
+        btn = Button(Rect(10, 10, 200, 100), "Title Line\nSubtitle Line\nSnippet Line")
+        backend = MockUIDrawBackend()
+        btn.draw(backend, Color(0, 0, 0, 1), Color(1, 1, 1, 1), Color(1, 1, 1, 1), Color(1, 1, 1, 1))
+
+        drawn_texts = [t[0] for t in backend.texts]
+        self.assertIn("Title Line", drawn_texts)
+        self.assertIn("Subtitle Line", drawn_texts)
+        self.assertIn("Snippet Line", drawn_texts)
+
 
 if __name__ == "__main__":
     unittest.main()

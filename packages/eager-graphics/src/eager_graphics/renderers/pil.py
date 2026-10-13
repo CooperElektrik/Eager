@@ -1756,6 +1756,11 @@ if PIL_AVAILABLE:
             root.bind("<Button-1>", self._on_click)
             root.bind("<Motion>", self._on_motion)
             root.bind("<Key>", self._on_key)
+            root.bind("<Button-4>", self._on_scroll_up)
+            root.bind("<Button-5>", self._on_scroll_down)
+            root.bind("<MouseWheel>", self._on_mousewheel)
+            root.bind("<KeyRelease-Control_L>", self._on_ctrl_release)
+            root.bind("<KeyRelease-Control_R>", self._on_ctrl_release)
             root.bind("<Configure>", self._on_configure)
 
             self._root = root
@@ -1796,6 +1801,32 @@ if PIL_AVAILABLE:
                     op()
                 except Exception:  # noqa: BLE001, S110
                     pass
+
+        def _on_scroll_up(self, event: Any) -> None:
+            if self.session is not None:
+                self._ui_dirty = True
+                self.session.handle_input(InputAction.ROLLBACK)
+                self.active_choice_prompt = self.session.active_choice_prompt
+                self.is_finished = self.session.is_finished
+                self._sync_overlay()
+
+        def _on_scroll_down(self, event: Any) -> None:
+            if self.session is not None:
+                self._ui_dirty = True
+                self.session.handle_input(InputAction.ROLL_FORWARD)
+                self.active_choice_prompt = self.session.active_choice_prompt
+                self.is_finished = self.session.is_finished
+                self._sync_overlay()
+
+        def _on_mousewheel(self, event: Any) -> None:
+            if getattr(event, "delta", 0) > 0:
+                self._on_scroll_up(event)
+            else:
+                self._on_scroll_down(event)
+
+        def _on_ctrl_release(self, event: Any) -> None:
+            if self.session is not None:
+                self.session.handle_input(InputAction.SKIP_RELEASE)
 
         def _on_motion(self, event: Any) -> None:
             """Handle mouse movement for screen and button hover states."""
@@ -1846,6 +1877,8 @@ if PIL_AVAILABLE:
                 keysym = "pageup"
             elif keysym == "next":
                 keysym = "pagedown"
+            elif keysym in ("control_l", "control_r"):
+                keysym = "ctrl"
 
             if self.session is not None:
                 # 1-9 choice keys

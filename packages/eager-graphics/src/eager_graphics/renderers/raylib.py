@@ -923,6 +923,23 @@ class RaylibPlayer:
                 self.is_finished = self.session.is_finished
                 self._sync_overlay()
 
+            # Mouse wheel scrolling
+            wheel_move = pyray.get_mouse_wheel_move()
+            if wheel_move > 0:
+                self.session.handle_input(InputAction.ROLLBACK)
+                self.active_choice_prompt = self.session.active_choice_prompt
+                self.is_finished = self.session.is_finished
+                self._sync_overlay()
+            elif wheel_move < 0:
+                self.session.handle_input(InputAction.ROLL_FORWARD)
+                self.active_choice_prompt = self.session.active_choice_prompt
+                self.is_finished = self.session.is_finished
+                self._sync_overlay()
+
+            # Key release (Ctrl skip release)
+            if pyray.is_key_released(pyray.KEY_LEFT_CONTROL) or pyray.is_key_released(pyray.KEY_RIGHT_CONTROL):
+                self.session.handle_input(InputAction.SKIP_RELEASE)
+
             # Check 1-9 choice keys
             if self.active_choice_prompt is not None:
                 num_keys = [
@@ -942,10 +959,14 @@ class RaylibPlayer:
             ray_key_map = [
                 (pyray.KEY_SPACE, "space"),
                 (pyray.KEY_ENTER, "enter"),
+                (pyray.KEY_UP, "up"),
+                (pyray.KEY_DOWN, "down"),
                 (pyray.KEY_BACKSPACE, "backspace"),
                 (pyray.KEY_PAGE_UP, "pageup"),
                 (pyray.KEY_PAGE_DOWN, "pagedown"),
                 (pyray.KEY_TAB, "tab"),
+                (pyray.KEY_LEFT_CONTROL, "ctrl"),
+                (pyray.KEY_RIGHT_CONTROL, "ctrl"),
                 (pyray.KEY_A, "a"),
                 (pyray.KEY_H, "h"),
                 (pyray.KEY_V, "v"),

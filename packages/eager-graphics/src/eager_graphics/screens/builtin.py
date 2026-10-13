@@ -87,13 +87,28 @@ class SaveLoadScreen(Screen):
 
         grid = Grid(Rect(100.0, 110.0, 720.0, 360.0), rows=3, cols=2, spacing_x=24.0, spacing_y=20.0, padding=0.0)
         save_mgr = getattr(session, "save_manager", None)
-        existing_slots = set(save_mgr.list_slots()) if save_mgr else set()
 
         for i in range(6):
             slot_name = f"slot_{i+1}"
             cell = grid.cell_rect_by_index(i)
-            status_text = "Saved" if slot_name in existing_slots else "Empty"
-            label = f"Slot {i+1} [{status_text}]"
+            meta = save_mgr.get_slot_metadata(slot_name) if save_mgr else None
+            if meta is not None:
+                scene_name = meta.scene_name or meta.scene_id or f"Scene {i+1}"
+                ts = meta.timestamp
+                if "T" in ts:
+                    d_part, t_part = ts.split("T", 1)
+                    ts_clean = f"{d_part} {t_part[:5]}"
+                else:
+                    ts_clean = ts[:16] if ts else ""
+                snip = meta.dialogue_snippet or ""
+                if len(snip) > 36:
+                    snip = snip[:33] + "..."
+                if snip:
+                    label = f"Slot {i+1}: {scene_name}\n{ts_clean}\n\"{snip}\""
+                else:
+                    label = f"Slot {i+1}: {scene_name}\n{ts_clean}"
+            else:
+                label = f"Slot {i+1}\n[Empty Slot]"
 
             def make_action(sname: str):
                 if self.mode == "save":

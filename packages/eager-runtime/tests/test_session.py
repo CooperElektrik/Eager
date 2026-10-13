@@ -225,3 +225,80 @@ Alice: Another day, another adventure.
     assert not session.screens.is_active
 
 
+def test_session_typewriter_reveal_and_click_skip() -> None:
+    story = """
+## Start --- start
+Alice: Long dialogue string that takes multiple seconds to reveal fully.
+Bob: Second dialogue beat.
+"""
+    graph = eager_script.parse_graph(story)
+    session = GameSession(graph)
+    session.preferences.text_speed = 10.0  # 10 chars per second
+
+    # Step to first dialogue: starts typewriter reveal
+    session.advance()
+    assert session.director.ui_state.text.startswith("Long dialogue")
+    assert session.text_reveal is not None
+    assert not session.text_reveal.is_complete
+    assert session.director.ui_state.visible_chars == 0
+
+    # Advance 0.5s: 5 chars revealed
+    session.update(0.5)
+    assert session.director.ui_state.visible_chars == 5
+    assert not session.text_reveal.is_complete
+
+    # First ADVANCE press: should immediately complete reveal without advancing to Bob
+    session.handle_input(InputAction.ADVANCE)
+    assert session.text_reveal.is_complete
+    assert session.director.ui_state.visible_chars is None
+    assert session.director.ui_state.speaker == "Alice"
+
+    # Second ADVANCE press: now advances to Bob
+    session.handle_input(InputAction.ADVANCE)
+    assert session.director.ui_state.speaker == "Bob"
+
+
+def test_session_choice_keyboard_navigation() -> None:
+    story = """
+## Start --- start
+? Option Alpha (alpha)
+? Option Beta (beta)
+? Option Gamma (gamma)
+
+## Alpha --- alpha
+Narrator: Alpha chosen.
+
+## Beta --- beta
+Narrator: Beta chosen.
+
+## Gamma --- gamma
+Narrator: Gamma chosen.
+"""
+    graph = eager_script.parse_graph(story)
+    session = GameSession(graph)
+    session.advance()  # reaches choice prompt
+
+    assert session.active_choice_prompt is not None
+
+    # Navigate down: selects first option (0)
+    session.handle_input(InputAction.NAV_DOWN)
+    assert session.overlay.choice_menu.selected_index == 0
+
+    # Navigate down again: selects second option (1)
+    session.handle_input(InputAction.NAV_DOWN)
+    assert session.overlay.choice_menu.selected_index == 1
+
+    # Navigate up: selects first option (0)
+    session.handle_input(InputAction.NAV_UP)
+    assert session.overlay.choice_menu.selected_index == 0
+
+    # Navigate up again: wraps around to last option (2)
+    session.handle_input(InputAction.NAV_UP)
+    assert session.overlay.choice_menu.selected_index == 2
+
+    # Confirm selection: selects Option Gamma
+    session.handle_input(InputAction.CONFIRM)
+    assert session.director.ui_state.text == "Gamma chosen."
+
+
+

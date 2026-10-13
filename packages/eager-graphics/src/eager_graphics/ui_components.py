@@ -63,6 +63,8 @@ _ADVANCE_ARROW = Color(0.784, 0.784, 0.784, 0.784)
 _CHOICE_FILL = Color(0.098, 0.118, 0.176, 0.902)
 _CHOICE_BORDER = Color(0.353, 0.510, 0.784, 1.0)
 _CHOICE_TEXT = Color(1.0, 1.0, 1.0, 1.0)
+_CHOICE_HOVER_FILL = Color(0.18, 0.24, 0.35, 0.95)
+_CHOICE_HOVER_BORDER = Color(0.6, 0.8, 1.0, 1.0)
 
 _END_BANNER_FILL = Color(0.0, 0.0, 0.0, 0.706)
 _END_TEXT = Color(0.784, 0.784, 0.784, 0.863)
@@ -236,6 +238,7 @@ class DialogueBox:
         self.emotion: str | None = None
         self.side_image: str | None = None
         self.show_advance_arrow: bool = True
+        self.visible_chars: int | None = None
 
     # ── state ──────────────────────────────────────────────────────────
 
@@ -250,12 +253,15 @@ class DialogueBox:
         text: str,
         emotion: str | None = None,
         side_image: str | None = None,
+        *,
+        visible_chars: int | None = None,
     ) -> None:
         """Set the speaker name, dialogue text, emotion tag, and optional side image."""
         self.speaker = speaker
         self.text = text
         self.emotion = emotion
         self.side_image = side_image
+        self.visible_chars = visible_chars
 
     def clear(self) -> None:
         """Reset to an empty, undrawn state."""
@@ -264,6 +270,7 @@ class DialogueBox:
         self.emotion = None
         self.side_image = None
         self.show_advance_arrow = True
+        self.visible_chars = None
 
     def cache_key(self) -> tuple[Any, ...]:
         """Return a hashable key covering everything that affects rendering."""
@@ -275,6 +282,7 @@ class DialogueBox:
             self.emotion,
             self.side_image,
             self.show_advance_arrow,
+            self.visible_chars,
         )
 
     # ── layout ─────────────────────────────────────────────────────────
@@ -369,16 +377,32 @@ class DialogueBox:
         line_height = style.text_font_size * 1.35
         lines = _get_wrapped_lines(self.text, text_max_w, backend.measure_text, font_size=style.text_font_size)
 
-        for i, line in enumerate(lines):
-            backend.draw_text(
-                text_start_x,
-                box_y + 24.0 + (i * line_height),
-                line,
-                font_size=style.text_font_size,
-                color=style.text_color,
-            )
+        if self.visible_chars is not None:
+            remaining = max(0, self.visible_chars)
+            for i, line in enumerate(lines):
+                if remaining <= 0:
+                    break
+                visible_part = line[:remaining]
+                remaining = max(0, remaining - (len(line) + 1))
+                backend.draw_text(
+                    text_start_x,
+                    box_y + 24.0 + (i * line_height),
+                    visible_part,
+                    font_size=style.text_font_size,
+                    color=style.text_color,
+                )
+        else:
+            for i, line in enumerate(lines):
+                backend.draw_text(
+                    text_start_x,
+                    box_y + 24.0 + (i * line_height),
+                    line,
+                    font_size=style.text_font_size,
+                    color=style.text_color,
+                )
 
-        if layout.show_arrow:
+        is_fully_revealed = (self.visible_chars is None or self.visible_chars >= len(self.text))
+        if layout.show_arrow and is_fully_revealed:
             backend.draw_text(
                 box_x + box_w - 30.0,
                 box_y + box_h - 25.0,
@@ -396,6 +420,8 @@ class ChoiceMenuStyle:
     button_fill: Color = _CHOICE_FILL
     button_border: Color = _CHOICE_BORDER
     button_border_width: float = 2.0
+    button_hover_fill: Color = _CHOICE_HOVER_FILL
+    button_hover_border: Color = _CHOICE_HOVER_BORDER
     button_width: int = 600
     button_width_ratio: float = 0.6
     button_height: float = 42.0
@@ -428,6 +454,7 @@ class ChoiceMenu:
         self.viewport_width = width
         self.viewport_height = height
         self.options: tuple[ChoiceOption, ...] = ()
+        self.selected_index: int | None = None
 
     def set_viewport(self, width: int, height: int) -> None:
         """Update the viewport the component lays itself out against."""
@@ -437,10 +464,12 @@ class ChoiceMenu:
     def set_options(self, options: Sequence[ChoiceOption] | None) -> None:
         """Set the active options; *None* or an empty sequence clears the menu."""
         self.options = tuple(options) if options else ()
+        self.selected_index = None
 
     def clear(self) -> None:
         """Remove all options."""
         self.options = ()
+        self.selected_index = None
 
     def cache_key(self) -> tuple[Any, ...]:
         """Return a hashable key covering everything that affects rendering."""
@@ -448,6 +477,7 @@ class ChoiceMenu:
             self.viewport_width,
             self.viewport_height,
             tuple((opt.index, opt.text) for opt in self.options),
+            self.selected_index,
         )
 
     def layout(self) -> tuple[tuple[float, float, float, float], ...]:
@@ -489,20 +519,24 @@ class ChoiceMenu:
 
         style = self.style
         for index, (bx, by, bw, bh) in enumerate(self.layout()):
+            is_selected = (self.selected_index == index)
+            fill_col = style.button_hover_fill if is_selected else style.button_fill
+            border_col = style.button_hover_border if is_selected else style.button_border
             backend.draw_rect(
                 bx,
                 by,
                 bw,
                 bh,
-                style.button_fill,
-                border_color=style.button_border,
+                fill_col,
+                border_color=border_col,
                 border_width=style.button_border_width,
             )
             opt = self.options[index]
+            prefix = "> " if is_selected else ""
             backend.draw_text(
                 bx + style.text_padding,
                 by + (bh / 2.0),
-                f"[{index + 1}]  {opt.text}",
+                f"{prefix}[{index + 1}]  {opt.text}",
                 font_size=style.text_font_size,
                 color=style.text_color,
                 anchor_y=TextAnchor.MIDDLE,
@@ -686,8 +720,10 @@ class UIOverlay:
             ui_state.text,
             ui_state.emotion,
             side_image=ui_state.side_image,
+            visible_chars=ui_state.visible_chars,
         )
-        self.dialogue_box.show_advance_arrow = choice_prompt is None
+        is_revealed = (ui_state.visible_chars is None or ui_state.visible_chars >= len(ui_state.text))
+        self.dialogue_box.show_advance_arrow = (choice_prompt is None and is_revealed)
 
         if choice_prompt is None:
             self.choice_menu.clear()
@@ -759,8 +795,9 @@ class UIOverlay:
         *,
         is_finished: bool | None = None,
         show_quick_menu: bool = False,
+        status_badge: str | None = None,
     ) -> None:
-        """Draw the dialogue box or NVL display, choice menu, quick menu, and end notice."""
+        """Draw the dialogue box or NVL display, choice menu, quick menu, status badge, and end notice."""
         self.sync(ui_state, choice_prompt)
         finished = ui_state.is_finished if is_finished is None else is_finished
 
@@ -774,6 +811,27 @@ class UIOverlay:
 
         if self.choice_menu.options:
             self.choice_menu.draw(backend)
+
+        if status_badge and not finished:
+            badge_w, badge_h = 84.0, 26.0
+            bx = float(self.width) - badge_w - 20.0
+            by = 20.0
+            fill = Color(0.08, 0.12, 0.18, 0.85)
+            border = Color(0.4, 0.6, 0.85, 0.9)
+            if hasattr(backend, "draw_rect_outline"):
+                backend.draw_rect(bx, by, badge_w, badge_h, fill)
+                backend.draw_rect_outline(bx, by, badge_w, badge_h, border, line_width=1.0)
+            else:
+                backend.draw_rect(bx, by, badge_w, badge_h, fill, border_color=border, border_width=1.0)
+            backend.draw_text(
+                bx + badge_w / 2.0,
+                by + badge_h / 2.0,
+                status_badge,
+                font_size=12,
+                color=Color(0.9, 0.95, 1.0, 1.0),
+                anchor_x=TextAnchor.CENTER,
+                anchor_y=TextAnchor.MIDDLE,
+            )
 
         if finished:
             self.end_notice.draw(backend)

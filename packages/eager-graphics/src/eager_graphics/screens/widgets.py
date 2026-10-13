@@ -54,17 +54,58 @@ class Button:
                 border_color=border_color,
                 border_width=1.5,
             )
-        tx = self.rect.x + self.rect.width / 2
-        ty = self.rect.y + self.rect.height / 2
-        backend.draw_text(
-            tx,
-            ty,
-            self.text,
-            color=text_color,
-            font_size=font_size,
-            anchor_x=TextAnchor.CENTER,
-            anchor_y=TextAnchor.MIDDLE,
-        )
+        lines = self.text.split("\n")
+        if len(lines) == 1:
+            tx = self.rect.x + self.rect.width / 2
+            ty = self.rect.y + self.rect.height / 2
+            backend.draw_text(
+                tx,
+                ty,
+                self.text,
+                color=text_color,
+                font_size=font_size,
+                anchor_x=TextAnchor.CENTER,
+                anchor_y=TextAnchor.MIDDLE,
+            )
+        else:
+            line_spacing = font_size * 1.35
+            total_text_h = len(lines) * line_spacing
+            start_y = self.rect.y + (self.rect.height - total_text_h) / 2.0 + (font_size * 0.4)
+            tx = self.rect.x + 16.0
+            for idx, line in enumerate(lines):
+                line_y = start_y + idx * line_spacing
+                if idx == 0:
+                    backend.draw_text(
+                        tx,
+                        line_y,
+                        line,
+                        color=text_color,
+                        font_size=font_size,
+                        anchor_x=TextAnchor.LEFT,
+                        anchor_y=TextAnchor.MIDDLE,
+                    )
+                elif idx == 1:
+                    sub_col = Color(text_color.r * 0.75, text_color.g * 0.75, text_color.b * 0.75, text_color.a)
+                    backend.draw_text(
+                        tx,
+                        line_y,
+                        line,
+                        color=sub_col,
+                        font_size=max(10, font_size - 3),
+                        anchor_x=TextAnchor.LEFT,
+                        anchor_y=TextAnchor.MIDDLE,
+                    )
+                else:
+                    snip_col = Color(text_color.r * 0.88, text_color.g * 0.88, text_color.b * 0.88, text_color.a)
+                    backend.draw_text(
+                        tx,
+                        line_y,
+                        line,
+                        color=snip_col,
+                        font_size=max(11, font_size - 2),
+                        anchor_x=TextAnchor.LEFT,
+                        anchor_y=TextAnchor.MIDDLE,
+                    )
 
 
 @dataclass
