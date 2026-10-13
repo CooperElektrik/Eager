@@ -57,9 +57,9 @@ class Button:
         tx = self.rect.x + self.rect.width / 2
         ty = self.rect.y + self.rect.height / 2
         backend.draw_text(
-            self.text,
             tx,
             ty,
+            self.text,
             color=text_color,
             font_size=font_size,
             anchor_x=TextAnchor.CENTER,
@@ -81,9 +81,9 @@ class Label:
 
     def draw(self, backend: UIDrawBackend) -> None:
         backend.draw_text(
-            self.text,
             self.x,
             self.y,
+            self.text,
             color=self.color,
             font_size=self.font_size,
             anchor_x=self.anchor_x,

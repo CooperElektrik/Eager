@@ -53,9 +53,9 @@ class TitleScreen(Screen):
 
         # Title
         backend.draw_text(
-            self.title,
             100.0,
             150.0,
+            self.title,
             color=self.theme.accent_color,
             font_size=self.theme.title_font_size,
             anchor_x=TextAnchor.LEFT,
@@ -128,9 +128,9 @@ class SaveLoadScreen(Screen):
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
         backend.draw_rect(0, 0, width, height, self.theme.bg_color)
         backend.draw_text(
-            "Save Game" if self.mode == "save" else "Load Game",
             100.0,
             40.0,
+            "Save Game" if self.mode == "save" else "Load Game",
             color=self.theme.text_color,
             font_size=28,
             anchor_x=TextAnchor.LEFT,
@@ -248,9 +248,9 @@ class PreferencesScreen(Screen):
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
         backend.draw_rect(0, 0, width, height, self.theme.bg_color)
         backend.draw_text(
-            "Preferences",
             100.0,
             40.0,
+            "Preferences",
             color=self.theme.text_color,
             font_size=28,
             anchor_x=TextAnchor.LEFT,
@@ -324,9 +324,9 @@ class HistoryScreen(Screen):
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
         backend.draw_rect(0, 0, width, height, self.theme.bg_color)
         backend.draw_text(
-            "Dialogue History",
             100.0,
             40.0,
+            "Dialogue History",
             color=self.theme.text_color,
             font_size=28,
             anchor_x=TextAnchor.LEFT,
@@ -338,9 +338,9 @@ class HistoryScreen(Screen):
 
         if not entries:
             backend.draw_text(
-                "No dialogue recorded yet.",
                 100.0,
                 120.0,
+                "No dialogue recorded yet.",
                 color=self.theme.muted_text_color,
                 font_size=16,
             )
@@ -355,24 +355,24 @@ class HistoryScreen(Screen):
             for entry in displayed_slice:
                 if entry.speaker:
                     backend.draw_text(
-                        entry.speaker,
                         100.0,
                         curr_y,
+                        entry.speaker,
                         color=self.theme.accent_color,
                         font_size=14,
                     )
                     backend.draw_text(
-                        f": {entry.text}",
                         100.0 + len(entry.speaker) * 9.0,
                         curr_y,
+                        f": {entry.text}",
                         color=self.theme.text_color,
                         font_size=14,
                     )
                 else:
                     backend.draw_text(
-                        entry.text,
                         100.0,
                         curr_y,
+                        entry.text,
                         color=self.theme.muted_text_color,
                         font_size=14,
                     )

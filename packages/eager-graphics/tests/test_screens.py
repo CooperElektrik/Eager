@@ -24,7 +24,7 @@ class MockUIDrawBackend:
     def draw_rect_outline(self, x: float, y: float, w: float, h: float, color: Color, line_width: float = 1.0) -> None:
         self.rects.append(("outline", x, y, w, h, color))
 
-    def draw_text(self, text: str, x: float, y: float, **kwargs) -> None:
+    def draw_text(self, x: float, y: float, text: str, **kwargs) -> None:
         self.texts.append((text, x, y, kwargs))
 
 
