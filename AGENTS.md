@@ -9,7 +9,7 @@ This file records durable architecture and development conventions. It is not an
 - **Python compatibility:** library code must support Python 3.11+. The workspace currently uses a newer Python, so do not rely on version-specific syntax or APIs without checking compatibility.
 - **Environment:** the real workspace environment is `.venv/` at the monorepo root. The root-level `venv/` is a legacy stub; do not use it.
 - **Workspace:** run `uv sync` from the root after dependency changes, and run `uv lock` when dependency declarations change.
-- **Explore narrowly:** use `rg` for searches and exclude `.venv/`, `venv/`, build outputs, and other generated directories. Read the complete relevant file when practical, and avoid inspecting unrelated files.
+- **Explore narrowly:** use `rg` for searches and exclude `.venv/`, `venv/`, build outputs, and other generated directories. Read the complete relevant file when practical, and avoid inspecting unrelated files. Never do incremental reads, as it is wasteful and slow.
 - **Inspect before implementing:** check existing class constructors, signatures, protocols, and call sites before writing code or scripts.
 - **Verify changes:** add or update focused tests, run the relevant package suite, then run broader checks when practical. Prefer `pytest -q --tb=short -x`; use `git diff --stat` and `git status` before wrapping up. Report only checks actually run.
 - **Documentation:** update package docs when public syntax, behavior, APIs, or architecture change. Do not expand this file with detailed feature documentation.

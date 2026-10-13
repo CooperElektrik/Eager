@@ -325,10 +325,8 @@ class RaylibRenderer(RenderBackend, UIDrawBackend):
         # --- destination rectangle and origin (rotation pivot) ---
         origin_x = draw_w * fx
         origin_y = draw_h * fy
-        dest_x = anchor_s_x - origin_x
-        dest_y = anchor_s_y - origin_y
 
-        dest = pyray.Rectangle(dest_x, dest_y, draw_w, draw_h)
+        dest = pyray.Rectangle(anchor_s_x, anchor_s_y, draw_w, draw_h)
         origin = pyray.Vector2(origin_x, origin_y)
 
         # --- combined tint + opacity ---

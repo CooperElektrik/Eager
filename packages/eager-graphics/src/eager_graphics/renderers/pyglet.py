@@ -366,8 +366,8 @@ class PygletRenderer(RenderBackend):
     ) -> None:
         """Draw a filled rectangle, optionally stroked with a top border."""
         rect = pyglet.shapes.Rectangle(
-            x=float(x) + width / 2.0,
-            y=self._flip_y(y, height) + height / 2.0,
+            x=float(x),
+            y=self._flip_y(y, height),
             width=float(width),
             height=float(height),
             color=color.to_rgba_bytes(),
@@ -376,8 +376,8 @@ class PygletRenderer(RenderBackend):
 
         if border_color is not None and border_width > 0.0:
             border = pyglet.shapes.Rectangle(
-                x=float(x) + width / 2.0,
-                y=self._flip_y(y, border_width) + border_width / 2.0,
+                x=float(x),
+                y=self._flip_y(y, border_width),
                 width=float(width),
                 height=float(border_width),
                 color=border_color.to_rgba_bytes(),
@@ -443,23 +443,24 @@ class PygletRenderer(RenderBackend):
         target_w = max(1, round(width))
         target_h = max(1, round(height))
 
-        # Sprites are anchored at their centre by default, which keeps the
-        # bottom-left conversion below straightforward.
+        dest_x = float(x)
+        dest_y = float(y)
+        if anchor_x == "center":
+            dest_x -= target_w / 2.0
+        elif anchor_x == "right":
+            dest_x -= target_w
+        if anchor_y == "middle":
+            dest_y -= target_h / 2.0
+        elif anchor_y == "bottom":
+            dest_y -= target_h
+
         sprite = pyglet.sprite.Sprite(
             texture,
-            x=float(x) + target_w / 2.0,
-            y=self._flip_y(y, target_h) + target_h / 2.0,
-            scale=(target_w / max(1, texture.width), target_h / max(1, texture.height)),
+            x=dest_x,
+            y=self._flip_y(dest_y, target_h),
         )
-
-        if anchor_x == "left":
-            sprite.anchor_x = 0.0
-        elif anchor_x == "right":
-            sprite.anchor_x = float(target_w)
-        if anchor_y == "top":
-            sprite.anchor_y = 0.0
-        elif anchor_y == "bottom":
-            sprite.anchor_y = float(target_h)
+        sprite.scale_x = target_w / max(1, texture.width)
+        sprite.scale_y = target_h / max(1, texture.height)
 
         if tint != WHITE:
             sprite.color = tint.to_rgba_bytes()
@@ -665,11 +666,6 @@ class PygletPlayer(pyglet.window.Window):
         self.active_choice_prompt: ChoicePromptEvent | None = None
         self.is_finished: bool = False
 
-        # Renderer-agnostic UI components (textbox, choice menu, end notice).
-        # These own all layout maths and draw through the renderer's
-        # UIDrawBackend primitives.
-        self.overlay = UIOverlay(width=width, height=height)
-
         # UI elements batch
         self._ui_batch = Batch()
 
@@ -700,7 +696,12 @@ class PygletPlayer(pyglet.window.Window):
 
     def on_resize(self, width: int, height: int) -> None:
         """Keep the UI components laid out against the new window size."""
+        super().on_resize(width, height)
         self.overlay.set_viewport(width, height)
+        if self.session is not None and hasattr(self.session, "overlay"):
+            self.session.overlay.set_viewport(width, height)
+        self.renderer.width = width
+        self.renderer.height = height
 
     def _sync_overlay(self) -> None:
         """Mirror current narrative state onto the UI components.

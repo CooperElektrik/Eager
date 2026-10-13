@@ -1082,62 +1082,67 @@ class PILRenderer(RenderBackend):
                 and self.asset_resolver.is_asset_opaque(base_items[1].asset_id)
                 and base_items[0].opacity > 0.0
                 and base_items[1].opacity > 0.0
+                and base_items[0].anchor == base_items[1].anchor
+                and base_items[0].scale_x == base_items[1].scale_x
+                and base_items[0].scale_y == base_items[1].scale_y
             ):
                 trans = self._current_transform
                 if trans is not None:
-                    eff_w = 1920 * abs(base_items[0].scale_x)
-                    eff_h = 1080 * abs(base_items[0].scale_y)
-                    draw_w = max(1, round(eff_w * trans.scale_x))
-                    draw_h = max(1, round(eff_h * trans.scale_y))
-                    dest_x = round(trans.offset_x)
-                    dest_y = round(trans.offset_y)
+                    base0 = self.asset_resolver.get_image(base_items[0].asset_id)
+                    base1 = self.asset_resolver.get_image(base_items[1].asset_id)
+                    if base0.size == base1.size:
+                        fx, fy = base_items[0].anchor.get_offset_factor()
+                        eff_w = base0.width * abs(base_items[0].scale_x)
+                        eff_h = base0.height * abs(base_items[0].scale_y)
+                        draw_w = max(1, round(eff_w * trans.scale_x))
+                        draw_h = max(1, round(eff_h * trans.scale_y))
+                        dest_x = round(trans.offset_x - draw_w * fx)
+                        dest_y = round(trans.offset_y - draw_h * fy)
 
-                    scale_key0 = (base_items[0].asset_id, draw_w, draw_h)
-                    tex0 = self._scaled_cache.lookup(scale_key0)
-                    if tex0 is None:
-                        base0 = self.asset_resolver.get_image(base_items[0].asset_id, 1920, 1080)
-                        tex0 = (
-                            _resize_opaque(base0, (draw_w, draw_h), resample=self.resampling)
-                            if base0.size != (draw_w, draw_h)
-                            else base0
+                        scale_key0 = (base_items[0].asset_id, draw_w, draw_h)
+                        tex0 = self._scaled_cache.lookup(scale_key0)
+                        if tex0 is None:
+                            tex0 = (
+                                _resize_opaque(base0, (draw_w, draw_h), resample=self.resampling)
+                                if base0.size != (draw_w, draw_h)
+                                else base0
+                            )
+                            self._scaled_cache.put(scale_key0, tex0, _image_nbytes(tex0))
+
+                        scale_key1 = (base_items[1].asset_id, draw_w, draw_h)
+                        tex1 = self._scaled_cache.lookup(scale_key1)
+                        if tex1 is None:
+                            tex1 = (
+                                _resize_opaque(base1, (draw_w, draw_h), resample=self.resampling)
+                                if base1.size != (draw_w, draw_h)
+                                else base1
+                            )
+                            self._scaled_cache.put(scale_key1, tex1, _image_nbytes(tex1))
+
+                        total_op = base_items[0].opacity + base_items[1].opacity
+                        blend_alpha = (
+                            min(1.0, max(0.0, base_items[1].opacity / total_op))
+                            if total_op > 0.0
+                            else 0.5
                         )
-                        self._scaled_cache.put(scale_key0, tex0, _image_nbytes(tex0))
-
-                    scale_key1 = (base_items[1].asset_id, draw_w, draw_h)
-                    tex1 = self._scaled_cache.lookup(scale_key1)
-                    if tex1 is None:
-                        base1 = self.asset_resolver.get_image(base_items[1].asset_id, 1920, 1080)
-                        tex1 = (
-                            _resize_opaque(base1, (draw_w, draw_h), resample=self.resampling)
-                            if base1.size != (draw_w, draw_h)
-                            else base1
-                        )
-                        self._scaled_cache.put(scale_key1, tex1, _image_nbytes(tex1))
-
-                    total_op = base_items[0].opacity + base_items[1].opacity
-                    blend_alpha = (
-                        min(1.0, max(0.0, base_items[1].opacity / total_op))
-                        if total_op > 0.0
-                        else 0.5
-                    )
-                    blended = Image.blend(tex0, tex1, blend_alpha)
-                    if (
-                        dest_x <= 0
-                        and dest_y <= 0
-                        and dest_x + draw_w >= self.width
-                        and dest_y + draw_h >= self.height
-                    ):
-                        self._needs_clear = False
-                        if dest_x == 0 and dest_y == 0 and draw_w == self.width and draw_h == self.height:
-                            self._image = blended
+                        blended = Image.blend(tex0, tex1, blend_alpha)
+                        if (
+                            dest_x <= 0
+                            and dest_y <= 0
+                            and dest_x + draw_w >= self.width
+                            and dest_y + draw_h >= self.height
+                        ):
+                            self._needs_clear = False
+                            if dest_x == 0 and dest_y == 0 and draw_w == self.width and draw_h == self.height:
+                                self._image = blended
+                            else:
+                                self._image.paste(blended, (dest_x, dest_y))
                         else:
+                            if self._needs_clear:
+                                self._execute_clear()
                             self._image.paste(blended, (dest_x, dest_y))
-                    else:
-                        if self._needs_clear:
-                            self._execute_clear()
-                        self._image.paste(blended, (dest_x, dest_y))
-                    self._frame_buffer.extend(base_items[:2])
-                    skip_count = 2
+                        self._frame_buffer.extend(base_items[:2])
+                        skip_count = 2
 
             for item in base_items[skip_count:]:
                 self.draw_item(item)
