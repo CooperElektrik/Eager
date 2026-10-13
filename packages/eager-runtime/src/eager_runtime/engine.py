@@ -88,7 +88,11 @@ class VisualEngine:
         self.script_path = Path(script_path)
         self.backend = backend
         self.audio_backend = audio_backend
-        self.asset_dir = Path(asset_dir) if asset_dir is not None else None
+        if asset_dir is not None:
+            self.asset_dir = Path(asset_dir)
+        else:
+            candidate = self.script_path.resolve().parent / "assets"
+            self.asset_dir = candidate if candidate.is_dir() else None
         self.plain = plain
         # --- 1. Parse the screenplay into a SceneGraph ---------------
         text = self.script_path.read_text(encoding="utf-8")
@@ -182,9 +186,11 @@ class VisualEngine:
             event = self.advance()
             steps += 1
 
-            if auto_choose is not None and isinstance(event, ChoicePromptEvent):
-                self.vm.choose(auto_choose)
-                continue
+            if isinstance(event, ChoicePromptEvent):
+                if auto_choose is not None:
+                    self.vm.choose(auto_choose)
+                    continue
+                break
 
             if event is None:
                 break

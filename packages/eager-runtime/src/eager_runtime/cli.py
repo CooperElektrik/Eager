@@ -281,8 +281,8 @@ def build_x_parser() -> argparse.ArgumentParser:
     render_p.add_argument(
         "--auto-choose",
         type=int,
-        default=None,
-        help="Automatically select this choice index when a choice prompt appears",
+        default=0,
+        help="Automatically select this choice index when a choice prompt appears (default: 0)",
     )
     render_p.set_defaults(func=_cmd_render)
     # run

@@ -193,7 +193,7 @@ def print_visual_state(compositor: StageCompositor, director: StageDirector) -> 
         speaker = ui.speaker or "Narrator"
         emotion = f" ({ui.emotion})" if ui.emotion else ""
         label = f"{speaker}{emotion}"
-        print(colorize(f"   [UI] ", Color.DIM) + colorize(f"{label}", Color.GREEN) + f": {ui.text}")
+        print(colorize("   [UI] ", Color.DIM) + colorize(f"{label}", Color.GREEN) + f": {ui.text}")
         if ui.choices:
             for opt in ui.choices:
                 print(colorize(f"   [UI]   {opt.index + 1}. {opt.text}", Color.MAGENTA))
@@ -477,28 +477,18 @@ def demo_rollback(script_text: str) -> None:
     vm, dispatcher, compositor, director, renderer = make_engine(script_text)
 
     # ── Advance through several beats, then save a full checkpoint ──
-    # We save at a HookEvent so that both narrative and visual history
-    # are aligned at the same point.
-    steps = 0
     checkpoint_set = False
-    story_snapshot = None
-    visual_snapshot = None
-    pre_items_count = 0
-    pre_speaker = None
     pre_beat = 0
 
-    for _ in range(7):
+    for _step_idx in range(7):
         event = step_and_render(vm, dispatcher, compositor, renderer)
         if event is None:
             break
-        steps += 1
         print_event(event)
 
         if isinstance(event, HookEvent) and not checkpoint_set:
             # Save full state AFTER the hook is applied
-            story_snapshot, visual_snapshot = save_full_state(vm, director)
-            pre_items_count = len(compositor.render_list())
-            pre_speaker = director.ui_state.speaker
+            _story_snapshot, _visual_snapshot = save_full_state(vm, director)
             pre_beat = vm.beat_index
             checkpoint_set = True
             print(colorize(f"   └─ Checkpoint saved (beat {pre_beat})", Color.DIM))
@@ -599,6 +589,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Run with uncapped framerate (disables V-Sync and redraw timer limit in --play; renders all transition frames in headless mode).",
     )
+    parser.add_argument(
+        "--asset-dir",
+        default=None,
+        help="Directory containing sprite/background assets (default: examples/assets).",
+    )
     parser.add_argument("--width", type=int, default=1280, help="Window width for --play mode (default: 1280).")
     parser.add_argument("--height", type=int, default=720, help="Window height for --play mode (default: 720).")
     args = parser.parse_args(argv)
@@ -613,12 +608,26 @@ def main(argv: list[str] | None = None) -> int:
 
     script_text = script_path.read_text(encoding="utf-8")
 
+    asset_dir = args.asset_dir
+    if asset_dir is None:
+        default_asset_dir = Path(__file__).resolve().parent / "assets"
+        if default_asset_dir.is_dir():
+            asset_dir = default_asset_dir
+    else:
+        asset_dir = Path(asset_dir)
+
     if args.save_load:
         demo_save_load(script_text)
     elif args.rollback:
         demo_rollback(script_text)
     elif args.play:
-        launch_interactive(script_text, args.width, args.height, uncapped=args.uncapped)
+        launch_interactive(
+            script_text,
+            args.width,
+            args.height,
+            uncapped=args.uncapped,
+            asset_dir=asset_dir,
+        )
     else:
         play_story(script_text, auto_choice=args.choice, uncapped=args.uncapped)
 
@@ -631,6 +640,7 @@ def launch_interactive(
     height: int = 720,
     *,
     uncapped: bool = False,
+    asset_dir: str | Path | None = None,
 ) -> None:
     """Launch an interactive PIL visual novel window (tkinter)."""
     try:
@@ -671,7 +681,8 @@ def launch_interactive(
         dispatcher=dispatcher,
         width=width,
         height=height,
-        title="Eager Demo — Library of Aethon",
+        title="Eager Demo — After School with Hoshiko",
+        asset_dir=asset_dir,
         vsync=not uncapped,
         uncapped=uncapped,
     )

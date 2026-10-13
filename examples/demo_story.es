@@ -1,77 +1,106 @@
-## Library of Aethon --- prologue
-Narrator: The ancient library stands in twilight, its candlelight long extinguished.
-- Stone shelves stretch into shadow, bearing volumes whose titles have faded.
-/ Yet something stirs within these walls — a presence neither living nor dead.
+## After the Bell --- prologue
+Narrator: The late afternoon chime echoes down the empty second-floor corridor.
+- Golden sunlight slants across rows of polished wooden desks, stretching long shadows toward the back chalkboard.
+/ For a few moments, the classroom is completely still.
 ~ fade_in duration=0.8
-~ bg library_interior with crossfade duration=1.0
-~ show meris ethereal at center with fade duration=0.6
-Meris (solemn): You have returned, seeker. The Library remembers all.
-- Even the names it has sworn to forget.
-~ show book whispering at right with cut
-Meris (urgent): The Grimoire of Vael is awake. It must not leave this place.
-? Take the Grimoire and flee (take_book)
-? Demand answers from Meris (question_her)
-? Search the shelves for a binding ritual (find_ritual)
+~ bg classroom_day with crossfade duration=1.0
+~ show hoshiko smile at center with fade duration=0.6
+Hoshiko (smile): Hey! Are you finally done packing up your bag?
+- I thought you were about to fall asleep right on your notebook.
+/ The sun's already sinking, and almost everyone has headed home.
+Hoshiko (smile): So... got any plans for the rest of the evening?
+? Take the coastal train towards the beach (coastal_train)
+? Walk up the stone path to the mountain shrine (mountain_shrine)
+? Stroll through the shopping street for some snacks (town_stroll)
 
-## The Descent --- take_book
-~ bg library_ruins with crossfade duration=1.5
-~ hide meris with dissolve duration=0.4
-~ hide book with dissolve duration=0.2
-Narrator: The moment you clutch the tome, the library shudders.
-~ shake intensity=2.5 duration=0.5
-~ flash color=#ffffff duration=0.3
-Narrator: Stone cracks bloom across the floor like veins of lightning.
-Guardian: You have broken the oldest seal!
-~ bg endless_stairs with crossfade duration=2.0
-Narrator: An endless staircase of floating stone unfolds before you.
-~ show guardian stone at left with slide_right duration=0.5
-Guardian (grinding): Climb, thief. Each step costs a memory.
->> count_memories
+## Coastal Railway --- coastal_train
+~ bg train_day with crossfade duration=1.2
+~ move hoshiko to center_left duration=0.5
+Narrator: The rhythmic clatter of wheels on iron reverberates through the quiet train car.
+Hoshiko (smile): I love taking this line when the day cools down.
+- Look out the window — you can see the coastline already!
+~ bg train_beach with crossfade duration=1.5
+Narrator: The train emerges from the cliffside cut, revealing the vast expanse of blue water glistening under the sky.
+~ expr hoshiko surprised
+Hoshiko (surprised): Whoa, look at the tide today! It's completely crystal clear!
+~ move hoshiko to center duration=0.4
+~ expr hoshiko embarrassed
+Hoshiko (embarrassed): To tell you the truth... I actually brought my swimsuit in my bag, just in case we took this detour.
+Narrator: She unzips her school satchel just enough to reveal a peek of turquoise fabric.
+~ flash color=#ffffff duration=0.2
+Hoshiko (flustered): D-don't look at me like that! It's summer, so being prepared is just smart!
+>> sunset_promise
+~ bg train_evening with crossfade duration=1.2
+~ expr hoshiko smile
+Hoshiko (smile): Thanks for taking the long route with me today.
+- Watching the sunset over the water never gets old.
+Narrator: The evening train glides forward as the horizon melts into shades of amber and indigo.
+Narrator: Some journeys are made unforgettable simply by who sits beside you.
 
-## Counting Memories --- count_memories
-Guardian: Count. One... for your mother's voice.
-- Two... for your first word.
-Narrator: Each step steals something precious.
-Guardian: Three... for the face you wore before you were named.
-~ fade_out duration=1.0 color=#000000
-Narrator: And you remember nothing at all.
+## Mountain Shrine --- mountain_shrine
+~ bg temple_day with crossfade duration=1.2
+Narrator: Ancient cedar branches sway gently above the worn mossy stairs leading to the shrine grounds.
+Hoshiko (smile): Phew! Those stairs never get any easier no matter how many times we climb them.
+- My legs feel practically made of jelly right now.
+~ expr hoshiko upset
+Hoshiko (upset): And you didn't even break a sweat! How is that fair at all?
+? Offer to carry her school bag (carry_bag)
+? Tease her about skipping gym class (tease_gym)
+
+## A Helping Hand --- carry_bag
+~ expr hoshiko embarrassed
+Hoshiko (embarrassed): W-wait, really? You'll carry it for me?
+~ move hoshiko to center duration=0.3
+Hoshiko (smile): You're way too nice sometimes... okay, deal! Here you go.
+Narrator: She hands over her bag with a relieved sigh and a grateful smile.
+> shrine_twilight
+
+## Friendly Teasing --- tease_gym
+~ expr hoshiko upset
+Hoshiko (upset): Hey! I tried my best in badminton yesterday, for your information!
+- The shuttlecock had a mind of its own, okay?
+~ expr hoshiko smile
+Hoshiko (smile): Fine, fine, I forgive you. Let's make our wish before it gets dark.
+> shrine_twilight
+
+## Shrine at Dusk --- shrine_twilight
+~ bg temple_night with crossfade duration=1.5
+Narrator: Dusk settles softly over the cedar grove, and ancient stone lanterns cast warm glows along the cobblestones.
+Hoshiko (smile): They say if you make a wish here at twilight, it's bound to come true.
+>> sunset_promise
+~ expr hoshiko smile
+Hoshiko (smile): May tomorrow be just as bright as today.
+Narrator: You clap twice together in front of the offering box, the sound drifting into the tranquil mountain night.
+
+## Town Stroll --- town_stroll
+~ bg street_day with crossfade duration=1.0
+Narrator: The shopping arcade bustles with lively conversation, bicycle bells, and the tempting aroma of freshly baked goods.
+Hoshiko (smile): Ooh, the bakery on the corner smells amazing! Let's grab some melon pan!
+Narrator: Without warning, the sky darkens overhead as distant thunder rumbles across the valley.
+~ shake intensity=2.0 duration=0.4
+~ flash color=#e0f7fa duration=0.25
+~ bg street_rain with crossfade duration=0.8
+Narrator: Fat raindrops suddenly pelt the warm pavement in a sudden summer shower.
+~ expr hoshiko surprised
+Hoshiko (surprised): Kya! Rain?! But the morning forecast said zero percent!
+~ move hoshiko to left duration=0.3
+Hoshiko (upset): My uniform is going to get completely drenched!
+~ bg busstop_rain with crossfade duration=0.6
+~ move hoshiko to center duration=0.3
+Narrator: You grab Hoshiko's hand and pull her under the narrow canopy of a nearby bus shelter.
+Hoshiko (embarrassed): Whew... that was close! Thanks for pulling me in.
+- Though... we're standing pretty close together under here, aren't we?
+>> sunset_promise
+~ bg street_night with crossfade duration=1.5
+Narrator: As suddenly as it arrived, the summer cloudburst drifts away, revealing a pristine canopy of shimmering stars.
+~ expr hoshiko smile
+Hoshiko (smile): Look at that... the sky cleared up completely.
+Hoshiko (smile): Getting caught in the rain wasn't so bad after all.
+Narrator: Side by side under the starlit sky, you walk the glistening street back home.
+
+## A Quiet Promise --- sunset_promise
+Narrator: For a lingering moment, time slows to a quiet breath.
+Hoshiko (smile): You know... afternoons like this make me really happy that we're friends.
+- Promise me we'll hang out again soon, okay?
+Narrator: A gentle nod and a smile are all the answer she needs.
 <<
-
-## Interrogation --- question_her
-~ expr meris angry
-Meris (angry): I will not be interrogated by a child of the forgetting!
-~ flash color=#ff4500 duration=0.15
-~ move meris to center duration=0.3
-Meris (shouting): The Grimoire was sealed for a reason!
-? Force her to speak (force_speak)
-? Lower your voice and apologize (apologize)
-
-## Ritual Search --- find_ritual
-~ bg library_ruins with crossfade duration=1.5
-Narrator: You comb the shelves, fingers tracing dusty spines until —
-~ show ritual_scroll glowing at center with fade duration=0.5
-Narrator: A scroll of binding rituals. This could seal the Grimoire without violence.
->> count_memories
-
-## Force Her to Speak --- force_speak
-~ bg library_interior with dissolve duration=0.8
-Meris (broken): The... the binding circle... it's beneath the third shelf...
-Narrator: The cost of force is written in her tear-streaked face.
->> ritual_chamber
-
-## Lower Your Voice --- apologize
-~ bg library_interior with dissolve duration=0.8
-~ expr meris sad
-Meris (softly): Forgive me, seeker. The Library's hunger is not my own.
-Narrator: Compassion opens doors that force could never break.
->> ritual_chamber
-
-## The Ritual Chamber --- ritual_chamber
-~ bg ritual_chamber with crossfade duration=1.5
-~ show meris determined at center with fade duration=0.6
-Meris: The circle is drawn. Stand within it.
-Narrator: Glyphs flare to life beneath your feet as the Grimoire screams above.
-~ flash color=#00ffff duration=0.4
-~ fade_out duration=2.0 color=#ffffff
-Narrator: When the light fades, the library is still. The Grimoire is sealed.
-Narrator: You have restored the forgotten.
