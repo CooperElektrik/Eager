@@ -29,6 +29,10 @@ from eager_core.events import (
     StoryEndEvent,
     StoryEvent,
 )
+from eager_core.i18n import (
+    TranslationCatalog,
+    TranslationManager,
+)
 from eager_core.input import (
     InputAction,
     Keymap,
@@ -104,6 +108,8 @@ __all__ = [
     "StoryEvent",
     "TextReveal",
     "TextSegment",
+    "TranslationCatalog",
+    "TranslationManager",
     "Vec2",
     # Storage
     "atomic_write_json",

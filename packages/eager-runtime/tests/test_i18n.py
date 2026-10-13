@@ -1,0 +1,215 @@
+"""Tests for story VM translation, catalog extraction, and localization pipeline."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+import eager_script
+from eager_core.events import AppendEvent, ChoicePromptEvent, DialogueEvent, NarrationEvent
+from eager_core.i18n import TranslationCatalog, TranslationManager
+
+from eager_runtime.cli import _cmd_i18n_check, _cmd_i18n_extract
+from eager_runtime.i18n import extract_catalog, merge_catalog, validate_catalog
+from eager_runtime.runtime import StoryVM
+
+
+def test_story_vm_event_translation_and_interpolation() -> None:
+    text = """
+@default player_name = "Robin"
+@default coins = 42
+## Market --- market
+Merchant: Welcome to the bazaar, [player_name]!
+- You have [coins] gold coins.
+? Buy a sword (armory)
+? Leave the market (town)
+"""
+    graph = eager_script.parse_graph(text)
+    tm = TranslationManager()
+    cat_es = TranslationCatalog(
+        locale="es",
+        strings={
+            "market.0": "Bienvenido al bazar, [player_name]!",
+            "market.1": "Tienes [coins] monedas de oro.",
+            "market.2.choice_0": "Comprar una espada",
+            "market.2.choice_1": "Salir del mercado",
+        },
+        speakers={"Merchant": "Comerciante"},
+    )
+    tm.register_catalog(cat_es)
+    tm.set_locale("es")
+
+    vm = StoryVM(graph, translation_manager=tm)
+
+    # 0. SceneEnterEvent
+    enter_ev = vm.step()
+    assert enter_ev is not None
+    assert enter_ev.type == "scene_enter"
+
+    # 1. Dialogue beat
+    ev1 = vm.step()
+    assert isinstance(ev1, DialogueEvent)
+    assert ev1.speaker == "Comerciante"
+    assert ev1.text == "Bienvenido al bazar, Robin!"
+    assert ev1.beat_id == "market.0"
+
+    # 2. Append beat
+    ev2 = vm.step()
+    assert isinstance(ev2, AppendEvent)
+    assert ev2.text == "Tienes 42 monedas de oro."
+    assert ev2.beat_id == "market.1"
+
+    # 3. Choice beat
+    ev3 = vm.step()
+    assert isinstance(ev3, ChoicePromptEvent)
+    assert ev3.beat_id == "market.2"
+    assert len(ev3.options) == 2
+    assert ev3.options[0].text == "Comprar una espada"
+    assert ev3.options[0].beat_id == "market.2.choice_0"
+    assert ev3.options[1].text == "Salir del mercado"
+    assert ev3.options[1].beat_id == "market.2.choice_1"
+
+
+def test_story_vm_fallback_to_source_text() -> None:
+    text = """
+## Intro --- intro
+Alice: Hello!
+Just a walk.
+"""
+    graph = eager_script.parse_graph(text)
+    tm = TranslationManager()
+    # Missing intro.1 translation
+    cat_es = TranslationCatalog(
+        locale="es",
+        strings={"intro.0": "Hola!"},
+    )
+    tm.register_catalog(cat_es)
+    tm.set_locale("es")
+
+    vm = StoryVM(graph, translation_manager=tm)
+    vm.step()  # SceneEnterEvent
+
+    ev1 = vm.step()
+    assert isinstance(ev1, DialogueEvent)
+    assert ev1.text == "Hola!"
+
+    ev2 = vm.step()
+    assert isinstance(ev2, NarrationEvent)
+    # Falls back to original source text
+    assert ev2.text == "Just a walk."
+
+
+def test_extract_catalog_from_graph() -> None:
+    text = """
+## Scene 1 --- s1
+Narrator: A gentle breeze.
+Hero: Ready for adventure!
+? Go north (north)
+? Go south (south)
+"""
+    graph = eager_script.parse_graph(text)
+    cat = extract_catalog(graph, locale="template")
+
+    assert cat.locale == "template"
+    assert "s1.0" in cat.strings
+    assert cat.strings["s1.0"] == "A gentle breeze."
+    assert "s1.1" in cat.strings
+    assert cat.strings["s1.1"] == "Ready for adventure!"
+    assert "s1.2.choice_0" in cat.strings
+    assert cat.strings["s1.2.choice_0"] == "Go north"
+    assert "s1.2.choice_1" in cat.strings
+    assert cat.strings["s1.2.choice_1"] == "Go south"
+    assert "Hero" in cat.speakers
+
+
+def test_merge_catalog_preserves_existing() -> None:
+    template = TranslationCatalog(
+        locale="template",
+        strings={
+            "s1.0": "First line",
+            "s1.1": "Second line (new)",
+        },
+        speakers={"Hero": "Hero"},
+    )
+    existing = TranslationCatalog(
+        locale="es",
+        strings={
+            "s1.0": "Primera linea",
+            "s_old.0": "Old obsolete line",
+        },
+        speakers={"Hero": "Héroe"},
+    )
+
+    merged, stats = merge_catalog(template, existing)
+
+    assert merged.locale == "es"
+    assert merged.strings["s1.0"] == "Primera linea"
+    assert merged.strings["s1.1"] == ""  # New empty slot
+    assert stats["translated"] == 1
+    assert stats["new"] == 1
+    assert stats["obsolete"] == 1
+    assert merged.speakers["Hero"] == "Héroe"
+
+
+def test_validate_catalog_coverage() -> None:
+    text = """
+## S1 --- s1
+Alice: Line 1
+Alice: Line 2
+Alice: Line 3
+"""
+    graph = eager_script.parse_graph(text)
+    cat_partial = TranslationCatalog(
+        locale="es",
+        strings={
+            "s1.0": "Línea 1",
+            "s1.1": "Línea 2",
+            "s_obsolete.0": "Old",
+        },
+    )
+
+    result = validate_catalog(cat_partial, graph)
+    assert result["total"] == 3
+    assert result["translated"] == 2
+    assert result["untranslated"] == 1
+    assert result["obsolete"] == 1
+    assert result["coverage_percent"] == 66.7
+    assert not result["is_complete"]
+    assert "s1.2" in result["missing_keys"]
+
+
+def test_cli_i18n_extract_and_check(tmp_path: Path) -> None:
+    script_file = tmp_path / "game.es"
+    script_file.write_text(
+        """
+## Start --- start
+Guide: Welcome!
+- Enjoy your stay.
+""",
+        encoding="utf-8",
+    )
+
+    out_json = tmp_path / "locales" / "template.json"
+    args_ext = argparse.Namespace(
+        script=str(script_file),
+        output=str(out_json),
+        locale="template",
+        plain=False,
+        merge=False,
+    )
+    code_ext = _cmd_i18n_extract(args_ext)
+    assert code_ext == 0
+    assert out_json.is_file()
+
+    cat = TranslationCatalog.load_json(out_json)
+    assert "start.0" in cat.strings
+    assert "start.1" in cat.strings
+
+    args_chk = argparse.Namespace(
+        catalog=str(out_json),
+        script=str(script_file),
+        plain=False,
+        strict=True,
+    )
+    code_chk = _cmd_i18n_check(args_chk)
+    assert code_chk == 0

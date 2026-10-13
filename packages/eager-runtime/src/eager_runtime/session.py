@@ -141,7 +141,18 @@ class GameSession:
                 "Install eager-runtime[graphics] or eager-graphics."
             )
 
-        self.vm = StoryVM(self.graph)
+        from eager_core.i18n import TranslationManager
+
+        self.translation_manager = TranslationManager()
+        locales_dir: Path | None = None
+        if self.script_path is not None:
+            candidate = self.script_path.resolve().parent / "locales"
+            if candidate.is_dir():
+                locales_dir = candidate
+        if locales_dir is not None:
+            self.translation_manager.load_directory(locales_dir)
+
+        self.vm = StoryVM(self.graph, translation_manager=self.translation_manager)
         self.dispatcher = EventDispatcher()
         self.compositor = StageCompositor(
             virtual_width=virtual_width,
@@ -204,12 +215,21 @@ class GameSession:
         self._last_event: StoryEvent | None = None
 
     def apply_preferences(self) -> None:
-        """Apply current preferences to audio mixer and other subsystems."""
+        """Apply current preferences to audio mixer, translation locale, and subsystems."""
         if hasattr(self, "audio") and self.audio is not None:
             self.audio.set_master_volume(self.preferences.master_volume)
             self.audio.set_channel_volume("music", self.preferences.music_volume)
             self.audio.set_channel_volume("sound", self.preferences.sfx_volume)
             self.audio.set_channel_volume("voice", self.preferences.voice_volume)
+        if hasattr(self, "vm") and self.vm is not None:
+            self.vm.set_locale(self.preferences.language)
+
+    def set_language(self, locale: str) -> None:
+        """Switch active language locale, updating VM and persisting preferences."""
+        self.preferences.language = locale
+        self.apply_preferences()
+        save_dir = get_default_save_dir(self.script_path.stem if self.script_path else "default")
+        self.preferences.save(save_dir / "preferences.json")
 
     def _capture_checkpoint(self) -> Checkpoint:
         """Generate a unified checkpoint of the current session state."""

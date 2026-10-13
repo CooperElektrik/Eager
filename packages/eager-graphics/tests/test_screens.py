@@ -141,6 +141,56 @@ height = 720
         self.assertTrue(pref_screen.handle_mouse_click(back_btn.rect.x + 5, back_btn.rect.y + 5))
         self.assertFalse(session.screens.is_active)
 
+    def test_preferences_screen_language_selection(self):
+        from eager_graphics.screens import PreferencesScreen
+
+        class DummyPreferences:
+            master_volume = 1.0
+            music_volume = 1.0
+            sfx_volume = 1.0
+            voice_volume = 1.0
+            text_speed = 50.0
+            auto_forward_time = 3.0
+            language = "default"
+
+        class DummyTranslationManager:
+            def available_locales(self):
+                return ["default", "es", "ja"]
+
+        class DummySession:
+            def __init__(self):
+                self.preferences = DummyPreferences()
+                self.translation_manager = DummyTranslationManager()
+                self.screens = ScreenManager()
+                self.chosen_locale = "default"
+
+            def apply_preferences(self):
+                pass
+
+            def set_language(self, locale: str):
+                self.chosen_locale = locale
+                self.preferences.language = locale
+
+        session = DummySession()
+        pref_screen = PreferencesScreen()
+        session.screens.register(pref_screen)
+        session.screens.show("preferences", session)
+
+        # Button 0 is Back, Buttons 1..3 are languages: default, es, ja
+        self.assertEqual(len(pref_screen.buttons), 4)
+        self.assertIn("DEFAULT", pref_screen.buttons[1].text)
+        self.assertIn("ES", pref_screen.buttons[2].text)
+        self.assertIn("JA", pref_screen.buttons[3].text)
+
+        # Click Spanish (buttons[2])
+        es_btn = pref_screen.buttons[2]
+        self.assertTrue(pref_screen.handle_mouse_click(es_btn.rect.x + 5, es_btn.rect.y + 5))
+        self.assertEqual(session.chosen_locale, "es")
+        self.assertEqual(session.preferences.language, "es")
+
+        # After clicking, screen re-initializes on_enter, so active marker updates
+        self.assertIn("[ ES ]", pref_screen.buttons[2].text)
+
     def test_history_screen(self):
         from eager_graphics.screens import HistoryScreen
 

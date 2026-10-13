@@ -17,6 +17,7 @@ def _to_nested_tuple(obj: Any) -> Any:
         return tuple(_to_nested_tuple(x) for x in obj)
     return obj
 
+from eager_core.i18n import TranslationManager
 from eager_script import (
     ParsedAppend,
     ParsedCall,
@@ -70,9 +71,11 @@ class StoryVM:
         initial_state: StorySnapshot | None = None,
         max_history: int = 500,
         rng_seed: int | None = None,
+        translation_manager: TranslationManager | None = None,
     ) -> None:
         self._graph = graph
         self._history = HistoryManager(max_history=max_history)
+        self._translation_manager: TranslationManager = translation_manager or TranslationManager()
 
         self._current_scene_id: str | None = None
         self._beat_index: int = 0
@@ -95,6 +98,31 @@ class StoryVM:
             self.load(initial_state)
         elif self._graph.entry:
             self._enter_scene(self._graph.entry)
+
+    @property
+    def translation_manager(self) -> TranslationManager:
+        """The active translation manager."""
+        return self._translation_manager
+
+    @translation_manager.setter
+    def translation_manager(self, mgr: TranslationManager) -> None:
+        self._translation_manager = mgr
+
+    def set_locale(self, locale: str) -> None:
+        """Set the active translation locale."""
+        self._translation_manager.set_locale(locale)
+
+    def _translate(self, key: str | None, default: str) -> str:
+        """Translate key if catalog present and key non-null, else default."""
+        if key is not None and self._translation_manager is not None:
+            return self._translation_manager.translate(key, default)
+        return default
+
+    def _translate_speaker(self, speaker: str) -> str:
+        """Translate speaker name if catalog present, else default."""
+        if self._translation_manager is not None:
+            return self._translation_manager.translate_speaker(speaker)
+        return speaker
 
     def _apply_graph_defaults(self) -> None:
         """Evaluate graph defaults if not already set."""
@@ -216,9 +244,19 @@ class StoryVM:
         """Retrieve a story variable value."""
         return self._variables.get(name, default)
 
-    def _build_choice_prompt(self, item: ParsedChoiceSet) -> ChoicePromptEvent:
+    def _build_choice_prompt(
+        self,
+        item: ParsedChoiceSet,
+        beat_index: int | None = None,
+    ) -> ChoicePromptEvent:
         """Construct ChoicePromptEvent from ParsedChoiceSet node, evaluating conditions."""
         options: list[ChoiceOption] = []
+        b_idx = beat_index if beat_index is not None else self._beat_index
+        prompt_beat_id = (
+            f"{self._current_scene_id}.{b_idx}"
+            if self._current_scene_id is not None
+            else None
+        )
         for i, opt in enumerate(item.options):
             enabled = True
             if opt.condition:
@@ -240,17 +278,24 @@ class StoryVM:
                         exc,
                     )
                     enabled = False
+            opt_beat_id = f"{prompt_beat_id}.choice_{i}" if prompt_beat_id else None
+            raw_text = self._translate(opt_beat_id, opt.text)
             options.append(
                 ChoiceOption(
                     index=i,
-                    text=self._interpolate(opt.text),
+                    text=self._interpolate(raw_text),
                     target=opt.target,
                     line_number=opt.line_number,
                     condition=opt.condition,
                     enabled=enabled,
+                    beat_id=opt_beat_id,
                 )
             )
-        return ChoicePromptEvent(options=tuple(options), line_number=item.line_number)
+        return ChoicePromptEvent(
+            options=tuple(options),
+            line_number=item.line_number,
+            beat_id=prompt_beat_id,
+        )
 
     def save(self) -> StorySnapshot:
         """Create an immutable, serializable snapshot of the current VM state."""
@@ -489,37 +534,52 @@ class StoryVM:
 
             # Record state snapshot before consuming narrative beat
             self._history.push(self.save())
+            current_beat_idx = self._beat_index
             self._beat_index += 1
+            beat_id = (
+                f"{self._current_scene_id}.{current_beat_idx}"
+                if self._current_scene_id is not None
+                else None
+            )
 
             if isinstance(item, ParsedDialogue):
-                interp_speaker = self._interpolate(item.speaker)
+                raw_speaker = self._translate_speaker(item.speaker)
+                interp_speaker = self._interpolate(raw_speaker)
                 # If speaker matches a character ID, we could map name if needed, but interpolate handles [var]
                 if hasattr(self._graph, "characters") and interp_speaker in self._graph.characters:
                     interp_speaker = self._graph.characters[interp_speaker].get("name", interp_speaker)
+                raw_text = self._translate(beat_id, item.text)
                 return DialogueEvent(
                     speaker=interp_speaker,
-                    text=self._interpolate(item.text),
+                    text=self._interpolate(raw_text),
                     voice=item.voice,
                     emotion=item.emotion,
                     line_number=item.line_number,
+                    beat_id=beat_id,
                 )
 
             if isinstance(item, ParsedNarration):
+                raw_text = self._translate(beat_id, item.text)
                 return NarrationEvent(
-                    text=self._interpolate(item.text),
+                    text=self._interpolate(raw_text),
                     line_number=item.line_number,
+                    beat_id=beat_id,
                 )
 
             if isinstance(item, ParsedAppend):
+                raw_text = self._translate(beat_id, item.text)
                 return AppendEvent(
-                    text=self._interpolate(item.text),
+                    text=self._interpolate(raw_text),
                     line_number=item.line_number,
+                    beat_id=beat_id,
                 )
 
             if isinstance(item, ParsedFreshBox):
+                raw_text = self._translate(beat_id, item.text)
                 return FreshBoxEvent(
-                    text=self._interpolate(item.text),
+                    text=self._interpolate(raw_text),
                     line_number=item.line_number,
+                    beat_id=beat_id,
                 )
 
             if isinstance(item, ParsedHook):
@@ -532,10 +592,13 @@ class StoryVM:
                     subparts = args.split(None, 1)
                     var_name = subparts[0] if subparts else "player_input"
                     prompt_text = subparts[1].strip().strip("\"'") if len(subparts) > 1 else "Enter input:"
+                    input_beat_id = f"{beat_id}.input" if beat_id else None
+                    raw_prompt = self._translate(input_beat_id, prompt_text)
                     input_prompt = InputPromptEvent(
                         var_name=var_name,
-                        prompt=prompt_text,
+                        prompt=self._interpolate(raw_prompt),
                         line_number=item.line_number,
+                        beat_id=input_beat_id,
                     )
                     self._pending_input = input_prompt
                     return input_prompt
@@ -547,7 +610,7 @@ class StoryVM:
 
 
             if isinstance(item, ParsedChoiceSet):
-                prompt = self._build_choice_prompt(item)
+                prompt = self._build_choice_prompt(item, current_beat_idx)
                 self._pending_choice = prompt
                 return prompt
 

@@ -105,11 +105,12 @@ Use these entry points as a guide; inspect their current signatures and implemen
 | Safe expressions | `packages/eager-script/src/eager_script/expr.py` |
 | Scene graph and lowering | `packages/eager-script/src/eager_script/graph.py` |
 | Static validation | `packages/eager-script/src/eager_script/validator.py` |
-| Shared events/audio/types/storage/text | `packages/eager-core/src/eager_core/` |
+| Shared events/audio/types/storage/text/i18n | `packages/eager-core/src/eager_core/` |
 | Story VM | `packages/eager-runtime/src/eager_runtime/runtime.py` |
 | Event dispatch | `packages/eager-runtime/src/eager_runtime/dispatcher.py` |
 | Session, checkpoints, input, UI coordination | `packages/eager-runtime/src/eager_runtime/session.py` |
 | Save/load and project configuration | `packages/eager-runtime/src/eager_runtime/saves.py`, `project.py` |
+| Translation catalog tooling | `packages/eager-runtime/src/eager_runtime/i18n.py` |
 | CLI commands | `packages/eager-runtime/src/eager_runtime/cli.py` |
 | Stage composition | `packages/eager-graphics/src/eager_graphics/compositor.py` |
 | Hook and event bridge | `packages/eager-graphics/src/eager_graphics/director.py` |
@@ -145,7 +146,7 @@ ruff check packages/
 
 Optional-dependency tests may be skipped when their backend/editor libraries are unavailable. The workspace development setup is intended to install the full test toolchain.
 
-Useful CLI entry points include `eager-script check`, `eager-script graph`, `eager play`, `eager inspect`, `eager test-run`, and `eager-x play` / `run` / `check` / `build`. Use each command's `--help` for its current arguments rather than maintaining an exhaustive command list here.
+Useful CLI entry points include `eager-script check`, `eager-script graph`, `eager play`, `eager inspect`, `eager test-run`, `eager i18n extract` / `check`, and `eager-x play` / `run` / `check` / `build` / `i18n`. Use each command's `--help` for its current arguments rather than maintaining an exhaustive command list here.
 
 ## 8. Common extension paths
 

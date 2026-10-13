@@ -58,6 +58,39 @@ def _version_string() -> str:
 # ── eager CLI (text-only, no graphics) ────────────────────────────────
 
 
+def _add_i18n_subparser(subparsers: Any) -> None:
+    i18n_p = subparsers.add_parser(
+        "i18n",
+        help="Translation catalog extraction, validation, and management.",
+    )
+    i18n_sub = i18n_p.add_subparsers(dest="i18n_command", required=True)
+
+    # extract
+    ext_p = i18n_sub.add_parser(
+        "extract", help="Extract translatable dialogue and choices into a catalog JSON."
+    )
+    ext_p.add_argument("script", help="Path to .es screenplay file or project directory.")
+    ext_p.add_argument("-o", "--output", default=None, help="Output JSON path (default: locales/<locale>.json).")
+    ext_p.add_argument("--locale", default="template", help="Target locale code (default: template).")
+    ext_p.add_argument("--plain", action="store_true", help="Parse script using Eager-SP mode.")
+    ext_p.add_argument("--merge", action="store_true", help="Merge with existing output file, preserving translations.")
+    ext_p.set_defaults(func=_cmd_i18n_extract)
+
+    # check
+    chk_p = i18n_sub.add_parser(
+        "check", help="Check translation coverage and missing strings for a catalog."
+    )
+    chk_p.add_argument("catalog", help="Path to translation catalog JSON file or locales directory.")
+    chk_p.add_argument("--script", required=True, help="Path to .es screenplay file or project directory.")
+    chk_p.add_argument("--plain", action="store_true", help="Parse script using Eager-SP mode.")
+    chk_p.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit with code 1 if translation coverage is below 100 percent.",
+    )
+    chk_p.set_defaults(func=_cmd_i18n_check)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser for the ``eager`` CLI."""
     parser = argparse.ArgumentParser(
@@ -107,6 +140,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to assets directory (defaults to assets/ next to script or project).",
     )
     check_p.set_defaults(func=_cmd_check)
+
+    # i18n
+    _add_i18n_subparser(subparsers)
 
     return parser
 
@@ -348,6 +384,9 @@ def build_x_parser() -> argparse.ArgumentParser:
     build_p.add_argument("project_dir", nargs="?", default=".", help="Project directory (default: current directory)")
     build_p.add_argument("-o", "--output", default=None, help="Output zip archive path")
     build_p.set_defaults(func=_cmd_build)
+
+    # i18n
+    _add_i18n_subparser(subparsers)
 
     return parser
 
@@ -716,6 +755,116 @@ def _cmd_build(args: argparse.Namespace) -> int:
                 zf.write(file, rel)
 
     print(f"Build complete: archive created at '{out_path}'.")
+    return 0
+
+
+def _resolve_script_file(target_path: Path) -> Path | None:
+    if target_path.is_dir():
+        from eager_runtime.project import ProjectConfig
+
+        cfg_path = target_path / "game.toml"
+        cfg = ProjectConfig.load(cfg_path) if cfg_path.exists() else ProjectConfig()
+        candidate = target_path / cfg.entry_script
+        if candidate.is_file():
+            return candidate
+        es_files = list(target_path.glob("*.es"))
+        return es_files[0] if es_files else None
+    elif target_path.is_file():
+        return target_path
+    return None
+
+
+def _cmd_i18n_extract(args: argparse.Namespace) -> int:
+    """Extract translatable screenplay strings into a catalog JSON file."""
+    target = Path(args.script)
+    script_file = _resolve_script_file(target)
+    if script_file is None or not script_file.is_file():
+        sys.stderr.write(f"Error: Script file not found for '{target}'.\n")
+        return 1
+
+    text = script_file.read_text(encoding="utf-8")
+    graph = eager_script.parse_graph(text, plain=args.plain)
+
+    from eager_core.i18n import TranslationCatalog
+
+    from eager_runtime.i18n import extract_catalog, merge_catalog
+
+    catalog = extract_catalog(graph, locale=args.locale)
+
+    out_path: Path
+    if args.output:
+        out_path = Path(args.output)
+    else:
+        locales_dir = (target if target.is_dir() else target.resolve().parent) / "locales"
+        out_path = locales_dir / f"{args.locale}.json"
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if args.merge and out_path.exists():
+        existing = TranslationCatalog.load_json(out_path)
+        merged, stats = merge_catalog(catalog, existing)
+        merged.save_json(out_path)
+        print(f"Merged catalog saved to '{out_path}':")
+        print(f"  Total strings:      {stats['total']}")
+        print(f"  Existing preserved: {stats['translated']}")
+        print(f"  New strings added:  {stats['new']}")
+        if stats["obsolete"] > 0:
+            print(f"  Obsolete strings:   {stats['obsolete']}")
+    else:
+        catalog.save_json(out_path)
+        print(f"Extracted catalog saved to '{out_path}':")
+        print(f"  Total strings:      {len(catalog.strings)}")
+        print(f"  Unique speakers:    {len(catalog.speakers)}")
+
+    return 0
+
+
+def _cmd_i18n_check(args: argparse.Namespace) -> int:
+    """Check translation coverage and missing strings for catalog(s)."""
+    target = Path(args.script)
+    script_file = _resolve_script_file(target)
+    if script_file is None or not script_file.is_file():
+        sys.stderr.write(f"Error: Script file not found for '{target}'.\n")
+        return 1
+
+    text = script_file.read_text(encoding="utf-8")
+    graph = eager_script.parse_graph(text, plain=args.plain)
+
+    from eager_core.i18n import TranslationCatalog
+
+    from eager_runtime.i18n import validate_catalog
+
+    cat_path = Path(args.catalog)
+    catalogs_to_check: list[Path] = []
+    if cat_path.is_dir():
+        catalogs_to_check = sorted(p for p in cat_path.glob("*.json") if not p.name.startswith((".", "template")))
+        if not catalogs_to_check:
+            sys.stderr.write(f"Error: No translation catalogs found in directory '{cat_path}'.\n")
+            return 1
+    elif cat_path.is_file():
+        catalogs_to_check = [cat_path]
+    else:
+        sys.stderr.write(f"Error: Catalog path '{cat_path}' not found.\n")
+        return 1
+
+    has_incomplete = False
+    for p in catalogs_to_check:
+        cat = TranslationCatalog.load_json(p)
+        result = validate_catalog(cat, graph)
+        print(f"Locale '{result['locale']}' ({p.name}):")
+        print(f"  Coverage:     {result['coverage_percent']}% ({result['translated']}/{result['total']} strings)")
+        if result["untranslated"] > 0:
+            has_incomplete = True
+            print(f"  Untranslated: {result['untranslated']}")
+            for k in result["missing_keys"][:5]:
+                print(f"    Missing: {k}")
+            if len(result["missing_keys"]) > 5:
+                print(f"    ... and {len(result['missing_keys']) - 5} more")
+        if result["obsolete"] > 0:
+            print(f"  Obsolete:     {result['obsolete']} keys in catalog not in script")
+
+    if args.strict and has_incomplete:
+        return 1
     return 0
 
 

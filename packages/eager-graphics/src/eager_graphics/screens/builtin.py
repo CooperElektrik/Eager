@@ -260,6 +260,38 @@ class PreferencesScreen(Screen):
             )
         )
 
+        # Language Selector
+        tm = getattr(session, "translation_manager", None)
+        available_locales = tm.available_locales() if tm is not None else ["default"]
+        current_locale = getattr(prefs, "language", "default") if prefs else "default"
+
+        lang_y = 120.0
+        lang_x = 680.0
+        self.labels.append(
+            Label("Language", lang_x, lang_y + 4.0, color=self.theme.text_color, font_size=18)
+        )
+
+        for l_idx, loc in enumerate(available_locales):
+            btn_y = lang_y + 36.0 + l_idx * 46.0
+            btn_label = f"[ {loc.upper()} ]" if loc.lower() == current_locale.lower() else f"  {loc.upper()}  "
+
+            def make_lang_cb(target_loc: str):
+                def cb() -> None:
+                    if hasattr(session, "set_language"):
+                        session.set_language(target_loc)
+                    elif prefs is not None:
+                        prefs.language = target_loc
+                    self.on_enter(session)
+                return cb
+
+            self.buttons.append(
+                Button(
+                    Rect(lang_x, btn_y, 140.0, 36.0),
+                    btn_label,
+                    action=make_lang_cb(loc),
+                )
+            )
+
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
         backend.draw_rect(0, 0, width, height, self.theme.bg_color)
         backend.draw_text(

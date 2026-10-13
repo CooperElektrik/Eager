@@ -36,13 +36,14 @@ class DialogueEvent:
     voice: str | None
     emotion: str | None
     line_number: int
+    beat_id: str | None = None
 
     @property
     def type(self) -> str:
         return "dialogue"
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "type": self.type,
             "speaker": self.speaker,
             "text": self.text,
@@ -50,6 +51,9 @@ class DialogueEvent:
             "emotion": self.emotion,
             "line_number": self.line_number,
         }
+        if self.beat_id is not None:
+            data["beat_id"] = self.beat_id
+        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,17 +62,21 @@ class AppendEvent:
 
     text: str
     line_number: int
+    beat_id: str | None = None
 
     @property
     def type(self) -> str:
         return "append"
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "type": self.type,
             "text": self.text,
             "line_number": self.line_number,
         }
+        if self.beat_id is not None:
+            data["beat_id"] = self.beat_id
+        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,17 +85,21 @@ class FreshBoxEvent:
 
     text: str
     line_number: int
+    beat_id: str | None = None
 
     @property
     def type(self) -> str:
         return "fresh_box"
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "type": self.type,
             "text": self.text,
             "line_number": self.line_number,
         }
+        if self.beat_id is not None:
+            data["beat_id"] = self.beat_id
+        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,17 +108,21 @@ class NarrationEvent:
 
     text: str
     line_number: int
+    beat_id: str | None = None
 
     @property
     def type(self) -> str:
         return "narration"
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "type": self.type,
             "text": self.text,
             "line_number": self.line_number,
         }
+        if self.beat_id is not None:
+            data["beat_id"] = self.beat_id
+        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +135,7 @@ class ChoiceOption:
     line_number: int = 0
     condition: str | None = None
     enabled: bool = True
+    beat_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -130,6 +147,8 @@ class ChoiceOption:
         }
         if self.condition is not None:
             data["condition"] = self.condition
+        if self.beat_id is not None:
+            data["beat_id"] = self.beat_id
         return data
 
     @classmethod
@@ -141,6 +160,7 @@ class ChoiceOption:
             line_number=int(data.get("line_number", 0)),
             condition=data.get("condition"),
             enabled=bool(data.get("enabled", True)),
+            beat_id=data.get("beat_id"),
         )
 
 
@@ -150,17 +170,21 @@ class ChoicePromptEvent:
 
     options: tuple[ChoiceOption, ...]
     line_number: int
+    beat_id: str | None = None
 
     @property
     def type(self) -> str:
         return "choice_prompt"
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "type": self.type,
             "options": [opt.to_dict() for opt in self.options],
             "line_number": self.line_number,
         }
+        if self.beat_id is not None:
+            data["beat_id"] = self.beat_id
+        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,19 +258,23 @@ class InputPromptEvent:
     prompt: str
     default: str = ""
     line_number: int = 0
+    beat_id: str | None = None
 
     @property
     def type(self) -> str:
         return "input_prompt"
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "type": self.type,
             "var_name": self.var_name,
             "prompt": self.prompt,
             "default": self.default,
             "line_number": self.line_number,
         }
+        if self.beat_id is not None:
+            data["beat_id"] = self.beat_id
+        return data
 
 
 StoryEvent: TypeAlias = (
