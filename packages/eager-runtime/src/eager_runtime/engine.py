@@ -27,8 +27,6 @@ from eager_graphics.director import StageDirector
 from eager_graphics.renderers.null import NullRenderer
 
 # Graph parsing lives in eager_script
-from eager_script import parse_graph
-
 from eager_runtime.dispatcher import EventDispatcher
 from eager_runtime.events import ChoicePromptEvent, StoryEvent
 from eager_runtime.runtime import StoryVM
@@ -94,13 +92,9 @@ class VisualEngine:
             candidate = self.script_path.resolve().parent / "assets"
             self.asset_dir = candidate if candidate.is_dir() else None
         self.plain = plain
-        # --- 1. Parse the screenplay into a SceneGraph ---------------
-        text = self.script_path.read_text(encoding="utf-8")
-        graph = parse_graph(text, plain=plain)
-
         # Create session wrapping the VM and director
         self.session = GameSession(
-            graph,
+            self.script_path,
             backend=backend,
             audio_backend=audio_backend,
             asset_dir=self.asset_dir,

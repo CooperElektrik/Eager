@@ -213,3 +213,34 @@ Guide: Welcome!
     )
     code_chk = _cmd_i18n_check(args_chk)
     assert code_chk == 0
+
+
+def test_cli_test_run_with_lang(tmp_path: Path) -> None:
+    script_file = tmp_path / "game.es"
+    script_file.write_text(
+        """
+## Start --- start
+Guide: Welcome!
+""",
+        encoding="utf-8",
+    )
+    loc_dir = tmp_path / "locales"
+    loc_dir.mkdir()
+    vi_cat = TranslationCatalog(
+        locale="vi",
+        strings={"start.0": "Chao mung!"},
+        speakers={"Guide": "Huong dan vien"},
+    )
+    vi_cat.save_json(loc_dir / "vi.json")
+
+    from eager_runtime.cli import run_test_run
+
+    args = argparse.Namespace(
+        script=str(script_file),
+        plain=False,
+        lang="vi",
+        all_paths=False,
+        max_steps=10,
+    )
+    code = run_test_run(args)
+    assert code == 0

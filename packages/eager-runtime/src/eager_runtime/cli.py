@@ -31,6 +31,12 @@ def _build_common_script_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Parse script using Eager-SP mode.",
     )
+    parser.add_argument(
+        "--lang",
+        "--locale",
+        default=None,
+        help="Language locale for translations (e.g. 'vi').",
+    )
 
 
 def _ensure_graphics() -> None:
@@ -162,7 +168,16 @@ def run_play(args: argparse.Namespace) -> int:
         print("Warning: Script contains no scenes.", file=sys.stderr)
         return 0
 
-    vm = StoryVM(graph)
+    from eager_core.i18n import TranslationManager
+
+    tm = TranslationManager()
+    locales_dir = (script_path if script_path.is_dir() else script_path.resolve().parent) / "locales"
+    if locales_dir.is_dir():
+        tm.load_directory(locales_dir)
+    if getattr(args, "lang", None):
+        tm.set_locale(args.lang)
+
+    vm = StoryVM(graph, translation_manager=tm)
     player = TerminalPlayer(vm, use_colors=not args.no_color)
     player.play()
     return 0
@@ -199,6 +214,15 @@ def run_test_run(args: argparse.Namespace) -> int:
     text = script_path.read_text(encoding="utf-8")
     graph = eager_script.parse_graph(text, plain=args.plain)
 
+    from eager_core.i18n import TranslationManager
+
+    tm = TranslationManager()
+    locales_dir = (script_path if script_path.is_dir() else script_path.resolve().parent) / "locales"
+    if locales_dir.is_dir():
+        tm.load_directory(locales_dir)
+    if getattr(args, "lang", None):
+        tm.set_locale(args.lang)
+
     if getattr(args, "all_paths", False):
         # Exhaustive branch exploration: find all terminal paths
         # We model paths as choice index decisions at each choice prompt encountered
@@ -212,7 +236,7 @@ def run_test_run(args: argparse.Namespace) -> int:
 
         while frontier:
             decision_path = frontier.pop()
-            vm = StoryVM(graph)
+            vm = StoryVM(graph, translation_manager=tm)
             steps = 0
             decision_idx = 0
             current_decisions: list[int] = []
@@ -256,7 +280,7 @@ def run_test_run(args: argparse.Namespace) -> int:
         return 0
 
 
-    vm = StoryVM(graph)
+    vm = StoryVM(graph, translation_manager=tm)
     steps = 0
     events_count = 0
 
@@ -310,6 +334,7 @@ def build_x_parser() -> argparse.ArgumentParser:
     play_p.add_argument("--plain", action="store_true", help="Parse script in Eager-SP plain mode.")
     play_p.add_argument("--warp", default=None, help="Fast-forward / jump directly to scene label.")
     play_p.add_argument("--no-audio", action="store_true", help="Disable audio playback (use NullAudioBackend).")
+    play_p.add_argument("--lang", "--locale", default=None, help="Language locale for translations (e.g. 'vi').")
     play_p.set_defaults(func=_cmd_play)
 
     # render
@@ -320,6 +345,7 @@ def build_x_parser() -> argparse.ArgumentParser:
     render_p.add_argument("script", help="Path to .es screenplay file")
     render_p.add_argument("--asset-dir", default=None, help="Directory containing sprite/background assets.")
     render_p.add_argument("--plain", action="store_true", help="Parse script in Eager-SP plain mode.")
+    render_p.add_argument("--lang", "--locale", default=None, help="Language locale for translations (e.g. 'vi').")
     render_p.add_argument(
         "--dt",
         type=float,
@@ -472,6 +498,9 @@ def _cmd_play(args: argparse.Namespace) -> int:
         plain=args.plain,
     )
 
+    if getattr(args, "lang", None):
+        engine.session.set_language(args.lang)
+
     if getattr(args, "warp", None):
         target_scene = args.warp
         if target_scene in engine.vm.graph.nodes:
@@ -498,6 +527,9 @@ def _cmd_render(args: argparse.Namespace) -> int:
         asset_dir=args.asset_dir,
         plain=args.plain,
     )
+
+    if getattr(args, "lang", None):
+        engine.session.set_language(args.lang)
 
     sys.stderr.write(f"Rendering '{args.script}' headlessly...\n")
 

@@ -79,10 +79,20 @@ def _disable_colors() -> None:
 
 def make_engine(
     script_text: str,
+    locale: str | None = None,
 ) -> tuple[StoryVM, EventDispatcher, StageCompositor, StageDirector, NullRenderer]:
     """Wire up the full Eager engine stack from a screenplay string."""
+    from eager_core.i18n import TranslationManager
+
     graph = parse_graph(script_text)
-    vm = StoryVM(graph)
+    tm = TranslationManager()
+    locales_dir = Path(__file__).resolve().parent / "locales"
+    if locales_dir.is_dir():
+        tm.load_directory(locales_dir)
+    if locale:
+        tm.set_locale(locale)
+
+    vm = StoryVM(graph, translation_manager=tm)
     dispatcher = EventDispatcher()
     compositor = StageCompositor(virtual_width=1920, virtual_height=1080)
     director = StageDirector(compositor)
@@ -229,11 +239,17 @@ def print_visual_state(compositor: StageCompositor, director: StageDirector) -> 
 # ── Story mode ─────────────────────────────────────────────────────────────
 
 
-def play_story(script_text: str, *, auto_choice: int = 0, uncapped: bool = False) -> None:
+def play_story(
+    script_text: str,
+    *,
+    auto_choice: int = 0,
+    uncapped: bool = False,
+    locale: str | None = None,
+) -> None:
     """Play through the story, printing an event-by-event transcript."""
     import time
 
-    vm, dispatcher, compositor, director, renderer = make_engine(script_text)
+    vm, dispatcher, compositor, director, renderer = make_engine(script_text, locale=locale)
 
     print(colorize("═══ Eager Engine — Full-Stack Demo ═══", Color.BOLD, Color.CYAN))
     if uncapped:
@@ -370,12 +386,12 @@ def _play_to(
             print()
 
 
-def demo_save_load(script_text: str) -> None:
+def demo_save_load(script_text: str, *, locale: str | None = None) -> None:
     """Demonstrate save/load by branching from the same checkpoint."""
     print(colorize("═══ Save / Load Demo — Branching from a Checkpoint ═══", Color.BOLD, Color.CYAN))
     print()
 
-    vm, dispatcher, compositor, director, renderer = make_engine(script_text)
+    vm, dispatcher, compositor, director, renderer = make_engine(script_text, locale=locale)
 
     # Step to the first dialogue (a safe save point — no pending choice)
     print(colorize("[1] Advancing to save point (first dialogue)...", Color.DIM))
@@ -463,7 +479,7 @@ def demo_save_load(script_text: str) -> None:
 # ── Rollback demo ──────────────────────────────────────────────────────────
 
 
-def demo_rollback(script_text: str) -> None:
+def demo_rollback(script_text: str, *, locale: str | None = None) -> None:
     """Demonstrate synchronized rollback of story and visual state.
 
     The StoryVM records a narrative history snapshot before every beat;
@@ -474,7 +490,7 @@ def demo_rollback(script_text: str) -> None:
     print(colorize("═══ Rollback Demo — Rewinding Story & Visuals ═══", Color.BOLD, Color.CYAN))
     print()
 
-    vm, dispatcher, compositor, director, renderer = make_engine(script_text)
+    vm, dispatcher, compositor, director, renderer = make_engine(script_text, locale=locale)
 
     # ── Advance through several beats, then save a full checkpoint ──
     checkpoint_set = False
@@ -550,10 +566,10 @@ def demo_rollback(script_text: str) -> None:
 
     all_ok = story_ok and visual_ok
     if all_ok:
-        print(colorize("  ✓ VM rollback returned True", Color.GREEN))
-        print(colorize("  ✓ Visual rollback returned True", Color.GREEN))
+        print(colorize("  [OK] VM rollback returned True", Color.GREEN))
+        print(colorize("  [OK] Visual rollback returned True", Color.GREEN))
         if re_beat == post_beat:
-            print(colorize("  ✓ Re-advance reproduced post-checkpoint state", Color.GREEN))
+            print(colorize("  [OK] Re-advance reproduced post-checkpoint state", Color.GREEN))
 
     print()
     print(colorize("═══ Demo Complete — Rollback verified ═══", Color.BOLD, Color.CYAN))
@@ -596,6 +612,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--width", type=int, default=1280, help="Window width for --play mode (default: 1280).")
     parser.add_argument("--height", type=int, default=720, help="Window height for --play mode (default: 720).")
+    parser.add_argument(
+        "--lang",
+        "--locale",
+        default=None,
+        help="Language locale for translations (e.g. 'vi', default: None).",
+    )
     args = parser.parse_args(argv)
 
     if args.no_color:
@@ -617,9 +639,9 @@ def main(argv: list[str] | None = None) -> int:
         asset_dir = Path(asset_dir)
 
     if args.save_load:
-        demo_save_load(script_text)
+        demo_save_load(script_text, locale=args.lang)
     elif args.rollback:
-        demo_rollback(script_text)
+        demo_rollback(script_text, locale=args.lang)
     elif args.play:
         launch_interactive(
             script_text,
@@ -627,9 +649,10 @@ def main(argv: list[str] | None = None) -> int:
             args.height,
             uncapped=args.uncapped,
             asset_dir=asset_dir,
+            locale=args.lang,
         )
     else:
-        play_story(script_text, auto_choice=args.choice, uncapped=args.uncapped)
+        play_story(script_text, auto_choice=args.choice, uncapped=args.uncapped, locale=args.lang)
 
     return 0
 
@@ -641,6 +664,7 @@ def launch_interactive(
     *,
     uncapped: bool = False,
     asset_dir: str | Path | None = None,
+    locale: str | None = None,
 ) -> None:
     """Launch an interactive PIL visual novel window (tkinter)."""
     try:
@@ -662,8 +686,17 @@ def launch_interactive(
         print(f"Error: PIL renderer unavailable: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    from eager_core.i18n import TranslationManager
+
     graph = parse_graph(script_text)
-    vm = StoryVM(graph)
+    tm = TranslationManager()
+    locales_dir = Path(__file__).resolve().parent / "locales"
+    if locales_dir.is_dir():
+        tm.load_directory(locales_dir)
+    if locale:
+        tm.set_locale(locale)
+
+    vm = StoryVM(graph, translation_manager=tm)
     dispatcher = EventDispatcher()
     compositor = StageCompositor(virtual_width=1920, virtual_height=1080)
     director = StageDirector(compositor)
