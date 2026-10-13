@@ -227,6 +227,711 @@ class SceneGraph:
 
         return "\n".join(lines)
 
+    def to_html(self, title: str = "Scene Graph") -> str:
+        """Export scene graph to a self-contained, interactive HTML document."""
+        import html
+        import json
+
+        safe_title = html.escape(title)
+        mermaid_src = self.to_mermaid()
+
+        entry_node = self.entry or ""
+        branch_nodes = set(self.branching_points())
+        hub_nodes = set(self.hubs())
+        terminal_nodes = set(self.terminal_scenes())
+        dead_end_nodes = set(self.dead_ends())
+
+        nodes_meta: list[dict[str, Any]] = []
+        for nid, node in self.nodes.items():
+            tags: list[str] = []
+            if nid == entry_node:
+                tags.append("entry")
+            if nid in branch_nodes:
+                tags.append("branch")
+            if nid in hub_nodes:
+                tags.append("hub")
+            if nid in terminal_nodes:
+                tags.append("terminal")
+            elif nid in dead_end_nodes:
+                tags.append("dead_end")
+
+            # Extract dialogue/narration excerpts for quick preview
+            body_previews: list[str] = []
+            for item in node.body:
+                item_dict = item.to_dict()
+                itype = item_dict.get("type")
+                if itype == "dialogue":
+                    spk = item_dict.get("speaker", "")
+                    txt = item_dict.get("text", "")
+                    body_previews.append(f"{spk}: {txt}")
+                elif itype == "narration":
+                    txt = item_dict.get("text", "")
+                    body_previews.append(txt)
+                elif itype == "choice":
+                    opts = item_dict.get("options", [])
+                    opt_labels = [f"? {o.get('text', '')}" for o in opts]
+                    body_previews.extend(opt_labels)
+                if len(body_previews) >= 6:
+                    break
+
+            incoming = [
+                {
+                    "source": e.source,
+                    "kind": e.kind,
+                    "label": e.label,
+                    "condition": e.condition,
+                }
+                for e in self.edges
+                if e.target == nid
+            ]
+            outgoing = [
+                {
+                    "target": e.target,
+                    "kind": e.kind,
+                    "label": e.label,
+                    "condition": e.condition,
+                }
+                for e in self.edges
+                if e.source == nid
+            ]
+
+            nodes_meta.append(
+                {
+                    "id": nid,
+                    "display_name": node.display_name,
+                    "line_number": node.line_number,
+                    "speakers": list(node.speakers),
+                    "hooks": list(node.hooks),
+                    "tags": tags,
+                    "incoming": incoming,
+                    "outgoing": outgoing,
+                    "preview": body_previews,
+                }
+            )
+
+        meta_json = json.dumps(nodes_meta)
+        escaped_mermaid = html.escape(mermaid_src)
+
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{safe_title} - Eager Scene Graph</title>
+  <style>
+    :root {{
+      --bg: #0f111a;
+      --panel: #181b2a;
+      --panel-hover: #22263d;
+      --border: #2a2f4c;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-border: #60a5fa;
+      --badge-entry: #3b82f6;
+      --badge-branch: #f59e0b;
+      --badge-hub: #8b5cf6;
+      --badge-term: #10b981;
+      --badge-dead: #ef4444;
+      --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }}
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }}
+    header {{
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-shrink: 0;
+    }}
+    .header-title {{
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }}
+    .stats-bar {{
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 12px;
+      color: var(--text-muted);
+    }}
+    .stat-pill {{
+      background: #101321;
+      border: 1px solid var(--border);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+    }}
+    .stat-pill strong {{ color: #fff; }}
+    .main-layout {{
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 51px);
+      overflow: hidden;
+    }}
+    .sidebar-left {{
+      width: 320px;
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }}
+    .sidebar-header {{
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+    }}
+    .search-input {{
+      width: 100%;
+      background: #0f111a;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 10px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-family: var(--font-ui);
+      outline: none;
+    }}
+    .search-input:focus {{
+      border-color: var(--primary);
+    }}
+    .scene-list {{
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }}
+    .scene-item {{
+      background: #141724;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 10px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }}
+    .scene-item:hover {{
+      background: var(--panel-hover);
+      border-color: #3b4267;
+    }}
+    .scene-item.active {{
+      background: #1e2540;
+      border-color: var(--primary);
+    }}
+    .scene-item-title {{
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }}
+    .scene-item-id {{
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      margin-top: 2px;
+    }}
+    .badge {{
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }}
+    .badge-entry {{ background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); }}
+    .badge-branch {{ background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }}
+    .badge-hub {{ background: rgba(139, 92, 246, 0.2); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.4); }}
+    .badge-terminal {{ background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }}
+    .badge-dead_end {{ background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }}
+    .badge-tag-row {{ display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }}
+
+    .center-canvas {{
+      flex: 1;
+      position: relative;
+      background: var(--bg);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }}
+    .canvas-viewport {{
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }}
+    .canvas-viewport:active {{
+      cursor: grabbing;
+    }}
+    .canvas-content {{
+      transform-origin: center center;
+      transition: transform 0.05s ease-out;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }}
+    .floating-toolbar {{
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      display: flex;
+      gap: 6px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px;
+      z-index: 10;
+    }}
+    .tool-btn {{
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text);
+      padding: 4px 8px;
+      font-size: 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: var(--font-mono);
+      transition: background 0.15s;
+    }}
+    .tool-btn:hover {{
+      background: var(--panel-hover);
+      border-color: var(--border);
+    }}
+
+    .sidebar-right {{
+      width: 360px;
+      background: var(--panel);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow-y: auto;
+    }}
+    .inspector-header {{
+      padding: 14px;
+      border-bottom: 1px solid var(--border);
+    }}
+    .inspector-title {{
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+    }}
+    .inspector-id {{
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }}
+    .inspector-section {{
+      padding: 14px;
+      border-bottom: 1px solid var(--border);
+    }}
+    .section-label {{
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      font-weight: 700;
+    }}
+    .transition-list {{
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }}
+    .transition-card {{
+      background: #141724;
+      border: 1px solid var(--border);
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }}
+    .transition-card:hover {{
+      background: var(--panel-hover);
+    }}
+    .transition-card .tgt {{
+      font-family: var(--font-mono);
+      color: var(--primary-border);
+      font-weight: 600;
+    }}
+    .transition-card .lbl {{
+      color: var(--text);
+      margin-top: 2px;
+    }}
+    .transition-card .cond {{
+      color: #f59e0b;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }}
+    .pill-list {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }}
+    .pill {{
+      background: #141724;
+      border: 1px solid var(--border);
+      padding: 3px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+    }}
+    .preview-box {{
+      background: #101321;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: #cbd5e1;
+      max-height: 220px;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      white-space: pre-wrap;
+    }}
+    .fallback-view {{
+      padding: 24px;
+      color: var(--text);
+      max-width: 800px;
+      text-align: left;
+    }}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="header-title">
+      <span>Eager Scene Graph:</span>
+      <span style="color: var(--primary-border);">{safe_title}</span>
+    </div>
+    <div class="stats-bar">
+      <div class="stat-pill">Scenes: <strong>{len(self.nodes)}</strong></div>
+      <div class="stat-pill">Transitions: <strong>{len(self.edges)}</strong></div>
+      <div class="stat-pill">Branch Points: <strong>{len(branch_nodes)}</strong></div>
+      <div class="stat-pill">Hubs: <strong>{len(hub_nodes)}</strong></div>
+      <div class="stat-pill">Terminals: <strong>{len(terminal_nodes)}</strong></div>
+    </div>
+  </header>
+
+  <div class="main-layout">
+    <!-- Left: Scene Navigator -->
+    <div class="sidebar-left">
+      <div class="sidebar-header">
+        <input type="text" id="search-input" class="search-input" placeholder="Search scene title, ID, speaker...">
+      </div>
+      <div class="scene-list" id="scene-list"></div>
+    </div>
+
+    <!-- Center: Interactive Graph -->
+    <div class="center-canvas">
+      <div class="floating-toolbar">
+        <button class="tool-btn" id="btn-zoom-in">[+]</button>
+        <button class="tool-btn" id="btn-zoom-out">[-]</button>
+        <button class="tool-btn" id="btn-zoom-reset">[1:1]</button>
+        <button class="tool-btn" id="btn-copy-mermaid">[Copy Mermaid]</button>
+      </div>
+      <div class="canvas-viewport" id="viewport">
+        <div class="canvas-content" id="canvas-content">
+          <div class="mermaid" id="mermaid-graph">
+{escaped_mermaid}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Scene Inspector -->
+    <div class="sidebar-right" id="inspector">
+      <div class="inspector-header">
+        <div class="inspector-title" id="insp-title">Select a Scene</div>
+        <div class="inspector-id" id="insp-id">Click a scene in the list or graph to inspect</div>
+        <div class="badge-tag-row" id="insp-badges"></div>
+      </div>
+      <div class="inspector-section">
+        <div class="section-label">Outgoing Transitions</div>
+        <div class="transition-list" id="insp-outgoing">
+          <div style="font-size: 12px; color: var(--text-muted);">None</div>
+        </div>
+      </div>
+      <div class="inspector-section">
+        <div class="section-label">Incoming Transitions</div>
+        <div class="transition-list" id="insp-incoming">
+          <div style="font-size: 12px; color: var(--text-muted);">None</div>
+        </div>
+      </div>
+      <div class="inspector-section">
+        <div class="section-label">Characters / Speakers</div>
+        <div class="pill-list" id="insp-speakers">
+          <div style="font-size: 12px; color: var(--text-muted);">None</div>
+        </div>
+      </div>
+      <div class="inspector-section">
+        <div class="section-label">Engine Hooks</div>
+        <div class="pill-list" id="insp-hooks">
+          <div style="font-size: 12px; color: var(--text-muted);">None</div>
+        </div>
+      </div>
+      <div class="inspector-section">
+        <div class="section-label">Dialogue & Beats Preview</div>
+        <div class="preview-box" id="insp-preview">No scene selected.</div>
+      </div>
+    </div>
+  </div>
+
+  <script id="nodes-data" type="application/json">{meta_json}</script>
+  <script>
+    const nodes = JSON.parse(document.getElementById('nodes-data').textContent);
+    const nodesById = new Map(nodes.map(n => [n.id, n]));
+    let selectedId = nodes.length > 0 ? nodes[0].id : null;
+
+    // Pan & Zoom
+    let scale = 1.0;
+    let panX = 0;
+    let panY = 0;
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+
+    const viewport = document.getElementById('viewport');
+    const content = document.getElementById('canvas-content');
+
+    function updateTransform() {{
+      content.style.transform = `translate(${{panX}}px, ${{panY}}px) scale(${{scale}})`;
+    }}
+
+    viewport.addEventListener('mousedown', (e) => {{
+      if (e.target.closest('.floating-toolbar') || e.target.closest('.node')) return;
+      isDragging = true;
+      startX = e.clientX - panX;
+      startY = e.clientY - panY;
+    }});
+
+    window.addEventListener('mousemove', (e) => {{
+      if (!isDragging) return;
+      panX = e.clientX - startX;
+      panY = e.clientY - startY;
+      updateTransform();
+    }});
+
+    window.addEventListener('mouseup', () => {{
+      isDragging = false;
+    }});
+
+    viewport.addEventListener('wheel', (e) => {{
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+      scale = Math.min(Math.max(0.2, scale * zoomFactor), 4.0);
+      updateTransform();
+    }}, {{ passive: false }});
+
+    document.getElementById('btn-zoom-in').onclick = () => {{
+      scale = Math.min(scale * 1.25, 4.0);
+      updateTransform();
+    }};
+    document.getElementById('btn-zoom-out').onclick = () => {{
+      scale = Math.max(scale / 1.25, 0.2);
+      updateTransform();
+    }};
+    document.getElementById('btn-zoom-reset').onclick = () => {{
+      scale = 1.0;
+      panX = 0;
+      panY = 0;
+      updateTransform();
+    }};
+    document.getElementById('btn-copy-mermaid').onclick = () => {{
+      const text = document.getElementById('mermaid-graph').textContent;
+      navigator.clipboard.writeText(text.trim()).then(() => {{
+        const btn = document.getElementById('btn-copy-mermaid');
+        const prev = btn.textContent;
+        btn.textContent = '[Copied!]';
+        setTimeout(() => {{ btn.textContent = prev; }}, 1500);
+      }});
+    }};
+
+    // Render Scene List
+    const sceneListEl = document.getElementById('scene-list');
+    function renderSceneList(filter = '') {{
+      sceneListEl.innerHTML = '';
+      const lowerFilter = filter.toLowerCase().trim();
+
+      nodes.forEach(node => {{
+        const matchTitle = node.display_name.toLowerCase().includes(lowerFilter);
+        const matchId = node.id.toLowerCase().includes(lowerFilter);
+        const matchSpk = node.speakers.some(s => s.toLowerCase().includes(lowerFilter));
+        if (lowerFilter && !matchTitle && !matchId && !matchSpk) return;
+
+        const item = document.createElement('div');
+        item.className = 'scene-item' + (node.id === selectedId ? ' active' : '');
+        item.onclick = () => selectScene(node.id);
+
+        let tagsHtml = '';
+        if (node.tags.length > 0) {{
+          tagsHtml = '<div class="badge-tag-row">' +
+            node.tags.map(t => `<span class="badge badge-${{t}}">[${{t}}]</span>`).join('') +
+            '</div>';
+        }}
+
+        item.innerHTML = `
+          <div class="scene-item-title">
+            <span>${{escapeHtml(node.display_name)}}</span>
+            <span style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">L${{node.line_number}}</span>
+          </div>
+          <div class="scene-item-id">${{escapeHtml(node.id)}}</div>
+          ${{tagsHtml}}
+        `;
+        sceneListEl.appendChild(item);
+      }});
+    }}
+
+    function selectScene(nid) {{
+      selectedId = nid;
+      const node = nodesById.get(nid);
+      if (!node) return;
+
+      // Update list active states
+      document.querySelectorAll('.scene-item').forEach(el => {{
+        const idEl = el.querySelector('.scene-item-id');
+        if (idEl && idEl.textContent === nid) {{
+          el.classList.add('active');
+          el.scrollIntoView({{ block: 'nearest', behavior: 'smooth' }});
+        }} else {{
+          el.classList.remove('active');
+        }}
+      }});
+
+      // Update Inspector
+      document.getElementById('insp-title').textContent = node.display_name;
+      document.getElementById('insp-id').textContent = `ID: ${{node.id}}  |  Line: ${{node.line_number}}`;
+
+      const badgeRow = document.getElementById('insp-badges');
+      badgeRow.innerHTML = node.tags.map(t => `<span class="badge badge-${{t}}">[${{t}}]</span>`).join('');
+
+      // Outgoing
+      const outEl = document.getElementById('insp-outgoing');
+      if (node.outgoing.length === 0) {{
+        outEl.innerHTML = '<div style="font-size: 12px; color: var(--text-muted);">(None / Concluding scene)</div>';
+      }} else {{
+        outEl.innerHTML = node.outgoing.map(o => `
+          <div class="transition-card" onclick="selectScene('${{escapeHtml(o.target)}}')">
+            <div class="tgt">&gt; ${{escapeHtml(o.target)}} <span style="font-size: 10px; color: var(--text-muted);">[${{o.kind}}]</span></div>
+            ${{o.label ? `<div class="lbl">? ${{escapeHtml(o.label)}}</div>` : ''}}
+            ${{o.condition ? `<div class="cond">[if ${{escapeHtml(o.condition)}}]</div>` : ''}}
+          </div>
+        `).join('');
+      }}
+
+      // Incoming
+      const inEl = document.getElementById('insp-incoming');
+      if (node.incoming.length === 0) {{
+        inEl.innerHTML = '<div style="font-size: 12px; color: var(--text-muted);">(None / Entry scene)</div>';
+      }} else {{
+        inEl.innerHTML = node.incoming.map(i => `
+          <div class="transition-card" onclick="selectScene('${{escapeHtml(i.source)}}')">
+            <div class="tgt">&lt; ${{escapeHtml(i.source)}} <span style="font-size: 10px; color: var(--text-muted);">[${{i.kind}}]</span></div>
+            ${{i.label ? `<div class="lbl">? ${{escapeHtml(i.label)}}</div>` : ''}}
+            ${{i.condition ? `<div class="cond">[if ${{escapeHtml(i.condition)}}]</div>` : ''}}
+          </div>
+        `).join('');
+      }}
+
+      // Speakers
+      const spkEl = document.getElementById('insp-speakers');
+      spkEl.innerHTML = node.speakers.length > 0
+        ? node.speakers.map(s => `<span class="pill">${{escapeHtml(s)}}</span>`).join('')
+        : '<div style="font-size: 12px; color: var(--text-muted);">(None)</div>';
+
+      // Hooks
+      const hksEl = document.getElementById('insp-hooks');
+      hksEl.innerHTML = node.hooks.length > 0
+        ? node.hooks.map(h => `<span class="pill">~ ${{escapeHtml(h)}}</span>`).join('')
+        : '<div style="font-size: 12px; color: var(--text-muted);">(None)</div>';
+
+      // Preview
+      const prevEl = document.getElementById('insp-preview');
+      prevEl.textContent = node.preview.length > 0
+        ? node.preview.join('\\n')
+        : '(Empty or pure directive scene)';
+    }}
+
+    function escapeHtml(str) {{
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }}
+
+    // Search filter
+    document.getElementById('search-input').addEventListener('input', (e) => {{
+      renderSceneList(e.target.value);
+    }});
+
+    // Initialize Mermaid
+    if (window.mermaid) {{
+      mermaid.initialize({{
+        startOnLoad: true,
+        theme: 'dark',
+        themeVariables: {{
+          darkMode: true,
+          background: '#0f111a',
+          primaryColor: '#1e2540',
+          primaryTextColor: '#e2e8f0',
+          primaryBorderColor: '#3b82f6',
+          lineColor: '#60a5fa',
+          secondaryColor: '#141724',
+          tertiaryColor: '#181b2a',
+        }},
+        flowchart: {{
+          curve: 'basis',
+          nodeSpacing: 50,
+          rankSpacing: 60,
+        }}
+      }});
+
+      // Bind node clicks after Mermaid rendering
+      setTimeout(() => {{
+        document.querySelectorAll('.node').forEach(nodeEl => {{
+          nodeEl.style.cursor = 'pointer';
+          nodeEl.addEventListener('click', () => {{
+            const id = nodeEl.id ? nodeEl.id.replace(/^flowchart-/, '').split('-')[0] : '';
+            if (nodesById.has(id)) {{
+              selectScene(id);
+            }}
+          }});
+        }});
+      }}, 500);
+    }}
+
+    renderSceneList();
+    if (selectedId) {{
+      selectScene(selectedId);
+    }}
+  </script>
+</body>
+</html>
+"""
+
 
 def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:
     """Lower nested @if/@elif/@else/@end blocks into flat ParsedCondJump and ParsedLocalJump."""
@@ -346,7 +1051,7 @@ def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:
                         line_number=flat[patch_idx].line_number,  # type: ignore[attr-defined]
                     )
             else:
-                flat.append(elem)
+                flat.append(elem)  # type: ignore[arg-type]
 
     flatten(structured_items)
     return tuple(flat)

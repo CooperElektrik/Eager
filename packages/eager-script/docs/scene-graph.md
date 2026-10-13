@@ -130,6 +130,14 @@ flowchart TD
     combat_start --> finish
 ```
 
+### 4. Interactive Standalone HTML (`to_html`)
+
+Export an interactive, self-contained single-page visual graph debugger with pan/zoom, scene filtering, and a sidebar inspector:
+
+```python
+html_source = graph.to_html(title="My Story Graph")
+```
+
 ---
 
 ## CLI Usage
@@ -148,4 +156,7 @@ eager-script graph script.es --format dot -o story.dot
 
 # Render to Mermaid flowchart
 eager-script graph script.es --format mermaid
+
+# Export interactive HTML graph viewer
+eager-script graph script.es --format html -o story_graph.html
 ```

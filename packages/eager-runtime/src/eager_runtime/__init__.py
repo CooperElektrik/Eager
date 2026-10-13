@@ -35,6 +35,8 @@ __version__ = "0.1.0"
 
 __all__ = [
     "AppendEvent",
+    "AssetCheckReport",
+    "AssetReference",
     "Backlog",
     "BacklogEntry",
     "CallFrame",
@@ -51,6 +53,7 @@ __all__ = [
     "InputAction",
     "InputPromptEvent",
     "Keymap",
+    "MissingAssetIssue",
     "NarrationEvent",
     "PersistentData",
     "Preferences",
@@ -68,10 +71,15 @@ __all__ = [
     "StoryVM",
     "TerminalPlayer",
     "VisualEngine",
+    "check_assets",
 ]
 
 
 _LAZY_EXPORTS = {
+    "AssetCheckReport": "eager_runtime.assets",
+    "AssetReference": "eager_runtime.assets",
+    "MissingAssetIssue": "eager_runtime.assets",
+    "check_assets": "eager_runtime.assets",
     "VisualEngine": "eager_runtime.engine",
     "SaveSlot": "eager_runtime.engine",
     "StateCorruptionError": "eager_runtime.engine",

@@ -90,6 +90,24 @@ def build_parser() -> argparse.ArgumentParser:
     test_p.add_argument("--all-paths", action="store_true", help="Exhaustively explore all choice branches.")
     test_p.set_defaults(func=run_test_run)
 
+    # check
+    check_p = subparsers.add_parser(
+        "check", help="Validate screenplay script, project directory, and asset consistency."
+    )
+    check_p.add_argument("script", help="Path to .es screenplay file or project directory.")
+    check_p.add_argument("--plain", action="store_true", help="Parse script using Eager-SP mode.")
+    check_p.add_argument(
+        "--assets",
+        action="store_true",
+        help="Verify all referenced background, sprite, and audio assets exist on disk.",
+    )
+    check_p.add_argument(
+        "--asset-dir",
+        default=None,
+        help="Path to assets directory (defaults to assets/ next to script or project).",
+    )
+    check_p.set_defaults(func=_cmd_check)
+
     return parser
 
 
@@ -306,10 +324,20 @@ def build_x_parser() -> argparse.ArgumentParser:
     # check
     check_p = subparsers.add_parser(
         "check",
-        help="Validate script syntax, logic, and scene graph integrity.",
+        help="Validate script syntax, logic, scene graph, and asset integrity.",
     )
     check_p.add_argument("script", help="Path to .es screenplay file or project directory")
     check_p.add_argument("--plain", action="store_true", help="Validate in Eager-SP plain mode.")
+    check_p.add_argument(
+        "--assets",
+        action="store_true",
+        help="Verify all referenced background, sprite, and audio assets exist on disk.",
+    )
+    check_p.add_argument(
+        "--asset-dir",
+        default=None,
+        help="Path to assets directory (defaults to assets/ next to script or project).",
+    )
     check_p.set_defaults(func=_cmd_check)
 
     # build
@@ -610,19 +638,59 @@ def _cmd_check(args: argparse.Namespace) -> int:
         sys.stderr.write(f"Check failed with error: {err}\n")
         return 1
 
+    has_errors = False
     if result.errors:
+        has_errors = True
         print(f"Validation FAILED with {len(result.errors)} error(s):")
         for err in result.errors:
             print(f"  Line {err.line_number}: {err.message}")
-        return 1
-
-    if result.warnings:
+    elif result.warnings:
         print(f"Validation passed with {len(result.warnings)} warning(s):")
         for warn in result.warnings:
             print(f"  Line {warn.line_number}: {warn.message}")
     else:
-        print("Validation PASSED (0 errors, 0 warnings).")
-    return 0
+        print("Script validation PASSED (0 errors, 0 warnings).")
+
+    # Asset verification check
+    explicit_assets = getattr(args, "assets", False)
+    asset_dir_arg = getattr(args, "asset_dir", None)
+    should_check_assets = explicit_assets or asset_dir_arg is not None
+
+    resolved_asset_dir: Path | None = None
+    if asset_dir_arg is not None:
+        resolved_asset_dir = Path(asset_dir_arg)
+    elif target_path.is_dir() and (target_path / "assets").is_dir():
+        resolved_asset_dir = target_path / "assets"
+    elif script_file.resolve().parent.joinpath("assets").is_dir():
+        resolved_asset_dir = script_file.resolve().parent.joinpath("assets")
+
+    if should_check_assets or (resolved_asset_dir is not None and target_path.is_dir()):
+        if resolved_asset_dir is None:
+            sys.stderr.write("Error: Asset directory not found. Specify --asset-dir <path>.\n")
+            return 1
+
+        from eager_runtime.assets import check_assets
+
+        graph = eager_script.to_graph(items)
+        report = check_assets(graph, resolved_asset_dir)
+
+        print(f"\nAsset Consistency Check: '{resolved_asset_dir}'")
+        print(f"  Total references: {report.total_references}")
+        print(f"  Resolved assets:  {report.resolved_count}")
+
+        if report.missing:
+            has_errors = True
+            print(f"  Missing assets:   {len(report.missing)}")
+            for issue in report.missing:
+                cand_str = ", ".join(issue.expected_paths[:2])
+                print(
+                    f"    Line {issue.reference.line_number}: [{issue.reference.kind}] "
+                    f"'{issue.reference.identifier}' (expected e.g. {cand_str})"
+                )
+        else:
+            print("  All referenced assets resolved successfully.")
+
+    return 1 if has_errors else 0
 
 
 def _cmd_build(args: argparse.Namespace) -> int:

@@ -257,6 +257,16 @@ Narrator: You arrived.
         graph_from_iter = to_graph(parse_iter(SAMPLE_SCRIPT))
         self.assertEqual(graph_from_list, graph_from_iter)
 
+    def test_html_export(self):
+        graph = parse_graph(SAMPLE_SCRIPT)
+        html_out = graph.to_html(title="Sample Adventure")
+        self.assertIn("<!DOCTYPE html>", html_out)
+        self.assertIn("Sample Adventure", html_out)
+        self.assertIn("courtyard", html_out)
+        self.assertIn("mermaid", html_out)
+        self.assertIn("scene-list", html_out)
+        self.assertIn("inspector", html_out)
+
 
 class TestGraphCLI(unittest.TestCase):
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
@@ -312,6 +322,12 @@ class TestGraphCLI(unittest.TestCase):
             res_mmd = self.run_cli("graph", f_path, "--format", "mermaid")
             self.assertEqual(res_mmd.returncode, 0)
             self.assertIn("flowchart TD", res_mmd.stdout)
+
+            # HTML format
+            res_html = self.run_cli("graph", f_path, "--format", "html")
+            self.assertEqual(res_html.returncode, 0)
+            self.assertIn("<!DOCTYPE html>", res_html.stdout)
+            self.assertIn("Eager Scene Graph", res_html.stdout)
         finally:
             Path(f_path).unlink(missing_ok=True)
 
