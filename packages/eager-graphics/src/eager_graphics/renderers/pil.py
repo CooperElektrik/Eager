@@ -298,26 +298,35 @@ class PILAssetResolver:
 
         # 1. Attempt loading from disk if asset_dir configured
         if self.asset_dir is not None:
-            for ext in _EXTENSIONS:
-                file_path = self.asset_dir / f"{asset_id}{ext}"
-                if file_path.is_file():
-                    try:
-                        with Image.open(file_path) as raw_img:
-                            is_opaque = raw_img.mode in ("RGB", "L", "1") or ext in (
-                                ".jpg",
-                                ".jpeg",
-                            )
-                            img = raw_img.convert("RGBA")
-                            if not is_opaque:
-                                extrema = img.getextrema()
-                                if len(extrema) >= 4 and extrema[3][0] == 255:
-                                    is_opaque = True
+            candidate_ids = [asset_id]
+            if not asset_id.startswith("characters/"):
+                candidate_ids.append(f"characters/{asset_id}")
+            if asset_id.startswith("bg/"):
+                candidate_ids.append(f"backgrounds/{asset_id[3:]}")
+            elif asset_id.startswith("backgrounds/"):
+                candidate_ids.append(f"bg/{asset_id[12:]}")
 
-                        self._image_cache[asset_id] = img
-                        self._opaque_cache[asset_id] = is_opaque
-                        return img
-                    except (OSError, ValueError):
-                        pass
+            for cid in candidate_ids:
+                for ext in _EXTENSIONS:
+                    file_path = self.asset_dir / f"{cid}{ext}"
+                    if file_path.is_file():
+                        try:
+                            with Image.open(file_path) as raw_img:
+                                is_opaque = raw_img.mode in ("RGB", "L", "1") or ext in (
+                                    ".jpg",
+                                    ".jpeg",
+                                )
+                                img = raw_img.convert("RGBA")
+                                if not is_opaque:
+                                    extrema = img.getextrema()
+                                    if len(extrema) >= 4 and extrema[3][0] == 255:
+                                        is_opaque = True
+
+                            self._image_cache[asset_id] = img
+                            self._opaque_cache[asset_id] = is_opaque
+                            return img
+                        except (OSError, ValueError):
+                            pass
 
         # 2. Generate procedural placeholder image
         img, is_opaque = self._generate_placeholder(asset_id, default_width, default_height)

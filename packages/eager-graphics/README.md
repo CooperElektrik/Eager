@@ -22,7 +22,7 @@ Eager-Graphics is the **presentation layer** of the Eager visual novel engine. I
 - **Audio Hooks & Voice**: `~ play` / `~ stop` / `~ volume` with seamless intro/loop points (`loop_start`, `loop_end`), automatic dialogue voice playback and auto-stop, and skip-mode sound/voice suppression. Driven by `AudioMixer` from [`eager-core`](../eager-core/README.md).
 - **UI Screen System & Themes**: Customizable ScreenManager with TitleScreen, Save/Load screen, backlog, and preferences.
 - **CLI Commands (`eager-x`)**:
-  - `eager-x new <project_name>` — Scaffolds a new visual novel project.
+  - `eager-x new <project_name> [--demo]` — Scaffolds a new visual novel project with starter assets (or full showcase with `--demo`).
   - `eager-x run [project_dir]` — Runs a project directory using game.toml configuration.
   - `eager-x play <script.es>` — Launches an interactive player (`--backend pil|pyglet|raylib`, `--warp scene_id`).
   - `eager-x check <script_or_project>` — Validates script logic and graph integrity.

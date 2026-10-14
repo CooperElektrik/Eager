@@ -9,7 +9,7 @@ from unittest.mock import patch
 import eager_script
 
 from eager_runtime import StoryVM, TerminalPlayer
-from eager_runtime.cli import main
+from eager_runtime.cli import main, main_x
 
 TEST_SCRIPT = """
 ## Courtyard --- courtyard
@@ -102,3 +102,47 @@ class TestCLIAndPlayer(unittest.TestCase):
             code = main(["inspect", "non_existent_file.es"])
             self.assertEqual(code, 1)
             self.assertIn("not found", mock_err.getvalue())
+
+    def test_cli_new_default_template(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            proj_path = Path(tmp_dir) / "test_novel"
+            with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                code = main_x(["new", str(proj_path)])
+                self.assertEqual(code, 0)
+                out = mock_out.getvalue()
+                self.assertIn("Created new Eager project", out)
+
+            self.assertTrue((proj_path / "game.toml").is_file())
+            self.assertTrue((proj_path / "main.es").is_file())
+            self.assertTrue((proj_path / "assets" / "bg" / "classroom.jpg").is_file())
+            self.assertTrue((proj_path / "assets" / "characters" / "guide" / "default.png").is_file())
+
+            # Validate that the generated project passes validation with 0 errors
+            with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                check_code = main_x(["check", str(proj_path), "--assets"])
+                self.assertEqual(check_code, 0)
+                check_out = mock_out.getvalue()
+                self.assertIn("validation PASSED", check_out)
+                self.assertIn("All referenced assets resolved successfully", check_out)
+
+    def test_cli_new_demo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            proj_path = Path(tmp_dir) / "test_demo"
+            with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                code = main_x(["new", str(proj_path), "--demo"])
+                self.assertEqual(code, 0)
+                out = mock_out.getvalue()
+                self.assertIn("demo showcase project", out)
+
+            self.assertTrue((proj_path / "game.toml").is_file())
+            self.assertTrue((proj_path / "main.es").is_file())
+            self.assertTrue((proj_path / "assets" / "hoshiko" / "default.png").is_file())
+
+    def test_cli_new_existing_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            proj_path = Path(tmp_dir) / "existing"
+            proj_path.mkdir()
+            with patch("sys.stderr", new_callable=io.StringIO) as mock_err:
+                code = main_x(["new", str(proj_path)])
+                self.assertEqual(code, 1)
+                self.assertIn("already exists", mock_err.getvalue())

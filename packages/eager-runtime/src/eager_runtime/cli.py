@@ -381,6 +381,11 @@ def build_x_parser() -> argparse.ArgumentParser:
         help="Scaffold a new Eager visual novel project structure.",
     )
     new_p.add_argument("name", help="Name of project directory to create")
+    new_p.add_argument(
+        "--demo",
+        action="store_true",
+        help="Scaffold project using the full showcase demo story and assets instead of the starter template.",
+    )
     new_p.set_defaults(func=_cmd_new)
 
     # check
@@ -642,15 +647,42 @@ def _cmd_new(args: argparse.Namespace) -> int:
         sys.stderr.write(f"Error: Directory '{target_dir}' already exists.\n")
         return 1
 
-    target_dir.mkdir(parents=True)
-    (target_dir / "assets").mkdir()
-    (target_dir / "assets" / "characters").mkdir()
-    (target_dir / "assets" / "backgrounds").mkdir()
-    (target_dir / "assets" / "audio").mkdir()
+    is_demo = getattr(args, "demo", False)
+    title = args.name.replace("_", " ").replace("-", " ").title()
 
-    # game.toml
-    toml_content = f"""[game]
-title = "{args.name.replace('_', ' ').title()}"
+    if is_demo:
+        # Search for showcase demo directory in workspace or parent paths
+        repo_examples = None
+        for candidate in (
+            Path("examples"),
+            Path(__file__).resolve().parents[4] / "examples",
+            Path(__file__).resolve().parents[3] / "examples",
+        ):
+            if candidate.is_dir() and (candidate / "demo_story.es").exists():
+                repo_examples = candidate
+                break
+
+        if repo_examples is None:
+            sys.stderr.write("Error: Showcase demo assets not found. Creating standard starter project instead.\n")
+            is_demo = False
+        else:
+            target_dir.mkdir(parents=True)
+            import shutil
+
+            # Copy demo script as main.es
+            shutil.copy2(repo_examples / "demo_story.es", target_dir / "main.es")
+
+            # Copy assets
+            if (repo_examples / "assets").is_dir():
+                shutil.copytree(repo_examples / "assets", target_dir / "assets")
+
+            # Copy locales if present
+            if (repo_examples / "locales").is_dir():
+                shutil.copytree(repo_examples / "locales", target_dir / "locales")
+
+            # Write game.toml
+            toml_content = f"""[game]
+title = "{title} (Demo Showcase)"
 version = "0.1.0"
 author = "Your Name"
 entry_script = "main.es"
@@ -659,16 +691,56 @@ entry_script = "main.es"
 width = 1920
 height = 1080
 """
-    (target_dir / "game.toml").write_text(toml_content, encoding="utf-8")
+            (target_dir / "game.toml").write_text(toml_content, encoding="utf-8")
 
-    # main.es
-    es_content = """## Start --- start
+            print(f"Created new Eager demo showcase project in '{target_dir}'.")
+            print("Run your game with:")
+            print(f"  eager-x run {target_dir}")
+            return 0
+
+    # Default: scaffold from starter template
+    template_dir = Path(__file__).resolve().parent / "template"
+    if template_dir.is_dir():
+        import shutil
+
+        shutil.copytree(template_dir, target_dir)
+        # Customize game.toml title
+        cfg_path = target_dir / "game.toml"
+        if cfg_path.exists():
+            cfg_text = cfg_path.read_text(encoding="utf-8")
+            cfg_text = cfg_text.replace('title = "My First Visual Novel"', f'title = "{title}"')
+            cfg_path.write_text(cfg_text, encoding="utf-8")
+    else:
+        # Fallback minimal scaffolding
+        target_dir.mkdir(parents=True)
+        (target_dir / "assets").mkdir()
+        (target_dir / "assets" / "characters").mkdir()
+        (target_dir / "assets" / "bg").mkdir()
+        (target_dir / "assets" / "audio").mkdir()
+
+        toml_content = f"""[game]
+title = "{title}"
+version = "0.1.0"
+author = "Your Name"
+entry_script = "main.es"
+
+[window]
+width = 1920
+height = 1080
+"""
+        (target_dir / "game.toml").write_text(toml_content, encoding="utf-8")
+
+        es_content = """## Start --- start
 Narrator: Welcome to your new visual novel!
 Narrator: Create characters, dialogue, and choices here.
 """
-    (target_dir / "main.es").write_text(es_content, encoding="utf-8")
+        (target_dir / "main.es").write_text(es_content, encoding="utf-8")
 
     print(f"Created new Eager project in '{target_dir}'.")
+    print("Run your game with:")
+    print(f"  eager-x run {target_dir}")
+    print("Or play in the terminal:")
+    print(f"  eager play {target_dir}/main.es")
     return 0
 
 

@@ -1,0 +1,9 @@
+[game]
+title = "My First Visual Novel"
+version = "0.1.0"
+author = "Your Name"
+entry_script = "main.es"
+
+[window]
+width = 1920
+height = 1080

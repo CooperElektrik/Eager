@@ -56,16 +56,25 @@ class PygletAssetResolver:
 
         # 1. Attempt loading from disk if asset_dir configured
         if self.asset_dir is not None:
+            candidate_ids = [asset_id]
+            if not asset_id.startswith("characters/"):
+                candidate_ids.append(f"characters/{asset_id}")
+            if asset_id.startswith("bg/"):
+                candidate_ids.append(f"backgrounds/{asset_id[3:]}")
+            elif asset_id.startswith("backgrounds/"):
+                candidate_ids.append(f"bg/{asset_id[12:]}")
+
             extensions = [".png", ".jpg", ".jpeg", ".webp"]
-            for ext in extensions:
-                file_path = self.asset_dir / f"{asset_id}{ext}"
-                if file_path.is_file():
-                    try:
-                        tex = pyglet.image.load(str(file_path))
-                        self._cache[asset_id] = tex
-                        return tex
-                    except (OSError, pyglet.image.ImageDecodeException):
-                        pass
+            for cid in candidate_ids:
+                for ext in extensions:
+                    file_path = self.asset_dir / f"{cid}{ext}"
+                    if file_path.is_file():
+                        try:
+                            tex = pyglet.image.load(str(file_path))
+                            self._cache[asset_id] = tex
+                            return tex
+                        except (OSError, pyglet.image.ImageDecodeException):
+                            pass
 
         # 2. Generate placeholder texture
         tex = self._generate_placeholder(asset_id, default_width, default_height)

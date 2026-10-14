@@ -85,6 +85,23 @@ def test_pil_asset_resolver_disk_load(tmp_path: Path) -> None:
     assert land_img.mode == "RGBA"
     assert resolver.is_asset_opaque("landscape") is True
 
+    # Test candidate path resolution: characters/ and backgrounds/
+    char_sub = asset_dir / "characters" / "guide"
+    char_sub.mkdir(parents=True)
+    guide_png = Image.new("RGBA", (100, 200), (0, 0, 255, 255))
+    guide_png.save(char_sub / "smile.png")
+
+    bg_sub = asset_dir / "backgrounds"
+    bg_sub.mkdir(parents=True)
+    room_jpg = Image.new("RGB", (320, 240), (128, 128, 128))
+    room_jpg.save(bg_sub / "room.jpg")
+
+    guide_img = resolver.get_image("guide/smile")
+    assert guide_img.size == (100, 200)
+
+    bg_img = resolver.get_image("bg/room")
+    assert bg_img.size == (320, 240)
+
 
 # ---------------------------------------------------------------------- #
 # Protocol & Lifecycle Tests
