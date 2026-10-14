@@ -258,6 +258,59 @@ Bob: Second dialogue beat.
     assert session.director.ui_state.speaker == "Bob"
 
 
+def test_session_typewriter_append_continuation() -> None:
+    story = """
+## Start --- start
+Alice: Part one.
+- Part two.
+- Part three.
+"""
+    graph = eager_script.parse_graph(story)
+    session = GameSession(graph)
+    session.preferences.text_speed = 10.0  # 10 chars per second
+
+    # Step to first dialogue: starts typewriter reveal from 0
+    session.advance()
+    assert session.director.ui_state.text == "Part one."
+    assert session.director.ui_state.visible_chars == 0
+    assert session.text_reveal is not None
+    assert session.text_reveal.current_visible_plain_text == ""
+
+    # Advance typewriter to complete
+    session.handle_input(InputAction.ADVANCE)
+    assert session.director.ui_state.visible_chars is None
+
+    # Advance to first append beat: should continue from already present text ("Part one.")
+    session.handle_input(InputAction.ADVANCE)
+    assert session.director.ui_state.text == "Part one. Part two."
+    assert session.text_reveal is not None
+    assert not session.text_reveal.is_complete
+    assert session.director.ui_state.visible_chars == len("Part one.")
+    assert session.text_reveal.current_visible_plain_text == "Part one."
+
+    # Update 0.5s: 5 chars revealed (" Part")
+    session.update(0.5)
+    assert session.director.ui_state.visible_chars == len("Part one.") + 5
+    assert session.text_reveal.current_visible_plain_text == "Part one. Part"
+
+    # Complete typewriter for first append
+    session.handle_input(InputAction.ADVANCE)
+    assert session.director.ui_state.visible_chars is None
+
+    # Advance to second append beat: should continue from "Part one. Part two."
+    session.handle_input(InputAction.ADVANCE)
+    assert session.director.ui_state.text == "Part one. Part two. Part three."
+    assert session.text_reveal is not None
+    assert not session.text_reveal.is_complete
+    assert session.director.ui_state.visible_chars == len("Part one. Part two.")
+    assert session.text_reveal.current_visible_plain_text == "Part one. Part two."
+
+    # Update 0.5s: 5 chars revealed
+    session.update(0.5)
+    assert session.director.ui_state.visible_chars == len("Part one. Part two.") + 5
+    assert session.text_reveal.current_visible_plain_text == "Part one. Part two. Part"
+
+
 def test_session_choice_keyboard_navigation() -> None:
     story = """
 ## Start --- start

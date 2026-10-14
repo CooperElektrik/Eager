@@ -254,6 +254,8 @@ class GameSession:
         self.director.load_visual_state(checkpoint.visual)
         self.audio.load_state(checkpoint.audio)
         self.director.ui_state = UIState.from_dict(checkpoint.ui)
+        self.director.ui_state.visible_chars = None
+        self.text_reveal = None
         if len(self.backlog.entries) > checkpoint.backlog_len:
             self.backlog.entries = self.backlog.entries[: checkpoint.backlog_len]
 
@@ -277,7 +279,7 @@ class GameSession:
         self.is_finished = self.vm.is_ended
         self.mode = "ended" if self.is_finished else "game"
 
-    def _setup_text_reveal(self, text: str) -> None:
+    def _setup_text_reveal(self, text: str, initial_visible_chars: int = 0) -> None:
         """Initialize typewriter text reveal based on user preferences."""
         if self.skip_mode or not text:
             self.text_reveal = None
@@ -293,8 +295,11 @@ class GameSession:
         from eager_core.text import TextReveal, parse_text_tags
 
         fmt = parse_text_tags(text)
-        self.text_reveal = TextReveal(fmt, chars_per_second=cps)
-        self.director.ui_state.visible_chars = int(self.text_reveal.visible_chars)
+        self.text_reveal = TextReveal(fmt, chars_per_second=cps, initial_visible_chars=initial_visible_chars)
+        if self.text_reveal.is_complete:
+            self.director.ui_state.visible_chars = None
+        else:
+            self.director.ui_state.visible_chars = int(self.text_reveal.visible_chars)
 
     def advance(self) -> StoryEvent | None:
         """Step the VM forward until the next interactive event, dispatching all
@@ -320,6 +325,8 @@ class GameSession:
                 self.mode = "ended"
                 break
 
+            prev_text = self.director.ui_state.text if event.type == "append" else None
+
             self.dispatcher.dispatch(event)
             self._last_event = event
 
@@ -335,7 +342,12 @@ class GameSession:
                 if event.type in ("dialogue", "narration", "fresh_box"):
                     self._setup_text_reveal(getattr(event, "text", ""))
                 elif event.type == "append":
-                    self._setup_text_reveal(self.director.ui_state.text)
+                    initial_chars = 0
+                    if prev_text:
+                        from eager_core.text import parse_text_tags
+
+                        initial_chars = len(parse_text_tags(prev_text).plain_text)
+                    self._setup_text_reveal(self.director.ui_state.text, initial_visible_chars=initial_chars)
                 elif event.type in ("choice_prompt", "input_prompt", "story_end"):
                     self.text_reveal = None
                     self.director.ui_state.visible_chars = None

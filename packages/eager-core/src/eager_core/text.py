@@ -147,17 +147,30 @@ def parse_text_tags(raw: str) -> FormattedText:
 class TextReveal:
     """Typewriter text reveal controller."""
 
-    def __init__(self, formatted: FormattedText, chars_per_second: float = 50.0) -> None:
+    def __init__(
+        self,
+        formatted: FormattedText,
+        chars_per_second: float = 50.0,
+        initial_visible_chars: int = 0,
+    ) -> None:
         self.formatted = formatted
         self.chars_per_second = chars_per_second
         self.total_chars = len(formatted.plain_text)
 
-        self.visible_chars: int = self.total_chars if chars_per_second <= 0 else 0
+        if chars_per_second <= 0:
+            self.visible_chars: float = float(self.total_chars)
+        else:
+            self.visible_chars = float(min(self.total_chars, max(0, initial_visible_chars)))
         self.is_complete: bool = (self.visible_chars >= self.total_chars)
 
         self._elapsed_time: float = 0.0
         self._pause_timer: float = 0.0
         self._current_pause_idx: int = 0
+        while (
+            self._current_pause_idx < len(self.formatted.pauses)
+            and self.formatted.pauses[self._current_pause_idx].char_index < self.visible_chars
+        ):
+            self._current_pause_idx += 1
 
     def update(self, dt: float) -> None:
         """Advance reveal progress by dt seconds."""
@@ -172,23 +185,29 @@ class TextReveal:
             self._pause_timer = 0.0
 
         if self.chars_per_second <= 0:
-            self.visible_chars = self.total_chars
+            self.visible_chars = float(self.total_chars)
             self.is_complete = True
             return
 
         # Advance chars
         chars_to_reveal = dt * self.chars_per_second
-        next_visible = min(self.total_chars, self.visible_chars + chars_to_reveal)
+        next_visible = min(float(self.total_chars), self.visible_chars + chars_to_reveal)
 
         # Check pause points between int(self.visible_chars) and int(next_visible)
         start_idx = int(self.visible_chars)
         target_idx = int(next_visible)
 
-        for p in self.formatted.pauses:
+        while self._current_pause_idx < len(self.formatted.pauses):
+            p = self.formatted.pauses[self._current_pause_idx]
             if start_idx <= p.char_index < target_idx:
                 self.visible_chars = float(p.char_index)
                 self._pause_timer = p.duration
+                self._current_pause_idx += 1
                 return
+            elif p.char_index >= target_idx:
+                break
+            else:
+                self._current_pause_idx += 1
 
         self.visible_chars = next_visible
         if int(self.visible_chars) >= self.total_chars:
@@ -200,6 +219,7 @@ class TextReveal:
         self.visible_chars = float(self.total_chars)
         self.is_complete = True
         self._pause_timer = 0.0
+        self._current_pause_idx = len(self.formatted.pauses)
 
     @property
     def current_visible_plain_text(self) -> str:

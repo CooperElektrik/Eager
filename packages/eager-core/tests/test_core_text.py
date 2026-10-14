@@ -45,3 +45,41 @@ def test_text_reveal_typewriter():
     reveal.complete_immediately()
     assert reveal.is_complete
     assert reveal.current_visible_plain_text == "1234567890"
+
+
+def test_text_reveal_initial_visible_chars():
+    fmt = parse_text_tags("Hello world!")
+    reveal = TextReveal(fmt, chars_per_second=10.0, initial_visible_chars=5)
+    assert reveal.visible_chars == 5.0
+    assert not reveal.is_complete
+    assert reveal.current_visible_plain_text == "Hello"
+
+    reveal.update(0.3)
+    assert reveal.visible_chars == 8.0
+    assert reveal.current_visible_plain_text == "Hello wo"
+
+    reveal.update(0.5)
+    assert reveal.is_complete
+    assert reveal.current_visible_plain_text == "Hello world!"
+
+
+def test_text_reveal_with_pauses():
+    fmt = parse_text_tags("Part 1.{w=0.5} Part 2.")
+    assert len(fmt.pauses) == 1
+    assert fmt.pauses[0].char_index == 7
+
+    reveal = TextReveal(fmt, chars_per_second=10.0, initial_visible_chars=0)
+    # 0.7s at 10 cps = 7 chars, hits pause at char_index 7
+    reveal.update(0.8)
+    assert reveal.visible_chars == 7.0
+    assert reveal.current_visible_plain_text == "Part 1."
+
+    # While pause timer is active, visible chars do not advance
+    reveal.update(0.2)
+    assert reveal.visible_chars == 7.0
+
+    # Once pause timer elapses (total 0.5s pause), reveal continues
+    reveal.update(0.4)  # 0.3s remaining pause + 0.1s reveal = 1 char
+    assert reveal.visible_chars == 8.0
+    assert reveal.current_visible_plain_text == "Part 1. "
+
