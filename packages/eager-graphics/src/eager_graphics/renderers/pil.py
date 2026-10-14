@@ -1502,6 +1502,7 @@ if PIL_AVAILABLE:
             self.current_emotion: str | None = None
             self.active_choice_prompt: ChoicePromptEvent | None = None
             self.is_finished: bool = False
+            self._last_visible_chars: int | None = None
 
             # tkinter window objects — created lazily by run() so that
             # construction and story logic stay headless-safe.
@@ -1532,6 +1533,9 @@ if PIL_AVAILABLE:
             Called whenever the active choice prompt or dialogue changes so that
             input handling sees up-to-date layout even before the next draw.
             """
+            self.current_speaker = self.director.ui_state.speaker
+            self.current_text = self.director.ui_state.text
+            self.current_emotion = self.director.ui_state.emotion
             self.overlay.sync(self.director.ui_state, self.active_choice_prompt)
 
         def advance_story(self) -> None:
@@ -1645,6 +1649,12 @@ if PIL_AVAILABLE:
                 self.session.update(dt)
                 self.active_choice_prompt = self.session.active_choice_prompt
                 self.is_finished = self.session.is_finished
+                if self.session.text_reveal is not None and not self.session.text_reveal.is_complete:
+                    self._ui_dirty = True
+                cur_vc = self.director.ui_state.visible_chars
+                if cur_vc != self._last_visible_chars:
+                    self._last_visible_chars = cur_vc
+                    self._ui_dirty = True
                 return
 
             self.compositor.step(dt)
@@ -1662,8 +1672,22 @@ if PIL_AVAILABLE:
                 and self.renderer._last_transform == self.renderer._current_transform
                 and self.renderer._stage_cache.size == (self.width, self.height)
             )
+            is_text_revealing = bool(
+                self.session is not None
+                and self.session.text_reveal is not None
+                and not self.session.text_reveal.is_complete
+            )
+            is_screen_active = bool(
+                getattr(getattr(self.session, "screens", None), "is_active", False)
+            )
 
-            if is_stage_static and not self._ui_dirty and self._photo is not None:
+            if (
+                is_stage_static
+                and not self._ui_dirty
+                and not is_text_revealing
+                and not is_screen_active
+                and self._photo is not None
+            ):
                 self.renderer.frame_count += 1
                 self.renderer.clock.tick()
                 self._present_cached()
@@ -1697,7 +1721,15 @@ if PIL_AVAILABLE:
                 return
             from PIL import ImageTk
 
-            self._photo = ImageTk.PhotoImage(self.renderer.get_image())
+            img = self.renderer.get_image()
+            if self._photo is not None and hasattr(self._photo, "paste"):
+                try:
+                    self._photo.paste(img)
+                    return
+                except Exception:  # noqa: BLE001, S110
+                    pass
+
+            self._photo = ImageTk.PhotoImage(img)
             self._label.configure(image=self._photo)
 
         def _present_cached(self) -> None:
@@ -1779,11 +1811,14 @@ if PIL_AVAILABLE:
             if self._closed or self._root is None:
                 return
             now = time.perf_counter()
-            self.tick(now - self._last_tick)
+            dt = now - self._last_tick if self._last_tick > 0.0 else (1.0 / 60.0)
             self._last_tick = now
+            self.tick(dt)
             self.on_draw()
-            interval = 16 if (self.vsync and not self.uncapped) else 1
-            self._root.after(interval, self._tick_loop)
+            target_interval = 16 if (self.vsync and not self.uncapped) else 1
+            elapsed_ms = (time.perf_counter() - now) * 1000.0
+            delay = max(1, round(target_interval - elapsed_ms)) if target_interval > 1 else 1
+            self._root.after(delay, self._tick_loop)
 
         def close(self) -> None:
             """Close the player window (marks closed when running headless)."""
@@ -1832,6 +1867,7 @@ if PIL_AVAILABLE:
             """Handle mouse movement for screen and button hover states."""
             if self.session is not None:
                 self.session.handle_input(InputAction.POINTER_MOVE, x=float(event.x), y=float(event.y))
+                self._ui_dirty = True
 
         def _on_click(self, event: Any) -> None:
             """Handle mouse clicks for advancement or choice selection."""
@@ -1864,6 +1900,7 @@ if PIL_AVAILABLE:
             self.height = height
             self.overlay.set_viewport(width, height)
             self.renderer.set_window(self)
+            self._photo = None
             self._ui_dirty = True
 
         def _on_key(self, event: Any) -> None:

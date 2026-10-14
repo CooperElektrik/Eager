@@ -693,5 +693,57 @@ def test_pil_renderer_stage_caching() -> None:
     assert img2.size == (800, 600)
 
 
+def test_pil_player_typewriter_reveal_progression() -> None:
+    """Verify PILPlayer renders each character reveal step without freezing on static stage."""
+    from eager_runtime.session import GameSession
+
+    script = """
+    ## Start --- start
+    Alice: Testing typewriter.
+    """
+    graph = parse_graph(script)
+    session = GameSession(graph)
+    player = PILPlayer(session=session, visible=False)
+    player._photo = "dummy"
+
+    rendered_chars: list[int | None] = []
+    orig_draw = player.overlay.draw
+
+    def spy_draw(backend: object, ui_state: object, *a: object, **k: object) -> object:
+        rendered_chars.append(getattr(ui_state, "visible_chars", None))
+        return orig_draw(backend, ui_state, *a, **k)
+
+    player.overlay.draw = spy_draw  # type: ignore[assignment]
+
+    # Advance 15 frames while text reveals
+    for _ in range(15):
+        player.tick(1.0 / 60.0)
+        player.on_draw()
+
+    # All frames while revealing must have been drawn, not skipped
+    assert len(rendered_chars) >= 10
+    # First few frames should show incremental reveals (0, 1, 2, ...)
+    assert rendered_chars[0] == 0
+    assert rendered_chars[1] == 1
+    assert rendered_chars[2] == 2
+
+    # Advance until complete
+    for _ in range(60):
+        player.tick(1.0 / 60.0)
+        player.on_draw()
+
+    # Once complete, visible_chars is None
+    assert session.text_reveal is not None and session.text_reveal.is_complete
+    count_after_complete = len(rendered_chars)
+
+    # Next frames with idle dialogue should use the static frame cache and not call overlay.draw
+    for _ in range(5):
+        player.tick(1.0 / 60.0)
+        player.on_draw()
+
+    assert len(rendered_chars) == count_after_complete
+    player.close()
+
+
 
 
