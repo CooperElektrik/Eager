@@ -244,3 +244,100 @@ Guide: Welcome!
     )
     code = run_test_run(args)
     assert code == 0
+
+
+def test_content_addressed_translations_stable_under_insertion() -> None:
+    """Verify that inserting a new line of dialogue does not shift or break existing translations."""
+    # Original screenplay
+    script_v1 = """
+## Scene --- scene1
+Alice: Welcome traveler!
+Alice: The road ahead is perilous.
+"""
+    graph_v1 = eager_script.parse_graph(script_v1)
+    cat_v1 = extract_catalog(graph_v1, locale="de")
+
+    # Translate the second line using its content-addressed key
+    # Find the content-addressed key for "The road ahead is perilous."
+    content_key = None
+    for k, v in cat_v1.strings.items():
+        if v == "The road ahead is perilous." and not k.endswith(".1"):
+            content_key = k
+            break
+    assert content_key is not None
+
+    cat_de = TranslationCatalog(
+        locale="de",
+        strings={
+            content_key: "Der Weg vor uns ist gefährlich.",
+        },
+    )
+    tm = TranslationManager()
+    tm.register_catalog(cat_de)
+    tm.set_locale("de")
+
+    # Screenplay with an inserted dialogue beat between line 1 and line 2
+    script_v2 = """
+## Scene --- scene1
+Alice: Welcome traveler!
+Bob: Don't forget your supplies!
+Alice: The road ahead is perilous.
+"""
+    graph_v2 = eager_script.parse_graph(script_v2)
+    vm = StoryVM(graph_v2, translation_manager=tm)
+    vm.step()  # SceneEnterEvent
+
+    ev1 = vm.step()
+    assert isinstance(ev1, DialogueEvent)
+    assert ev1.speaker == "Alice"
+    assert ev1.text == "Welcome traveler!"
+
+    ev_inserted = vm.step()
+    assert isinstance(ev_inserted, DialogueEvent)
+    assert ev_inserted.speaker == "Bob"
+    assert ev_inserted.text == "Don't forget your supplies!"
+
+    ev2 = vm.step()
+    assert isinstance(ev2, DialogueEvent)
+    assert ev2.speaker == "Alice"
+    # Even though its positional index shifted from 1 to 2, it still gets translated correctly!
+    assert ev2.text == "Der Weg vor uns ist gefährlich."
+
+
+def test_explicit_beat_id_translation() -> None:
+    """Verify that explicit beat IDs {id=...} are respected for translations and event beat_id."""
+    script = """
+## Intro --- intro
+Alice: Welcome to the tavern! {id=tavern_welcome}
+"""
+    graph = eager_script.parse_graph(script)
+    cat = extract_catalog(graph, locale="es")
+    assert "intro.tavern_welcome" in cat.strings
+    # Translatable source text should not contain the metadata tag
+    assert cat.strings["intro.tavern_welcome"] == "Welcome to the tavern!"
+
+    # In untranslated gameplay, the tag must not leak to the player
+    vm_untranslated = StoryVM(graph)
+    vm_untranslated.step()
+    ev_raw = vm_untranslated.step()
+    assert isinstance(ev_raw, DialogueEvent)
+    assert ev_raw.text == "Welcome to the tavern!"
+    assert ev_raw.beat_id == "intro.tavern_welcome"
+
+    tm = TranslationManager()
+    tm.register_catalog(
+        TranslationCatalog(
+            locale="es",
+            strings={"intro.tavern_welcome": "¡Bienvenido a la taberna!"},
+        )
+    )
+    tm.set_locale("es")
+
+    vm = StoryVM(graph, translation_manager=tm)
+    vm.step()  # SceneEnterEvent
+
+    ev = vm.step()
+    assert isinstance(ev, DialogueEvent)
+    assert ev.text == "¡Bienvenido a la taberna!"
+    assert ev.beat_id == "intro.tavern_welcome"
+
