@@ -1,0 +1,156 @@
+"""Tests for ProjectConfig and multi-file scene graph merging validation."""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+import eager_script
+import pytest
+
+from eager_runtime.project import ProjectConfig, merge_graphs
+
+
+def test_project_config_defaults(tmp_path: Path) -> None:
+    non_existent = tmp_path / "game.toml"
+    cfg = ProjectConfig.load(non_existent)
+    assert cfg.title == "Untitled Project"
+    assert cfg.virtual_width == 1920
+    assert cfg.virtual_height == 1080
+
+
+def test_project_config_load(tmp_path: Path) -> None:
+    toml_path = tmp_path / "game.toml"
+    toml_path.write_text(
+        """
+[game]
+title = "My Epic VN"
+version = "1.2.3"
+author = "Dev"
+entry_script = "act1.es"
+
+[window]
+width = 1280
+height = 720
+""",
+        encoding="utf-8",
+    )
+    cfg = ProjectConfig.load(toml_path)
+    assert cfg.title == "My Epic VN"
+    assert cfg.version == "1.2.3"
+    assert cfg.author == "Dev"
+    assert cfg.entry_script == "act1.es"
+    assert cfg.virtual_width == 1280
+    assert cfg.virtual_height == 720
+
+
+def test_merge_graphs_empty() -> None:
+    merged = merge_graphs([])
+    assert merged.entry is None
+    assert len(merged.nodes) == 0
+
+
+def test_merge_graphs_valid_connected() -> None:
+    g1 = eager_script.parse_graph(
+        """
+## Act 1 --- act1
+Narrator: Beginning.
+> act2
+"""
+    )
+    g2 = eager_script.parse_graph(
+        """
+## Act 2 --- act2
+Narrator: Continuation.
+"""
+    )
+    merged = merge_graphs([g1, g2], strict=True)
+    assert merged.entry == "act1"
+    assert "act1" in merged.nodes
+    assert "act2" in merged.nodes
+    assert len(merged.edges) == 1
+    assert merged.edges[0].source == "act1"
+    assert merged.edges[0].target == "act2"
+
+
+def test_merge_graphs_duplicate_label_error() -> None:
+    g1 = eager_script.parse_graph(
+        """
+## Intro --- scene_a
+Narrator: In file 1.
+"""
+    )
+    g2 = eager_script.parse_graph(
+        """
+## Intro Copy --- scene_a
+Narrator: In file 2 with same label!
+"""
+    )
+    with pytest.raises(ValueError, match="Duplicate scene label 'scene_a' across merged graphs"):
+        merge_graphs([g1, g2])
+
+
+def test_merge_graphs_broken_link_error() -> None:
+    g1 = eager_script.parse_graph(
+        """
+## Scene 1 --- s1
+Narrator: Going to unknown scene.
+> nowhere
+"""
+    )
+    g2 = eager_script.parse_graph(
+        """
+## Scene 2 --- s2
+Narrator: Alone.
+"""
+    )
+    with pytest.raises(ValueError, match="Invalid transition target 'nowhere' from scene 's1'"):
+        merge_graphs([g1, g2])
+
+
+def test_merge_graphs_reachability(caplog: pytest.LogCaptureFixture) -> None:
+    g1 = eager_script.parse_graph(
+        """
+## Main --- main
+Narrator: Story entry.
+"""
+    )
+    g2 = eager_script.parse_graph(
+        """
+## Orphan --- orphan
+Narrator: Never reached.
+"""
+    )
+    # Non-strict mode logs a warning
+    with caplog.at_level(logging.WARNING):
+        merged = merge_graphs([g1, g2], strict=False)
+        assert merged.entry == "main"
+        assert "orphan" in merged.nodes
+        assert any("Unreachable scenes detected from entry 'main': orphan" in r.message for r in caplog.records)
+
+    # Strict mode raises ValueError
+    with pytest.raises(ValueError, match="Unreachable scenes detected from entry 'main': orphan"):
+        merge_graphs([g1, g2], strict=True)
+
+
+def test_merge_graphs_missing_entry_error() -> None:
+    g1 = eager_script.SceneGraph(
+        entry="ghost_entry",
+        nodes={},
+        edges=(),
+        preamble=(),
+    )
+    with pytest.raises(ValueError, match="Entry scene 'ghost_entry' does not exist in merged graphs"):
+        merge_graphs([g1])
+
+
+def test_merge_graphs_cyclic_references() -> None:
+    g1 = eager_script.parse_graph("## Scene A --- a\n> b")
+    g2 = eager_script.parse_graph("## Scene B --- b\n> c")
+    g3 = eager_script.parse_graph("## Scene C --- c\n> a")
+
+    merged = merge_graphs([g1, g2, g3], strict=True)
+    assert merged.entry == "a"
+    assert set(merged.nodes.keys()) == {"a", "b", "c"}
+    assert len(merged.edges) == 3
+

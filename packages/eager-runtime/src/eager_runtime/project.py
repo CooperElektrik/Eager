@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from eager_script import SceneGraph, to_graph
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -41,20 +45,30 @@ class ProjectConfig:
         )
 
 
-def merge_graphs(graphs: list[SceneGraph]) -> SceneGraph:
-    """Merge multiple SceneGraph instances into one unified SceneGraph."""
+def merge_graphs(graphs: list[SceneGraph], *, strict: bool = False) -> SceneGraph:
+    """Merge multiple SceneGraph instances into one unified SceneGraph.
+
+    Validates that:
+    1. Scene IDs are unique across all merged graphs (raises ValueError on duplicates).
+    2. All transition edge targets exist in the combined scene nodes (raises ValueError on broken links).
+    3. All scenes are reachable from the entry point (logs warning, and raises ValueError if strict=True).
+    """
     if not graphs:
         return to_graph([])
 
-    entry = graphs[0].entry
-    combined_nodes = {}
-    combined_edges = []
-    combined_preamble = []
-    combined_characters = {}
-    combined_defaults = []
+    entry = next((g.entry for g in graphs if g.entry is not None), None)
+    combined_nodes: dict[str, Any] = {}
+    combined_edges: list[Any] = []
+    combined_preamble: list[Any] = []
+    combined_characters: dict[str, Any] = {}
+    combined_defaults: list[Any] = []
 
     for g in graphs:
-        combined_nodes.update(g.nodes)
+        for node_id, node in g.nodes.items():
+            if node_id in combined_nodes:
+                raise ValueError(f"Duplicate scene label '{node_id}' across merged graphs")
+            combined_nodes[node_id] = node
+
         combined_edges.extend(g.edges)
         combined_preamble.extend(g.preamble)
         if hasattr(g, "characters"):
@@ -62,7 +76,14 @@ def merge_graphs(graphs: list[SceneGraph]) -> SceneGraph:
         if hasattr(g, "defaults"):
             combined_defaults.extend(g.defaults)
 
-    return SceneGraph(
+    # Validate transition targets
+    for edge in combined_edges:
+        if edge.target not in combined_nodes:
+            raise ValueError(
+                f"Invalid transition target '{edge.target}' from scene '{edge.source}' at line {edge.line_number}"
+            )
+
+    merged = SceneGraph(
         entry=entry,
         nodes=combined_nodes,
         edges=tuple(combined_edges),
@@ -70,3 +91,18 @@ def merge_graphs(graphs: list[SceneGraph]) -> SceneGraph:
         characters=combined_characters,
         defaults=tuple(combined_defaults),
     )
+
+    # Validate reachability from entry
+    if merged.entry:
+        if merged.entry not in combined_nodes:
+            raise ValueError(f"Entry scene '{merged.entry}' does not exist in merged graphs")
+        reachable = merged.reachable_from(merged.entry)
+        unreachable = set(combined_nodes.keys()) - reachable
+        if unreachable:
+            unreachable_list = sorted(unreachable)
+            msg = f"Unreachable scenes detected from entry '{merged.entry}': {', '.join(unreachable_list)}"
+            logger.warning(msg)
+            if strict:
+                raise ValueError(msg)
+
+    return merged
