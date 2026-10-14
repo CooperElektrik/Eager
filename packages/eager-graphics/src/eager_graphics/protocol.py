@@ -112,6 +112,18 @@ class UIDrawBackend(Protocol):
         """Fill a rectangle, optionally stroking a border of *border_width* pixels."""
         ...
 
+    def draw_gradient_rect(
+        self,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        top_color: Color,
+        bottom_color: Color,
+    ) -> None:
+        """Fill a rectangle with a vertical linear gradient from top_color to bottom_color."""
+        ...
+
     def draw_text(
         self,
         x: float,

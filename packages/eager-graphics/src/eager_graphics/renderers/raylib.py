@@ -461,6 +461,20 @@ class RaylibRenderer(RenderBackend, UIDrawBackend):
             rec = pyray.Rectangle(float(x), float(y), float(width), float(height))
             pyray.draw_rectangle_lines_ex(rec, float(border_width), _to_pyray_color(border_color))
 
+    def draw_gradient_rect(
+        self,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        top_color: Color,
+        bottom_color: Color,
+    ) -> None:
+        """Fill a rectangle with a vertical linear gradient from top_color to bottom_color."""
+        top_col = _to_pyray_color(top_color)
+        bot_col = _to_pyray_color(bottom_color)
+        pyray.draw_rectangle_gradient_v(int(x), int(y), int(width), int(height), top_col, bot_col)
+
     def draw_text(
         self,
         x: float,

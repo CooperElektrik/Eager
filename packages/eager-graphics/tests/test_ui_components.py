@@ -23,19 +23,27 @@ from eager_graphics.ui_state import ChoiceOption, UIState
 
 
 def test_dialogue_box_is_docked_at_the_bottom() -> None:
-    box = DialogueBox(1280, 720)
-    box.set_content(None, "Hello")
-
-    layout = box.layout()
-    bx, by, bw, bh = layout.box
+    # Classic boxed mode has margins and bottom gap
+    classic_box = DialogueBox(1280, 720, style=TextboxStyle.classic())
+    classic_box.set_content(None, "Hello")
+    bx, by, bw, bh = classic_box.layout().box
 
     assert by + bh == pytest.approx(720 - 25)
     assert bx == pytest.approx(64)
     assert bw == pytest.approx(1152)
 
+    # Cinematic mode spans full width and docks flush to the bottom edge
+    cinematic_box = DialogueBox(1280, 720, style=TextboxStyle.cinematic())
+    cinematic_box.set_content(None, "Hello")
+    cx, cy, cw, ch = cinematic_box.layout().box
+
+    assert cy + ch == pytest.approx(720)
+    assert cx == pytest.approx(0)
+    assert cw == pytest.approx(1280)
+
 
 def test_dialogue_box_nameplate_straddles_top_edge() -> None:
-    box = DialogueBox(1280, 720)
+    box = DialogueBox(1280, 720, style=TextboxStyle.classic())
     box.set_content("Meris", "You have returned.")
 
     layout = box.layout()
@@ -50,17 +58,25 @@ def test_dialogue_box_nameplate_straddles_top_edge() -> None:
     assert name_y < box_y
 
 
+def test_dialogue_box_cinematic_inline_speaker() -> None:
+    box = DialogueBox(1280, 720, style=TextboxStyle.cinematic())
+    box.set_content("Meris", "You have returned.")
+
+    layout = box.layout()
+    assert layout.nameplate is None
+
+
 def test_dialogue_box_no_nameplate_for_narration() -> None:
-    box = DialogueBox(1280, 720)
+    box = DialogueBox(1280, 720, style=TextboxStyle.classic())
     box.set_content(None, "The wind howls.")
 
     assert box.layout().nameplate is None
 
 
 def test_dialogue_box_nameplate_width_scales_with_name() -> None:
-    short = DialogueBox(1280, 720)
+    short = DialogueBox(1280, 720, style=TextboxStyle.classic())
     short.set_content("Al", "x")
-    long = DialogueBox(1280, 720)
+    long = DialogueBox(1280, 720, style=TextboxStyle.classic())
     long.set_content("Bartholomew", "x")
 
     assert long.nameplate_width() > short.nameplate_width()
@@ -89,7 +105,7 @@ def test_dialogue_box_cache_key_tracks_visible_state() -> None:
 
 def test_dialogue_box_draw_emits_expected_primitives() -> None:
     backend = NullRenderer()
-    box = DialogueBox(1280, 720)
+    box = DialogueBox(1280, 720, style=TextboxStyle.classic())
     box.set_content("Meris", "You have returned.")
 
     box.draw(backend)
@@ -103,6 +119,25 @@ def test_dialogue_box_draw_emits_expected_primitives() -> None:
     assert len(texts) == 3
     assert texts[0]["text"] == "Meris"
     assert texts[1]["text"] == "You have returned."
+
+
+def test_dialogue_box_cinematic_draw_emits_gradient_and_inline_text() -> None:
+    backend = NullRenderer()
+    box = DialogueBox(1280, 720, style=TextboxStyle.cinematic())
+    box.set_content("Meris", "You have returned.")
+
+    box.draw(backend)
+
+    grads = [c for c in backend.ui_calls if c["kind"] == "gradient_rect"]
+    texts = [c for c in backend.ui_calls if c["kind"] == "text"]
+
+    # Two-stage background gradient scrim (top fade + lower plate)
+    assert len(grads) == 2
+    # Speaker name, dialogue text, and clean advance indicator
+    assert len(texts) == 3
+    assert texts[0]["text"] == "Meris"
+    assert texts[1]["text"] == "You have returned."
+    assert texts[2]["text"] == "▾"
 
 
 def test_dialogue_box_draw_is_a_noop_without_text() -> None:
@@ -157,7 +192,7 @@ def test_dialogue_box_respects_viewport_changes() -> None:
 
 
 def test_textbox_style_scaling_helpers() -> None:
-    style = TextboxStyle()
+    style = TextboxStyle.classic()
 
     assert style.box_margin(1280) == pytest.approx(64)
     assert style.box_margin(320) == pytest.approx(20)
@@ -185,7 +220,7 @@ def test_choice_menu_layout_is_centered_and_stacked() -> None:
     # Strictly increasing y: option 0 on top, last option at the bottom.
     ys = [r[1] for r in rects]
     assert ys == sorted(ys)
-    assert ys[1] - ys[0] == pytest.approx(42 + 12)
+    assert ys[1] - ys[0] == pytest.approx(44 + 12)
 
 
 def test_choice_menu_hit_test_matches_drawn_geometry() -> None:
@@ -241,7 +276,7 @@ def test_choice_menu_scales_with_resolution() -> None:
 
 
 def test_choice_menu_style_button_width_cap() -> None:
-    style = ChoiceMenuStyle()
+    style = ChoiceMenuStyle.classic()
     # Capped at the absolute maximum on wide viewports.
     assert style.button_width_for(4000) == pytest.approx(600)
     # Proportional on narrow ones.
@@ -250,13 +285,24 @@ def test_choice_menu_style_button_width_cap() -> None:
 
 def test_choice_menu_draw_labels_are_numbered_from_one() -> None:
     backend = NullRenderer()
-    menu = ChoiceMenu(1280, 720)
+    menu = ChoiceMenu(1280, 720, style=ChoiceMenuStyle.classic())
     menu.set_options(_options(2))
 
     menu.draw(backend)
 
     texts = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
     assert texts == ["[1]  Option 0", "[2]  Option 1"]
+
+
+def test_choice_menu_cinematic_draw_is_clean_without_number_brackets() -> None:
+    backend = NullRenderer()
+    menu = ChoiceMenu(1280, 720, style=ChoiceMenuStyle.cinematic())
+    menu.set_options(_options(2))
+
+    menu.draw(backend)
+
+    texts = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
+    assert texts == ["Option 0", "Option 1"]
 
 
 def test_choice_menu_option_text_is_vertically_centred() -> None:
@@ -308,7 +354,12 @@ class _FakePrompt:
 
 def test_overlay_draws_all_three_layers_when_appropriate() -> None:
     backend = NullRenderer()
-    overlay = UIOverlay(1280, 720)
+    overlay = UIOverlay(
+        1280,
+        720,
+        dialogue_style=TextboxStyle.classic(),
+        choice_style=ChoiceMenuStyle.classic(),
+    )
 
     ui = UIState(speaker="Meris", text="Choose.")
     overlay.draw(backend, ui, _FakePrompt(_options(2)))
@@ -316,6 +367,20 @@ def test_overlay_draws_all_three_layers_when_appropriate() -> None:
     rects = [c for c in backend.ui_calls if c["kind"] == "rect"]
     # Textbox + nameplate + two choice buttons.
     assert len(rects) == 4
+
+
+def test_overlay_cinematic_mode_draws_layers() -> None:
+    backend = NullRenderer()
+    overlay = UIOverlay(1280, 720)
+
+    ui = UIState(speaker="Meris", text="Choose.")
+    overlay.draw(backend, ui, _FakePrompt(_options(2)))
+
+    grads = [c for c in backend.ui_calls if c["kind"] == "gradient_rect"]
+    rects = [c for c in backend.ui_calls if c["kind"] == "rect"]
+    # 2 gradient scrim stages + 2 choice button rects
+    assert len(grads) == 2
+    assert len(rects) == 2
 
 
 def test_overlay_hides_textbox_when_finished() -> None:
@@ -338,7 +403,7 @@ def test_overlay_hides_advance_arrow_during_choices() -> None:
     overlay.draw(backend, ui, _FakePrompt(_options(1)))
 
     labels = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
-    assert "▼" not in labels
+    assert overlay.dialogue_box.style.arrow_symbol not in labels
 
 
 def test_overlay_shows_advance_arrow_without_choices() -> None:
@@ -349,7 +414,7 @@ def test_overlay_shows_advance_arrow_without_choices() -> None:
     overlay.draw(backend, ui, None)
 
     labels = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
-    assert "▼" in labels
+    assert overlay.dialogue_box.style.arrow_symbol in labels
 
 
 def test_overlay_is_finished_override_takes_precedence() -> None:
@@ -408,7 +473,7 @@ def test_overlay_draw_is_idempotent_across_frames() -> None:
 
 @pytest.mark.parametrize(
     "method",
-    ["draw_rect", "draw_text", "draw_image", "measure_text"],
+    ["draw_rect", "draw_gradient_rect", "draw_text", "draw_image", "measure_text"],
 )
 def test_null_renderer_implements_uidraw_backend(method: str) -> None:
     backend = NullRenderer()
@@ -459,7 +524,7 @@ def test_pil_renderer_implements_uidraw_backend() -> None:
     from eager_graphics.renderers.pil import PILRenderer
 
     renderer = PILRenderer(width=320, height=240)
-    for method in ("draw_rect", "draw_text", "draw_image", "measure_text"):
+    for method in ("draw_rect", "draw_gradient_rect", "draw_text", "draw_image", "measure_text"):
         assert callable(getattr(renderer, method))
 
 
@@ -522,7 +587,7 @@ def test_pyglet_renderer_implements_uidraw_backend() -> None:
     from eager_graphics.renderers.pyglet import PygletRenderer
 
     renderer = PygletRenderer()
-    for method in ("draw_rect", "draw_text", "draw_image", "measure_text"):
+    for method in ("draw_rect", "draw_gradient_rect", "draw_text", "draw_image", "measure_text"):
         assert callable(getattr(renderer, method))
 
 
@@ -538,19 +603,19 @@ def test_dialogue_box_typewriter_reveal_draws_partial_text_and_hides_arrow() -> 
     assert any(t["text"] == "Alice" for t in texts)
     assert any(t["text"] == "Hello" for t in texts)
     # Advance arrow should be hidden while typing
-    assert not any(t["text"] == "▼" for t in texts)
+    assert not any(t["text"] == box.style.arrow_symbol for t in texts)
 
     # When reveal completes, arrow appears
     backend.ui_calls.clear()
     box.set_content("Alice", "Hello brave new world!", visible_chars=None)
     box.draw(backend)
     texts_after = [c for c in backend.ui_calls if c["kind"] == "text"]
-    assert any(t["text"] == "▼" for t in texts_after)
+    assert any(t["text"] == box.style.arrow_symbol for t in texts_after)
 
 
 def test_choice_menu_selection_highlight_and_prefix() -> None:
     backend = NullRenderer()
-    menu = ChoiceMenu(1280, 720)
+    menu = ChoiceMenu(1280, 720, style=ChoiceMenuStyle.classic())
     opts = [ChoiceOption(0, "Fight"), ChoiceOption(1, "Flee")]
     menu.set_options(opts)
 

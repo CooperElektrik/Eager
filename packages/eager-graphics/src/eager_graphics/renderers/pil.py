@@ -1485,6 +1485,41 @@ class PILRenderer(RenderBackend):
                     width=bw,
                 )
 
+    def draw_gradient_rect(
+        self,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        top_color: Color,
+        bottom_color: Color,
+    ) -> None:
+        """Fill a rectangle with a vertical linear gradient from top_color to bottom_color."""
+        if self._needs_clear:
+            self._execute_clear()
+        w = max(1, round(width))
+        h = max(2, round(height))
+        left = round(x)
+        top = round(y)
+        self._mark_ui_dirty(left, top, left + w + 1, top + h + 1)
+
+        grad = Image.new("RGBA", (1, h))
+        tc = top_color.to_rgba_bytes()
+        bc = bottom_color.to_rgba_bytes()
+        pixels = [
+            tuple(int(tc[i] + (bc[i] - tc[i]) * y_step / (h - 1)) for i in range(4))
+            for y_step in range(h)
+        ]
+        grad.putdata(pixels)
+        grad_resized = grad.resize((w, h), Image.Resampling.BILINEAR)
+
+        if self.mode == "RGBA":
+            self._image.alpha_composite(grad_resized, (left, top))
+        else:
+            bg_crop = self._image.crop((left, top, left + w, top + h)).convert("RGBA")
+            bg_crop.alpha_composite(grad_resized)
+            self._image.paste(bg_crop.convert("RGB"), (left, top))
+
     def draw_text(
         self,
         x: float,

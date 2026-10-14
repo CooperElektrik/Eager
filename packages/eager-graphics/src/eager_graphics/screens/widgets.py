@@ -39,10 +39,11 @@ class Button:
     ) -> None:
         """Render button rectangle and text."""
         col = hover_color if self.hovered else fill_color
-        if hasattr(backend, "draw_rect_outline"):
+        outline_fn = getattr(backend, "draw_rect_outline", None)
+        if callable(outline_fn):
             backend.draw_rect(self.rect.x, self.rect.y, self.rect.width, self.rect.height, col)
-            backend.draw_rect_outline(
-                self.rect.x, self.rect.y, self.rect.width, self.rect.height, border_color, line_width=1.5
+            outline_fn(
+                self.rect.x, self.rect.y, self.rect.width, self.rect.height, border_color, line_width=1.0
             )
         else:
             backend.draw_rect(
@@ -52,7 +53,7 @@ class Button:
                 self.rect.height,
                 col,
                 border_color=border_color,
-                border_width=1.5,
+                border_width=1.0,
             )
         lines = self.text.split("\n")
         if len(lines) == 1:
@@ -182,11 +183,12 @@ class Bar:
         fill_w = self.rect.width * ratio
 
         if border_color is not None:
-            if hasattr(backend, "draw_rect_outline"):
+            outline_fn = getattr(backend, "draw_rect_outline", None)
+            if callable(outline_fn):
                 backend.draw_rect(self.rect.x, self.rect.y, self.rect.width, self.rect.height, bar_color)
                 if fill_w > 0:
                     backend.draw_rect(self.rect.x, self.rect.y, fill_w, self.rect.height, fill_color)
-                backend.draw_rect_outline(
+                outline_fn(
                     self.rect.x, self.rect.y, self.rect.width, self.rect.height, border_color, line_width=line_width
                 )
             else:

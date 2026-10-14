@@ -437,6 +437,32 @@ class PygletRenderer(RenderBackend):
         )
         box.draw()
 
+    def draw_gradient_rect(
+        self,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        top_color: Color,
+        bottom_color: Color,
+    ) -> None:
+        """Draw a rectangle filled with a vertical linear gradient."""
+        w = max(1.0, float(width))
+        h = max(1.0, float(height))
+        flipped_y = self._flip_y(y, h)
+
+        rect = pyglet.shapes.Rectangle(
+            x=float(x),
+            y=flipped_y,
+            width=w,
+            height=h,
+            color=bottom_color.to_rgba_bytes(),
+        )
+        bot = list(bottom_color.to_rgba_bytes())
+        top = list(top_color.to_rgba_bytes())
+        rect._vertex_list.colors[:] = bot + bot + top + bot + top + top
+        rect.draw()
+
     def draw_text(
         self,
         x: float,

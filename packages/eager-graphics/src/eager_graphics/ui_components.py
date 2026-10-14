@@ -50,24 +50,41 @@ __all__ = [
     "wrap_text",
 ]
 
-# Palette used by the default component styling.  Mirrors the colours the
-# bundled players hard-coded before these components were extracted.
-_TEXTBOX_FILL = Color(0.059, 0.071, 0.098, 0.863)
-_TEXTBOX_BORDER = Color(0.471, 0.549, 0.706, 1.0)
-_NAMEPLATE_FILL = Color(0.137, 0.176, 0.255, 0.941)
-_NAMEPLATE_BORDER = Color(0.627, 0.706, 0.863, 1.0)
-_NAMEPLATE_TEXT = Color(1.0, 0.902, 0.471, 1.0)
-_DIALOGUE_TEXT = Color(0.961, 0.961, 0.961, 1.0)
-_ADVANCE_ARROW = Color(0.784, 0.784, 0.784, 0.784)
+# Eye-friendly minimal / cinematic palette (Option B)
+_CINEMATIC_BOX_FILL = Color(0.03, 0.04, 0.06, 0.90)
+_CINEMATIC_TOP_BORDER = Color(1.0, 1.0, 1.0, 0.0)
+_CINEMATIC_GRADIENT_TOP = Color(0.03, 0.04, 0.06, 0.0)
+_CINEMATIC_GRADIENT_MID = Color(0.03, 0.04, 0.06, 0.88)
+_CINEMATIC_GRADIENT_BOT = Color(0.03, 0.04, 0.06, 0.94)
+_CINEMATIC_SPEAKER_COLOR = Color(0.95, 0.86, 0.62, 1.0)
+_CINEMATIC_DIALOGUE_TEXT = Color(0.94, 0.95, 0.97, 1.0)
+_CINEMATIC_ARROW_COLOR = Color(0.72, 0.76, 0.82, 0.70)
 
-_CHOICE_FILL = Color(0.098, 0.118, 0.176, 0.902)
-_CHOICE_BORDER = Color(0.353, 0.510, 0.784, 1.0)
-_CHOICE_TEXT = Color(1.0, 1.0, 1.0, 1.0)
-_CHOICE_HOVER_FILL = Color(0.18, 0.24, 0.35, 0.95)
-_CHOICE_HOVER_BORDER = Color(0.6, 0.8, 1.0, 1.0)
+_CINEMATIC_CHOICE_FILL = Color(0.07, 0.09, 0.12, 0.86)
+_CINEMATIC_CHOICE_BORDER = Color(1.0, 1.0, 1.0, 0.12)
+_CINEMATIC_CHOICE_TEXT = Color(0.94, 0.95, 0.97, 1.0)
+_CINEMATIC_CHOICE_HOVER_FILL = Color(0.15, 0.18, 0.25, 0.94)
+_CINEMATIC_CHOICE_HOVER_BORDER = Color(0.95, 0.86, 0.62, 0.50)
+_CINEMATIC_CHOICE_ACCENT = Color(0.95, 0.86, 0.62, 0.95)
 
-_END_BANNER_FILL = Color(0.0, 0.0, 0.0, 0.706)
-_END_TEXT = Color(0.784, 0.784, 0.784, 0.863)
+# Legacy retro palette
+_CLASSIC_TEXTBOX_FILL = Color(0.059, 0.071, 0.098, 0.863)
+_CLASSIC_TEXTBOX_BORDER = Color(0.471, 0.549, 0.706, 1.0)
+_CLASSIC_NAMEPLATE_FILL = Color(0.137, 0.176, 0.255, 0.941)
+_CLASSIC_NAMEPLATE_BORDER = Color(0.627, 0.706, 0.863, 1.0)
+_CLASSIC_NAMEPLATE_TEXT = Color(1.0, 0.902, 0.471, 1.0)
+_CLASSIC_DIALOGUE_TEXT = Color(0.961, 0.961, 0.961, 1.0)
+_CLASSIC_ADVANCE_ARROW = Color(0.784, 0.784, 0.784, 0.784)
+
+_CLASSIC_CHOICE_FILL = Color(0.098, 0.118, 0.176, 0.902)
+_CLASSIC_CHOICE_BORDER = Color(0.353, 0.510, 0.784, 1.0)
+_CLASSIC_CHOICE_TEXT = Color(1.0, 1.0, 1.0, 1.0)
+_CLASSIC_CHOICE_HOVER_FILL = Color(0.18, 0.24, 0.35, 0.95)
+_CLASSIC_CHOICE_HOVER_BORDER = Color(0.6, 0.8, 1.0, 1.0)
+
+_END_BANNER_FILL = Color(0.04, 0.05, 0.07, 0.78)
+_END_TEXT = Color(0.85, 0.88, 0.92, 0.85)
+_TRANSPARENT = Color(0.0, 0.0, 0.0, 0.0)
 
 
 class TextAnchor:
@@ -85,32 +102,74 @@ class TextAnchor:
 class TextboxStyle:
     """Visual styling for :class:`DialogueBox`.
 
-    Defaults reproduce the look the bundled players shipped with before the
-    components were extracted, so existing screenplays render unchanged.
+    Defaults to a clean, minimal cinematic scrim docked to the bottom of the screen.
+    Use :meth:`classic` for the legacy boxed layout with retro high-contrast borders.
     """
 
-    box_fill: Color = _TEXTBOX_FILL
-    box_border: Color = _TEXTBOX_BORDER
-    box_border_width: float = 2.0
+    layout_mode: str = "cinematic"  # "cinematic" or "classic"
 
-    nameplate_fill: Color = _NAMEPLATE_FILL
-    nameplate_border: Color = _NAMEPLATE_BORDER
-    nameplate_text: Color = _NAMEPLATE_TEXT
-    nameplate_font_size: int = 13
+    box_fill: Color = _CINEMATIC_BOX_FILL
+    box_border: Color = _CINEMATIC_TOP_BORDER
+    box_border_width: float = 0.0
+    gradient_top: Color | None = _CINEMATIC_GRADIENT_TOP
+    gradient_mid: Color | None = _CINEMATIC_GRADIENT_MID
+    gradient_bottom: Color | None = _CINEMATIC_GRADIENT_BOT
+    fade_height: float = 55.0
 
-    text_color: Color = _DIALOGUE_TEXT
-    text_font_size: int = 14
-    text_padding: float = 20.0
+    nameplate_fill: Color = _TRANSPARENT
+    nameplate_border: Color = _TRANSPARENT
+    nameplate_text: Color = _CINEMATIC_SPEAKER_COLOR
+    nameplate_font_size: int = 15
+    show_nameplate_box: bool = False
 
-    arrow_color: Color = _ADVANCE_ARROW
-    arrow_font_size: int = 12
+    text_color: Color = _CINEMATIC_DIALOGUE_TEXT
+    text_font_size: int = 15
+    text_padding: float = 56.0
 
-    min_height: float = 110.0
-    height_ratio: float = 0.22
-    margin_ratio: float = 0.05
-    min_margin: float = 20.0
-    bottom_gap: float = 25.0
-    nameplate_overlap: float = 15.0
+    arrow_color: Color = _CINEMATIC_ARROW_COLOR
+    arrow_font_size: int = 14
+    arrow_symbol: str = "▾"
+
+    min_height: float = 160.0
+    height_ratio: float = 0.28
+    margin_ratio: float = 0.0
+    min_margin: float = 0.0
+    bottom_gap: float = 0.0
+    nameplate_overlap: float = 0.0
+
+    @classmethod
+    def cinematic(cls) -> TextboxStyle:
+        """Full-width bottom cinematic scrim with clean inline speaker label."""
+        return cls()
+
+    @classmethod
+    def classic(cls) -> TextboxStyle:
+        """Legacy boxed layout with high-contrast borders and raised nameplate."""
+        return cls(
+            layout_mode="classic",
+            box_fill=_CLASSIC_TEXTBOX_FILL,
+            box_border=_CLASSIC_TEXTBOX_BORDER,
+            box_border_width=2.0,
+            gradient_top=None,
+            gradient_bottom=None,
+            nameplate_fill=_CLASSIC_NAMEPLATE_FILL,
+            nameplate_border=_CLASSIC_NAMEPLATE_BORDER,
+            nameplate_text=_CLASSIC_NAMEPLATE_TEXT,
+            nameplate_font_size=13,
+            show_nameplate_box=True,
+            text_color=_CLASSIC_DIALOGUE_TEXT,
+            text_font_size=14,
+            text_padding=20.0,
+            arrow_color=_CLASSIC_ADVANCE_ARROW,
+            arrow_font_size=12,
+            arrow_symbol="▼",
+            min_height=110.0,
+            height_ratio=0.22,
+            margin_ratio=0.05,
+            min_margin=20.0,
+            bottom_gap=25.0,
+            nameplate_overlap=15.0,
+        )
 
     def box_height(self, viewport_height: float) -> float:
         """Return the textbox height for a viewport of *viewport_height* pixels."""
@@ -298,27 +357,37 @@ class DialogueBox:
         style = self.style
         vw, vh = self.viewport_width, self.viewport_height
 
-        box_w = float(vw - style.box_margin(vw) * 2)
-        box_h = style.box_height(vh)
-        box_x = style.box_margin(vw)
-        box_y = float(vh) - box_h - style.bottom_gap
+        if style.layout_mode == "cinematic":
+            box_w = float(vw)
+            box_h = style.box_height(vh)
+            box_x = 0.0
+            box_y = float(vh) - box_h - style.bottom_gap
+            nameplate = None
+            return DialogueBoxLayout(
+                box=(box_x, box_y, box_w, box_h),
+                nameplate=nameplate,
+                show_arrow=self.show_advance_arrow and bool(self.text),
+            )
+        else:
+            box_w = float(vw - style.box_margin(vw) * 2)
+            box_h = style.box_height(vh)
+            box_x = style.box_margin(vw)
+            box_y = float(vh) - box_h - style.bottom_gap
 
-        has_speaker = bool(self.speaker)
-        nameplate: tuple[float, float, float, float] | None = None
-        if has_speaker:
-            name_w = self.nameplate_width()
-            name_h = 30.0
-            # The nameplate straddles the top edge of the box, as is
-            # conventional for visual-novel dialogue.
-            name_x = box_x + 15.0
-            name_y = box_y - style.nameplate_overlap
-            nameplate = (name_x, name_y, name_w, name_h)
+            has_speaker = bool(self.speaker)
+            nameplate: tuple[float, float, float, float] | None = None
+            if has_speaker and style.show_nameplate_box:
+                name_w = self.nameplate_width()
+                name_h = 30.0
+                name_x = box_x + 15.0
+                name_y = box_y - style.nameplate_overlap
+                nameplate = (name_x, name_y, name_w, name_h)
 
-        return DialogueBoxLayout(
-            box=(box_x, box_y, box_w, box_h),
-            nameplate=nameplate,
-            show_arrow=self.show_advance_arrow and bool(self.text),
-        )
+            return DialogueBoxLayout(
+                box=(box_x, box_y, box_w, box_h),
+                nameplate=nameplate,
+                show_arrow=self.show_advance_arrow and bool(self.text),
+            )
 
     # ── drawing ────────────────────────────────────────────────────────
 
@@ -331,15 +400,64 @@ class DialogueBox:
         layout = self.layout()
         box_x, box_y, box_w, box_h = layout.box
 
-        backend.draw_rect(
-            box_x,
-            box_y,
-            box_w,
-            box_h,
-            style.box_fill,
-            border_color=style.box_border,
-            border_width=style.box_border_width,
-        )
+        # Background: gradient scrim or solid rect
+        if (
+            style.layout_mode == "cinematic"
+            and hasattr(backend, "draw_gradient_rect")
+            and style.gradient_top is not None
+            and getattr(style, "gradient_mid", None) is not None
+        ):
+            fade_h = min(getattr(style, "fade_height", 55.0), box_h * 0.45)
+            body_h = box_h - fade_h
+            # 1. Top transition fade
+            backend.draw_gradient_rect(
+                box_x,
+                box_y,
+                box_w,
+                fade_h,
+                style.gradient_top,
+                style.gradient_mid,
+            )
+            # 2. Rich dark reading plate
+            bot_col = (
+                style.gradient_bottom
+                if style.gradient_bottom is not None
+                else style.gradient_mid
+            )
+            backend.draw_gradient_rect(
+                box_x,
+                box_y + fade_h,
+                box_w,
+                body_h,
+                style.gradient_mid,
+                bot_col,
+            )
+        elif (
+            style.gradient_top is not None
+            and style.gradient_bottom is not None
+            and hasattr(backend, "draw_gradient_rect")
+        ):
+            backend.draw_gradient_rect(
+                box_x,
+                box_y,
+                box_w,
+                box_h,
+                style.gradient_top,
+                style.gradient_bottom,
+            )
+        else:
+            backend.draw_rect(
+                box_x,
+                box_y,
+                box_w,
+                box_h,
+                style.box_fill,
+                border_color=style.box_border if style.box_border_width > 0 else None,
+                border_width=style.box_border_width,
+            )
+
+        if style.layout_mode == "cinematic" and style.box_border_width > 0 and style.box_border.a > 0:
+            backend.draw_rect(box_x, box_y, box_w, style.box_border_width, style.box_border)
 
         if layout.nameplate is not None:
             nx, ny, nw, nh = layout.nameplate
@@ -374,9 +492,24 @@ class DialogueBox:
             text_start_x += img_size + 15.0
             text_max_w -= img_size + 15.0
 
+        if style.layout_mode == "cinematic":
+            content_y = box_y + getattr(style, "fade_height", 55.0) + 6.0
+            speaker_offset_y = 0.0
+            if self.speaker:
+                backend.draw_text(
+                    text_start_x,
+                    content_y,
+                    self.speaker,
+                    font_size=style.nameplate_font_size,
+                    color=style.nameplate_text,
+                )
+                speaker_offset_y = float(style.nameplate_font_size) + 12.0
+            dialogue_start_y = content_y + speaker_offset_y
+        else:
+            dialogue_start_y = box_y + 24.0
+
         line_height = style.text_font_size * 1.35
         lines = _get_wrapped_lines(self.text, text_max_w, backend.measure_text, font_size=style.text_font_size)
-
         if self.visible_chars is not None:
             remaining = max(0, self.visible_chars)
             for i, line in enumerate(lines):
@@ -386,7 +519,7 @@ class DialogueBox:
                 remaining = max(0, remaining - (len(line) + 1))
                 backend.draw_text(
                     text_start_x,
-                    box_y + 24.0 + (i * line_height),
+                    dialogue_start_y + (i * line_height),
                     visible_part,
                     font_size=style.text_font_size,
                     color=style.text_color,
@@ -395,7 +528,7 @@ class DialogueBox:
             for i, line in enumerate(lines):
                 backend.draw_text(
                     text_start_x,
-                    box_y + 24.0 + (i * line_height),
+                    dialogue_start_y + (i * line_height),
                     line,
                     font_size=style.text_font_size,
                     color=style.text_color,
@@ -403,32 +536,69 @@ class DialogueBox:
 
         is_fully_revealed = (self.visible_chars is None or self.visible_chars >= len(self.text))
         if layout.show_arrow and is_fully_revealed:
+            arrow_sym = getattr(style, "arrow_symbol", "▼")
+            arrow_x = box_x + box_w - (style.text_padding if style.layout_mode == "cinematic" else 30.0)
             backend.draw_text(
-                box_x + box_w - 30.0,
+                arrow_x,
                 box_y + box_h - 25.0,
-                "▼",
+                arrow_sym,
                 font_size=style.arrow_font_size,
                 color=style.arrow_color,
+                anchor_x=TextAnchor.RIGHT if style.layout_mode == "cinematic" else TextAnchor.LEFT,
             )
 
 
 
 @dataclass(frozen=True, slots=True)
 class ChoiceMenuStyle:
-    """Visual styling for :class:`ChoiceMenu`."""
+    """Visual styling for :class:`ChoiceMenu`.
 
-    button_fill: Color = _CHOICE_FILL
-    button_border: Color = _CHOICE_BORDER
-    button_border_width: float = 2.0
-    button_hover_fill: Color = _CHOICE_HOVER_FILL
-    button_hover_border: Color = _CHOICE_HOVER_BORDER
-    button_width: int = 600
-    button_width_ratio: float = 0.6
-    button_height: float = 42.0
+    Defaults to a clean, minimal card button with subtle hover highlighting.
+    Use :meth:`classic` for the legacy boxed buttons with high-contrast borders and >[1] numbering.
+    """
+
+    layout_mode: str = "cinematic"  # "cinematic" or "classic"
+    button_fill: Color = _CINEMATIC_CHOICE_FILL
+    button_border: Color = _CINEMATIC_CHOICE_BORDER
+    button_border_width: float = 1.0
+    button_hover_fill: Color = _CINEMATIC_CHOICE_HOVER_FILL
+    button_hover_border: Color = _CINEMATIC_CHOICE_HOVER_BORDER
+    accent_bar_color: Color = _CINEMATIC_CHOICE_ACCENT
+
+    button_width: int = 640
+    button_width_ratio: float = 0.65
+    button_height: float = 44.0
     spacing: float = 12.0
-    text_color: Color = _CHOICE_TEXT
-    text_font_size: int = 13
-    text_padding: float = 20.0
+    text_color: Color = _CINEMATIC_CHOICE_TEXT
+    text_font_size: int = 14
+    text_padding: float = 24.0
+    show_numbering: bool = False
+
+    @classmethod
+    def cinematic(cls) -> ChoiceMenuStyle:
+        """Clean minimal card buttons with soft hover highlight and left accent line."""
+        return cls()
+
+    @classmethod
+    def classic(cls) -> ChoiceMenuStyle:
+        """Legacy boxed buttons with retro blue borders and >[1] prefixes."""
+        return cls(
+            layout_mode="classic",
+            button_fill=_CLASSIC_CHOICE_FILL,
+            button_border=_CLASSIC_CHOICE_BORDER,
+            button_border_width=2.0,
+            button_hover_fill=_CLASSIC_CHOICE_HOVER_FILL,
+            button_hover_border=_CLASSIC_CHOICE_HOVER_BORDER,
+            accent_bar_color=Color(0.6, 0.8, 1.0, 1.0),
+            button_width=600,
+            button_width_ratio=0.6,
+            button_height=42.0,
+            spacing=12.0,
+            text_color=_CLASSIC_CHOICE_TEXT,
+            text_font_size=13,
+            text_padding=20.0,
+            show_numbering=True,
+        )
 
     def button_width_for(self, viewport_width: float) -> float:
         """Return the button width for a viewport of *viewport_width* pixels."""
@@ -531,12 +701,22 @@ class ChoiceMenu:
                 border_color=border_col,
                 border_width=style.button_border_width,
             )
+
+            # Left accent highlight bar on selection/hover in cinematic mode
+            if is_selected and style.layout_mode == "cinematic":
+                backend.draw_rect(bx, by, 3.0, bh, style.accent_bar_color)
+
             opt = self.options[index]
-            prefix = "> " if is_selected else ""
+            if style.show_numbering:
+                prefix = "> " if (is_selected and style.layout_mode == "classic") else ""
+                label_text = f"{prefix}[{index + 1}]  {opt.text}"
+            else:
+                label_text = opt.text
+
             backend.draw_text(
                 bx + style.text_padding,
                 by + (bh / 2.0),
-                f"{prefix}[{index + 1}]  {opt.text}",
+                label_text,
                 font_size=style.text_font_size,
                 color=style.text_color,
                 anchor_y=TextAnchor.MIDDLE,
@@ -619,6 +799,7 @@ class QuickMenu:
     def __init__(self, viewport_width: int = 1280, viewport_height: int = 720) -> None:
         self.viewport_width = viewport_width
         self.viewport_height = viewport_height
+        self.hovered_action: str | None = None
 
     def set_viewport(self, width: int, height: int) -> None:
         self.viewport_width = width
@@ -649,23 +830,25 @@ class QuickMenu:
         return None
 
     def draw(self, backend: UIDrawBackend) -> None:
-        """Render quick action buttons."""
-        fill = Color(0.08, 0.1, 0.14, 0.85)
-        border = Color(0.35, 0.45, 0.6, 0.9)
-        text_col = Color(0.9, 0.92, 0.95, 0.9)
+        """Render quick action buttons cleanly without harsh boxes."""
+        text_col = Color(0.68, 0.72, 0.78, 0.65)
+        hover_col = Color(0.95, 0.96, 0.98, 1.0)
+        hover_pill = Color(1.0, 1.0, 1.0, 0.08)
 
-        for _, label, bx, by, bw, bh in self.layout():
-            if hasattr(backend, "draw_rect_outline"):
-                backend.draw_rect(bx, by, bw, bh, fill)
-                backend.draw_rect_outline(bx, by, bw, bh, border, line_width=1.0)
+        for act_id, label, bx, by, bw, bh in self.layout():
+            is_hovered = getattr(self, "hovered_action", None) == act_id
+            if is_hovered:
+                backend.draw_rect(bx, by, bw, bh, hover_pill)
+                col = hover_col
             else:
-                backend.draw_rect(bx, by, bw, bh, fill, border_color=border, border_width=1.0)
+                col = text_col
+
             backend.draw_text(
                 bx + bw / 2.0,
                 by + bh / 2.0,
                 label,
                 font_size=11,
-                color=text_col,
+                color=col,
                 anchor_x=TextAnchor.CENTER,
                 anchor_y=TextAnchor.MIDDLE,
             )
@@ -691,14 +874,16 @@ class UIOverlay:
 
     width: int = 1280
     height: int = 720
+    dialogue_style: TextboxStyle | None = None
+    choice_style: ChoiceMenuStyle | None = None
     dialogue_box: DialogueBox = field(init=False)
     choice_menu: ChoiceMenu = field(init=False)
     end_notice: EndNotice = field(init=False)
     quick_menu: QuickMenu = field(init=False)
 
     def __post_init__(self) -> None:
-        self.dialogue_box = DialogueBox(self.width, self.height)
-        self.choice_menu = ChoiceMenu(self.width, self.height)
+        self.dialogue_box = DialogueBox(self.width, self.height, style=self.dialogue_style)
+        self.choice_menu = ChoiceMenu(self.width, self.height, style=self.choice_style)
         self.end_notice = EndNotice(self.width, self.height)
         self.quick_menu = QuickMenu(self.width, self.height)
 
@@ -816,11 +1001,12 @@ class UIOverlay:
             badge_w, badge_h = 84.0, 26.0
             bx = float(self.width) - badge_w - 20.0
             by = 20.0
-            fill = Color(0.08, 0.12, 0.18, 0.85)
-            border = Color(0.4, 0.6, 0.85, 0.9)
-            if hasattr(backend, "draw_rect_outline"):
+            fill = Color(0.06, 0.08, 0.11, 0.80)
+            border = Color(1.0, 1.0, 1.0, 0.12)
+            outline_fn = getattr(backend, "draw_rect_outline", None)
+            if callable(outline_fn):
                 backend.draw_rect(bx, by, badge_w, badge_h, fill)
-                backend.draw_rect_outline(bx, by, badge_w, badge_h, border, line_width=1.0)
+                outline_fn(bx, by, badge_w, badge_h, border, line_width=1.0)
             else:
                 backend.draw_rect(bx, by, badge_w, badge_h, fill, border_color=border, border_width=1.0)
             backend.draw_text(
@@ -828,7 +1014,7 @@ class UIOverlay:
                 by + badge_h / 2.0,
                 status_badge,
                 font_size=12,
-                color=Color(0.9, 0.95, 1.0, 1.0),
+                color=Color(0.92, 0.93, 0.95, 0.95),
                 anchor_x=TextAnchor.CENTER,
                 anchor_y=TextAnchor.MIDDLE,
             )

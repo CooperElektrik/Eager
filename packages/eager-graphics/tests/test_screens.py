@@ -24,6 +24,17 @@ class MockUIDrawBackend:
     def draw_rect_outline(self, x: float, y: float, w: float, h: float, color: Color, line_width: float = 1.0) -> None:
         self.rects.append(("outline", x, y, w, h, color))
 
+    def draw_gradient_rect(
+        self,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        top_color: Color,
+        bottom_color: Color,
+    ) -> None:
+        self.rects.append(("gradient", x, y, width, height, top_color, bottom_color))
+
     def draw_text(self, x: float, y: float, text: str, **kwargs) -> None:
         self.texts.append((text, x, y, kwargs))
 

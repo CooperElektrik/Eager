@@ -199,6 +199,28 @@ class NullRenderer(RenderBackend):
             }
         )
 
+    def draw_gradient_rect(
+        self,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        top_color: Color,
+        bottom_color: Color,
+    ) -> None:
+        """Record a vertical linear gradient rectangle."""
+        self.ui_calls.append(
+            {
+                "kind": "gradient_rect",
+                "x": float(x),
+                "y": float(y),
+                "width": float(width),
+                "height": float(height),
+                "top_color": top_color.to_hex(),
+                "bottom_color": bottom_color.to_hex(),
+            }
+        )
+
     def draw_text(
         self,
         x: float,
