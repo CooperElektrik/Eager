@@ -553,11 +553,8 @@ def _cmd_render(args: argparse.Namespace) -> int:
 def _run_interactive_player(engine: Any, *, backend: str) -> None:
     """Run the interactive player loop for the given backend.
 
-    Both PygletPlayer and PILPlayer share a common interface:
-    ``advance_story()``, ``make_choice(idx)``, ``on_draw()``,
-    ``active_choice_prompt``, ``is_finished``, and ``close()``.
-    RaylibPlayer and PILPlayer run their own event loops (``run()``);
-    PygletPlayer is driven by ``pyglet.app.run()``.
+    All interactive players (PygletPlayer, RaylibPlayer, and PILPlayer) share a
+    common interface and run their own event loops via ``run()``.
     """
     session = getattr(engine, "session", engine)
     asset_dir = str(engine.asset_dir) if getattr(engine, "asset_dir", None) else None
@@ -591,19 +588,15 @@ def _run_interactive_player(engine: Any, *, backend: str) -> None:
     if backend == "pyglet":
         from eager_graphics.renderers.pyglet import PygletPlayer
 
-        PygletPlayer(
+        player = PygletPlayer(
             session=session,
-            width=getattr(engine.renderer, "width", 1280) if hasattr(engine, "renderer") else 1280,
+            width=1280,
             height=720,
-            title="Eager Visual Novel",
+            title="Eager Visual Novel (Pyglet)",
             asset_dir=asset_dir,
         )
-    else:
+        player.run()
         return
-
-    import pyglet
-
-    pyglet.app.run()
 
 
 def _cmd_run(args: argparse.Namespace) -> int:

@@ -9,8 +9,9 @@ from typing import TYPE_CHECKING, Any
 try:
     import pyglet
     from pyglet.graphics import Batch, Group
-    from pyglet.shapes import Rectangle
+    from pyglet.shapes import Box, Rectangle
     from pyglet.text import Label
+    from pyglet.window import key, mouse
 except ImportError as err:
     msg = "Pyglet is not installed. Install with 'pip install eager-graphics[pyglet]' or 'pip install pyglet'."
     raise ImportError(msg) from err
@@ -70,6 +71,9 @@ class PygletAssetResolver:
         tex = self._generate_placeholder(asset_id, default_width, default_height)
         self._cache[asset_id] = tex
         return tex
+
+    # Alias matching PIL and Raylib resolvers
+    get_image = get_texture
 
     def _generate_placeholder(
         self,
@@ -159,6 +163,8 @@ class PygletRenderer(RenderBackend):
 
     def __init__(
         self,
+        width: int = 1920,
+        height: int = 1080,
         *,
         asset_dir: str | Path | None = None,
         scale_mode: ScaleMode = ScaleMode.LETTERBOX,
@@ -167,13 +173,14 @@ class PygletRenderer(RenderBackend):
         self.asset_resolver = PygletAssetResolver(asset_dir)
         self.scale_mode = scale_mode
         self.window = window
-        self.width: int = window.width if window is not None else 1920
-        self.height: int = window.height if window is not None else 1080
+        self.width: int = window.width if window is not None else width
+        self.height: int = window.height if window is not None else height
         self._current_transform: ViewportTransform | None = None
         self._active_sprites: list[pyglet.sprite.Sprite] = []
         self._letterbox_bars: list[Rectangle] = []
         self.clock: FrameClock = FrameClock()
         self.frame_count: int = 0
+        self.last_frame: list[RenderItem] = []
 
     def set_window(self, window: pyglet.window.Window) -> None:
         """Associate renderer with an active Pyglet Window."""
@@ -267,10 +274,13 @@ class PygletRenderer(RenderBackend):
 
     def end_frame(self) -> None:
         """Conclude frame render pass, drawing letterbox black bars if necessary."""
+        self.frame_count += 1
+        self.clock.tick()
+
         if self.window is None or self._current_transform is None:
             return
 
-        win_w, win_h = self.window.width, self.window.height
+        win_w, win_h = self.width, self.height
         trans = self._current_transform
 
         # Draw letterbox/pillarbox borders if window exceeds virtual aspect ratio
@@ -293,9 +303,6 @@ class PygletRenderer(RenderBackend):
             bottom_bar.draw()
             top_bar.draw()
             self._letterbox_bars.extend([bottom_bar, top_bar])
-
-        self.frame_count += 1
-        self.clock.tick()
 
     # ------------------------------------------------------------------ #
     # FPS properties (delegate to the FrameClock for a uniform API)
@@ -335,10 +342,25 @@ class PygletRenderer(RenderBackend):
         self.clear(BLACK)
 
         items = compositor.render_list()
+        self.last_frame = items
         for item in items:
             self.draw_item(item)
 
         self.end_frame()
+
+    # ------------------------------------------------------------------ #
+    # Introspection
+    # ------------------------------------------------------------------ #
+
+    def __len__(self) -> int:
+        return len(self.last_frame)
+
+    def __repr__(self) -> str:
+        return (
+            f"PygletRenderer(width={self.width}, height={self.height}, "
+            f"frame_count={self.frame_count}, last_frame_items={len(self.last_frame)}, "
+            f"fps={self.clock.fps:.1f})"
+        )
 
     # ------------------------------------------------------------------ #
     # UIDrawBackend primitives
@@ -364,7 +386,7 @@ class PygletRenderer(RenderBackend):
         border_color: Color | None = None,
         border_width: float = 0.0,
     ) -> None:
-        """Draw a filled rectangle, optionally stroked with a top border."""
+        """Draw a filled rectangle, optionally stroked with a border."""
         rect = pyglet.shapes.Rectangle(
             x=float(x),
             y=self._flip_y(y, height),
@@ -375,14 +397,36 @@ class PygletRenderer(RenderBackend):
         rect.draw()
 
         if border_color is not None and border_width > 0.0:
-            border = pyglet.shapes.Rectangle(
+            box = Box(
                 x=float(x),
-                y=self._flip_y(y, border_width),
+                y=self._flip_y(y, height),
                 width=float(width),
-                height=float(border_width),
+                height=float(height),
+                thickness=float(border_width),
                 color=border_color.to_rgba_bytes(),
             )
-            border.draw()
+            box.draw()
+
+    def draw_rect_outline(
+        self,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        color: Color,
+        *,
+        line_width: float = 1.0,
+    ) -> None:
+        """Draw an unfilled rectangle outline with thickness *line_width*."""
+        box = Box(
+            x=float(x),
+            y=self._flip_y(y, height),
+            width=float(width),
+            height=float(height),
+            thickness=float(line_width),
+            color=color.to_rgba_bytes(),
+        )
+        box.draw()
 
     def draw_text(
         self,
@@ -620,13 +664,17 @@ class PygletPlayer(pyglet.window.Window):
         audio: AudioMixer | None = None,
         width: int = 1280,
         height: int = 720,
-        title: str = "Eager-Graphics Visual Novel",
+        title: str = "Eager-Graphics Visual Novel (Pyglet)",
         asset_dir: str | Path | None = None,
         scale_mode: ScaleMode = ScaleMode.LETTERBOX,
         vsync: bool = True,
         visible: bool = True,
         show_fps: bool = True,
+        uncapped: bool = False,
     ) -> None:
+        if uncapped:
+            vsync = False
+        self.uncapped: bool = uncapped
         super().__init__(
             width=width,
             height=height,
@@ -635,6 +683,8 @@ class PygletPlayer(pyglet.window.Window):
             vsync=vsync,
             visible=visible,
         )
+        self.width = width
+        self.height = height
         self.session = session
         if session is not None:
             self.vm = session.vm
@@ -644,6 +694,9 @@ class PygletPlayer(pyglet.window.Window):
             self.audio = getattr(session, "audio", audio)
             self.keymap = getattr(session, "keymap", None) or Keymap()
             self.overlay = getattr(session, "overlay", None) or UIOverlay(width=width, height=height)
+            self.overlay.set_viewport(width, height)
+            if hasattr(session, "overlay"):
+                session.overlay.set_viewport(width, height)
         else:
             self.vm = vm  # type: ignore[assignment]
             self.compositor = compositor  # type: ignore[assignment]
@@ -654,6 +707,8 @@ class PygletPlayer(pyglet.window.Window):
             self.overlay = UIOverlay(width=width, height=height)
 
         self.renderer = PygletRenderer(
+            width=width,
+            height=height,
             asset_dir=asset_dir,
             scale_mode=scale_mode,
             window=self,
@@ -671,18 +726,16 @@ class PygletPlayer(pyglet.window.Window):
 
         # On-screen FPS debug overlay
         self.show_fps: bool = show_fps
-        self._fps_label: Label | None = None
-        if show_fps:
-            self._fps_label = Label(
-                "",
-                font_name="sans-serif",
-                font_size=11,
-                x=10,
-                y=10,
-                anchor_x="left",
-                anchor_y="bottom",
-                color=(230, 230, 230, 200),
-            )
+        self._fps_label: Label = Label(
+            "",
+            font_name="sans-serif",
+            font_size=11,
+            x=10,
+            y=10,
+            anchor_x="left",
+            anchor_y="bottom",
+            color=(230, 230, 230, 200),
+        )
         # Enable visual history rollback on director
         self.director.enable_visual_history()
 
@@ -709,6 +762,9 @@ class PygletPlayer(pyglet.window.Window):
         Called whenever the active choice prompt or dialogue changes so that
         input handling sees up-to-date layout even before the next draw.
         """
+        self.current_speaker = self.director.ui_state.speaker
+        self.current_text = self.director.ui_state.text
+        self.current_emotion = self.director.ui_state.emotion
         self.overlay.sync(self.director.ui_state, self.active_choice_prompt)
 
     def advance_story(self) -> None:
@@ -832,6 +888,10 @@ class PygletPlayer(pyglet.window.Window):
             self.audio.shutdown()
         super().close()
 
+    def run(self) -> None:
+        """Run the interactive visual-novel main loop (blocks until window closes)."""
+        pyglet.app.run()
+
     def on_draw(self) -> None:
         """Render frame: stage graphics followed by UI textbox, choices, screens, and FPS."""
         self.clear()
@@ -851,7 +911,7 @@ class PygletPlayer(pyglet.window.Window):
             )
 
         # 5. Render FPS counter
-        if self._fps_label is not None:
+        if self.show_fps and self._fps_label is not None:
             self._draw_fps()
 
     def _draw_fps(self) -> None:
@@ -860,7 +920,7 @@ class PygletPlayer(pyglet.window.Window):
             return
         fps = self.renderer.fps
         fps_avg = self.renderer.fps_avg
-        frames = self.compositor.clock.frame_count
+        frames = self.renderer.frame_count
         self._fps_label.text = f"FPS: {fps:.1f}  (avg: {fps_avg:.1f}, frames: {frames})"
         self._fps_label.draw()
 
@@ -870,9 +930,30 @@ class PygletPlayer(pyglet.window.Window):
         if self.session is not None:
             self.session.handle_input(InputAction.POINTER_MOVE, x=x, y=flipped_y)
 
+    def on_mouse_drag(
+        self, x: int, y: int, dx: int, dy: int, buttons: int, modifiers: int
+    ) -> None:
+        """Handle mouse drag for sliders and interactive UI elements."""
+        flipped_y = self.height - y
+        if self.session is not None:
+            self.session.handle_input(InputAction.POINTER_MOVE, x=x, y=flipped_y)
+            if buttons & mouse.LEFT:
+                self.session.handle_input(InputAction.POINTER_CLICK, x=x, y=flipped_y)
+                self.active_choice_prompt = self.session.active_choice_prompt
+                self.is_finished = self.session.is_finished
+                self._sync_overlay()
+
     def on_mouse_press(self, x: int, y: int, button: int, modifiers: int) -> None:
         """Handle mouse clicks for advancement, screens, or choice selection."""
-        if button != pyglet.window.mouse.LEFT:
+        if button == mouse.RIGHT:
+            if self.session is not None:
+                self.session.handle_input(InputAction.GAME_MENU)
+                self.active_choice_prompt = self.session.active_choice_prompt
+                self.is_finished = self.session.is_finished
+                self._sync_overlay()
+            return
+
+        if button != mouse.LEFT:
             return
 
         flipped_y = self.height - y
@@ -894,10 +975,13 @@ class PygletPlayer(pyglet.window.Window):
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
         """Handle keyboard input for advancing, choices, rollback, save/load, and menus."""
-        key = pyglet.window.key
         sym_str = key.symbol_string(symbol).lower()
         if sym_str.startswith("_") and len(sym_str) == 2 and sym_str[1].isdigit():
             sym_str = sym_str[1]
+        elif sym_str.startswith("num_") and len(sym_str) == 5 and sym_str[4].isdigit():
+            sym_str = sym_str[4]
+        elif sym_str == "num_enter":
+            sym_str = "enter"
 
         if self.session is not None:
             # 1-9 choice keys
@@ -925,23 +1009,23 @@ class PygletPlayer(pyglet.window.Window):
                 return
 
         # Fallback if running without session
-        if symbol in (key.SPACE, key.RETURN):
+        if symbol in (key.SPACE, key.RETURN) or sym_str in ("space", "enter"):
             if self.active_choice_prompt is None:
                 self.advance_story()
         elif self.active_choice_prompt is not None:
-            num_keys = [key._1, key._2, key._3, key._4, key._5, key._6, key._7, key._8, key._9]
-            for idx, k in enumerate(num_keys):
-                if symbol == k and idx < len(self.active_choice_prompt.options):
+            if len(sym_str) == 1 and sym_str in "123456789":
+                idx = int(sym_str) - 1
+                if idx < len(self.active_choice_prompt.options):
                     self.make_choice(idx)
-                    break
-        elif symbol == key.BACKSPACE:
+        elif symbol == key.BACKSPACE or sym_str == "backspace":
             self.rollback()
-        elif symbol in (key.ESCAPE, key.Q):
+        elif symbol == key.F3 or sym_str == "f3":
+            self.show_fps = not self.show_fps
+        elif symbol in (key.ESCAPE, key.Q) or sym_str in ("escape", "q"):
             self.close()
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         """Handle key releases (e.g. releasing Ctrl stops fast-forward skip)."""
-        key = pyglet.window.key
         sym_str = key.symbol_string(symbol).lower()
         if sym_str in ("ctrl", "lctrl", "rctrl") and self.session is not None:
             self.session.handle_input(InputAction.SKIP_RELEASE)

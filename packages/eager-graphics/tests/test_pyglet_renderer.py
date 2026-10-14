@@ -318,3 +318,115 @@ def test_pyglet_player_choice_mouse_click() -> None:
     finally:
         player.close()
 
+
+def test_pyglet_renderer_size_repr_and_primitives(invisible_window: pyglet.window.Window) -> None:
+    """Verify PygletRenderer constructor dimensions, len/repr, and drawing primitives."""
+    # Custom dimensions without window
+    r_custom = PygletRenderer(width=1280, height=720)
+    assert r_custom.width == 1280
+    assert r_custom.height == 720
+    assert len(r_custom) == 0
+    assert "PygletRenderer(width=1280, height=720" in repr(r_custom)
+
+    # Attached to window
+    r_win = PygletRenderer(window=invisible_window)
+    assert r_win.width == invisible_window.width
+    assert r_win.height == invisible_window.height
+
+    # Test drawing primitives (draw_rect, draw_rect_outline, draw_text, draw_image)
+    r_win.begin_frame()
+    r_win.draw_rect(10, 10, 100, 50, Color(1, 0, 0, 1), border_color=Color(0, 1, 0, 1), border_width=2.0)
+    r_win.draw_rect_outline(20, 20, 80, 40, Color(0, 0, 1, 1), line_width=1.5)
+    r_win.draw_text(30, 30, "Hello Pyglet", font_size=16, color=Color(1, 1, 1, 1))
+    r_win.draw_image("bg/castle", 0, 0, 200, 100)
+    r_win.end_frame()
+
+    w, h = r_win.measure_text("Hello Pyglet", font_size=16)
+    assert w > 0
+    assert h > 0
+
+    # Verify asset resolver get_image alias
+    assert r_win.asset_resolver.get_image("bg/castle", 200, 100) is not None
+
+
+def test_pyglet_player_run_and_input_handling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify player.run, right-click, mouse drag, and numpad keyboard handling."""
+    from eager_core.input import InputAction
+    from eager_runtime.session import GameSession
+
+    screenplay = """
+    ## Start --- start
+    Alice: Welcome!
+    ? Choice 1 (c1)
+    ? Choice 2 (c2)
+
+    ## Choice 1 --- c1
+    Alice: One.
+
+    ## Choice 2 --- c2
+    Alice: Two.
+    """
+    graph = parse_graph(screenplay)
+    session = GameSession(graph)
+
+    player = PygletPlayer(
+        session=session,
+        width=1280,
+        height=720,
+        visible=False,
+        uncapped=True,
+    )
+    assert not player.vsync
+
+    run_called = []
+    monkeypatch.setattr(pyglet.app, "run", lambda: run_called.append(True))
+    player.run()
+    assert run_called == [True]
+
+    try:
+        # FPS overlay toggle
+        assert player.show_fps
+        player.on_key_press(pyglet.window.key.F3, 0)
+        assert not player.show_fps
+        player.on_draw()  # FPS draw skipped when show_fps is False
+
+        # Advance to choice prompt
+        player.advance_story()
+        assert player.active_choice_prompt is not None
+
+        # Test numpad key press (NUM_1 selects choice 0)
+        player.on_key_press(pyglet.window.key.NUM_1, 0)
+        assert player.active_choice_prompt is None
+        assert player.current_text == "One."
+
+        # Right-click dispatches GAME_MENU
+        game_menu_dispatched = []
+        orig_handle_input = session.handle_input
+
+        def spy_handle_input(action: InputAction, **kw: object) -> object:
+            if action == InputAction.GAME_MENU:
+                game_menu_dispatched.append(True)
+            return orig_handle_input(action, **kw)
+
+        monkeypatch.setattr(session, "handle_input", spy_handle_input)
+        player.on_mouse_press(100, 100, pyglet.window.mouse.RIGHT, 0)
+        assert game_menu_dispatched == [True]
+
+        # Mouse drag forwards pointer move and click
+        drag_clicks = []
+
+        def spy_drag_click(action: InputAction, **kw: object) -> object:
+            if action == InputAction.POINTER_CLICK:
+                drag_clicks.append(kw)
+            return orig_handle_input(action, **kw)
+
+        monkeypatch.setattr(session, "handle_input", spy_drag_click)
+        player.on_mouse_drag(150, 200, 5, 5, pyglet.window.mouse.LEFT, 0)
+        assert len(drag_clicks) == 1
+        assert drag_clicks[0]["x"] == 150
+        assert drag_clicks[0]["y"] == 720 - 200
+
+    finally:
+        player.close()
+
+

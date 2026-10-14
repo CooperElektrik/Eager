@@ -231,18 +231,21 @@ PygletPlayer(
     *,
     width: int = 1280,
     height: int = 720,
-    title: str = "Eager-X Visual Novel",
+    title: str = "Eager-Graphics Visual Novel (Pyglet)",
     asset_dir: str | Path | None = None,
     scale_mode: ScaleMode = ScaleMode.LETTERBOX,
+    vsync: bool = True,
     visible: bool = True,
     show_fps: bool = True,
+    uncapped: bool = False,
 )
 ```
 - Interactive story advancement on Click, Space, or Enter.
-- Built-in UI textbox, speaker nameplate, and clickable branching choices.
-- Time-travel rollback on Backspace.
-- **`show_fps`** *(constructor parameter)*: When `True` (default), renders an on-screen FPS counter in the top-left corner, sourced from `PygletRenderer.fps` / `PygletRenderer.fps_avg`. The counter can be toggled at runtime via `player._fps_label = None`.
-- Runs with `pyglet.app.run()`.
+- Built-in UI textbox, speaker nameplate, and clickable branching choices (mouse or 1-9 numpad/number keys).
+- Time-travel rollback on Backspace or scroll up.
+- Right-click or Escape opens the game menu / dismisses active screens.
+- **`show_fps`** *(constructor parameter)*: When `True` (default), renders an on-screen FPS counter in the top-left corner, sourced from `PygletRenderer.fps` / `PygletRenderer.fps_avg`. The counter can be toggled at runtime via `player.show_fps = not player.show_fps` or the `F3` key.
+- Runs with `player.run()` (or `pyglet.app.run()`).
 
 ---
 
