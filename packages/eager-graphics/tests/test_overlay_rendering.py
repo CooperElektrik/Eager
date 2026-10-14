@@ -69,7 +69,7 @@ def test_pil_flash_renders_white_not_pastel() -> None:
     coords = [(0, 0), (960, 540), (1919, 1079), (100, 100)]
     for coord in coords:
         pixel = rendered_img.getpixel(coord)
-        assert pixel == (255, 255, 255, 255), f"Expected white at {coord}, got {pixel}"
+        assert pixel[:3] == (255, 255, 255), f"Expected white at {coord}, got {pixel}"
 
 
 def test_pil_fade_out_does_not_hang() -> None:
@@ -91,7 +91,7 @@ def test_pil_fade_out_does_not_hang() -> None:
     if PIL_AVAILABLE:
         renderer = PILRenderer(1920, 1080, scale_mode=ScaleMode.STRETCH)
         rendered_img = renderer.render_compositor(comp, 1920, 1080)
-        assert rendered_img.getpixel((960, 540)) == (0, 0, 0, 255)
+        assert rendered_img.getpixel((960, 540))[:3] == (0, 0, 0)
 
 
 def test_overlay_scale_produces_stage_sized_coverage() -> None:

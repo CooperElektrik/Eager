@@ -143,7 +143,7 @@ def test_pil_renderer_clear() -> None:
     img = backend.get_image()
     # Check top-left pixel is red
     pixel = img.getpixel((0, 0))
-    assert pixel == (255, 0, 0, 255)
+    assert pixel[:3] == (255, 0, 0)
 
 
 # ---------------------------------------------------------------------- #
@@ -395,7 +395,7 @@ def test_pil_renderer_letterbox_borders() -> None:
     img = renderer.render_compositor(comp, 2560, 720)
 
     # Far-left column should be black letterbox bar
-    assert img.getpixel((0, 360)) == (0, 0, 0, 255)
+    assert img.getpixel((0, 360))[:3] == (0, 0, 0)
 
 
 def test_pil_renderer_clear_cache() -> None:
@@ -565,7 +565,7 @@ def test_pil_renderer_lazy_clear() -> None:
     # The clear should have been bypassed because the opaque item covers the entire canvas
     assert renderer._needs_clear is False
     renderer.end_frame()
-    assert renderer.get_image().getpixel((0, 0)) == (255, 255, 255, 255)
+    assert renderer.get_image().getpixel((0, 0))[:3] == (255, 255, 255)
 
     # 2. Clear with green and render translucent item -> clear must execute
     renderer.begin_frame()
@@ -590,7 +590,7 @@ def test_pil_renderer_lazy_clear() -> None:
     assert renderer._needs_clear is False
     renderer.end_frame()
     # Bottom-right untouched pixel must be green
-    assert renderer.get_image().getpixel((150, 150)) == (0, 255, 0, 255)
+    assert renderer.get_image().getpixel((150, 150))[:3] == (0, 255, 0)
 
 
 def test_pil_renderer_anchor_cache_isolation() -> None:

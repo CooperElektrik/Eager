@@ -396,3 +396,118 @@ def test_pil_player_uncapped_mode():
         player.close()
 
 
+def test_hierarchical_background_layer_caching():
+    """When characters change, pre-rendered background cache (_bg_cache) must be reused."""
+    comp = StageCompositor(1920, 1080)
+    comp.set_background("bg/tavern", duration=0.0)
+    comp.show_character("alice", "smiling", position="left", duration=0.0)
+
+    renderer = PILRenderer(1280, 720)
+    renderer.render_compositor(comp, 1280, 720)
+
+    # Both background cache and stage cache are populated
+    assert renderer._bg_cache is not None
+    assert renderer._stage_cache is not None
+    cached_bg = renderer._bg_cache
+
+    # Character changes emotion: stage cache invalidates, but _bg_cache MUST be preserved
+    comp.show_character("alice", "surprised", position="left", duration=0.0)
+    renderer.render_compositor(comp, 1280, 720)
+
+    assert renderer._bg_cache is cached_bg
+    # Character moved: _bg_cache still preserved
+    comp.move_character("alice", "center", duration=0.0)
+    renderer.render_compositor(comp, 1280, 720)
+    assert renderer._bg_cache is cached_bg
+
+    # Changing the background updates _bg_cache with new background
+    comp.set_background("bg/forest", transition="cut", duration=0.0)
+    renderer.render_compositor(comp, 1280, 720)
+    assert renderer._bg_cache is not None
+    assert renderer._bg_cache is not cached_bg
+
+
+def test_alpha_fading_decoupled_from_geometry_cache():
+    """Alpha fading over multiple frames must reuse base geometry and cache quantized masks."""
+    renderer = PILRenderer(800, 600)
+    layout = LayoutResolver(1920, 1080)
+    renderer._current_transform = layout.compute_viewport_transform(800, 600, mode=ScaleMode.STRETCH)
+
+    # Render a character fading across multiple opacity values
+    opacities = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    for op in opacities:
+        renderer.begin_frame()
+        item = RenderItem(
+            asset_id="alice/smiling",
+            x=960.0,
+            y=540.0,
+            opacity=op,
+            scale_x=1.0,
+            scale_y=1.0,
+            rotation=0.0,
+            anchor=Anchor.CENTER,
+            tint=Color(1.0, 1.0, 1.0, 1.0),
+            flip_h=False,
+            flip_v=False,
+            layer="characters",
+            z_order=1,
+        )
+        renderer.draw_item(item)
+        renderer.end_frame()
+
+    # _geom_cache must contain exactly 1 entry for alice's geometry (not 10!)
+    assert len(renderer._geom_cache) == 1
+    geom_entry = next(iter(renderer._geom_cache.values()))
+    # alpha_masks dict on the geom entry should have cached the quantized masks
+    assert len(geom_entry.alpha_masks) > 0
+
+
+def test_adaptive_resampling_during_transformation():
+    """Actively moving/scaling items should use NEAREST resampling; resting items use high-quality filter."""
+    from PIL import Image
+
+    comp = StageCompositor(1920, 1080)
+    comp.set_background("bg/tavern", duration=0.0)
+    comp.show_character("alice", "smiling", position="left", duration=0.0)
+
+    renderer = PILRenderer(1280, 720, resampling=Image.Resampling.BILINEAR, adaptive_resampling=True)
+    renderer.render_compositor(comp, 1280, 720)
+
+    # Initial frame: resting, not in motion
+    assert len(renderer._in_motion_assets) == 0
+
+    # Frame 2: Start moving character across frames (motion in progress)
+    comp.move_character("alice", "center", duration=1.0)
+    comp.step(0.5)
+    renderer.render_compositor(comp, 1280, 720)
+
+    assert "alice/smiling" in renderer._in_motion_assets
+
+    # Frame 3: Element reaches rest (no geometry change)
+    comp.step(1.0)  # complete tween
+    renderer.render_compositor(comp, 1280, 720)  # resting render
+    renderer.render_compositor(comp, 1280, 720)  # stationary comparison
+    assert "alice/smiling" not in renderer._in_motion_assets
+
+
+def test_localized_ui_dirty_subregion_restore():
+    """When only UI is drawn on a static stage, only the dirty subregion is restored from stage cache."""
+    comp = StageCompositor(1920, 1080)
+    comp.set_background("bg/tavern", duration=0.0)
+
+    renderer = PILRenderer(1280, 720)
+    renderer.render_compositor(comp, 1280, 720)
+    assert renderer._stage_cache is not None
+
+    # Immediate-mode UI draws a textbox at the bottom (y=500 to 700)
+    renderer.draw_rect(50, 500, 1180, 200, Color(0.1, 0.1, 0.1, 0.8))
+    assert renderer._ui_dirty_bbox is not None
+    _x0, y0, _x1, y1 = renderer._ui_dirty_bbox
+    assert y0 >= 500 and y1 <= 701
+
+    # Next render_compositor call with unchanged stage: dirty bbox is used and reset
+    renderer.render_compositor(comp, 1280, 720)
+    assert renderer._ui_dirty_bbox is None
+
+
+
