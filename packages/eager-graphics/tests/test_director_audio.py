@@ -113,8 +113,9 @@ class TestDirectorAudioHooks(unittest.TestCase):
         director.bind(dispatcher)
 
         # When skip is not active, sound and voice play
+        # (sound effects are polyphonic by default -> sound_0 pool slot)
         dispatcher.dispatch(HookEvent(hook_name="play", args="sound click.ogg", line_number=1))
-        self.assertEqual(backend.calls[-1][1], "sound")
+        self.assertEqual(backend.calls[-1][1], "sound_0")
 
         dispatcher.dispatch(DialogueEvent(speaker="Alice", text="Voice line", voice="alice_v.ogg", emotion=None, line_number=2))
         self.assertEqual(backend.calls[-1][1], "voice")
@@ -135,6 +136,96 @@ class TestDirectorAudioHooks(unittest.TestCase):
         dispatcher.dispatch(HookEvent(hook_name="play", args="music bgm.ogg", line_number=6))
         self.assertEqual(backend.calls[-1][0], "play")
         self.assertEqual(backend.calls[-1][1], "music")
+
+    def test_stage_director_sound_polyphony_by_default(self):
+        backend = NullAudioBackend()
+        mixer = AudioMixer(backend=backend)
+        compositor = StageCompositor()
+        director = StageDirector(compositor, audio=mixer)
+        dispatcher = EventDispatcher()
+        director.bind(dispatcher)
+
+        # Overlapping SFX layer instead of cutting off
+        dispatcher.dispatch(HookEvent(hook_name="play", args="sound thunder.ogg", line_number=1))
+        dispatcher.dispatch(HookEvent(hook_name="play", args="sound click.ogg", line_number=2))
+        plays = [c for c in backend.calls if c[0] == "play"]
+        self.assertEqual([p[1] for p in plays], ["sound_0", "sound_1"])
+        self.assertTrue(mixer.channels["sound_0"].is_playing)
+        self.assertTrue(mixer.channels["sound_1"].is_playing)
+        self.assertEqual(mixer.channels["sound_0"].current_asset, "thunder.ogg")
+        self.assertEqual(mixer.channels["sound_1"].current_asset, "click.ogg")
+
+        # ~ stop sound fans out to the whole pool
+        dispatcher.dispatch(HookEvent(hook_name="stop", args="sound", line_number=3))
+        self.assertFalse(mixer.is_playing("sound"))
+
+    def test_stage_director_sound_polyphony_opt_out_and_opt_in(self):
+        backend = NullAudioBackend()
+        mixer = AudioMixer(backend=backend)
+        compositor = StageCompositor()
+        director = StageDirector(compositor, audio=mixer)
+        dispatcher = EventDispatcher()
+        director.bind(dispatcher)
+
+        # Legacy single-voice cutoff
+        dispatcher.dispatch(HookEvent(hook_name="play", args="sound a.ogg auto_channels=false", line_number=1))
+        dispatcher.dispatch(HookEvent(hook_name="play", args="sound b.ogg auto_channels=false", line_number=2))
+        plays = [c for c in backend.calls if c[0] == "play"]
+        self.assertTrue(all(p[1] == "sound" for p in plays))
+        self.assertEqual(mixer.channels["sound"].current_asset, "b.ogg")
+
+        # Other channels stay single by default but can opt in
+        backend.calls.clear()
+        dispatcher.dispatch(HookEvent(hook_name="play", args="music sting.ogg auto_channels=true", line_number=3))
+        self.assertEqual(backend.calls[-1][1], "music_0")
+
+    def test_stage_director_sound_volume_inheritance(self):
+        backend = NullAudioBackend()
+        mixer = AudioMixer(backend=backend)
+        compositor = StageCompositor()
+        director = StageDirector(compositor, audio=mixer)
+        dispatcher = EventDispatcher()
+        director.bind(dispatcher)
+
+        # Track volume configured before playback carries into pool slots.
+        dispatcher.dispatch(HookEvent(hook_name="volume", args="sound 0.5", line_number=1))
+        dispatcher.dispatch(HookEvent(hook_name="play", args="sound click.ogg", line_number=2))
+        self.assertAlmostEqual(mixer.channels["sound_0"].volume, 0.5)
+
+        # An explicit hook volume overrides the inherited one.
+        dispatcher.dispatch(HookEvent(hook_name="play", args="sound bang.ogg volume=0.9", line_number=3))
+        self.assertAlmostEqual(mixer.channels["sound_1"].volume, 0.9)
+
+    def test_stage_director_explicit_slot_inherits_base_volume(self):
+        backend = NullAudioBackend()
+        mixer = AudioMixer(backend=backend)
+        compositor = StageCompositor()
+        director = StageDirector(compositor, audio=mixer)
+        dispatcher = EventDispatcher()
+        director.bind(dispatcher)
+
+        dispatcher.dispatch(HookEvent(hook_name="volume", args="sound 0.5", line_number=1))
+        dispatcher.dispatch(HookEvent(hook_name="play", args="sound_0 click.ogg", line_number=2))
+        self.assertAlmostEqual(mixer.channels["sound_0"].volume, 0.5)
+
+    def test_stage_director_max_polyphony_zero_is_unbounded(self):
+        backend = NullAudioBackend()
+        mixer = AudioMixer(backend=backend)
+        compositor = StageCompositor()
+        director = StageDirector(compositor, audio=mixer)
+        dispatcher = EventDispatcher()
+        director.bind(dispatcher)
+
+        for i in range(16):
+            dispatcher.dispatch(
+                HookEvent(hook_name="play", args=f"sound s{i}.ogg auto_channels=true", line_number=i)
+            )
+        dispatcher.dispatch(
+            HookEvent(hook_name="play", args="sound extra.ogg auto_channels=true max_polyphony=0", line_number=100)
+        )
+        # Unbounded: grows to sound_16 instead of stealing sound_0.
+        self.assertEqual(backend.calls[-1][1], "sound_16")
+        self.assertEqual(mixer.channels["sound_0"].current_asset, "s0.ogg")
 
 
 if __name__ == "__main__":

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
+
+_POOL_SUFFIX_RE = re.compile(r"^(.*)_(\d+)$")
 
 
 class AudioBackend(Protocol):
@@ -169,6 +173,12 @@ class AudioMixer:
 
     STANDARD_CHANNELS = ("music", "sound", "voice", "ambient")
 
+    #: Default cap on concurrent auto-allocated pool channels per base
+    #: (e.g. ``sound_0`` … ``sound_15``). When every slot is busy the oldest
+    #: entry is stolen. Set to ``None`` (or pass ``max_polyphony<=0``) for
+    #: unbounded growth.
+    DEFAULT_MAX_POLYPHONY = 16
+
     def __init__(
         self,
         backend: AudioBackend | None = None,
@@ -201,8 +211,138 @@ class AudioMixer:
         """Compute final output volume = master * channel_type * track_vol."""
         chan = self.channels.get(channel)
         chan_vol = chan.volume if chan else 1.0
-        type_vol = self.channel_volumes.get(channel, 1.0)
+        type_vol = self._type_volume(channel)
         return max(0.0, min(1.0, self.master_volume * type_vol * chan_vol))
+
+    @staticmethod
+    def _split_pool_name(channel: str) -> tuple[str, int | None]:
+        """Split ``sound_3`` into ``("sound", 3)``; plain names yield ``(name, None)``."""
+        m = _POOL_SUFFIX_RE.match(channel)
+        if m and m.group(1):
+            try:
+                return m.group(1), int(m.group(2))
+            except ValueError:
+                pass
+        return channel, None
+
+    def _type_volume(self, channel: str) -> float:
+        """Return the type/category volume for *channel*.
+
+        Pool members (``sound_0``) inherit their base channel's type volume
+        (``sound``) unless they have an explicit entry.
+        """
+        if channel in self.channel_volumes:
+            return self.channel_volumes[channel]
+        base, suffix = self._split_pool_name(channel)
+        while suffix is not None:
+            if base in self.channel_volumes:
+                return self.channel_volumes[base]
+            base, suffix = self._split_pool_name(base)
+        return 1.0
+
+    def _pool_members(self, base: str) -> list[str]:
+        """Return allocated pool channel names for *base* (e.g. ``sound_0``)."""
+        prefix = f"{base}_"
+        members: list[str] = []
+        for name in self.channels:
+            if name.startswith(prefix) and name[len(prefix):].isdigit():
+                members.append(name)
+        return sorted(members, key=lambda n: int(n[len(prefix):]))
+
+    def _is_pool_member(self, channel: str) -> bool:
+        base, suffix = self._split_pool_name(channel)
+        return suffix is not None and channel != base
+
+    def _allocate_pool_channel(self, base: str, max_polyphony: int | None = None) -> str:
+        """Find a free ``<base>_N`` slot or allocate a new one.
+
+        Reuses the lowest-index idle slot first so the pool stays compact.
+        A slot counts as busy while the mixer marks it playing *and* the
+        backend still reports it playing (so naturally-finished sounds are
+        reusable even before the next :meth:`update`). Gaps are filled
+        before appending: with ``sound_5`` already taken, the next
+        allocation is ``sound_0``. Once every index in ``0..cap-1`` exists
+        and is busy, the oldest (lowest serial) entry is stolen instead of
+        growing forever. A *cap* of ``None`` (or ``<=0``) means unbounded
+        growth.
+        """
+        if base not in self.channels:
+            self.channels[base] = ChannelState(name=base)
+            if base not in self.channel_volumes:
+                self.channel_volumes[base] = 1.0
+        if max_polyphony is not None and max_polyphony <= 0:
+            cap: int | None = None
+        else:
+            cap = max_polyphony if max_polyphony is not None else self.DEFAULT_MAX_POLYPHONY
+        prefix = f"{base}_"
+        indices: dict[int, str] = {}
+        for name in self.channels:
+            if name.startswith(prefix) and name[len(prefix):].isdigit():
+                indices[int(name[len(prefix):])] = name
+        for idx in sorted(indices):
+            name = indices[idx]
+            chan = self.channels[name]
+            if not chan.is_playing:
+                chan.queue.clear()
+                return name
+            try:
+                backend_busy = self.backend.is_playing(name)
+            except Exception:  # noqa: BLE001
+                backend_busy = True
+            if not backend_busy:
+                chan.queue.clear()
+                return name
+        # Fill the lowest gap first (unified for bounded and unbounded
+        # modes): with ``sound_5`` taken, the next allocation is ``sound_0``.
+        candidate = 0
+        while cap is None or candidate < cap:
+            if candidate not in indices:
+                return f"{base}_{candidate}"
+            candidate += 1
+        # Every slot 0..cap-1 exists and is busy: steal the oldest managed
+        # slot. Explicit out-of-range slots (e.g. a dedicated ``sound_99``)
+        # are never stolen.
+        assert cap is not None  # unbounded mode always returns inside the loop
+        managed = [indices[i] for i in range(cap) if i in indices]
+        busy = sorted(
+            ((self.channels[name].serial, name) for name in managed),
+            key=lambda t: t[0],
+        )
+        if busy:
+            victim = busy[0][1]
+            self.channels[victim].queue.clear()
+            return victim
+        return f"{base}_0"
+
+    def _slot_audible(self, channel: str) -> bool:
+        """Return True if an exact channel entry is currently audible.
+
+        Unlike the raw ``ChannelState.is_playing`` flag this also consults
+        the backend, so naturally-finished sounds read as stopped even
+        before the next :meth:`update` tick. Paused channels count as
+        active since they will resume.
+        """
+        chan = self.channels.get(channel)
+        if chan is None or not chan.is_playing:
+            return False
+        if chan.is_paused:
+            return True
+        try:
+            return bool(self.backend.is_playing(channel))
+        except Exception:  # noqa: BLE001
+            return True
+
+    def is_playing(self, channel: str) -> bool:
+        """Return True if *channel* is audibly active.
+
+        For a base channel (e.g. ``sound``) this covers the base entry plus
+        every allocated pool member (``sound_0``, ``sound_1``, …). Pool
+        member names are checked exactly.
+        """
+        if self._is_pool_member(channel):
+            return self._slot_audible(channel)
+        targets = [channel, *self._pool_members(channel)]
+        return any(self._slot_audible(name) for name in targets)
 
     def play(
         self,
@@ -211,26 +351,67 @@ class AudioMixer:
         *,
         loop: bool | None = None,
         fade_in: float = 0.0,
-        volume: float = 1.0,
+        volume: float | None = None,
         loop_start: float | None = None,
         loop_end: float | None = None,
-    ) -> None:
-        """Play an audio asset on the specified channel."""
+        auto_channels: bool = False,
+        max_polyphony: int | None = None,
+    ) -> str:
+        """Play an audio asset on the specified channel.
+
+        With ``auto_channels=True`` overlapping sounds no longer cut each
+        other off: playback is allocated onto a dynamic pool slot named
+        ``<channel>_N`` (``sound_0``, ``sound_1``, …) and the actual channel
+        name is returned. Explicit pool names (``sound_0``) always play
+        exactly on that channel even when *auto_channels* is set.
+
+        When *volume* is omitted (``None``), a pool slot — whether
+        auto-allocated or explicitly addressed (``sound_0``) — inherits the
+        base channel's current track volume (so ``~ volume sound 0.5``
+        applies to later SFX); every other channel defaults to ``1.0``.
+        """
+        inherit_base: str | None = None
+        if auto_channels and not self._is_pool_member(channel):
+            inherit_base = channel
+            channel = self._allocate_pool_channel(channel, max_polyphony)
+
         if channel not in self.channels:
             self.channels[channel] = ChannelState(name=channel)
-            self.channel_volumes[channel] = 1.0
+            # Pool members (sound_0) inherit the base type volume via
+            # _type_volume fallback, so only brand-new base/custom channel
+            # names get an explicit entry.
+            if not self._is_pool_member(channel):
+                self.channel_volumes.setdefault(channel, 1.0)
 
         chan = self.channels[channel]
-        is_loop = loop if loop is not None else (channel in ("music", "ambient"))
+        if loop is not None:
+            is_loop = loop
+        else:
+            base, _suffix = self._split_pool_name(channel)
+            is_loop = channel in ("music", "ambient") or base in ("music", "ambient")
+        if volume is None:
+            base_name = inherit_base
+            if base_name is None and self._is_pool_member(channel):
+                base_name = self._split_pool_name(channel)[0]
+            base_chan = self.channels.get(base_name) if base_name is not None else None
+            volume = base_chan.volume if base_chan is not None else 1.0
         self._serial_counter += 1
         chan.serial = self._serial_counter
         chan.current_asset = asset_path
         chan.loop = is_loop
-        chan.volume = volume
+        chan.volume = max(0.0, min(1.0, volume))
         chan.loop_start = loop_start
         chan.loop_end = loop_end
         chan.is_playing = True
         chan.is_paused = False
+        # A fresh playback cancels any pending fade-out automation; without
+        # this a reused/stolen slot would be silenced mid-playback when the
+        # stale fade completes in update().
+        chan.fade_timer = 0.0
+        chan.fade_duration = 0.0
+        chan.fade_start_vol = 0.0
+        chan.fade_target_vol = 0.0
+        chan.stop_on_fade_complete = False
 
         resolved = self._resolve_asset(asset_path)
         final_vol = self._effective_volume(channel)
@@ -243,9 +424,10 @@ class AudioMixer:
             loop_start=loop_start,
             loop_end=loop_end,
         )
+        return channel
 
-    def stop(self, channel: str, *, fade_out: float = 0.0) -> None:
-        """Stop playback on a channel."""
+    def _stop_one(self, channel: str, *, fade_out: float = 0.0) -> None:
+        """Stop a single exact channel entry."""
         chan = self.channels.get(channel)
         if chan is None:
             return
@@ -261,31 +443,61 @@ class AudioMixer:
             chan.current_asset = None
             self.backend.stop(channel)
 
+    def stop(self, channel: str, *, fade_out: float = 0.0) -> None:
+        """Stop playback on a channel.
+
+        Stopping a base channel (``sound``) fans out to every allocated
+        pool member (``sound_0``, ``sound_1``, …). Explicit pool names stop
+        exactly that slot.
+        """
+        if self._is_pool_member(channel):
+            self._stop_one(channel, fade_out=fade_out)
+            return
+        targets = [channel, *self._pool_members(channel)]
+        for name in targets:
+            self._stop_one(name, fade_out=fade_out)
+
     def stop_all(self, *, fade_out: float = 0.0) -> None:
         """Stop playback across all audio channels."""
         for name in list(self.channels):
-            self.stop(name, fade_out=fade_out)
+            self._stop_one(name, fade_out=fade_out)
 
     def pause(self, channel: str) -> None:
-        """Pause playback on a channel."""
-        chan = self.channels.get(channel)
-        if chan and chan.is_playing:
-            chan.is_paused = True
-            self.backend.pause(channel)
+        """Pause playback on a channel (base names fan out to pool members)."""
+        if self._is_pool_member(channel):
+            targets = [channel]
+        else:
+            targets = [channel, *self._pool_members(channel)]
+        for name in targets:
+            chan = self.channels.get(name)
+            if chan and chan.is_playing:
+                chan.is_paused = True
+                self.backend.pause(name)
 
     def resume(self, channel: str) -> None:
-        """Resume playback on a paused channel."""
-        chan = self.channels.get(channel)
-        if chan and chan.is_paused:
-            chan.is_paused = False
-            self.backend.resume(channel)
+        """Resume playback on a paused channel (base names fan out)."""
+        if self._is_pool_member(channel):
+            targets = [channel]
+        else:
+            targets = [channel, *self._pool_members(channel)]
+        for name in targets:
+            chan = self.channels.get(name)
+            if chan and chan.is_paused:
+                chan.is_paused = False
+                self.backend.resume(name)
 
     def set_volume(self, channel: str, volume: float) -> None:
-        """Set track volume for a channel."""
-        chan = self.channels.get(channel)
-        if chan is not None:
-            chan.volume = max(0.0, min(1.0, volume))
-            self.backend.set_volume(channel, self._effective_volume(channel))
+        """Set track volume for a channel (base names fan out to pool members)."""
+        clamped = max(0.0, min(1.0, volume))
+        if self._is_pool_member(channel):
+            targets = [channel]
+        else:
+            targets = [channel, *self._pool_members(channel)]
+        for name in targets:
+            chan = self.channels.get(name)
+            if chan is not None:
+                chan.volume = clamped
+                self.backend.set_volume(name, self._effective_volume(name))
 
     def set_master_volume(self, volume: float) -> None:
         """Set master volume scaling all channels."""
@@ -294,15 +506,26 @@ class AudioMixer:
             self.backend.set_volume(name, self._effective_volume(name))
 
     def set_channel_volume(self, channel: str, volume: float) -> None:
-        """Set type volume for a category of channel."""
+        """Set type volume for a category of channel.
+
+        Setting a base channel (``sound``) also pushes the recomputed
+        effective volume to every allocated pool member so SFX preferences
+        apply to overlapping sounds.
+        """
         self.channel_volumes[channel] = max(0.0, min(1.0, volume))
-        self.backend.set_volume(channel, self._effective_volume(channel))
+        if self._is_pool_member(channel):
+            targets = [channel]
+        else:
+            targets = [channel, *self._pool_members(channel)]
+        for name in targets:
+            self.backend.set_volume(name, self._effective_volume(name))
 
     def queue(self, channel: str, asset_path: str) -> None:
         """Queue an audio asset to play after current playback completes."""
         if channel not in self.channels:
             self.channels[channel] = ChannelState(name=channel)
-            self.channel_volumes[channel] = 1.0
+            if not self._is_pool_member(channel):
+                self.channel_volumes.setdefault(channel, 1.0)
         chan = self.channels[channel]
         if not chan.is_playing:
             self.play(channel, asset_path)
@@ -346,11 +569,26 @@ class AudioMixer:
             self.backend.shutdown()
 
     def save_state(self) -> dict[str, Any]:
-        """Save mixer state for checkpoints and saves."""
+        """Save mixer state for checkpoints and saves.
+
+        Idle pool members (``sound_0`` with nothing playing, nothing queued
+        and no fade running) are pruned so checkpoints do not accumulate
+        ghost channels over a long session.
+        """
         return {
             "master_volume": self.master_volume,
             "channel_volumes": dict(self.channel_volumes),
-            "channels": {name: chan.to_dict() for name, chan in self.channels.items()},
+            "channels": {
+                name: chan.to_dict()
+                for name, chan in self.channels.items()
+                if not (
+                    self._is_pool_member(name)
+                    and not chan.is_playing
+                    and not chan.queue
+                    and chan.fade_duration == 0.0
+                    and not chan.stop_on_fade_complete
+                )
+            },
             "serial_counter": self._serial_counter,
         }
 
@@ -404,8 +642,15 @@ class AudioMixer:
                 if was_paused:
                     self.pause(name)
             else:
-                self.stop(name)
+                self._stop_one(name)
 
         for name in list(self.channels):
             if name not in raw_channels:
-                self.stop(name)
+                if self._is_pool_member(name):
+                    # Drop ghost pool slots allocated after this snapshot so
+                    # rollback/checkpoints do not accumulate them forever.
+                    with contextlib.suppress(Exception):
+                        self.backend.stop(name)
+                    del self.channels[name]
+                else:
+                    self._stop_one(name)

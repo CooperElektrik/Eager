@@ -352,7 +352,7 @@ class StageDirector:
         return False
 
     def handle_play(self, args: str) -> None:
-        """Handle '~ play channel track [fade=X] [volume=Y] [loop=True/False] [loop_start=Z] [loop_end=W]'."""
+        """Handle '~ play channel track [fade=X] [volume=Y] [loop=True/False] [loop_start=Z] [loop_end=W] [auto_channels=True/False] [max_polyphony=N]'."""
         if self.audio is None:
             return
         parsed = parse_hook_args(args)
@@ -362,14 +362,33 @@ class StageDirector:
         track = parsed.positional[1].strip()
 
         # In skip mode, drop sound and voice playback (music and ambient keep playing)
-        if self._is_skip_active() and channel in ("sound", "voice"):
+        if self._is_skip_active() and (
+            channel in ("sound", "voice")
+            or channel.startswith(("sound_", "voice_"))
+        ):
             return
 
         fade_in = parsed.get_float("fade", 0.0) or parsed.get_float("fade_in", 0.0)
-        volume = parsed.get_float("volume", 1.0)
+        # Omit volume (None) when the hook does not specify it so an
+        # auto-allocated pool slot inherits the base channel's track volume.
+        vol_raw = parsed.get_str("volume")
+        try:
+            volume = float(vol_raw) if vol_raw is not None else None
+        except ValueError:
+            volume = None
         loop_arg = parsed.get_bool("loop", None)
         loop_start = parsed.get_float("loop_start", None)
         loop_end = parsed.get_float("loop_end", None)
+        # Sound effects are polyphonic by default so overlapping SFX spawn
+        # pool slots (sound_0, sound_1, …) instead of cutting each other off.
+        # Other channels stay single-voice unless opted in. Explicit pool
+        # names (sound_0) always address that slot directly.
+        auto_channels = parsed.get_bool("auto_channels", channel == "sound")
+        poly_raw = parsed.get_str("max_polyphony")
+        try:
+            max_polyphony = int(poly_raw) if poly_raw is not None else None
+        except ValueError:
+            max_polyphony = None
 
         self.audio.play(
             channel,
@@ -379,10 +398,16 @@ class StageDirector:
             volume=volume,
             loop_start=loop_start,
             loop_end=loop_end,
+            auto_channels=auto_channels,
+            max_polyphony=max_polyphony,
         )
 
     def handle_stop(self, args: str) -> None:
-        """Handle '~ stop channel [fade=X]' or '~ stop all'."""
+        """Handle '~ stop channel [fade=X]' or '~ stop all'.
+
+        Stopping a base channel (e.g. ``sound``) also stops its polyphonic
+        pool members (``sound_0``, ``sound_1``, …).
+        """
         if self.audio is None:
             return
         parsed = parse_hook_args(args)
@@ -395,7 +420,11 @@ class StageDirector:
             self.audio.stop(channel, fade_out=fade_out)
 
     def handle_volume(self, args: str) -> None:
-        """Handle '~ volume channel level'."""
+        """Handle '~ volume channel level'.
+
+        Volume changes on a base channel fan out to its polyphonic pool
+        members.
+        """
         if self.audio is None:
             return
         parsed = parse_hook_args(args)

@@ -191,7 +191,7 @@ Fades the screen overlay from solid color to fully transparent.
 
 Audio hooks drive the injected `AudioMixer` over its channels (`music`, `ambient`, `sound`, `voice`, plus custom channels). They are no-ops when no mixer is attached (e.g. pure headless runs).
 
-### `~ play <channel> <track> [fade=<seconds>] [volume=<level>] [loop=true|false] [loop_start=<seconds>] [loop_end=<seconds>]`
+### `~ play <channel> <track> [fade=<seconds>] [volume=<level>] [loop=true|false] [loop_start=<seconds>] [loop_end=<seconds>] [auto_channels=true|false] [max_polyphony=<N>]`
 Plays a track on a channel. `fade` (also accepted as `fade_in`) fades the volume in over that many seconds; `volume` defaults to `1.0`. `loop` overrides the channel default (`music`/`ambient` loop; `sound`/`voice` do not). `loop_start` and `loop_end` specify intro-to-loop seamless boundaries in seconds.
 
 ```es
@@ -199,6 +199,29 @@ Plays a track on a channel. `fade` (also accepted as `fade_in`) fades the volume
 ~ play sound thunder.ogg
 ~ play voice greeting.ogg volume=1.0
 ```
+
+#### Polyphonic sound effects (`auto_channels`)
+The `sound` channel is polyphonic by default: each `~ play sound …` allocates a pool slot (`sound_0`, `sound_1`, …) so overlapping effects layer instead of cutting each other off. Finished slots are reused; when the pool (default 16 concurrent slots) is exhausted the oldest slot is stolen. Other channels stay single-voice unless opted in.
+
+```es
+~ play sound thunder.ogg
+~ play sound thunder.ogg
+# -> sound_0 + sound_1 play together
+
+~ play sound thunder.ogg auto_channels=false
+# -> legacy single-voice cutoff on `sound`
+
+~ play music sting.ogg auto_channels=true
+# -> opt any other channel into pooling (music_0, …)
+
+~ play music sting.ogg auto_channels=true max_polyphony=4
+# -> cap that pool at 4 concurrent slots
+
+~ play sound thunder.ogg auto_channels=true max_polyphony=0
+# -> unbounded pool growth (never steal)
+```
+
+`~ stop sound` (and `~ volume sound …`, pause/resume, and the `sfx` preference volume) fan out to the base channel plus every allocated `sound_N` slot. `~ stop sound_1` or an explicit `~ play sound_0 …` addresses a single pool slot directly. A `~ volume sound …` set before playback is inherited by later pool slots unless the `~ play` hook passes its own `volume`. Idle pool slots are pruned from checkpoints/saves and dropped on rollback to an earlier snapshot.
 
 ### Voice Playback & Management
 When dialogue events specify a voice tag (e.g. `{voice=alice_01.ogg}`), `StageDirector` automatically plays the audio clip on the `voice` channel. When subsequent dialogue lines or narration events lack voice tags, the voice channel is automatically stopped to prevent audio bleed. Exiting scenes or ending the story also stops any active voice clip.
