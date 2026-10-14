@@ -69,6 +69,7 @@ class ChannelState:
     queue: list[str] = dataclasses.field(default_factory=list)
     loop_start: float | None = None
     loop_end: float | None = None
+    serial: int = 0
 
     # Fade automation
     fade_timer: float = 0.0
@@ -88,6 +89,7 @@ class ChannelState:
             "queue": list(self.queue),
             "loop_start": self.loop_start,
             "loop_end": self.loop_end,
+            "serial": self.serial,
             "fade_timer": self.fade_timer,
             "fade_duration": self.fade_duration,
             "fade_start_vol": self.fade_start_vol,
@@ -107,6 +109,7 @@ class ChannelState:
             queue=list(data.get("queue", [])),
             loop_start=data.get("loop_start"),
             loop_end=data.get("loop_end"),
+            serial=int(data.get("serial", 0)),
             fade_timer=float(data.get("fade_timer", 0.0)),
             fade_duration=float(data.get("fade_duration", 0.0)),
             fade_start_vol=float(data.get("fade_start_vol", 0.0)),
@@ -181,6 +184,7 @@ class AudioMixer:
 
         self.master_volume: float = 1.0
         self.channel_volumes: dict[str, float] = {name: 1.0 for name in self.STANDARD_CHANNELS}
+        self._serial_counter: int = 0
 
     def _resolve_asset(self, asset_path: str) -> Path | str:
         """Resolve audio file relative to asset_dir if configured."""
@@ -218,6 +222,8 @@ class AudioMixer:
 
         chan = self.channels[channel]
         is_loop = loop if loop is not None else (channel in ("music", "ambient"))
+        self._serial_counter += 1
+        chan.serial = self._serial_counter
         chan.current_asset = asset_path
         chan.loop = is_loop
         chan.volume = volume
@@ -345,6 +351,7 @@ class AudioMixer:
             "master_volume": self.master_volume,
             "channel_volumes": dict(self.channel_volumes),
             "channels": {name: chan.to_dict() for name, chan in self.channels.items()},
+            "serial_counter": self._serial_counter,
         }
 
     def load_state(self, state: dict[str, Any]) -> None:
@@ -353,12 +360,36 @@ class AudioMixer:
             return
         self.master_volume = float(state.get("master_volume", 1.0))
         self.channel_volumes = {k: float(v) for k, v in state.get("channel_volumes", {}).items()}
+        self._serial_counter = max(self._serial_counter, int(state.get("serial_counter", 0)))
 
         raw_channels = state.get("channels", {})
         for name, data in raw_channels.items():
             chan = ChannelState.from_dict(data)
+            existing = self.channels.get(name)
+
+            # Check if this exact playback serial/track is already playing
+            is_same_track = (
+                existing is not None
+                and existing.is_playing
+                and chan.is_playing
+                and chan.current_asset is not None
+                and existing.current_asset == chan.current_asset
+                and existing.serial == chan.serial
+                and chan.serial > 0
+                and self.backend.is_playing(name)
+            )
+
+            was_paused = bool(data.get("is_paused", False))
             self.channels[name] = chan
-            if chan.is_playing and chan.current_asset:
+            if is_same_track:
+                # Same music track/serial continues smoothly across rollback without restarting from frame 0
+                if abs(existing.volume - chan.volume) > 1e-4:
+                    self.backend.set_volume(name, self._effective_volume(name))
+                if chan.is_paused and not existing.is_paused:
+                    self.backend.pause(name)
+                elif not chan.is_paused and existing.is_paused:
+                    self.backend.resume(name)
+            elif chan.is_playing and chan.current_asset:
                 self.play(
                     name,
                     chan.current_asset,
@@ -367,5 +398,14 @@ class AudioMixer:
                     loop_start=chan.loop_start,
                     loop_end=chan.loop_end,
                 )
+                restored_serial = int(data.get("serial", 0))
+                if restored_serial > 0:
+                    chan.serial = restored_serial
+                if was_paused:
+                    self.pause(name)
             else:
+                self.stop(name)
+
+        for name in list(self.channels):
+            if name not in raw_channels:
                 self.stop(name)

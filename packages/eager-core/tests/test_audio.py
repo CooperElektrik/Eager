@@ -84,6 +84,63 @@ class TestAudioMixer(unittest.TestCase):
         self.assertTrue(backend.shutdown_called)
         self.assertIn(("shutdown",), backend.calls)
 
+    def test_audio_rollback_continuity_same_track(self):
+        backend = NullAudioBackend()
+        mixer = AudioMixer(backend=backend)
+
+        # Start playback in scene beat 1
+        mixer.play("music", "bgm/peaceful.ogg", volume=0.8)
+        state_beat1 = mixer.save_state()
+        self.assertEqual(len([c for c in backend.calls if c[0] == "play"]), 1)
+
+        # Progress to scene beat 2 (same track continues playing)
+        _ = mixer.save_state()
+
+        # Roll back from beat 2 to beat 1
+        mixer.load_state(state_beat1)
+
+        # Playback MUST NOT restart from frame 0 (no new backend.play calls)
+        play_calls = [c for c in backend.calls if c[0] == "play"]
+        self.assertEqual(len(play_calls), 1)
+        self.assertTrue(mixer.channels["music"].is_playing)
+        self.assertEqual(mixer.channels["music"].current_asset, "bgm/peaceful.ogg")
+
+    def test_audio_rollback_across_track_change(self):
+        backend = NullAudioBackend()
+        mixer = AudioMixer(backend=backend)
+
+        # Scene 1: peaceful theme
+        mixer.play("music", "bgm/peaceful.ogg", volume=0.8)
+        state_scene1 = mixer.save_state()
+
+        # Scene 2: battle starts
+        mixer.play("music", "bgm/battle.ogg", volume=1.0)
+        _ = mixer.save_state()
+        self.assertEqual(len([c for c in backend.calls if c[0] == "play"]), 2)
+
+        # Roll back to Scene 1
+        mixer.load_state(state_scene1)
+
+        # When rolling back across track change, peaceful theme must be restarted
+        play_calls = [c for c in backend.calls if c[0] == "play"]
+        self.assertEqual(len(play_calls), 3)
+        self.assertEqual(play_calls[-1][2], "bgm/peaceful.ogg")
+        self.assertEqual(mixer.channels["music"].current_asset, "bgm/peaceful.ogg")
+
+    def test_audio_rollback_paused_state(self):
+        backend = NullAudioBackend()
+        mixer = AudioMixer(backend=backend)
+        mixer.play("music", "bgm/theme.ogg")
+        mixer.pause("music")
+        saved = mixer.save_state()
+
+        mixer2 = AudioMixer(backend=backend)
+        mixer2.load_state(saved)
+        self.assertTrue(mixer2.channels["music"].is_paused)
+        pause_calls = [c for c in backend.calls if c[0] == "pause" and c[1] == "music"]
+        self.assertGreaterEqual(len(pause_calls), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
+
