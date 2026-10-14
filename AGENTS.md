@@ -1,6 +1,6 @@
-# Eager-X — Agent Guide
+# Eager — Agent Guide
 
-Eager-X is a Python monorepo for building interactive narrative games and visual novels. Four packages form a layered toolchain: screenplay parsing, shared primitives, story execution, and presentation.
+Eager is a Python monorepo for building interactive narrative games and visual novels. Four packages form a layered toolchain: screenplay parsing, shared primitives, story execution, and presentation.
 
 This file records durable architecture and development conventions. It is not an exhaustive API reference or change log. Update it when package boundaries, core workflows, or important architectural invariants change—not for every ordinary implementation change. Put feature details in the relevant package README or docs.
 
@@ -146,7 +146,7 @@ ruff check packages/
 
 Optional-dependency tests may be skipped when their backend/editor libraries are unavailable. The workspace development setup is intended to install the full test toolchain.
 
-Useful CLI entry points include `eager-script check`, `eager-script graph`, `eager play`, `eager inspect`, `eager test-run`, `eager i18n extract` / `check`, and `eager-x play` / `run` / `check` / `build` / `i18n`. Use each command's `--help` for its current arguments rather than maintaining an exhaustive command list here.
+Useful CLI entry points include `eager-script check`, `eager-script graph`, `eager play`, `eager inspect`, `eager test-run`, `eager i18n extract` / `check`, and `eager play --backend` / `run` / `check` / `build` / `render`. Use each command's `--help` for its current arguments rather than maintaining an exhaustive command list here.
 
 ## 8. Common extension paths
 

@@ -1,4 +1,4 @@
-"""Eager: Lightweight narrative runtime engine for Eager-S screenplays.
+"""Eager: Lightweight narrative runtime engine for Eager-Script screenplays.
 
 The headless VM, events, dispatcher, and state management are always
 available.  The :class:`~eager_runtime.engine.VisualEngine` façade — which

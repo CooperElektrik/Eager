@@ -1,4 +1,4 @@
-"""Eager-S screenplay DSL parser."""
+"""Eager-Script screenplay DSL parser."""
 
 from __future__ import annotations
 
@@ -586,7 +586,7 @@ def _parse_dialogue(
 
 
 class ScreenplayParser:
-    """Parses Eager-S screenplay text into a sequence of parsed AST items (standard mode).
+    """Parses Eager-Script screenplay text into a sequence of parsed AST items (standard mode).
 
     Standard mode supports the full DSL: hooks, subroutine calls, fresh-box/append
     beats, voice tags, and explicit label identifiers.  Subclasses can override
@@ -872,7 +872,7 @@ class ScreenplayParser:
 
 
 class PlainScreenplayParser(ScreenplayParser):
-    """Parses Eager-S screenplays in Eager-SP plain mode.
+    """Parses Eager-Script screenplays in Eager-SP plain mode.
 
     In plain mode the screenplay reads like a natural manuscript:
 

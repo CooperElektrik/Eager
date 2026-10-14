@@ -1,4 +1,4 @@
-"""Static validator for parsed Eager-S screenplay AST."""
+"""Static validator for parsed Eager-Script screenplay AST."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ class ValidationError:
 
 @dataclass(frozen=True, slots=True)
 class ValidationResult:
-    """Result of validating an Eager-S script AST."""
+    """Result of validating an Eager-Script script AST."""
 
     errors: tuple[ValidationError, ...]
     warnings: tuple[ValidationError, ...]

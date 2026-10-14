@@ -1,4 +1,4 @@
-"""Unit tests for Eager-S terminal text editor components."""
+"""Unit tests for Eager-Script terminal text editor components."""
 
 import tempfile
 import unittest
@@ -224,7 +224,7 @@ class TestTextBuffer(unittest.TestCase):
 
 
 class TestHighlighter(unittest.TestCase):
-    """Test syntax highlighting for all Eager-S DSL constructs."""
+    """Test syntax highlighting for all Eager-Script DSL constructs."""
 
     def setUp(self) -> None:
         self.highlighter = EagerSHighlighter(DummyTerm())
@@ -356,7 +356,7 @@ class TestCLIEditSubcommand(unittest.TestCase):
             exit_code = main(["edit", "test.es"])
             self.assertEqual(exit_code, 1)
             err = mock_stderr.getvalue()
-            self.assertIn("The Eager-S terminal editor requires 'blessed'", err)
+            self.assertIn("The Eager-Script terminal editor requires 'blessed'", err)
             self.assertIn('pip install "eager-script[editor]"', err)
 
     @patch("eager_script.editor.is_editor_available", return_value=True)
@@ -548,7 +548,7 @@ class TestEditorModule(unittest.TestCase):
 
         with self.assertRaises(ImportError) as ctx:
             _ = eager_script.editor.Editor
-        self.assertIn("The Eager-S terminal editor requires 'blessed'", str(ctx.exception))
+        self.assertIn("The Eager-Script terminal editor requires 'blessed'", str(ctx.exception))
 
     @patch("eager_script.editor.is_editor_available", return_value=False)
     def test_run_editor_returns_1_when_missing(self, mock_avail) -> None:
@@ -559,7 +559,7 @@ class TestEditorModule(unittest.TestCase):
         with patch("sys.stderr", new_callable=io.StringIO) as mock_err:
             exit_code = eager_script.editor.run_editor()
             self.assertEqual(exit_code, 1)
-            self.assertIn("The Eager-S terminal editor requires 'blessed'", mock_err.getvalue())
+            self.assertIn("The Eager-Script terminal editor requires 'blessed'", mock_err.getvalue())
 
     def test_editor_python_310_compatibility(self) -> None:
         import ast

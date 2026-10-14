@@ -1,4 +1,4 @@
-"""Terminal dialogs and modal overlays for the Eager-S editor."""
+"""Terminal dialogs and modal overlays for the Eager-Script editor."""
 
 from __future__ import annotations
 
@@ -201,7 +201,7 @@ def outline_dialog(term: Any, scenes: Sequence[SceneEntry]) -> SceneEntry | None
 
 
 def help_dialog(term: Any) -> None:
-    """Show Eager-S screenplay DSL and editor keyboard shortcuts reference."""
+    """Show Eager-Script screenplay DSL and editor keyboard shortcuts reference."""
     help_lines = [
         ("KEYBOARD SHORTCUTS", True),
         ("  Ctrl+S          Save current screenplay", False),
@@ -215,7 +215,7 @@ def help_dialog(term: Any) -> None:
         ("  Ctrl+H / F1     Display this help screen", False),
         ("  Arrows/Home/End Navigation", False),
         ("", False),
-        ("EAGER-S SCREENPLAY DSL REFERENCE", True),
+        ("EAGER-SCRIPT SCREENPLAY DSL REFERENCE", True),
         ("  ## Scene Title --- id       Scene label with custom identifier", False),
         ("  ## Scene Title              Scene label with auto-slug identifier", False),
         ("  Speaker: Text               Character dialogue beat", False),
@@ -248,7 +248,7 @@ def help_dialog(term: Any) -> None:
             left,
             w,
             h,
-            title="Eager-S Editor Help & DSL Reference",
+            title="Eager-Script Editor Help & DSL Reference",
             border_color=term.bold_green,
         )
 

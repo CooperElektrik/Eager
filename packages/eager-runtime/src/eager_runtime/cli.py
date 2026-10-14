@@ -1,11 +1,10 @@
-"""Command-line interfaces for the Eager runtime.
+"""Command-line interface for the Eager runtime.
 
-Two entry points are provided:
+Single entry point is provided:
 
-* ``eager``       — headless / text-only commands (``play``, ``inspect``,
-  ``test-run``).  No graphics dependency required.
-* ``eager-x``     — visual-novel commands (``play`` with a rendering backend,
-  ``render`` in headless mode).  Requires ``eager_graphics`` to be installed.
+* ``eager`` — unified commands (``play``, ``inspect``,
+  ``test-run``, ``render``, ``run``, ``new``, ``check``, ``build``,
+  ``i18n``).  Graphical commands require ``eager_graphics`` to be installed.
 """
 
 from __future__ import annotations
@@ -54,7 +53,7 @@ def _version_string() -> str:
     try:
         import eager_graphics
 
-        return f"eager-x {eager_graphics.__version__}"
+        return f"eager {eager_graphics.__version__}"
     except ImportError:
         import eager_runtime
 
@@ -101,16 +100,31 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser for the ``eager`` CLI."""
     parser = argparse.ArgumentParser(
         prog="eager",
-        description="Eager narrative runtime and player for Eager-S screenplay scripts.",
+        description="Eager narrative runtime and player for Eager-Script screenplay scripts.",
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=_version_string(),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # play
     play_p = subparsers.add_parser(
-        "play", help="Play an Eager-S screenplay interactively in the terminal."
+        "play", help="Play an Eager-Script screenplay interactively in the terminal."
     )
     _build_common_script_args(play_p)
     play_p.add_argument("--no-color", action="store_true", help="Disable colored terminal output.")
+    play_p.add_argument(
+        "--backend",
+        choices=["terminal", "pyglet", "pil", "raylib"],
+        default="terminal",
+        help="Player backend (default: terminal). Graphical backends require eager-graphics.",
+    )
+    play_p.add_argument("--asset-dir", default=None, help="Directory containing sprite/background assets.")
+    play_p.add_argument("--warp", default=None, help="Fast-forward / jump directly to scene label.")
+    play_p.add_argument("--no-audio", action="store_true", help="Disable audio playback (use NullAudioBackend).")
     play_p.set_defaults(func=run_play)
 
     # inspect
@@ -147,6 +161,67 @@ def build_parser() -> argparse.ArgumentParser:
     )
     check_p.set_defaults(func=_cmd_check)
 
+    # render
+    render_p = subparsers.add_parser(
+        "render",
+        help="Run a story to completion in headless mode (NullRenderer, no window).",
+    )
+    render_p.add_argument("script", help="Path to .es screenplay file")
+    render_p.add_argument("--asset-dir", default=None, help="Directory containing sprite/background assets.")
+    render_p.add_argument("--plain", action="store_true", help="Parse script in Eager-SP plain mode.")
+    render_p.add_argument("--lang", "--locale", default=None, help="Language locale for translations (e.g. 'vi').")
+    render_p.add_argument(
+        "--dt",
+        type=float,
+        default=1.0 / 60.0,
+        help="Simulated timestep per frame (default: 1/60 ≈ 60 FPS)",
+    )
+    render_p.add_argument(
+        "--max-steps",
+        type=int,
+        default=None,
+        help="Safety cap on total story steps",
+    )
+    render_p.add_argument(
+        "--auto-choose",
+        type=int,
+        default=0,
+        help="Automatically select this choice index when a choice prompt appears (default: 0)",
+    )
+    render_p.set_defaults(func=_cmd_render)
+
+    # run
+    run_p = subparsers.add_parser(
+        "run",
+        help="Run project in directory containing game.toml or script.",
+    )
+    run_p.add_argument("project_dir", nargs="?", default=".", help="Project directory (default: current directory)")
+    run_p.add_argument("--backend", choices=["pyglet", "pil", "raylib"], default="pil", help="Rendering backend")
+    run_p.add_argument("--no-audio", action="store_true", help="Disable audio playback (use NullAudioBackend).")
+    run_p.set_defaults(func=_cmd_run)
+
+    # new
+    new_p = subparsers.add_parser(
+        "new",
+        help="Scaffold a new Eager visual novel project structure.",
+    )
+    new_p.add_argument("name", help="Name of project directory to create")
+    new_p.add_argument(
+        "--demo",
+        action="store_true",
+        help="Scaffold project using the full showcase demo story and assets instead of the starter template.",
+    )
+    new_p.set_defaults(func=_cmd_new)
+
+    # build
+    build_p = subparsers.add_parser(
+        "build",
+        help="Package and bundle an Eager project into a standalone distribution archive.",
+    )
+    build_p.add_argument("project_dir", nargs="?", default=".", help="Project directory (default: current directory)")
+    build_p.add_argument("-o", "--output", default=None, help="Output zip archive path")
+    build_p.set_defaults(func=_cmd_build)
+
     # i18n
     _add_i18n_subparser(subparsers)
 
@@ -155,7 +230,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run_play(args: argparse.Namespace) -> int:
-    """Execute interactive terminal playthrough."""
+    """Execute interactive playthrough (terminal by default, graphical with --backend)."""
+    backend = getattr(args, "backend", "terminal")
+    if backend != "terminal":
+        return _cmd_play(args)
     script_path = Path(args.script)
     if not script_path.exists():
         print(f"Error: Screenplay file '{script_path}' not found.", file=sys.stderr)
@@ -300,126 +378,12 @@ def run_test_run(args: argparse.Namespace) -> int:
 
 
 
-# ── eager-x CLI (visual novel with graphics) ────────────────────────────
+# ── eager CLI (unified, graphics optional) ────────────────────────────────
 
 
 def build_x_parser() -> argparse.ArgumentParser:
-    """Build the argument parser for the ``eager-x`` CLI."""
-    parser = argparse.ArgumentParser(
-        prog="eager-x",
-        description="Eager-Graphics: unified visual novel engine CLI.",
-    )
-    parser.add_argument(
-        "-v",
-        "--version",
-        action="version",
-        version=_version_string(),
-    )
-
-    subparsers = parser.add_subparsers(dest="command", help="Command to run")
-
-    # play
-    play_p = subparsers.add_parser(
-        "play",
-        help="Launch an interactive visual novel window.",
-    )
-    play_p.add_argument("script", help="Path to .es screenplay file")
-    play_p.add_argument(
-        "--backend",
-        choices=["pyglet", "pil", "raylib"],
-        default="pil",
-        help="Rendering backend (default: pil)",
-    )
-    play_p.add_argument("--asset-dir", default=None, help="Directory containing sprite/background assets.")
-    play_p.add_argument("--plain", action="store_true", help="Parse script in Eager-SP plain mode.")
-    play_p.add_argument("--warp", default=None, help="Fast-forward / jump directly to scene label.")
-    play_p.add_argument("--no-audio", action="store_true", help="Disable audio playback (use NullAudioBackend).")
-    play_p.add_argument("--lang", "--locale", default=None, help="Language locale for translations (e.g. 'vi').")
-    play_p.set_defaults(func=_cmd_play)
-
-    # render
-    render_p = subparsers.add_parser(
-        "render",
-        help="Run a story to completion in headless mode (NullRenderer, no window).",
-    )
-    render_p.add_argument("script", help="Path to .es screenplay file")
-    render_p.add_argument("--asset-dir", default=None, help="Directory containing sprite/background assets.")
-    render_p.add_argument("--plain", action="store_true", help="Parse script in Eager-SP plain mode.")
-    render_p.add_argument("--lang", "--locale", default=None, help="Language locale for translations (e.g. 'vi').")
-    render_p.add_argument(
-        "--dt",
-        type=float,
-        default=1.0 / 60.0,
-        help="Simulated timestep per frame (default: 1/60 ≈ 60 FPS)",
-    )
-    render_p.add_argument(
-        "--max-steps",
-        type=int,
-        default=None,
-        help="Safety cap on total story steps",
-    )
-    render_p.add_argument(
-        "--auto-choose",
-        type=int,
-        default=0,
-        help="Automatically select this choice index when a choice prompt appears (default: 0)",
-    )
-    render_p.set_defaults(func=_cmd_render)
-    # run
-    run_p = subparsers.add_parser(
-        "run",
-        help="Run project in directory containing game.toml or script.",
-    )
-    run_p.add_argument("project_dir", nargs="?", default=".", help="Project directory (default: current directory)")
-    run_p.add_argument("--backend", choices=["pyglet", "pil", "raylib"], default="pil", help="Rendering backend")
-    run_p.add_argument("--no-audio", action="store_true", help="Disable audio playback (use NullAudioBackend).")
-    run_p.set_defaults(func=_cmd_run)
-
-    # new
-    new_p = subparsers.add_parser(
-        "new",
-        help="Scaffold a new Eager visual novel project structure.",
-    )
-    new_p.add_argument("name", help="Name of project directory to create")
-    new_p.add_argument(
-        "--demo",
-        action="store_true",
-        help="Scaffold project using the full showcase demo story and assets instead of the starter template.",
-    )
-    new_p.set_defaults(func=_cmd_new)
-
-    # check
-    check_p = subparsers.add_parser(
-        "check",
-        help="Validate script syntax, logic, scene graph, and asset integrity.",
-    )
-    check_p.add_argument("script", help="Path to .es screenplay file or project directory")
-    check_p.add_argument("--plain", action="store_true", help="Validate in Eager-SP plain mode.")
-    check_p.add_argument(
-        "--assets",
-        action="store_true",
-        help="Verify all referenced background, sprite, and audio assets exist on disk.",
-    )
-    check_p.add_argument(
-        "--asset-dir",
-        default=None,
-        help="Path to assets directory (defaults to assets/ next to script or project).",
-    )
-    check_p.set_defaults(func=_cmd_check)
-
-    # build
-    build_p = subparsers.add_parser(
-        "build",
-        help="Package and bundle an Eager project into a standalone distribution archive.",
-    )
-    build_p.add_argument("project_dir", nargs="?", default=".", help="Project directory (default: current directory)")
-    build_p.add_argument("-o", "--output", default=None, help="Output zip archive path")
-    build_p.set_defaults(func=_cmd_build)
-
-    # i18n
-    _add_i18n_subparser(subparsers)
-
-    return parser
+    """Deprecated alias for :func:`build_parser` (``eager-x`` merged into ``eager``)."""
+    return build_parser()
 
 
 
@@ -695,7 +659,7 @@ height = 1080
 
             print(f"Created new Eager demo showcase project in '{target_dir}'.")
             print("Run your game with:")
-            print(f"  eager-x run {target_dir}")
+            print(f"  eager run {target_dir}")
             return 0
 
     # Default: scaffold from starter template
@@ -738,7 +702,7 @@ Narrator: Create characters, dialogue, and choices here.
 
     print(f"Created new Eager project in '{target_dir}'.")
     print("Run your game with:")
-    print(f"  eager-x run {target_dir}")
+    print(f"  eager run {target_dir}")
     print("Or play in the terminal:")
     print(f"  eager play {target_dir}/main.es")
     return 0
@@ -970,22 +934,15 @@ def _cmd_i18n_check(args: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Entry point for the ``eager`` CLI (text-only)."""
+    """Entry point for the ``eager`` CLI."""
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)
 
 
 def main_x(argv: Sequence[str] | None = None) -> int:
-    """Entry point for the ``eager-x`` CLI (visual novel with graphics)."""
-    parser = build_x_parser()
-    args = parser.parse_args(argv)
-
-    if not args.command:
-        parser.print_help()
-        return 0
-
-    return args.func(args)
+    """Deprecated alias for :func:`main` (``eager-x`` merged into ``eager``)."""
+    return main(argv)
 
 
 if __name__ == "__main__":

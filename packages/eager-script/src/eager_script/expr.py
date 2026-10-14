@@ -1,4 +1,4 @@
-"""Safe expression evaluation engine for Eager-S screenplay scripts."""
+"""Safe expression evaluation engine for Eager-Script screenplay scripts."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Core virtual machine for executing Eager-S narrative scene graphs."""
+"""Core virtual machine for executing Eager-Script narrative scene graphs."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ _INTERPOLATION_PATTERN = re.compile(r"\[\[|\]\]|\[([a-zA-Z_][a-zA-Z0-9_\.]*)\]")
 
 
 class StoryVM:
-    """Headless story virtual machine executing an Eager-S SceneGraph."""
+    """Headless story virtual machine executing an Eager-Script SceneGraph."""
 
     def __init__(
         self,

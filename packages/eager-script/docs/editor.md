@@ -31,7 +31,7 @@ eager-script edit --read-only screenplay.es
 
 ## Features
 
-### 1. Eager-S DSL Syntax Highlighting
+### 1. Eager-Script DSL Syntax Highlighting
 - Visual distinction for scene labels, character speakers, emotion tags, voice audio tags, append beats, fresh box beats, choice options, jumps, subroutine calls, returns, hooks, and comments.
 
 ### 2. Real-Time Diagnostics

@@ -1,4 +1,4 @@
-"""Main application loop and UI renderer for the Eager-S terminal text editor."""
+"""Main application loop and UI renderer for the Eager-Script terminal text editor."""
 
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ def editor_input_mode(term: Any) -> Generator[None, None, None]:
 
 
 class Editor:
-    """Eager-S interactive terminal screenplay text editor."""
+    """Eager-Script interactive terminal screenplay text editor."""
 
     def __init__(
         self,
@@ -93,7 +93,7 @@ class Editor:
         if term is None:
             if Terminal is None:
                 raise ImportError(
-                    "The Eager-S terminal editor requires 'blessed'. "
+                    "The Eager-Script terminal editor requires 'blessed'. "
                     'Install it with: pip install "eager-script[editor]"'
                 )
             self.term = Terminal()
@@ -369,7 +369,7 @@ class Editor:
         fname = self.buffer.filepath.name if self.buffer.filepath else "[Untitled]"
         dirty_flag = " [+]" if self.buffer.dirty else ""
         ro_flag = " [RO]" if self.buffer.read_only else ""
-        left_header = f" Eager-S Editor │ {fname}{dirty_flag}{ro_flag}"
+        left_header = f" Eager-Script Editor │ {fname}{dirty_flag}{ro_flag}"
         right_header = (
             f"Ln {self.buffer.cursor_row + 1}, Col {self.buffer.cursor_col + 1} │ F1: Help "
         )

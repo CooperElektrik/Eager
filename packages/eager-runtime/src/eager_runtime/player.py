@@ -1,4 +1,4 @@
-"""Interactive terminal runner for playing Eager-S screenplays."""
+"""Interactive terminal runner for playing Eager-Script screenplays."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Live parser and validator feedback cache for the Eager-S editor."""
+"""Live parser and validator feedback cache for the Eager-Script editor."""
 
 from __future__ import annotations
 

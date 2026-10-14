@@ -1,4 +1,4 @@
-"""Text buffer model for the Eager-S editor."""
+"""Text buffer model for the Eager-Script editor."""
 
 from __future__ import annotations
 

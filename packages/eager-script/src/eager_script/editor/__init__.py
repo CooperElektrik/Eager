@@ -1,4 +1,4 @@
-"""Interactive terminal text editor for Eager-S screenplay DSL scripts."""
+"""Interactive terminal text editor for Eager-Script screenplay DSL scripts."""
 
 from __future__ import annotations
 
@@ -26,13 +26,13 @@ def run_editor(
     read_only: bool = False,
     plain: bool = False,
 ) -> int:
-    """Launch the Eager-S terminal text editor.
+    """Launch the Eager-Script terminal text editor.
 
     Returns exit code (0 on normal exit, non-zero on error).
     """
     if not is_editor_available():
         sys.stderr.write(
-            "Error: The Eager-S terminal editor requires 'blessed'.\n"
+            "Error: The Eager-Script terminal editor requires 'blessed'.\n"
             'Install it with: pip install "eager-script[editor]"\n'
         )
         return 1
@@ -47,7 +47,7 @@ def __getattr__(name: str) -> Any:
     if name == "Editor":
         if not is_editor_available():
             raise ImportError(
-                "The Eager-S terminal editor requires 'blessed'. "
+                "The Eager-Script terminal editor requires 'blessed'. "
                 'Install it with: pip install "eager-script[editor]"'
             )
         from eager_script.editor.app import Editor

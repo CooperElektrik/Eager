@@ -9,7 +9,7 @@ from unittest.mock import patch
 import eager_script
 
 from eager_runtime import StoryVM, TerminalPlayer
-from eager_runtime.cli import main, main_x
+from eager_runtime.cli import main
 
 TEST_SCRIPT = """
 ## Courtyard --- courtyard
@@ -107,7 +107,7 @@ class TestCLIAndPlayer(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             proj_path = Path(tmp_dir) / "test_novel"
             with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-                code = main_x(["new", str(proj_path)])
+                code = main(["new", str(proj_path)])
                 self.assertEqual(code, 0)
                 out = mock_out.getvalue()
                 self.assertIn("Created new Eager project", out)
@@ -119,7 +119,7 @@ class TestCLIAndPlayer(unittest.TestCase):
 
             # Validate that the generated project passes validation with 0 errors
             with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-                check_code = main_x(["check", str(proj_path), "--assets"])
+                check_code = main(["check", str(proj_path), "--assets"])
                 self.assertEqual(check_code, 0)
                 check_out = mock_out.getvalue()
                 self.assertIn("validation PASSED", check_out)
@@ -129,7 +129,7 @@ class TestCLIAndPlayer(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             proj_path = Path(tmp_dir) / "test_demo"
             with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-                code = main_x(["new", str(proj_path), "--demo"])
+                code = main(["new", str(proj_path), "--demo"])
                 self.assertEqual(code, 0)
                 out = mock_out.getvalue()
                 self.assertIn("demo showcase project", out)
@@ -143,6 +143,6 @@ class TestCLIAndPlayer(unittest.TestCase):
             proj_path = Path(tmp_dir) / "existing"
             proj_path.mkdir()
             with patch("sys.stderr", new_callable=io.StringIO) as mock_err:
-                code = main_x(["new", str(proj_path)])
+                code = main(["new", str(proj_path)])
                 self.assertEqual(code, 1)
                 self.assertIn("already exists", mock_err.getvalue())

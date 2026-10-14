@@ -1,4 +1,4 @@
-"""Directed scene graph model and transformation for Eager-S screenplay AST."""
+"""Directed scene graph model and transformation for Eager-Script screenplay AST."""
 
 from __future__ import annotations
 

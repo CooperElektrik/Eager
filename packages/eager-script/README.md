@@ -1,4 +1,4 @@
-# Eager-S
+# Eager-Script
 
 A zero-dependency screenplay DSL parser for visual novels and interactive fiction in Python.
 

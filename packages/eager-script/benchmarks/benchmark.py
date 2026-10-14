@@ -102,7 +102,7 @@ def run_benchmarks() -> None:
     ]
 
     print("=" * 80)
-    print("EAGER-S PARSER & RUNTIME BENCHMARK")
+    print("EAGER-SCRIPT PARSER & RUNTIME BENCHMARK")
     print("=" * 80)
 
     for label, num_scenes in test_scales:

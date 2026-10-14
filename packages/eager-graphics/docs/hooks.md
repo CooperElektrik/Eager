@@ -1,6 +1,6 @@
 # Screenplay Hook Reference
 
-Writers control visual staging, character placement, transitions, and camera effects using Eager-S engine hooks (`~`).
+Writers control visual staging, character placement, transitions, and camera effects using Eager-Script engine hooks (`~`).
 
 ---
 

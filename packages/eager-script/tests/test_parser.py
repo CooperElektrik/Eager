@@ -1,4 +1,4 @@
-"""Tests for standalone Eager-S parser, validator, and CLI."""
+"""Tests for standalone Eager-Script parser, validator, and CLI."""
 
 import ast
 import json

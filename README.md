@@ -8,7 +8,7 @@ An engine for visual novels.
 |---|---|---|---|
 | `eager-script` | `eager_script` | Zero-dependency screenplay DSL parser: AST, scene graph, validator, safe expressions, optional terminal editor | 0.1.0 |
 | `eager-core` | `eager_core` | Shared dependency-free leaf: audio mixing, geometry/color types, easing, timing, input, storage, text tags | 0.1.0 |
-| `eager-runtime` | `eager_runtime` | Headless story VM, event dispatcher, `GameSession` controller, saves/rollback, terminal player, `eager` / `eager-x` CLIs | 0.1.0 |
+| `eager-runtime` | `eager_runtime` | Headless story VM, event dispatcher, `GameSession` controller, saves/rollback, terminal player, `eager` CLI | 0.1.0 |
 | `eager-graphics` | `eager_graphics` | Renderer-agnostic stage compositor & presentation layer (Null / Pyglet / PIL / Raylib backends), UI screens, themes | 0.1.0 |
 
 Dependency DAG: `eager-script` and `eager-core` are zero-dependency leaves; `eager-graphics` depends on both; `eager-runtime` depends on `eager-script` + `eager-core` and optionally on `eager-graphics`.

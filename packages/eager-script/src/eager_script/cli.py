@@ -72,14 +72,14 @@ def _cmd_edit(args: argparse.Namespace) -> int:
         from eager_script.editor import is_editor_available, run_editor
     except ImportError:
         sys.stderr.write(
-            "Error: The Eager-S terminal editor requires 'blessed'.\n"
+            "Error: The Eager-Script terminal editor requires 'blessed'.\n"
             'Install it with: pip install "eager-script[editor]"\n'
         )
         return 1
 
     if not is_editor_available():
         sys.stderr.write(
-            "Error: The Eager-S terminal editor requires 'blessed'.\n"
+            "Error: The Eager-Script terminal editor requires 'blessed'.\n"
             'Install it with: pip install "eager-script[editor]"\n'
         )
         return 1

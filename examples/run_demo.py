@@ -3,7 +3,7 @@
 
 Showcases the complete pipeline:
 
-    Eager-S (.es)  →  parse_graph  →  StoryVM
+    Eager-Script (.es)  →  parse_graph  →  StoryVM
                    →  EventDispatcher  →  StageDirector
                    →  StageCompositor  →  NullRenderer
 

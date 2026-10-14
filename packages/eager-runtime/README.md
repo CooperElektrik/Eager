@@ -1,6 +1,6 @@
 # Eager
 
-Lightweight, headless narrative runtime and state machine for [Eager-S](https://github.com/CooperElektrik/Eager) screenplays.
+Lightweight, headless narrative runtime and state machine for [Eager-Script](https://github.com/CooperElektrik/Eager) screenplays.
 
 Eager is a render-agnostic story virtual machine (VM). It handles execution flow, choice branching, subroutine call stacks (`>>` and `<<`), engine hooks (`~`), save/load snapshots, and time-travel rollbacks.
 
@@ -110,7 +110,7 @@ session.advance()
 
 ## CLI Usage
 
-Eager provides two command-line tools: `eager` (headless / text-only) and `eager-x` (graphical visual novel runner):
+Eager provides a unified command-line tool `eager` (terminal play plus graphical visual novel runner):
 
 ```bash
 # Play a screenplay interactively in the terminal
@@ -123,8 +123,8 @@ eager inspect ../../examples/demo_story.es
 eager test-run ../../examples/demo_story.es
 
 # Launch interactive visual novel player with selected backend (and optional --no-audio)
-eager-x play ../../examples/demo_story.es --backend pyglet
-eager-x play ../../examples/demo_story.es --backend pil --no-audio
+eager play ../../examples/demo_story.es --backend pyglet
+eager play ../../examples/demo_story.es --backend pil --no-audio
 ```
 
 During interactive terminal play, the following built-in commands are available:

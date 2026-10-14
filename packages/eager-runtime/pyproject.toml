@@ -46,7 +46,6 @@ dev = [
 
 [project.scripts]
 eager = "eager_runtime.cli:main"
-eager-x = "eager_runtime.cli:main_x"
 
 [tool.setuptools.packages.find]
 where = ["src"]

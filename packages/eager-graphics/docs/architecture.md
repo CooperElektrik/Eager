@@ -1,6 +1,6 @@
-# Eager-X Architecture
+# Eager-Graphics Architecture
 
-Eager-X is a **headless, renderer-agnostic, resolution-independent Graphics & Stage Compositor** designed for the [Eager](https://github.com/CooperElektrik/Eager) visual novel engine ecosystem.
+Eager-Graphics is a **headless, renderer-agnostic, resolution-independent Graphics & Stage Compositor** designed for the [Eager](https://github.com/CooperElektrik/Eager) visual novel engine ecosystem.
 
 - **FPS monitoring**: Every render backend and the `StageCompositor` itself own a `FrameClock` (`eager_graphics.timing`) that tracks real wall-clock frame intervals, computing instantaneous, rolling-average, and overall FPS for debug HUDs and headless benchmarks.
 
@@ -10,7 +10,7 @@ Eager-X is a **headless, renderer-agnostic, resolution-independent Graphics & St
 
 | Pillar | Description |
 |---|---|
-| **Headless & Render-Agnostic** | Eager-X computes *what* should appear on screen (sprites, backgrounds, overlays, transitions) and yields an ordered render list (`RenderItem`). It never calls drawing APIs or touches GPU pixels directly. |
+| **Headless & Render-Agnostic** | Eager-Graphics computes *what* should appear on screen (sprites, backgrounds, overlays, transitions) and yields an ordered render list (`RenderItem`). It never calls drawing APIs or touches GPU pixels directly. |
 | **Resolution-Independent** | All stage elements live in a virtual reference coordinate system (default `1920x1080`). Backends scale to physical screen sizes using viewport transformers. |
 | **Zero Bloat & Fast** | Pure Python with zero heavy dependencies (no Pygame, no SDL, no image decoders in core). Timeline updates and render list compilation execute in microseconds. |
 | **Deterministic State** | Visual state serializes to plain JSON-compatible dictionaries, enabling infallible quicksave and time-travel rollback alongside Eager's narrative snapshots. |
@@ -21,7 +21,7 @@ Eager-X is a **headless, renderer-agnostic, resolution-independent Graphics & St
 ## 2. Rendering Pipeline
 
 ```
-  Eager-S Screenplay (.es)
+  Eager-Script Screenplay (.es)
             │
             ▼
     [ StoryVM (Eager) ] ──── emits StoryEvents ────► [ EventDispatcher ]
@@ -126,7 +126,7 @@ When rendering to a physical display of different dimensions, `LayoutResolver.co
 
 ## 4. Layer Hierarchy & Stacking Order
 
-Eager-X maintains an ordered layer stack. Higher `z_order` renders on top:
+Eager-Graphics maintains an ordered layer stack. Higher `z_order` renders on top:
 
 1. **`background`** (`z_order=0`): Environment art and CG backgrounds. Automatically manages crossfades between incoming and outgoing scenes.
 2. **`characters`** (`z_order=100`): Character sprites with horizontal positioning, expressions, and enter/exit transitions.

@@ -1,4 +1,4 @@
-"""End-to-end integration test with Eager StoryVM, EventDispatcher, and Eager-S screenplays."""
+"""End-to-end integration test with Eager StoryVM, EventDispatcher, and Eager-Script screenplays."""
 
 from eager_runtime import EventDispatcher, StoryVM
 from eager_script import parse_graph

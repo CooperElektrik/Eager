@@ -1,4 +1,4 @@
-# Eager-X API Reference
+# Eager-Graphics API Reference
 
 All primary classes, protocols, and data structures are exported from the top-level `eager_graphics` package.
 
@@ -283,4 +283,4 @@ for item in backend.last_frame:
     print(f"  [{item.layer}] {item.asset_id} @ ({item.x}, {item.y}) opacity={item.opacity:.2f}")
 ```
 
-The `NullRenderer` is always available (imported unconditionally from `eager_graphics`), even when no graphical backend is installed. This makes Eager-X's full compositor logic testable and usable in pure-headless environments.
+The `NullRenderer` is always available (imported unconditionally from `eager_graphics`), even when no graphical backend is installed. This makes Eager-Graphics' full compositor logic testable and usable in pure-headless environments.

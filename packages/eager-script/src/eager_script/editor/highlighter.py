@@ -1,4 +1,4 @@
-"""Syntax highlighter for Eager-S screenplay DSL scripts using Blessed formatting."""
+"""Syntax highlighter for Eager-Script screenplay DSL scripts using Blessed formatting."""
 
 from __future__ import annotations
 
@@ -11,13 +11,13 @@ COMMENT_RE = re.compile(r"(?<!\\)\s+#.*$")
 
 
 class EagerSHighlighter:
-    """Applies ANSI styling to Eager-S script lines using Blessed Terminal capabilities."""
+    """Applies ANSI styling to Eager-Script script lines using Blessed Terminal capabilities."""
 
     def __init__(self, term: Any) -> None:
         self.term = term
 
     def highlight_line(self, line: str) -> str:
-        """Highlight a single line of Eager-S screenplay text."""
+        """Highlight a single line of Eager-Script screenplay text."""
         t = self.term
 
         # Check for full-line comment
