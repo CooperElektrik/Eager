@@ -87,6 +87,42 @@ class TestHardwareAudioBackends(unittest.TestCase):
 
         backend.shutdown()
 
+    def test_miniaudio_audio_backend_thread_safety(self) -> None:
+        pytest.importorskip("miniaudio")
+        import threading
+
+        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
+
+        backend = MiniaudioAudioBackend()
+        backend.play("music", self.wav_path, loop=True, volume=0.8)
+
+        errors: list[Exception] = []
+
+        def worker(thread_id: int) -> None:
+            try:
+                for i in range(40):
+                    backend.set_volume("music", (i % 10) / 10.0)
+                    backend.is_playing("music")
+                    backend.pause("music")
+                    backend.resume("music")
+                    backend.update(0.01)
+                    if i % 10 == 0:
+                        backend.play(f"sfx_{thread_id}", self.wav_path, loop=False)
+                    elif i % 10 == 5:
+                        backend.stop(f"sfx_{thread_id}")
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker, args=(t,)) for t in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(len(errors), 0)
+        backend.shutdown()
+
 
 if __name__ == "__main__":
     unittest.main()
+

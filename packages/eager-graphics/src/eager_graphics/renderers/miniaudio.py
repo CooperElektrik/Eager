@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import array
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -63,13 +64,15 @@ class MiniaudioAudioBackend(BaseAudioBackend):
 
     Decodes audio files (WAV, MP3, FLAC, Ogg Vorbis) to PCM frames and streams
     them into a miniaudio PlaybackDevice with per-channel volume, pausing, and
-    intro/loop points.
+    intro/loop points. Uses a threading.Lock to synchronize access to active tracks
+    between client calls and the miniaudio audio thread callback.
     """
 
     def __init__(self, sample_rate: int = 44100, nchannels: int = 2) -> None:
         self.sample_rate = sample_rate
         self.nchannels = nchannels
         self._tracks: dict[str, _ChannelTrack] = {}
+        self._lock = threading.Lock()
         self._device: Any = None
         self._generator: Any = None
         self._active: bool = False
@@ -88,62 +91,64 @@ class MiniaudioAudioBackend(BaseAudioBackend):
 
             while True:
                 req = required_frames
-                if not self._tracks:
-                    # Silence
-                    required_frames = yield bytes(req * bytes_per_frame)
-                    continue
+                with self._lock:
+                    if not self._tracks:
+                        out_bytes = bytes(req * bytes_per_frame)
+                    else:
+                        mixed = [0] * (req * self.nchannels)
 
-                mixed = [0] * (req * self.nchannels)
+                        for track in list(self._tracks.values()):
+                            if not track.is_playing or track.is_paused or track.total_frames == 0:
+                                continue
 
-                for track in list(self._tracks.values()):
-                    if not track.is_playing or track.is_paused or track.total_frames == 0:
-                        continue
+                            vol = track.volume
+                            samples = track.samples
+                            t_channels = track.nchannels
+                            cur_f = track.frame_pos
+                            total_f = track.total_frames
+                            loop_end = (
+                                min(track.loop_end_frame, total_f)
+                                if track.loop_end_frame is not None
+                                else total_f
+                            )
+                            loop_start = (
+                                track.loop_start_frame
+                                if track.loop_start_frame is not None
+                                else 0
+                            )
 
-                    vol = track.volume
-                    samples = track.samples
-                    t_channels = track.nchannels
-                    cur_f = track.frame_pos
-                    total_f = track.total_frames
-                    loop_end = (
-                        min(track.loop_end_frame, total_f)
-                        if track.loop_end_frame is not None
-                        else total_f
-                    )
-                    loop_start = (
-                        track.loop_start_frame
-                        if track.loop_start_frame is not None
-                        else 0
-                    )
+                            out_idx = 0
+                            for _ in range(req):
+                                if cur_f >= loop_end:
+                                    if track.loop:
+                                        cur_f = loop_start
+                                    else:
+                                        track.is_playing = False
+                                        break
 
-                    out_idx = 0
-                    for _ in range(req):
-                        if cur_f >= loop_end:
-                            if track.loop:
-                                cur_f = loop_start
-                            else:
-                                track.is_playing = False
-                                break
+                                samp_idx = cur_f * t_channels
+                                if t_channels == 2:
+                                    s_left = samples[samp_idx]
+                                    s_right = samples[samp_idx + 1]
+                                else:
+                                    s_left = samples[samp_idx]
+                                    s_right = s_left
 
-                        samp_idx = cur_f * t_channels
-                        if t_channels == 2:
-                            s_left = samples[samp_idx]
-                            s_right = samples[samp_idx + 1]
-                        else:
-                            s_left = samples[samp_idx]
-                            s_right = s_left
+                                mixed[out_idx] += int(s_left * vol)
+                                mixed[out_idx + 1] += int(s_right * vol)
+                                out_idx += 2
+                                cur_f += 1
 
-                        mixed[out_idx] += int(s_left * vol)
-                        mixed[out_idx + 1] += int(s_right * vol)
-                        out_idx += 2
-                        cur_f += 1
+                            track.frame_pos = cur_f
 
-                    track.frame_pos = cur_f
+                        # Clamp mixed samples to signed 16-bit
+                        out_arr = array.array(
+                            "h",
+                            (max(-32768, min(32767, s)) for s in mixed),
+                        )
+                        out_bytes = out_arr.tobytes()
 
-                # Clamp mixed samples to signed 16-bit
-                out_arr = array.array("h", (
-                    max(-32768, min(32767, s)) for s in mixed
-                ))
-                required_frames = yield out_arr.tobytes()
+                required_frames = yield out_bytes
 
         try:
             self._generator = _pcm_generator()
@@ -187,7 +192,7 @@ class MiniaudioAudioBackend(BaseAudioBackend):
         start_frame = int(loop_start * self.sample_rate) if loop_start is not None else None
         end_frame = int(loop_end * self.sample_rate) if loop_end is not None else None
 
-        self._tracks[channel] = _ChannelTrack(
+        track = _ChannelTrack(
             samples=decoded.samples,
             sample_rate=self.sample_rate,
             nchannels=self.nchannels,
@@ -196,36 +201,45 @@ class MiniaudioAudioBackend(BaseAudioBackend):
             loop_start_frame=start_frame,
             loop_end_frame=end_frame,
         )
+        with self._lock:
+            self._tracks[channel] = track
 
     def stop(self, channel: str, *, fade_out: float = 0.0) -> None:
-        self._tracks.pop(channel, None)
+        with self._lock:
+            self._tracks.pop(channel, None)
 
     def set_volume(self, channel: str, volume: float) -> None:
-        track = self._tracks.get(channel)
-        if track is not None:
-            track.volume = max(0.0, min(1.0, volume))
+        with self._lock:
+            track = self._tracks.get(channel)
+            if track is not None:
+                track.volume = max(0.0, min(1.0, volume))
 
     def pause(self, channel: str) -> None:
-        track = self._tracks.get(channel)
-        if track is not None:
-            track.is_paused = True
+        with self._lock:
+            track = self._tracks.get(channel)
+            if track is not None:
+                track.is_paused = True
 
     def resume(self, channel: str) -> None:
-        track = self._tracks.get(channel)
-        if track is not None:
-            track.is_paused = False
+        with self._lock:
+            track = self._tracks.get(channel)
+            if track is not None:
+                track.is_paused = False
 
     def is_playing(self, channel: str) -> bool:
-        track = self._tracks.get(channel)
-        return bool(track is not None and track.is_playing and not track.is_paused)
+        with self._lock:
+            track = self._tracks.get(channel)
+            return bool(track is not None and track.is_playing and not track.is_paused)
 
     def update(self, dt: float) -> None:
-        for ch, track in list(self._tracks.items()):
-            if not track.is_playing:
-                del self._tracks[ch]
+        with self._lock:
+            for ch, track in list(self._tracks.items()):
+                if not track.is_playing:
+                    del self._tracks[ch]
 
     def shutdown(self) -> None:
-        self._tracks.clear()
+        with self._lock:
+            self._tracks.clear()
         if self._device is not None:
             try:
                 self._device.stop()
