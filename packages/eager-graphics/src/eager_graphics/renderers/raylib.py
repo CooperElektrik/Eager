@@ -483,6 +483,8 @@ class RaylibRenderer(RenderBackend, UIDrawBackend):
         *,
         font_size: int = 14,
         color: Color = WHITE,
+        bold: bool = False,
+        italic: bool = False,
         anchor_x: str = "left",
         anchor_y: str = "top",
     ) -> None:
@@ -543,7 +545,14 @@ class RaylibRenderer(RenderBackend, UIDrawBackend):
 
         pyray.draw_texture_pro(tex, source, dest, origin, 0.0, _to_pyray_color(tint))
 
-    def measure_text(self, text: str, *, font_size: int = 14) -> tuple[float, float]:
+    def measure_text(
+        self,
+        text: str,
+        *,
+        font_size: int = 14,
+        bold: bool = False,
+        italic: bool = False,
+    ) -> tuple[float, float]:
         """Return the ``(width, height)`` the given text would occupy."""
         font = self._get_font()
         measures = pyray.measure_text_ex(font, text, font_size, 0.0)

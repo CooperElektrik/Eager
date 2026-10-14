@@ -31,6 +31,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from eager_core.text import parse_text_tags
+
 from eager_graphics.types import Color
 
 if TYPE_CHECKING:
@@ -508,36 +510,95 @@ class DialogueBox:
         else:
             dialogue_start_y = box_y + 24.0
 
-        line_height = style.text_font_size * 1.35
-        lines = _get_wrapped_lines(self.text, text_max_w, backend.measure_text, font_size=style.text_font_size)
-        if self.visible_chars is not None:
-            remaining = max(0, self.visible_chars)
-            for i, line in enumerate(lines):
-                if remaining <= 0:
-                    break
-                visible_part = line[:remaining]
-                remaining = max(0, remaining - (len(line) + 1))
-                backend.draw_text(
-                    text_start_x,
-                    dialogue_start_y + (i * line_height),
-                    visible_part,
-                    font_size=style.text_font_size,
-                    color=style.text_color,
-                )
-        else:
-            for i, line in enumerate(lines):
-                backend.draw_text(
-                    text_start_x,
-                    dialogue_start_y + (i * line_height),
-                    line,
-                    font_size=style.text_font_size,
-                    color=style.text_color,
-                )
+        formatted = parse_text_tags(self.text)
+        if not formatted.plain_text:
+            return
 
-        is_fully_revealed = (self.visible_chars is None or self.visible_chars >= len(self.text))
+        line_height = style.text_font_size * 1.35
+        lines = _get_wrapped_lines(
+            formatted.plain_text,
+            text_max_w,
+            backend.measure_text,
+            font_size=style.text_font_size,
+        )
+
+        visible_limit = (
+            max(0, int(self.visible_chars))
+            if self.visible_chars is not None
+            else len(formatted.plain_text)
+        )
+
+        # Precompute segment spans (start, end, segment) in plain_text
+        seg_spans: list[tuple[int, int, Any]] = []
+        cur_pos = 0
+        for seg in formatted.segments:
+            seg_len = len(seg.text)
+            seg_spans.append((cur_pos, cur_pos + seg_len, seg))
+            cur_pos += seg_len
+
+        search_cursor = 0
+        for i, line in enumerate(lines):
+            line_idx = formatted.plain_text.find(line, search_cursor)
+            if line_idx == -1:
+                line_idx = search_cursor
+            line_start = line_idx
+            line_end = line_idx + len(line)
+            search_cursor = line_end
+
+            if line_start >= visible_limit:
+                break
+
+            visible_line_end = min(line_end, visible_limit)
+            x_cursor = text_start_x
+            line_y = dialogue_start_y + (i * line_height)
+
+            for seg_start, seg_end, seg in seg_spans:
+                overlap_start = max(line_start, seg_start)
+                overlap_end = min(visible_line_end, seg_end)
+                if overlap_start < overlap_end:
+                    piece_text = seg.text[overlap_start - seg_start : overlap_end - seg_start]
+                    seg_font_size = max(1, round(style.text_font_size * seg.size_mult))
+                    seg_color = seg.color if seg.color is not None else style.text_color
+                    try:
+                        backend.draw_text(
+                            x_cursor,
+                            line_y,
+                            piece_text,
+                            font_size=seg_font_size,
+                            color=seg_color,
+                            bold=seg.bold,
+                            italic=seg.italic,
+                        )
+                    except TypeError:
+                        backend.draw_text(
+                            x_cursor,
+                            line_y,
+                            piece_text,
+                            font_size=seg_font_size,
+                            color=seg_color,
+                        )
+                    try:
+                        piece_w, _ = backend.measure_text(
+                            piece_text,
+                            font_size=seg_font_size,
+                            bold=seg.bold,
+                            italic=seg.italic,
+                        )
+                    except TypeError:
+                        piece_w, _ = backend.measure_text(
+                            piece_text,
+                            font_size=seg_font_size,
+                        )
+                    x_cursor += piece_w
+
+        is_fully_revealed = (
+            self.visible_chars is None or int(self.visible_chars) >= len(formatted.plain_text)
+        )
         if layout.show_arrow and is_fully_revealed:
             arrow_sym = getattr(style, "arrow_symbol", "▼")
-            arrow_x = box_x + box_w - (style.text_padding if style.layout_mode == "cinematic" else 30.0)
+            arrow_x = (
+                box_x + box_w - (style.text_padding if style.layout_mode == "cinematic" else 30.0)
+            )
             backend.draw_text(
                 arrow_x,
                 box_y + box_h - 25.0,
@@ -907,7 +968,10 @@ class UIOverlay:
             side_image=ui_state.side_image,
             visible_chars=ui_state.visible_chars,
         )
-        is_revealed = (ui_state.visible_chars is None or ui_state.visible_chars >= len(ui_state.text))
+        plain_len = len(parse_text_tags(ui_state.text).plain_text) if ui_state.text else 0
+        is_revealed = (
+            ui_state.visible_chars is None or int(ui_state.visible_chars) >= plain_len
+        )
         self.dialogue_box.show_advance_arrow = (choice_prompt is None and is_revealed)
 
         if choice_prompt is None:

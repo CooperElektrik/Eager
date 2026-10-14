@@ -132,6 +132,8 @@ class UIDrawBackend(Protocol):
         *,
         font_size: int = 14,
         color: Color = WHITE,
+        bold: bool = False,
+        italic: bool = False,
         anchor_x: str = "left",
         anchor_y: str = "top",
     ) -> None:
@@ -158,6 +160,13 @@ class UIDrawBackend(Protocol):
         """Draw a resolved asset scaled into the given box, with optional tint."""
         ...
 
-    def measure_text(self, text: str, *, font_size: int = 14) -> tuple[float, float]:
+    def measure_text(
+        self,
+        text: str,
+        *,
+        font_size: int = 14,
+        bold: bool = False,
+        italic: bool = False,
+    ) -> tuple[float, float]:
         """Return the ``(width, height)`` the given text would occupy."""
         ...

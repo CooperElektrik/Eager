@@ -229,6 +229,8 @@ class NullRenderer(RenderBackend):
         *,
         font_size: int = 14,
         color: Color = WHITE,
+        bold: bool = False,
+        italic: bool = False,
         anchor_x: str = "left",
         anchor_y: str = "top",
     ) -> None:
@@ -241,6 +243,8 @@ class NullRenderer(RenderBackend):
                 "text": text,
                 "font_size": int(font_size),
                 "color": color.to_hex(),
+                "bold": bold,
+                "italic": italic,
                 "anchor_x": anchor_x,
                 "anchor_y": anchor_y,
             }
@@ -273,7 +277,14 @@ class NullRenderer(RenderBackend):
             }
         )
 
-    def measure_text(self, text: str, *, font_size: int = 14) -> tuple[float, float]:
+    def measure_text(
+        self,
+        text: str,
+        *,
+        font_size: int = 14,
+        bold: bool = False,
+        italic: bool = False,
+    ) -> tuple[float, float]:
         """Return a deterministic monospace-ish estimate of the text extents.
 
         The real backends measure with real font metrics; for headless

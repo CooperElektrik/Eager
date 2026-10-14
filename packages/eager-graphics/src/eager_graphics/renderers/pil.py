@@ -1528,6 +1528,8 @@ class PILRenderer(RenderBackend):
         *,
         font_size: int = 14,
         color: Color = WHITE,
+        bold: bool = False,
+        italic: bool = False,
         anchor_x: str = "left",
         anchor_y: str = "top",
     ) -> None:
@@ -1541,21 +1543,34 @@ class PILRenderer(RenderBackend):
         pil_anchor_y = _PIL_ANCHOR_Y.get(anchor_y, "t")
         anchor = f"{pil_anchor_x}{pil_anchor_y}"
 
-        cache_key = (text, font_size, anchor)
+        cache_key = (text, font_size, anchor, bold, italic)
         cached = self._text_mask_cache.lookup(cache_key)
         if cached is None:
             font = self._ui_font(font_size)
             try:
-                l, t, r, b = font.getbbox(text, anchor=anchor)
+                stroke_w = 1 if bold else 0
+                l, t, r, b = font.getbbox(text, anchor=anchor, stroke_width=stroke_w)
                 w, h = r - l, b - t
                 if w > 0 and h > 0:
                     mask = Image.new("L", (w, h), 0)
-                    ImageDraw.Draw(mask).text((-l, -t), text, font=font, fill=255, anchor=anchor)
+                    ImageDraw.Draw(mask).text(
+                        (-l, -t), text, font=font, fill=255, anchor=anchor, stroke_width=stroke_w
+                    )
                     cached = (mask, l, t)
                 else:
                     cached = (None, 0, 0)
             except (AttributeError, ValueError, TypeError):
-                cached = (None, 0, 0)
+                try:
+                    l, t, r, b = font.getbbox(text, anchor=anchor)
+                    w, h = r - l, b - t
+                    if w > 0 and h > 0:
+                        mask = Image.new("L", (w, h), 0)
+                        ImageDraw.Draw(mask).text((-l, -t), text, font=font, fill=255, anchor=anchor)
+                        cached = (mask, l, t)
+                    else:
+                        cached = (None, 0, 0)
+                except (AttributeError, ValueError, TypeError):
+                    cached = (None, 0, 0)
             self._text_mask_cache.put(
                 cache_key,
                 cached,
@@ -1652,23 +1667,35 @@ class PILRenderer(RenderBackend):
         lut = self._get_rgba_lut(r, g, b, a)
         return image.convert("RGBA").point(lut)
 
-    def measure_text(self, text: str, *, font_size: int = 14) -> tuple[float, float]:
+    def measure_text(
+        self,
+        text: str,
+        *,
+        font_size: int = 14,
+        bold: bool = False,
+        italic: bool = False,
+    ) -> tuple[float, float]:
         """Measure the pixel extents *text* would occupy at *font_size*."""
-        cache_key = (text, font_size)
+        cache_key = (
+            (text, font_size)
+            if not bold and not italic
+            else (text, font_size, bold, italic)
+        )
         cached = self._measure_cache.get(cache_key)
         if cached is not None:
             return cached
 
         font = self._ui_font(font_size)
+        stroke_w = 1 if bold else 0
         try:
-            left, top, right, bottom = font.getbbox(text)
+            left, top, right, bottom = font.getbbox(text, stroke_width=stroke_w)
             result = (float(right - left), float(bottom - top))
-        except (AttributeError, ValueError):
+        except (AttributeError, ValueError, TypeError):
             try:
                 draw = ImageDraw.Draw(self._image)
-                left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+                left, top, right, bottom = draw.textbbox((0, 0), text, font=font, stroke_width=stroke_w)
                 result = (float(right - left), float(bottom - top))
-            except (AttributeError, ValueError):
+            except (AttributeError, ValueError, TypeError):
                 result = (float(font_size) * 0.5 * len(text), float(font_size) * 1.2)
 
         if len(self._measure_cache) < 2048:

@@ -641,3 +641,93 @@ def test_ui_overlay_status_badge_rendering() -> None:
     texts = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
     assert "SKIP >>" in texts
 
+
+def test_dialogue_box_text_tags_render_styles() -> None:
+    backend = NullRenderer()
+    box = DialogueBox(1280, 720)
+    box.set_content(
+        None,
+        "Hello {b}brave{/b} {i}new{/i} {color=#ff0000}world{/color} {size=1.5}huge{/size}!",
+    )
+    box.draw(backend)
+
+    text_calls = [c for c in backend.ui_calls if c["kind"] == "text" and c["text"] not in ("▼", "▾")]
+    # Raw markup tags should never be emitted as text
+    for call in text_calls:
+        assert "{" not in call["text"]
+        assert "}" not in call["text"]
+
+    # Check bold segment
+    brave_call = next(c for c in text_calls if c["text"] == "brave")
+    assert brave_call["bold"] is True
+    assert brave_call["italic"] is False
+
+    # Check italic segment
+    new_call = next(c for c in text_calls if c["text"] == "new")
+    assert new_call["italic"] is True
+    assert new_call["bold"] is False
+
+    # Check color segment
+    world_call = next(c for c in text_calls if c["text"] == "world")
+    assert world_call["color"].lower() in ("#ff0000", "#ff0000ff")
+
+    # Check size segment
+    huge_call = next(c for c in text_calls if c["text"] == "huge")
+    assert huge_call["font_size"] == round(box.style.text_font_size * 1.5)
+
+
+def test_dialogue_box_typewriter_reveal_aligns_with_tags() -> None:
+    backend = NullRenderer()
+    box = DialogueBox(1280, 720)
+    # Plain text is "Hello world!" (12 chars). Slicing 8 chars yields "Hello " + "wo"
+    box.set_content("Alice", "Hello {b}world{/b}!", visible_chars=8)
+    box.draw(backend)
+
+    dialogue_calls = [
+        c for c in backend.ui_calls if c["kind"] == "text" and c["text"] not in ("Alice", "▼", "▾")
+    ]
+    # Verify no raw tag markup
+    for c in dialogue_calls:
+        assert "{" not in c["text"]
+        assert "}" not in c["text"]
+
+    combined_text = "".join(c["text"] for c in dialogue_calls)
+    assert combined_text == "Hello wo"
+
+    # Verify bold styling was maintained on the sliced segment
+    bold_parts = [c for c in dialogue_calls if c["bold"]]
+    assert len(bold_parts) == 1
+    assert bold_parts[0]["text"] == "wo"
+
+    # Advance arrow must NOT be visible because 8 < 12
+    arrow_calls = [c for c in backend.ui_calls if c["kind"] == "text" and c["text"] in ("▼", "▾")]
+    assert len(arrow_calls) == 0
+
+
+def test_dialogue_box_advance_arrow_shows_when_plain_text_fully_revealed() -> None:
+    backend = NullRenderer()
+    box = DialogueBox(1280, 720)
+    # Raw string is 19 chars, plain text is 12 chars.
+    # At visible_chars=12, plain text is fully revealed even though 12 < len(raw)
+    box.set_content(None, "Hello {b}world{/b}!", visible_chars=12)
+    box.draw(backend)
+
+    arrow_calls = [c for c in backend.ui_calls if c["kind"] == "text" and c["text"] in ("▼", "▾")]
+    assert len(arrow_calls) == 1
+
+
+def test_dialogue_box_typewriter_reveal_float_visible_chars() -> None:
+    backend = NullRenderer()
+    box = DialogueBox(1280, 720)
+    # Pacing clock can produce float visible_chars (e.g. 5.5, 7.8)
+    box.set_content("Alice", "Hello {b}brave new{/b} world!", visible_chars=8.7)
+    box.draw(backend)
+
+    dialogue_calls = [
+        c for c in backend.ui_calls if c["kind"] == "text" and c["text"] not in ("Alice", "▼", "▾")
+    ]
+    combined_text = "".join(c["text"] for c in dialogue_calls)
+    assert combined_text == "Hello br"
+
+
+

@@ -471,6 +471,8 @@ class PygletRenderer(RenderBackend):
         *,
         font_size: int = 14,
         color: Color = WHITE,
+        bold: bool = False,
+        italic: bool = False,
         anchor_x: str = "left",
         anchor_y: str = "top",
     ) -> None:
@@ -492,6 +494,8 @@ class PygletRenderer(RenderBackend):
             text,
             font_name=self._ui_font_name(),
             font_size=font_size,
+            weight="bold" if bold else "normal",
+            italic=italic,
             x=float(x),
             y=self._flip_y(y),
             anchor_x=pyglet_anchor_x,
@@ -549,7 +553,14 @@ class PygletRenderer(RenderBackend):
         """Return the font family used for UI text."""
         return "sans-serif"
 
-    def measure_text(self, text: str, *, font_size: int = 14) -> tuple[float, float]:
+    def measure_text(
+        self,
+        text: str,
+        *,
+        font_size: int = 14,
+        bold: bool = False,
+        italic: bool = False,
+    ) -> tuple[float, float]:
         """Measure the pixel extents *text* would occupy at *font_size*.
 
         Reads the label's ``content_width`` / ``content_height`` rather than
@@ -558,7 +569,11 @@ class PygletRenderer(RenderBackend):
         """
         try:
             label = pyglet.text.Label(
-                text, font_name=self._ui_font_name(), font_size=font_size
+                text,
+                font_name=self._ui_font_name(),
+                font_size=font_size,
+                weight="bold" if bold else "normal",
+                italic=italic,
             )
             width = float(label.content_width)
             height = float(label.content_height)
