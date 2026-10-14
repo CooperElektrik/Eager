@@ -78,11 +78,13 @@ The main narrative path is:
 - Standard DSL syntax and plain-manuscript mode are distinct; plain mode must reject standard-only directives where specified.
 - Script expressions must use the whitelist-based evaluator. Do not replace it with Python `eval` or broaden allowed AST operations casually.
 - Conditional `@if` blocks are lowered by the graph-building layer into flat conditional/local-jump nodes. Preserve the flat beat-index model used by the VM.
+- Inline choice blocks (indented content beneath a `?` option, written without a `(target)`) are lowered by the graph builder into **anonymous scenes** with generated ids (`<scene_id>__anon_<line>`), marked with `SceneNode.is_anonymous`. The option's target is rewritten to that scene id, and the anonymous body ends in an implicit return.
 - If a language feature changes, consider parser/AST serialization, graph construction, validation, editor highlighting, tests, and syntax/API documentation—not only the parser branch.
 
 ### Runtime and state
 
 - `StoryVM` must remain usable without graphics installed.
+- Inline choice blocks reuse the call stack for control flow: `StoryVM.choose` pushes an `inline` `CallFrame` so an anonymous scene resumes the enclosing scene after the menu, and a jump out of an anonymous scene discards that frame instead of returning.
 - `GameSession.advance()` runs execution to the next player interaction, dispatches intermediate events, and records a checkpoint. Rollback must keep story state and relevant presentation/UI state consistent, including restoring pending choices.
 - Keep `PersistentData` distinct from rollback-managed per-session state: persistent progress is intended to survive playthroughs and is not rolled back with ordinary checkpoints.
 - Save files use the shared atomic JSON storage helpers. Preserve safe handling of missing or corrupt save data.

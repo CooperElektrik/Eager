@@ -8,6 +8,7 @@ It parses screenplay text into an abstract syntax tree (AST) and directed scene 
 
 - Parses screenplay text into AST items and directed scene graphs
 - Topological queries for reachability, branching points, hubs, and terminal scenes
+- Inline choice blocks that lower into anonymous scenes (no label ceremony)
 - Static validation for broken links, duplicate labels, dead code, and loops
 - Exports to JSON, Graphviz DOT, and Mermaid
 - Eager-SP mode for branching novels without engine markup
@@ -36,7 +37,10 @@ Narrator: Rain pours against the stone pavement.
 Guard: Who goes there? State your business.
 
 ? Announce yourself peacefully (peaceful_entry)
-? Draw your sword (combat_start)
+? Draw your sword
+    $ reputation -= 5
+    Guard (angry): So that's how it is.
+    > combat_start
 
 ## Peaceful Entry --- peaceful_entry
 ~ play_chime

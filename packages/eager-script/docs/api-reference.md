@@ -41,9 +41,12 @@ Represents speakerless descriptive text.
 - `line_number: int`
 
 ### `ParsedChoiceOption`
-Represents an individual choice line (`? Option (target)`).
+Represents an individual choice line (`? Option (target)`) or an inline option (`? Option` + indented block).
 - `text: str`: Option text shown to the player.
-- `target: str`: Target scene label identifier.
+- `target: str | None`: Target scene label identifier, or `None` for an inline option.
+- `condition: str | None`: Optional `if ...` visibility condition.
+- `body: tuple[ParsedItem, ...]`: The indented inline block (empty for named options). During `to_graph()` this is lowered into an anonymous scene and `target` is rewritten to that scene's id.
+- `is_inline` (property): `True` when `body` is non-empty.
 - `line_number: int`
 
 ### `ParsedChoiceSet`
@@ -88,7 +91,7 @@ Serializes AST nodes directly to a JSON string.
 Validates AST items for broken links, duplicate labels, orphan scenes, and infinite loops.
 
 ### `to_graph(items: Sequence[ParsedItem]) -> SceneGraph`
-Transforms an AST item sequence into a directed scene graph.
+Transforms an AST item sequence into a directed scene graph. Inline choice options are lowered into anonymous scenes (nodes with `is_anonymous=True`); see the [Directed Scene Graph](scene-graph.md) guide.
 
 ### `parse_graph(text: str, *, plain: bool = False) -> SceneGraph`
 Parses screenplay text directly into a directed scene graph.

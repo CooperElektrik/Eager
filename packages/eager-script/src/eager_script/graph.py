@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from eager_script import ParsedItem
+
+
+def _anon_scene_id(scene_id: str, line_number: int) -> str:
+    """Build the stable id of an anonymous scene lowered from an inline choice block."""
+    return f"{scene_id}__anon_{line_number}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +26,7 @@ class SceneNode:
     body: tuple[ParsedItem, ...]
     speakers: tuple[str, ...]
     hooks: tuple[str, ...]
+    is_anonymous: bool = False
 
     def to_dict(self, include_body: bool = True) -> dict[str, Any]:
         """Convert scene node to a dictionary."""
@@ -30,6 +36,7 @@ class SceneNode:
             "line_number": self.line_number,
             "speakers": list(self.speakers),
             "hooks": list(self.hooks),
+            "anonymous": self.is_anonymous,
         }
         if include_body:
             data["body"] = [item.to_dict() for item in self.body]
@@ -113,8 +120,8 @@ class SceneGraph:
         return node_id in self.reachable_from(self.entry)
 
     def dead_ends(self) -> list[str]:
-        """Return scene IDs with no outgoing transitions."""
-        return [nid for nid in self.nodes if not self.successors(nid)]
+        """Return scene IDs with no outgoing transitions (excluding anonymous scenes)."""
+        return [nid for nid, node in self.nodes.items() if not node.is_anonymous and not self.successors(nid)]
 
     def hubs(self, threshold: int = 2) -> list[str]:
         """Return scene IDs with in-degree (predecessors) >= threshold."""
@@ -123,6 +130,10 @@ class SceneGraph:
     def branching_points(self) -> list[str]:
         """Return scene IDs with more than one outgoing transition."""
         return [nid for nid in self.nodes if len(self.successors(nid)) > 1]
+
+    def anonymous_scenes(self) -> list[str]:
+        """Return scene IDs that were lowered from inline choice blocks."""
+        return [nid for nid, node in self.nodes.items() if node.is_anonymous]
 
     def terminal_scenes(self) -> list[str]:
         """Return reachable scenes that end the story (no outgoing transitions and no return)."""
@@ -244,6 +255,8 @@ class SceneGraph:
         nodes_meta: list[dict[str, Any]] = []
         for nid, node in self.nodes.items():
             tags: list[str] = []
+            if node.is_anonymous:
+                tags.append("anonymous")
             if nid == entry_node:
                 tags.append("entry")
             if nid in branch_nodes:
@@ -1057,43 +1070,181 @@ def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:
     return tuple(flat)
 
 
-def to_graph(items: Sequence[ParsedItem] | Iterable[ParsedItem]) -> SceneGraph:
-    """Build a SceneGraph from a sequence or iterator of parsed AST items."""
+def _process_scene_body(
+    body: list[ParsedItem],
+    scene_id: str,
+    nodes: dict[str, SceneNode],
+    edges: list[SceneEdge],
+) -> tuple[tuple[ParsedItem, ...], tuple[str, ...], tuple[str, ...]]:
+    """Lower one scene body, flattening ``@if`` blocks and resolving inline choices.
+
+    Consecutive transition edges (jumps, calls, choices) are emitted as each item is
+    inspected while the enclosing ``@if`` condition stack is active.  An inline choice
+    option is lowered into an anonymous :class:`SceneNode` (whose body ends in an
+    implicit return) and the option's ``target`` is rewritten to that anonymous scene
+    id so the runtime can branch into it and resume after the menu.
+
+    Returns the flattened body along with its ordered unique speakers and hooks.
+    """
     from eager_script import (
         ParsedCall,
-        ParsedCharacter,
         ParsedChoiceSet,
-        ParsedDefault,
         ParsedDialogue,
+        ParsedElif,
+        ParsedElse,
+        ParsedEnd,
         ParsedHook,
+        ParsedIf,
         ParsedJump,
+        ParsedReturn,
+    )
+
+    flat: list[ParsedItem] = []
+    flat_append = flat.append
+    speakers: list[str] = []
+    speakers_append = speakers.append
+    seen_speakers: set[str] = set()
+    hooks: list[str] = []
+    hooks_append = hooks.append
+    seen_hooks: set[str] = set()
+
+    cond_stack: list[str] = []
+
+    def _active_cond() -> str | None:
+        valid = [c for c in cond_stack if c]
+        if not valid:
+            return None
+        if len(valid) == 1:
+            return valid[0]
+        return " and ".join(f"({c})" for c in valid)
+
+    for item in body:
+        if isinstance(item, ParsedJump):
+            flat_append(item)
+            edges.append(SceneEdge(scene_id, item.target, "jump", None, item.line_number, condition=_active_cond()))
+        elif isinstance(item, ParsedCall):
+            flat_append(item)
+            edges.append(SceneEdge(scene_id, item.target, "call", None, item.line_number, condition=_active_cond()))
+        elif isinstance(item, ParsedChoiceSet):
+            active = _active_cond()
+            resolved_options: list[Any] = []
+            for opt in item.options:
+                opt_cond = opt.condition
+                if active:
+                    opt_cond = f"{active} and ({opt.condition})" if opt.condition else active
+                if opt.body:
+                    anon_id = _anon_scene_id(scene_id, opt.line_number)
+                    edges.append(
+                        SceneEdge(scene_id, anon_id, "choice", opt.text, opt.line_number, condition=opt_cond)
+                    )
+                    anon_body, anon_speakers, anon_hooks = _process_scene_body(
+                        list(opt.body), anon_id, nodes, edges
+                    )
+                    anon_body = anon_body + (ParsedReturn(line_number=opt.line_number),)
+                    nodes[anon_id] = SceneNode(
+                        anon_id,
+                        opt.text,
+                        opt.line_number,
+                        anon_body,
+                        anon_speakers,
+                        anon_hooks,
+                        True,
+                    )
+                    resolved_options.append(replace(opt, target=anon_id))
+                elif opt.target is not None:
+                    edges.append(
+                        SceneEdge(scene_id, opt.target, "choice", opt.text, opt.line_number, condition=opt_cond)
+                    )
+                    resolved_options.append(opt)
+                else:
+                    resolved_options.append(opt)
+            flat_append(replace(item, options=tuple(resolved_options)))
+        elif isinstance(item, ParsedDialogue):
+            flat_append(item)
+            spk = item.speaker
+            if spk not in seen_speakers:
+                seen_speakers.add(spk)
+                speakers_append(spk)
+        elif isinstance(item, ParsedHook):
+            flat_append(item)
+            h = item.hook_name
+            if h not in seen_hooks:
+                seen_hooks.add(h)
+                hooks_append(h)
+        elif isinstance(item, ParsedIf):
+            cond_stack.append(item.expr_src)
+            flat_append(item)
+        elif isinstance(item, ParsedElif):
+            if cond_stack:
+                cond_stack[-1] = item.expr_src
+            flat_append(item)
+        elif isinstance(item, ParsedElse):
+            if cond_stack and cond_stack[-1]:
+                cond_stack[-1] = f"not ({cond_stack[-1]})"
+            flat_append(item)
+        elif isinstance(item, ParsedEnd):
+            if cond_stack:
+                cond_stack.pop()
+            flat_append(item)
+        else:
+            flat_append(item)
+
+    return (
+        _lower_scene_body(flat),
+        tuple(speakers),
+        tuple(hooks),
+    )
+
+
+def to_graph(items: Sequence[ParsedItem] | Iterable[ParsedItem]) -> SceneGraph:
+    """Build a SceneGraph from a sequence or iterator of parsed AST items.
+
+    Inline choice blocks (indented reactions beneath a ``?`` option) are lowered into
+    anonymous scenes by :func:`_process_scene_body`.
+    """
+    from eager_script import (
+        ParsedCharacter,
+        ParsedDefault,
         ParsedLabel,
-        ParsedNarration,
     )
 
     preamble: list[ParsedItem] = []
     characters: dict[str, Any] = {}
     defaults: list[ParsedDefault] = []
-    preamble_append = preamble.append
 
-    item_iter = iter(items)
-    current_label: ParsedLabel | None = None
+    first_label: ParsedLabel | None = None
+    scene_order: list[tuple[ParsedLabel, list[ParsedItem]]] = []
+    current_body: list[ParsedItem] = []
 
-    for item in item_iter:
+    for item in items:
         if type(item) is ParsedLabel:
-            current_label = item
-            break
+            if first_label is None:
+                first_label = item
+            else:
+                scene_order.append((first_label, current_body))
+                first_label = item
+                current_body = []
+            continue
+
         if isinstance(item, ParsedCharacter):
             characters[item.id] = {
                 "name": item.name,
                 "attrs": dict(item.attrs),
                 "line_number": item.line_number,
             }
-        elif isinstance(item, ParsedDefault):
+            preamble.append(item)
+            continue
+        if isinstance(item, ParsedDefault):
             defaults.append(item)
-        preamble_append(item)
+            preamble.append(item)
+            continue
 
-    if current_label is None:
+        if first_label is None:
+            preamble.append(item)
+        else:
+            current_body.append(item)
+
+    if first_label is None:
         return SceneGraph(
             entry=None,
             nodes={},
@@ -1103,134 +1254,22 @@ def to_graph(items: Sequence[ParsedItem] | Iterable[ParsedItem]) -> SceneGraph:
             defaults=tuple(defaults),
         )
 
+    scene_order.append((first_label, current_body))
+
     nodes: dict[str, SceneNode] = {}
     edges: list[SceneEdge] = []
-    edges_append = edges.append
+    entry = scene_order[0][0].name
 
-    current_label_name = current_label.name
-    entry = current_label_name
-
-    current_body: list[ParsedItem] = []
-    current_body_append = current_body.append
-    current_speakers: list[str] = []
-    current_speakers_append = current_speakers.append
-    seen_speakers: set[str] = set()
-    seen_speakers_add = seen_speakers.add
-    current_hooks: list[str] = []
-    current_hooks_append = current_hooks.append
-    seen_hooks: set[str] = set()
-    seen_hooks_add = seen_hooks.add
-
-    from eager_script import ParsedElif, ParsedElse, ParsedEnd, ParsedIf
-
-    cond_stack: list[str] = []
-
-    def _active_cond() -> str | None:
-        if not cond_stack:
-            return None
-        valid = [c for c in cond_stack if c]
-        if not valid:
-            return None
-        if len(valid) == 1:
-            return valid[0]
-        return " and ".join(f"({c})" for c in valid)
-
-    for item in item_iter:
-        if type(item) is ParsedNarration:
-            current_body_append(item)
-        elif type(item) is ParsedDialogue:
-            current_body_append(item)
-            spk = item.speaker
-            if spk not in seen_speakers:
-                seen_speakers_add(spk)
-                current_speakers_append(spk)
-        elif type(item) is ParsedLabel:
-            cond_stack.clear()
-            lowered_body = _lower_scene_body(current_body)
-            nodes[current_label_name] = SceneNode(
-                current_label_name,
-                current_label.display_name,
-                current_label.line_number,
-                lowered_body,
-                tuple(current_speakers) if current_speakers else (),
-                tuple(current_hooks) if current_hooks else (),
-            )
-            current_label = item
-            current_label_name = item.name
-            current_body.clear()
-            if current_speakers:
-                current_speakers.clear()
-                seen_speakers.clear()
-            if current_hooks:
-                current_hooks.clear()
-                seen_hooks.clear()
-        elif type(item) is ParsedJump:
-            current_body_append(item)
-            edges_append(SceneEdge(current_label_name, item.target, "jump", None, item.line_number, condition=_active_cond()))
-        elif type(item) is ParsedHook:
-            current_body_append(item)
-            h = item.hook_name
-            if h not in seen_hooks:
-                seen_hooks_add(h)
-                current_hooks_append(h)
-        elif type(item) is ParsedChoiceSet:
-            current_body_append(item)
-            active = _active_cond()
-            for opt in item.options:
-                opt_cond = opt.condition
-                if active:
-                    opt_cond = f"{active} and ({opt.condition})" if opt.condition else active
-                edges_append(
-                    SceneEdge(
-                        current_label_name,
-                        opt.target,
-                        "choice",
-                        opt.text,
-                        opt.line_number,
-                        condition=opt_cond,
-                    )
-                )
-        elif type(item) is ParsedCall:
-            current_body_append(item)
-            edges_append(SceneEdge(current_label_name, item.target, "call", None, item.line_number, condition=_active_cond()))
-        elif type(item) is ParsedIf:
-            cond_stack.append(item.expr_src)
-            current_body_append(item)
-        elif type(item) is ParsedElif:
-            if cond_stack:
-                cond_stack[-1] = item.expr_src
-            current_body_append(item)
-        elif type(item) is ParsedElse:
-            if cond_stack and cond_stack[-1]:
-                cond_stack[-1] = f"not ({cond_stack[-1]})"
-            current_body_append(item)
-        elif type(item) is ParsedEnd:
-            if cond_stack:
-                cond_stack.pop()
-            current_body_append(item)
-        elif type(item) is ParsedCharacter:
-            characters[item.id] = {
-                "name": item.name,
-                "attrs": dict(item.attrs),
-                "line_number": item.line_number,
-            }
-            preamble_append(item)
-        elif type(item) is ParsedDefault:
-            defaults.append(item)
-            preamble_append(item)
-        else:
-            current_body_append(item)
-
-    assert current_label is not None
-    lowered_body = _lower_scene_body(current_body)
-    nodes[current_label_name] = SceneNode(
-        current_label_name,
-        current_label.display_name,
-        current_label.line_number,
-        lowered_body,
-        tuple(current_speakers) if current_speakers else (),
-        tuple(current_hooks) if current_hooks else (),
-    )
+    for label, body in scene_order:
+        lowered, speakers, hooks = _process_scene_body(body, label.name, nodes, edges)
+        nodes[label.name] = SceneNode(
+            label.name,
+            label.display_name,
+            label.line_number,
+            lowered,
+            speakers,
+            hooks,
+        )
 
     return SceneGraph(
         entry=entry,

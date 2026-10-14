@@ -18,6 +18,7 @@
 | `Speakerless lines` | Narration beat (consecutive lines grouped) | `A cold wind blows through the trees.` |
 | `? Option (target_id)` | Choice option (consecutive choices form a menu) | `? Enter the cave (cave_entry)` |
 | `? Option (target_id) if cond` | Conditional choice option | `? Buy sword (armory) if gold >= 50` |
+| `? Option` + indented block | Inline choice option lowered to an anonymous scene | `? Pet the dog` ↴<br>`    $ affinity += 1` |
 | `> target_id` | Unconditional jump / goto label | `> ruins` |
 | `>> target_id` | Subroutine call (pushes to call stack) | `>> inspect_artifact` |
 | `<<` | Return from subroutine (pops call stack) | `<<` |
@@ -143,6 +144,23 @@ Conditional blocks may be nested. During scene graph construction, conditional b
   ? Pick the locked chest (unlock_chest) if has_lockpick
   ? Search for another path (detour)
   ```
+- **Inline Choice Blocks (Anonymous Scenes)**: Indent reactions and variable mutations directly beneath an option instead of creating a named scene. The option omits its `(target)`; the indented block becomes an *anonymous scene* that runs when the option is picked and then returns to the line after the menu. This keeps minor choices self-contained while the scene continues naturally:
+  ```es
+  ## Tavern --- tavern
+  Bartender: What will it be?
+
+  ? Order an ale
+      $ gold -= 3
+      Bartender: Coming right up.
+  ? Ask for water
+      Bartender: Suit yourself.
+
+  Narrator: You settle onto a stool by the fire.
+  > nightfall
+  ```
+  - The inline block may contain dialogue, narration, `$` mutations, hooks, nested `@if` blocks, and even nested choice menus.
+  - An option cannot combine a `(target)` with an indented block; use a `> target` jump inside the block to leave when it finishes.
+  - Anonymous scenes never need a name and are visible in graph exports as nodes tagged `anonymous`.
 - **Jumps (`>`)**: Directs execution to another scene label:
   ```es
   > peaceful_entry
@@ -203,3 +221,4 @@ In `--plain` mode:
 - **Natural choice & jump targets**: `? Search room (The Hidden Room)` and `> The Hidden Room` target the natural title and are automatically slugified to match headings.
 - **Paragraph dialogue continuation**: Lines under a character speaker continue that character's dialogue without needing `-`. A blank line ends the beat.
 - **Engine markup disallowed**: Subroutines (`>>`, `<<`), engine hooks (`~`), text-box layout beats (`-`, `/`), voice tags (`{voice:...}`), preamble directives (`@default`, `@character`), variable assignments (`$`), conditional blocks (`@if`, `@elif`, `@else`, `@end`), and conditional choices (`if ...`) raise validation errors.
+- **Inline choice blocks allowed**: `? Option` with an indented block of dialogue/narration is supported; engine markup nested inside the block follows the same restrictions as above.

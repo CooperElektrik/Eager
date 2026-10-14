@@ -8,8 +8,10 @@ import unittest
 from pathlib import Path
 
 from eager_script import (
+    ParsedChoiceSet,
     ParsedHook,
     ParsedNarration,
+    ParsedReturn,
     parse_graph,
     parse_iter,
     to_graph,
@@ -351,6 +353,93 @@ class TestGraphCLI(unittest.TestCase):
         res = self.run_cli("graph", "non_existent_file_12345.es")
         self.assertEqual(res.returncode, 1)
         self.assertIn("File not found", res.stderr)
+
+
+INLINE_CHOICE_GRAPH_SCRIPT = """\
+## Tavern --- tavern
+Bartender: What will it be?
+? Order an ale
+    $ gold -= 3
+    Bartender: Coming right up.
+? Ask for water
+    Bartender: Suit yourself.
+Narrator: You settle by the fire.
+> nightfall
+
+## Nightfall --- nightfall
+Narrator: The night deepens.
+"""
+
+
+class TestAnonymousScenes(unittest.TestCase):
+    """Test suite for anonymous scene lowering of inline choice blocks."""
+
+    def setUp(self) -> None:
+        self.graph = parse_graph(INLINE_CHOICE_GRAPH_SCRIPT)
+
+    def test_lowered_nodes_and_edges(self) -> None:
+        self.assertEqual(self.graph.anonymous_scenes(), ["tavern__anon_3", "tavern__anon_6"])
+
+        anon = self.graph.nodes["tavern__anon_3"]
+        self.assertTrue(anon.is_anonymous)
+        self.assertEqual(anon.display_name, "Order an ale")
+        self.assertEqual(anon.speakers, ("Bartender",))
+        self.assertIsInstance(anon.body[-1], ParsedReturn)
+
+        # Option targets are rewritten to the anonymous scene ids.
+        choice_set = next(item for item in self.graph.nodes["tavern"].body if isinstance(item, ParsedChoiceSet))
+        self.assertEqual(choice_set.options[0].target, "tavern__anon_3")
+        self.assertEqual(choice_set.options[1].target, "tavern__anon_6")
+
+        choice_edges = [e for e in self.graph.edges if e.kind == "choice"]
+        self.assertEqual(len(choice_edges), 2)
+        self.assertEqual(choice_edges[0].target, "tavern__anon_3")
+        self.assertEqual(choice_edges[0].label, "Order an ale")
+
+    def test_successors_and_terminals(self) -> None:
+        self.assertIn("tavern__anon_3", self.graph.successors("tavern"))
+        # Anonymous scenes return to the menu, so they are not terminal scenes or dead ends.
+        self.assertNotIn("tavern__anon_3", self.graph.terminal_scenes())
+        self.assertNotIn("tavern__anon_3", self.graph.dead_ends())
+        self.assertIn("nightfall", self.graph.terminal_scenes())
+
+    def test_html_export_tags_anonymous_scenes(self) -> None:
+        html_out = self.graph.to_html()
+        self.assertIn('"anonymous"', html_out)
+
+    def test_anonymous_jump_inside_block_leaves_scene(self) -> None:
+        script = """\
+## A --- a
+? Go
+    > b
+
+## B --- b
+Narrator: done
+"""
+        graph = parse_graph(script)
+        anon_id = graph.anonymous_scenes()[0]
+        jump_edges = [e for e in graph.edges if e.source == anon_id and e.kind == "jump"]
+        self.assertEqual(len(jump_edges), 1)
+        self.assertEqual(jump_edges[0].target, "b")
+
+    def test_nested_inline_blocks_lower_recursively(self) -> None:
+        script = """\
+## Outer --- outer
+? Reaction
+    Alice: first
+    ? Nested
+        Bob: deep
+    Alice: back
+"""
+        graph = parse_graph(script)
+        self.assertEqual(
+            sorted(graph.anonymous_scenes()), ["outer__anon_2", "outer__anon_2__anon_4"]
+        )
+        self.assertTrue(graph.nodes["outer__anon_2__anon_4"].is_anonymous)
+
+    def test_empty_graph_unaffected(self) -> None:
+        graph = to_graph([])
+        self.assertEqual(graph.anonymous_scenes(), [])
 
 
 if __name__ == "__main__":

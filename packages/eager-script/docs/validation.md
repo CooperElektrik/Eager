@@ -8,14 +8,20 @@
 
 | Check | Level | Description |
 | :--- | :--- | :--- |
-| **Undefined Target** | `error` | A jump (`>`), subroutine call (`>>`), or choice option (`?`) points to a non-existent scene label. |
+| **Undefined Target** | `error` | A jump (`>`), subroutine call (`>>`), or choice option (`?`) points to a non-existent scene label. Targets inside inline choice blocks are checked too. |
 | **Duplicate Label** | `error` | Two or more scenes declare the same identifier. |
 | **Plain Mode Violations** | `error` | Script contains engine hooks, subroutine calls, text-box controls, or voice tags while running in `--plain` mode. |
 | **Unreturned Subroutine** | `warning` | A subroutine call (`>>`) exists, but the script contains no return instruction (`<<`). |
-| **Dead Code / Unreachable Statements** | `warning` | Statements located after an unconditional jump (`>`), return (`<<`), or choice menu within the same scene. |
+| **Dead Code / Unreachable Statements** | `warning` | Statements located after an unconditional jump (`>`), return (`<<`), or a choice menu with no inline blocks within the same scene (and inside inline choice blocks). |
 | **Orphan Scene Label** | `warning` | A scene label is declared but never targeted by any jump, call, or choice. |
 | **Unreachable From Entry** | `warning` | A scene exists in the script but cannot be reached by traversing from the first scene (entry point). |
 | **Cyclical Traversal** | `warning` | An unconditional loop exists where scenes jump to one another in an infinite loop without player choices or exit points. |
+
+---
+
+## Inline Choice Blocks
+
+Because an inline choice block returns to the line after the menu, statements that follow a menu containing at least one inline option are treated as reachable and are **not** flagged as dead code. Undefined targets, invalid expressions, and unreachable statements inside the block itself are validated with the same rules as a normal scene.
 
 ---
 

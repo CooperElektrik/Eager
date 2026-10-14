@@ -14,11 +14,13 @@ class CallFrame:
 
     scene_id: str
     beat_index: int
+    kind: str = "call"  # "call" for '>>', "inline" for an optional inline choice block
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "scene_id": self.scene_id,
             "beat_index": self.beat_index,
+            "kind": self.kind,
         }
 
     @classmethod
@@ -26,6 +28,7 @@ class CallFrame:
         return cls(
             scene_id=data["scene_id"],
             beat_index=data["beat_index"],
+            kind=data.get("kind", "call"),
         )
 
 

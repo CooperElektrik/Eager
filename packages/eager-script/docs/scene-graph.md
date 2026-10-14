@@ -6,12 +6,17 @@ While `eager_script.parse()` produces a flat list of AST items (ideal for step-b
 
 ## Conceptual Model
 
-- **Nodes (`SceneNode`)**: Each `##` scene label block acts as a node. It encapsulates the scene's ID, display title, line number, speakers, hooks, and full AST body.
+- **Nodes (`SceneNode`)**: Each `##` scene label block acts as a node. It encapsulates the scene's ID, display title, line number, speakers, hooks, and full AST body. Inline choice blocks are lowered into extra **anonymous** nodes (`node.is_anonymous == True`) that end in an implicit return.
 - **Edges (`SceneEdge`)**: Directed transitions between scenes created by:
   - `? Option (target)`: `kind="choice"`, with choice text stored in `.label`
+  - `? Option` + indented block: `kind="choice"` into the anonymous scene id (`<scene>__anon_<line>`)
   - `> target`: `kind="jump"`, `.label=None`
   - `>> target`: `kind="call"`, `.label=None`
 - **Preamble**: Any top-of-script AST items appearing before the first scene label.
+
+### Anonymous Scenes
+
+An option with an indented block is rewritten during graph construction: the block becomes its own `SceneNode` with `is_anonymous=True`, whose body ends with an implicit `<<` (return). The runtime branches into it when the option is chosen and resumes the enclosing scene once the block finishes, exactly like a subroutine call. Anonymous scene ids are derived from the owning scene and the option's source line (`<scene_id>__anon_<line_number>`), so they stay stable as surrounding beats change.
 
 ---
 
@@ -49,6 +54,7 @@ graph.dead_ends()  # Scenes with no outgoing transitions
 graph.terminal_scenes()  # Reachable scenes that conclude the story (no outgoing transitions and no return)
 graph.branching_points()  # Scenes with > 1 outgoing transitions
 graph.hubs(threshold=2)  # Scenes with in-degree (predecessors) >= threshold
+graph.anonymous_scenes()  # Scenes lowered from inline choice blocks
 ```
 
 ### Scene Node Summaries
@@ -62,6 +68,7 @@ print(node.id)  # "courtyard"
 print(node.display_name)  # "Courtyard"
 print(node.speakers)  # ("Narrator", "Guard") - order-preserved unique speakers
 print(node.hooks)  # ("play_sfx",) - order-preserved unique engine hooks
+print(node.is_anonymous)  # False for authored scenes, True for inline-choice scenes
 print(node.body)  # tuple of parsed AST items
 ```
 

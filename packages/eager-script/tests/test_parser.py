@@ -17,6 +17,7 @@ from eager_script import (
     ParsedLabel,
     ParsedNarration,
     ParsedReturn,
+    ParsedSet,
     ParseError,
     parse,
     parse_iter,
@@ -677,6 +678,165 @@ class TestEagerSP(unittest.TestCase):
             self.assertEqual(exit_code, 1)
         finally:
             Path(tmp_err_path).unlink(missing_ok=True)
+
+
+INLINE_CHOICE_SCRIPT = """\
+## Tavern --- tavern
+Bartender: What will it be?
+
+? Order an ale
+    $ gold -= 3
+    Bartender: Coming right up.
+? Ask for water
+    Bartender: Suit yourself.
+
+Narrator: You settle by the fire.
+"""
+
+
+class TestInlineChoiceBlocks(unittest.TestCase):
+    """Test suite for inline choice blocks that lower into anonymous scenes."""
+
+    def test_parser_attaches_indented_block_to_option(self) -> None:
+        items = parse(INLINE_CHOICE_SCRIPT)
+        self.assertEqual([item.type for item in items], ["label", "dialogue", "choice_set", "dialogue"])
+
+        choice_set = items[2]
+        self.assertIsInstance(choice_set, ParsedChoiceSet)
+        self.assertEqual(len(choice_set.options), 2)
+
+        first = choice_set.options[0]
+        self.assertEqual(first.text, "Order an ale")
+        self.assertIsNone(first.target)
+        self.assertTrue(first.is_inline)
+        self.assertEqual(len(first.body), 2)
+        self.assertIsInstance(first.body[0], ParsedSet)
+        self.assertEqual(first.body[0].target, "gold")
+        self.assertIsInstance(first.body[1], ParsedDialogue)
+        self.assertEqual(first.body[1].text, "Coming right up.")
+
+        second = choice_set.options[1]
+        self.assertIsNone(second.target)
+        self.assertEqual(len(second.body), 1)
+        self.assertIsInstance(second.body[0], ParsedDialogue)
+
+    def test_parser_preserves_source_line_numbers(self) -> None:
+        items = parse(INLINE_CHOICE_SCRIPT)
+        choice_set = items[2]
+        first = choice_set.options[0]
+        self.assertEqual(first.line_number, 4)
+        self.assertEqual(first.body[0].line_number, 5)
+        self.assertEqual(first.body[1].line_number, 6)
+        self.assertEqual(choice_set.options[1].line_number, 7)
+
+    def test_parser_nested_inline_blocks(self) -> None:
+        script = """\
+## Outer --- outer
+? Reaction
+    Alice: first
+    ? Nested
+        Bob: deep
+    Alice: back
+"""
+        items = parse(script)
+        outer = items[1].options[0]
+        self.assertEqual([item.type for item in outer.body], ["dialogue", "choice_set", "dialogue"])
+        nested_option = outer.body[1].options[0]
+        self.assertEqual(nested_option.text, "Nested")
+        self.assertIsNone(nested_option.target)
+        self.assertEqual([item.type for item in nested_option.body], ["dialogue"])
+        self.assertEqual(nested_option.body[0].text, "deep")
+
+    def test_inline_option_with_condition(self) -> None:
+        items = parse("## S --- s\n? Sneak in if has_key\n    Narrator: You slip inside.\n")
+        opt = items[1].options[0]
+        self.assertEqual(opt.text, "Sneak in")
+        self.assertEqual(opt.condition, "has_key")
+        self.assertEqual(len(opt.body), 1)
+
+    def test_target_and_block_combination_rejected(self) -> None:
+        with self.assertRaises(ParseError) as ctx:
+            parse("## A --- a\n? Go (somewhere)\n    Alice: hi\n")
+        self.assertIn("cannot combine", str(ctx.exception))
+
+    def test_targetless_option_without_block_rejected(self) -> None:
+        with self.assertRaises(ParseError) as ctx:
+            parse("## A --- a\n? Just some text\n")
+        self.assertIn("Invalid choice syntax", str(ctx.exception))
+
+    def test_parse_iter_matches_parse_for_inline_blocks(self) -> None:
+        self.assertEqual(
+            to_dict(parse(INLINE_CHOICE_SCRIPT)),
+            to_dict(list(parse_iter(INLINE_CHOICE_SCRIPT))),
+        )
+
+    def test_to_dict_serializes_inline_body(self) -> None:
+        dicts = to_dict(parse(INLINE_CHOICE_SCRIPT))
+        choice_set = next(d for d in dicts if d["type"] == "choice_set")
+        first = choice_set["options"][0]
+        self.assertIsNone(first["target"])
+        self.assertEqual(first["body"][0]["type"], "set")
+        self.assertEqual(choice_set["options"][1]["body"][0]["type"], "dialogue")
+        # Round-trips through JSON
+        self.assertEqual(json.loads(to_json(parse(INLINE_CHOICE_SCRIPT))), dicts)
+
+    def test_validator_accepts_inline_blocks_and_reachable_continuation(self) -> None:
+        result = validate(parse(INLINE_CHOICE_SCRIPT))
+        self.assertTrue(result.is_valid)
+        unreachable = [w for w in result.warnings if "Unreachable" in w.message]
+        self.assertEqual(unreachable, [])
+
+    def test_validator_checks_targets_inside_inline_blocks(self) -> None:
+        result = validate(parse("## A --- a\n? Go\n    > nowhere\n"))
+        self.assertFalse(result.is_valid)
+        self.assertTrue(any("nowhere" in err.message for err in result.errors))
+
+    def test_validator_rejects_invalid_expression_inside_block(self) -> None:
+        result = validate(parse("## A --- a\n? Go\n    $ x = 1 +\n"))
+        self.assertFalse(result.is_valid)
+        self.assertTrue(any("Invalid expression" in err.message for err in result.errors))
+
+    def test_inline_block_with_comments_and_blank_lines(self) -> None:
+        script = """\
+## Tavern --- tavern
+? Order
+    # first comment
+    $ gold -= 3
+
+    # second comment
+    Bartender: Coming up.
+? Leave
+    > nowhere
+"""
+        items = parse(script)
+        choice_set = items[1]
+        self.assertEqual(len(choice_set.options), 2)
+        first = choice_set.options[0]
+        self.assertEqual(len(first.body), 2)
+        self.assertEqual(first.body[0].type, "set")
+        self.assertEqual(first.body[1].type, "dialogue")
+
+    def test_inline_block_with_tabs_and_spaces(self) -> None:
+        script = "## A --- a\n? Choice\n    $ a = 1\n\t$ b = 2\n"
+        items = parse(script)
+        opt = items[1].options[0]
+        self.assertEqual(len(opt.body), 2)
+        self.assertIsInstance(opt.body[0], ParsedSet)
+        self.assertEqual(opt.body[0].target, "a")
+        self.assertIsInstance(opt.body[1], ParsedSet)
+        self.assertEqual(opt.body[1].target, "b")
+
+    def test_validator_rejects_plain_mode_violations_in_inline_blocks(self) -> None:
+        items = parse("## A --- a\n? Go\n    ~ screen_shake\n")
+        result = validate(items, plain=True)
+        self.assertFalse(result.is_valid)
+        self.assertTrue(any("Engine hooks" in err.message for err in result.errors))
+
+    def test_validator_rejects_unclosed_if_in_inline_block(self) -> None:
+        items = parse("## A --- a\n? Go\n    @if cond\n        Alice: hi\n")
+        result = validate(items)
+        self.assertFalse(result.is_valid)
+        self.assertTrue(any("Unclosed @if block" in err.message for err in result.errors))
 
 
 if __name__ == "__main__":

@@ -421,6 +421,11 @@ class StoryVM:
             msg = f"Cannot jump to unknown scene '{scene_id}'"
             raise StoryRuntimeError(msg)
 
+        target_node = self._graph.nodes.get(scene_id)
+        if target_node is not None and not getattr(target_node, "is_anonymous", False):
+            while self._call_stack and self._call_stack[-1].kind == "inline":
+                self._call_stack.pop()
+
         self._pending_choice = None
         self._pending_input = None
         self._enter_scene(scene_id)
@@ -470,6 +475,22 @@ class StoryVM:
 
         self._pending_choice = None
         self._pending_input = None
+
+        # Inline choice blocks are lowered into anonymous scenes.  Branching into one
+        # should resume the enclosing scene once the block finishes, so push a return
+        # frame pointing at the beat right after the choice prompt.
+        target_node = self._graph.nodes.get(target)
+        if (
+            target is not None
+            and target_node is not None
+            and getattr(target_node, "is_anonymous", False)
+            and self._current_scene_id is not None
+        ):
+            self._call_stack.append(CallFrame(self._current_scene_id, self._beat_index, "inline"))
+        else:
+            while self._call_stack and self._call_stack[-1].kind == "inline":
+                self._call_stack.pop()
+
         self.jump(target)
 
     def _enter_scene(self, scene_id: str) -> None:
@@ -650,6 +671,11 @@ class StoryVM:
                 return prompt
 
             if isinstance(item, ParsedJump):
+                # An unconditional jump out of an anonymous inline block abandons the
+                # block's pending return to the enclosing scene.
+                if getattr(scene, "is_anonymous", False):
+                    while self._call_stack and self._call_stack[-1].kind == "inline":
+                        self._call_stack.pop()
                 self._next_transition_target = item.target
                 return SceneExitEvent(
                     scene_id=scene.id,

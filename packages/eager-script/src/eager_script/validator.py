@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -30,6 +30,17 @@ class ValidationResult:
     def is_valid(self) -> bool:
         """True if there are no errors."""
         return len(self.errors) == 0
+
+
+def _iter_choice_bodies(items: Sequence[Any]) -> Iterator[Any]:
+    """Yield every item nested inside inline choice option bodies (depth-first)."""
+    from eager_script import ParsedChoiceSet
+
+    for item in items:
+        if isinstance(item, ParsedChoiceSet):
+            for opt in item.options:
+                yield from opt.body
+                yield from _iter_choice_bodies(opt.body)
 
 
 def validate(items: Sequence[ParsedItem], *, plain: bool = False) -> ValidationResult:
@@ -67,6 +78,196 @@ def validate(items: Sequence[ParsedItem], *, plain: bool = False) -> ValidationR
     # Stack for tracking open @if blocks: stores list of line numbers and whether else was seen
     if_stack: list[dict[str, Any]] = []
     current_label_seen = False
+
+    def scan_inline_body(nested_items: Sequence[Any]) -> None:
+        """Validate references and expressions inside an inline choice block body."""
+        nonlocal has_call, first_call_line, has_return
+        terminator: tuple[str, int] | None = None
+        inline_if_stack: list[dict[str, Any]] = []
+
+        for sub in nested_items:
+            if plain:
+                if isinstance(sub, (ParsedCall, ParsedReturn)):
+                    errors.append(
+                        ValidationError(
+                            message="Subroutines ('>>', '<<') are not allowed in Eager-SP mode",
+                            line_number=sub.line_number,
+                            level="error",
+                        )
+                    )
+                elif isinstance(sub, ParsedHook):
+                    errors.append(
+                        ValidationError(
+                            message="Engine hooks ('~') are not allowed in Eager-SP mode",
+                            line_number=sub.line_number,
+                            level="error",
+                        )
+                    )
+                elif isinstance(sub, (ParsedAppend, ParsedFreshBox)):
+                    errors.append(
+                        ValidationError(
+                            message="Box control beats ('-', '/') are not allowed in Eager-SP mode",
+                            line_number=sub.line_number,
+                            level="error",
+                        )
+                    )
+                elif isinstance(sub, (ParsedSet, ParsedDefault, ParsedCharacter, ParsedIf, ParsedElif, ParsedElse, ParsedEnd)):
+                    errors.append(
+                        ValidationError(
+                            message="Script logic and directives are not allowed in Eager-SP mode",
+                            line_number=sub.line_number,
+                            level="error",
+                        )
+                    )
+                elif isinstance(sub, ParsedDialogue) and sub.voice:
+                    errors.append(
+                        ValidationError(
+                            message="Voice tags ('{voice:...}') are not allowed in Eager-SP mode",
+                            line_number=sub.line_number,
+                            level="error",
+                        )
+                    )
+
+            if terminator is not None:
+                warnings.append(
+                    ValidationError(
+                        message=(
+                            f"Unreachable code: statement after {terminator[0]} "
+                            f"(line {terminator[1]}) will never execute"
+                        ),
+                        line_number=sub.line_number,
+                        level="warning",
+                    )
+                )
+            elif isinstance(sub, ParsedJump):
+                references.append((sub.target, sub.line_number, "jump"))
+                terminator = ("jump", sub.line_number)
+            elif isinstance(sub, ParsedCall):
+                has_call = True
+                if first_call_line == 0:
+                    first_call_line = sub.line_number
+                references.append((sub.target, sub.line_number, "call"))
+            elif isinstance(sub, ParsedReturn):
+                has_return = True
+                terminator = ("return ('<<')", sub.line_number)
+            elif isinstance(sub, ParsedChoiceSet):
+                for opt in sub.options:
+                    if opt.target is not None:
+                        references.append((opt.target, opt.line_number, "choice"))
+                    if opt.condition:
+                        if plain:
+                            errors.append(
+                                ValidationError(
+                                    message="Conditional choices are not allowed in Eager-SP mode",
+                                    line_number=opt.line_number,
+                                    level="error",
+                                )
+                            )
+                        try:
+                            compile_expr(opt.condition)
+                        except ExprError as e:
+                            errors.append(
+                                ValidationError(
+                                    message=f"Invalid choice condition '{opt.condition}': {e}",
+                                    line_number=opt.line_number,
+                                    level="error",
+                                )
+                            )
+                    if opt.body:
+                        scan_inline_body(opt.body)
+                if not any(opt.body for opt in sub.options):
+                    terminator = ("choice menu", sub.line_number)
+            elif isinstance(sub, ParsedSet):
+                try:
+                    compile_expr(sub.expr_src)
+                except ExprError as e:
+                    errors.append(
+                        ValidationError(
+                            message=f"Invalid expression in set statement: {e}",
+                            line_number=sub.line_number,
+                            level="error",
+                        )
+                    )
+            elif isinstance(sub, ParsedIf):
+                try:
+                    compile_expr(sub.expr_src)
+                except ExprError as e:
+                    errors.append(
+                        ValidationError(
+                            message=f"Invalid expression in condition: {e}",
+                            line_number=sub.line_number,
+                            level="error",
+                        )
+                    )
+                inline_if_stack.append({"line": sub.line_number, "has_else": False})
+            elif isinstance(sub, ParsedElif):
+                if not inline_if_stack:
+                    errors.append(
+                        ValidationError(
+                            message="@elif without matching @if",
+                            line_number=sub.line_number,
+                            level="error",
+                        )
+                    )
+                elif inline_if_stack[-1]["has_else"]:
+                    errors.append(
+                        ValidationError(
+                            message="@elif cannot follow @else",
+                            line_number=sub.line_number,
+                            level="error",
+                        )
+                    )
+                else:
+                    try:
+                        compile_expr(sub.expr_src)
+                    except ExprError as e:
+                        errors.append(
+                            ValidationError(
+                                message=f"Invalid expression in condition: {e}",
+                                line_number=sub.line_number,
+                                level="error",
+                            )
+                        )
+            elif isinstance(sub, ParsedElse):
+                if not inline_if_stack:
+                    errors.append(
+                        ValidationError(
+                            message="@else without matching @if",
+                            line_number=sub.line_number,
+                            level="error",
+                        )
+                    )
+                elif inline_if_stack[-1]["has_else"]:
+                    errors.append(
+                        ValidationError(
+                            message="Multiple @else clauses in single @if block",
+                            line_number=sub.line_number,
+                            level="error",
+                        )
+                    )
+                else:
+                    inline_if_stack[-1]["has_else"] = True
+            elif isinstance(sub, ParsedEnd):
+                if not inline_if_stack:
+                    errors.append(
+                        ValidationError(
+                            message="@end without matching @if",
+                            line_number=sub.line_number,
+                            level="error",
+                        )
+                    )
+                else:
+                    inline_if_stack.pop()
+
+        if inline_if_stack:
+            for frame in inline_if_stack:
+                errors.append(
+                    ValidationError(
+                        message=f"Unclosed @if block (started at line {frame['line']})",
+                        line_number=frame["line"],
+                        level="error",
+                    )
+                )
 
     for item in items:
         if plain:
@@ -169,7 +370,8 @@ def validate(items: Sequence[ParsedItem], *, plain: bool = False) -> ValidationR
             has_return = True
         elif isinstance(item, ParsedChoiceSet):
             for opt in item.options:
-                references.append((opt.target, opt.line_number, "choice"))
+                if opt.target is not None:
+                    references.append((opt.target, opt.line_number, "choice"))
                 if opt.condition:
                     try:
                         compile_expr(opt.condition)
@@ -181,6 +383,8 @@ def validate(items: Sequence[ParsedItem], *, plain: bool = False) -> ValidationR
                                 level="error",
                             )
                         )
+                if opt.body:
+                    scan_inline_body(opt.body)
         elif isinstance(item, ParsedSet):
             if not current_label_seen:
                 errors.append(
@@ -343,7 +547,7 @@ def validate(items: Sequence[ParsedItem], *, plain: bool = False) -> ValidationR
             terminator_info = ("jump", item.line_number)
         elif isinstance(item, ParsedReturn):
             terminator_info = ("return ('<<')", item.line_number)
-        elif isinstance(item, ParsedChoiceSet):
+        elif isinstance(item, ParsedChoiceSet) and not any(opt.body for opt in item.options):
             terminator_info = ("choice menu", item.line_number)
 
     # Check for unreferenced / orphan labels and unreachable labels from entry point
@@ -364,8 +568,17 @@ def validate(items: Sequence[ParsedItem], *, plain: bool = False) -> ValidationR
                     curr_terminated = True
             elif isinstance(item, ParsedChoiceSet):
                 for opt in item.options:
-                    scene_targets[curr_scene].append(opt.target)
-                curr_terminated = True
+                    if opt.target is not None:
+                        scene_targets[curr_scene].append(opt.target)
+                for sub in _iter_choice_bodies([item]):
+                    if isinstance(sub, (ParsedJump, ParsedCall)):
+                        scene_targets[curr_scene].append(sub.target)
+                    elif isinstance(sub, ParsedChoiceSet):
+                        for nested_opt in sub.options:
+                            if nested_opt.target is not None:
+                                scene_targets[curr_scene].append(nested_opt.target)
+                if not any(opt.body for opt in item.options):
+                    curr_terminated = True
             elif isinstance(item, ParsedReturn):
                 curr_terminated = True
 

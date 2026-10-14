@@ -5,12 +5,13 @@ from __future__ import annotations
 import re
 import sys
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, TypeAlias
 
 __version__ = "0.1.0"
 
 CHOICE_PATTERN = re.compile(r"^\?\s+(.+?)\s*\(([^()]+)\)(?:\s+if\s+(.+))?\s*$")
+CHOICE_INLINE_PATTERN = re.compile(r"^\?\s+(.+?)(?:\s+if\s+(.+))?\s*$")
 VOICE_PATTERN = re.compile(r"^\{voice:([^}]+)\}\s*")
 SPEAKER_PATTERN = re.compile(
     r"^([A-Za-z_][A-Za-z0-9_\s\.\-\'\"]*?)(?:\s*\(([^)]+)\))?:(?:\s+(.*)|\s*)$"
@@ -140,16 +141,27 @@ class ParsedNarration:
 
 @dataclass(frozen=True, slots=True)
 class ParsedChoiceOption:
-    """Parsed choice menu option ('?')."""
+    """Parsed choice menu option ('? Text (target)' or '? Text' + indented block).
+
+    A named option carries a ``target`` scene label.  An *inline* option omits the
+    target and instead carries an indented ``body`` that is lowered into an
+    anonymous scene (see :func:`eager_script.to_graph`).
+    """
 
     text: str
-    target: str
+    target: str | None
     line_number: int
     condition: str | None = None
+    body: tuple[ParsedItem, ...] = ()
 
     @property
     def type(self) -> str:
         return "choice_option"
+
+    @property
+    def is_inline(self) -> bool:
+        """True when the option carries an anonymous inline block instead of a target."""
+        return bool(self.body)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -158,6 +170,7 @@ class ParsedChoiceOption:
             "target": self.target,
             "line_number": self.line_number,
             "condition": self.condition,
+            "body": [item.to_dict() for item in self.body],
         }
 
 
@@ -478,6 +491,15 @@ def _unescape(text: str) -> str:
     return _UNESCAPE_PATTERN.sub(r"\1", text)
 
 
+def _leading_indent(raw_line: str) -> int:
+    """Return the number of leading space/tab characters on a raw source line."""
+    stripped = raw_line.lstrip(" \t")
+    if not stripped:
+        return 0
+    leading = raw_line[: len(raw_line) - len(stripped)]
+    return len(leading.expandtabs(4))
+
+
 def _strip_line_comment(line: str) -> str:
     """Strip standalone comments or unescaped inline comments."""
     if line.startswith("##"):
@@ -522,16 +544,27 @@ def _parse_label(line: str, line_number: int, *, plain: bool = False) -> ParsedL
 
 
 def _parse_choice(line: str, line_number: int, *, plain: bool = False) -> ParsedChoiceOption:
-    """Parse a single choice line ('? Option text (target_label)' or '? Option text (target_label) if cond')."""
+    """Parse a single choice line.
+
+    Supports a named option (``? Text (target_label)`` / ``? Text (target_label) if cond``)
+    as well as an anonymous inline option (``? Text`` / ``? Text if cond``) whose block is
+    supplied by the indented lines immediately beneath it.
+    """
     match = CHOICE_PATTERN.match(line)
-    if not match:
-        raise ParseError(
-            "Invalid choice syntax. Expected '? Text (target_label)'",
-            line_number,
-        )
-    text = _unescape(match.group(1).strip())
-    raw_target = match.group(2).strip()
-    condition = match.group(3).strip() if match.group(3) else None
+    if match:
+        text = _unescape(match.group(1).strip())
+        raw_target: str | None = match.group(2).strip()
+        condition = match.group(3).strip() if match.group(3) else None
+    else:
+        inline_match = CHOICE_INLINE_PATTERN.match(line)
+        if not inline_match:
+            raise ParseError(
+                "Invalid choice syntax. Expected '? Text (target_label)' or '? Text' with an indented block",
+                line_number,
+            )
+        text = _unescape(inline_match.group(1).strip())
+        raw_target = None
+        condition = inline_match.group(2).strip() if inline_match.group(2) else None
 
     if plain and condition:
         raise ParseError(
@@ -541,18 +574,20 @@ def _parse_choice(line: str, line_number: int, *, plain: bool = False) -> Parsed
 
     if not text:
         raise ParseError("Empty choice text", line_number)
-    if not raw_target:
-        raise ParseError("Empty choice target", line_number)
 
-    target = _slugify(raw_target) if plain else raw_target
-    if plain and not target:
-        raise ParseError(
-            f"Invalid choice target '{raw_target}' cannot be converted to a valid identifier",
-            line_number,
-        )
+    target: str | None = None
+    if raw_target is not None:
+        if not raw_target:
+            raise ParseError("Empty choice target", line_number)
+        target = _slugify(raw_target) if plain else raw_target
+        if plain and not target:
+            raise ParseError(
+                f"Invalid choice target '{raw_target}' cannot be converted to a valid identifier",
+                line_number,
+            )
     return ParsedChoiceOption(
         text=text,
-        target=sys.intern(target),
+        target=sys.intern(target) if target else None,
         line_number=line_number,
         condition=condition,
     )
@@ -599,6 +634,8 @@ class ScreenplayParser:
         self._narration_buffer: list[str] = []
         self._narration_line: int = 0
         self._choice_buffer: list[ParsedChoiceOption] = []
+        self._choice_bodies: list[list[ParsedItem]] = []
+        self._choice_indent: int = 0
         self._dialogue_speaker: str | None = None
         self._dialogue_emotion: str | None = None
         self._dialogue_parts: list[str] = []
@@ -638,9 +675,22 @@ class ScreenplayParser:
     def _flush_choices(self) -> list[ParsedItem]:
         if self._choice_buffer:
             first_line = self._choice_buffer[0].line_number
-            options = tuple(self._choice_buffer)
+            options: list[ParsedChoiceOption] = []
+            for opt, body in zip(self._choice_buffer, self._choice_bodies):
+                if opt.target is None and not body:
+                    raise ParseError(
+                        f"Invalid choice syntax: option '{opt.text}' needs a '(target)' or an indented block",
+                        opt.line_number,
+                    )
+                if opt.target is not None and body:
+                    raise ParseError(
+                        f"Choice option '{opt.text}' cannot combine a '(target)' with an indented block",
+                        opt.line_number,
+                    )
+                options.append(replace(opt, body=tuple(body)) if body else opt)
             self._choice_buffer.clear()
-            return [ParsedChoiceSet(options=options, line_number=first_line)]
+            self._choice_bodies.clear()
+            return [ParsedChoiceSet(options=tuple(options), line_number=first_line)]
         return []
 
     def _flush_all(self) -> list[ParsedItem]:
@@ -768,15 +818,8 @@ class ScreenplayParser:
     # Shared parse loop
     # ------------------------------------------------------------------
 
-    def _parse(self, text: str) -> Iterator[ParsedItem]:
-        """Shared line-by-line parse loop yielding AST items."""
-        self._narration_buffer.clear()
-        self._choice_buffer.clear()
-        self._dialogue_speaker = None
-        self._dialogue_emotion = None
-        self._dialogue_parts.clear()
-        self._dialogue_line = 0
-
+    def _iter_raw_lines(self, text: str) -> Iterator[tuple[int, str]]:
+        """Yield ``(line_number, raw_line)`` pairs without splitting the whole text."""
         start = 0
         text_len = len(text)
         find = text.find
@@ -794,6 +837,68 @@ class ScreenplayParser:
                 else:
                     raw_line = text[start:end]
                 start = end + 1
+            yield idx, raw_line
+
+    def _parse_inline_block(self, block: list[tuple[int, str]]) -> tuple[ParsedItem, ...]:
+        """Parse an indented choice block into anonymous-scene body items.
+
+        The block is dedented to its first line and re-parsed so nested control
+        lines and inline blocks keep their relative structure.  Source line
+        numbers are preserved by offsetting the dedented text.
+        """
+        first_line = block[0][0]
+        base_indent = 0
+        for _, raw in block:
+            if raw.strip():
+                base_indent = _leading_indent(raw)
+                break
+
+        stripped: list[str] = []
+        for _, raw in block:
+            if not raw.strip():
+                stripped.append("")
+                continue
+            indent_len = len(raw) - len(raw.lstrip(" \t"))
+            expanded_prefix = raw[:indent_len].expandtabs(4)
+            expanded_line = expanded_prefix + raw[indent_len:]
+            if len(expanded_prefix) >= base_indent:
+                stripped.append(expanded_line[base_indent:])
+            else:
+                stripped.append(raw.lstrip())
+
+        text = "\n" * (first_line - 1) + "\n".join(stripped)
+        nested = type(self)().parse(text)
+        for item in nested:
+            if isinstance(item, (ParsedLabel, ParsedDefault, ParsedCharacter)):
+                raise ParseError(
+                    "Scene labels and preamble directives are not allowed inside an inline choice block",
+                    item.line_number,
+                )
+        return tuple(nested)
+
+    def _parse(self, text: str) -> Iterator[ParsedItem]:
+        """Shared line-by-line parse loop yielding AST items."""
+        self._narration_buffer.clear()
+        self._choice_buffer.clear()
+        self._choice_bodies.clear()
+        self._choice_indent = 0
+        self._dialogue_speaker = None
+        self._dialogue_emotion = None
+        self._dialogue_parts.clear()
+        self._dialogue_line = 0
+
+        line_iter = self._iter_raw_lines(text)
+        pending: tuple[int, str] | None = None
+
+        while True:
+            if pending is not None:
+                idx, raw_line = pending
+                pending = None
+            else:
+                nxt = next(line_iter, None)
+                if nxt is None:
+                    break
+                idx, raw_line = nxt
 
             clean = raw_line.strip()
             if not clean:
@@ -803,7 +908,8 @@ class ScreenplayParser:
             c0 = clean[0]
             if c0 == "#":
                 if not clean.startswith("##"):
-                    yield from self._flush_all()
+                    if not self._choice_buffer:
+                        yield from self._flush_all()
                     continue
             elif "#" in clean and (" #" in clean or "\t#" in clean):
                 clean = _INLINE_COMMENT_PATTERN.sub("", clean).rstrip()
@@ -817,9 +923,56 @@ class ScreenplayParser:
                     yield from self._flush_narration()
                 if self._dialogue_speaker is not None:
                     yield from self._flush_dialogue()
-                self._choice_buffer.append(self._build_choice(clean, idx))
+                choice_opt = self._build_choice(clean, idx)
+                choice_indent = _leading_indent(raw_line)
+
+                # Look ahead for an indented inline block attached to this option
+                block: list[tuple[int, str]] = []
+                leading_blanks: list[tuple[int, str]] = []
+                while True:
+                    nxt = next(line_iter, None)
+                    if nxt is None:
+                        break
+                    nidx, nraw = nxt
+                    nclean = nraw.strip()
+                    if not nclean:
+                        if block:
+                            block.append((nidx, nraw))
+                        else:
+                            leading_blanks.append((nidx, nraw))
+                        continue
+                    if _leading_indent(nraw) > choice_indent:
+                        if leading_blanks:
+                            block.extend(leading_blanks)
+                            leading_blanks.clear()
+                        block.append((nidx, nraw))
+                    else:
+                        pending = (nidx, nraw)
+                        break
+
+                while block and not block[-1][1].strip():
+                    block.pop()
+
+                if block:
+                    if choice_opt.target is not None:
+                        raise ParseError(
+                            f"Choice option '{choice_opt.text}' cannot combine a '(target)' with an indented block",
+                            choice_opt.line_number,
+                        )
+                    body_items = self._parse_inline_block(block)
+                    self._choice_buffer.append(choice_opt)
+                    self._choice_bodies.append(list(body_items))
+                else:
+                    if choice_opt.target is None:
+                        raise ParseError(
+                            f"Invalid choice syntax: option '{choice_opt.text}' needs a '(target)' or an indented block",
+                            choice_opt.line_number,
+                        )
+                    self._choice_buffer.append(choice_opt)
+                    self._choice_bodies.append([])
                 continue
 
+            # ── Flush choices before processing non-choice lines ──
             if self._choice_buffer:
                 yield from self._flush_choices()
 

@@ -225,6 +225,7 @@ def help_dialog(term: Any) -> None:
         ("  / Text                      Start fresh dialogue box", False),
         ("  Narration line              Speakerless narrative beat", False),
         ("  ? Option text (target_id)   Interactive choice branch", False),
+        ("  ? Option text               Inline branch (indented block, no label)", False),
         ("  > target_id                 Unconditional jump to label", False),
         ("  >> target_id                Call subroutine", False),
         ("  <<                          Return from subroutine", False),
@@ -234,7 +235,7 @@ def help_dialog(term: Any) -> None:
     ]
 
     w = min(76, term.width - 4)
-    h = min(22, term.height - 4)
+    h = min(23, term.height - 4)
     top = max(1, (term.height - h) // 2)
     left = max(1, (term.width - w) // 2)
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from eager_script import CHOICE_PATTERN, SPEAKER_PATTERN, VOICE_PATTERN
+from eager_script import CHOICE_INLINE_PATTERN, CHOICE_PATTERN, SPEAKER_PATTERN, VOICE_PATTERN
 
 COMMENT_RE = re.compile(r"(?<!\\)\s+#.*$")
 
@@ -146,6 +146,18 @@ class EagerSHighlighter:
                 + t.bold_cyan(target)
                 + t.white(")")
             )
+        # Anonymous inline choice: '? Text' or '? Text if cond' with an indented block
+        inline = CHOICE_INLINE_PATTERN.match(text)
+        if inline:
+            opt_text = inline.group(1)
+            prefix_end = text.index(opt_text)
+            remainder = text[prefix_end + len(opt_text) :]
+            result = t.bold_green(text[0]) + text[1:prefix_end] + t.green(opt_text)
+            if inline.group(2):
+                result += t.bold_cyan(remainder)
+            else:
+                result += remainder
+            return result
         # Malformed choice, highlight prefix green
         return t.bold_green("?") + t.white(text[1:])
 
