@@ -730,4 +730,24 @@ def test_dialogue_box_typewriter_reveal_float_visible_chars() -> None:
     assert combined_text == "Hello br"
 
 
+def test_ui_overlay_error_overlay() -> None:
+    backend = NullRenderer()
+    overlay = UIOverlay(1280, 720)
+    state = UIState(speaker="Narrator", text="Normal text")
+
+    overlay.error_overlay = "Scene not found: 'missing_scene'"
+    overlay.draw(backend, state)
+
+    texts = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
+    assert "Scene Not Found" in texts
+    assert "Scene not found: 'missing_scene'" in texts
+
+    # Clear error overlay
+    backend.ui_calls.clear()
+    overlay.error_overlay = None
+    overlay.draw(backend, state)
+    texts_cleared = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
+    assert "Scene Not Found" not in texts_cleared
+
+
 

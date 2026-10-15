@@ -125,6 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
     play_p.add_argument("--asset-dir", default=None, help="Directory containing sprite/background assets.")
     play_p.add_argument("--warp", default=None, help="Fast-forward / jump directly to scene label.")
     play_p.add_argument("--no-audio", action="store_true", help="Disable audio playback (use NullAudioBackend).")
+    play_p.add_argument("--watch", "--hot-reload", dest="watch", action="store_true", help="Automatically hot-reload when script changes on disk.")
     play_p.set_defaults(func=run_play)
 
     # inspect
@@ -198,6 +199,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("project_dir", nargs="?", default=".", help="Project directory (default: current directory)")
     run_p.add_argument("--backend", choices=["pyglet", "pil", "raylib"], default="pil", help="Rendering backend")
     run_p.add_argument("--no-audio", action="store_true", help="Disable audio playback (use NullAudioBackend).")
+    run_p.add_argument("--watch", "--hot-reload", dest="watch", action="store_true", help="Automatically hot-reload when script changes on disk.")
     run_p.set_defaults(func=_cmd_run)
 
     # new
@@ -465,6 +467,7 @@ def _cmd_play(args: argparse.Namespace) -> int:
         audio_backend=audio_backend,
         asset_dir=args.asset_dir,
         plain=args.plain,
+        auto_reload=getattr(args, "watch", False),
     )
 
     if getattr(args, "lang", None):
@@ -599,6 +602,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         backend=args.backend,
         audio_backend=audio_backend,
         asset_dir=str(asset_dir) if asset_dir else None,
+        auto_reload=getattr(args, "watch", False),
     )
     _run_interactive_player(engine, backend=args.backend)
     return 0

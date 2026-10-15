@@ -46,6 +46,7 @@ __all__ = [
     "ChoicePromptEvent",
     "DialogueEvent",
     "EventDispatcher",
+    "FileWatcher",
     "FreshBoxEvent",
     "GameSession",
     "HistoryManager",
@@ -93,6 +94,7 @@ _LAZY_EXPORTS = {
     "Preferences": "eager_runtime.preferences",
     "Backlog": "eager_runtime.backlog",
     "BacklogEntry": "eager_runtime.backlog",
+    "FileWatcher": "eager_runtime.watcher",
 }
 
 

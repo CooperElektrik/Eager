@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from eager_graphics import Anchor, Color, RenderItem, ScaleMode, StageCompositor
@@ -508,6 +510,53 @@ def test_localized_ui_dirty_subregion_restore():
     # Next render_compositor call with unchanged stage: dirty bbox is used and reset
     renderer.render_compositor(comp, 1280, 720)
     assert renderer._ui_dirty_bbox is None
+
+
+def test_pil_player_shift_r_hot_reload(tmp_path: Path) -> None:
+    """Pressing Shift+R in PILPlayer should reload script, set _ui_dirty = True, and update UI."""
+    import time
+    from types import SimpleNamespace
+
+    from eager_runtime.session import GameSession
+
+    from eager_graphics.renderers.pil import PILPlayer
+
+    script_file = tmp_path / "game.es"
+    script_file.write_text(
+        "## Start --- start\nNarrator: First draft\n",
+        encoding="utf-8",
+    )
+
+    session = GameSession(script_file)
+    player = PILPlayer(session=session, width=800, height=600, visible=False)
+    try:
+        # First draw clears _ui_dirty
+        player.on_draw()
+        assert player._ui_dirty is False
+        assert player.current_text == "First draft"
+
+        # Edit script on disk
+        time.sleep(0.05)
+        script_file.write_text(
+            "## Start --- start\nNarrator: Hot reloaded draft!\n",
+            encoding="utf-8",
+        )
+
+        # Simulate Shift+R key event (keysym 'r', state with Shift mask 0x0001)
+        player._on_key(SimpleNamespace(keysym="r", state=0x0001))
+
+        # Check: _ui_dirty set to True and text updated
+        assert player._ui_dirty is True
+        assert player.current_text == "Hot reloaded draft!"
+        assert session.director.ui_state.text == "Hot reloaded draft!"
+
+        # Draw frame: forces redraw and clears _ui_dirty
+        initial_frames = player.renderer.frame_count
+        player.on_draw()
+        assert player.renderer.frame_count == initial_frames + 1
+        assert player._ui_dirty is False
+    finally:
+        player.close()
 
 
 

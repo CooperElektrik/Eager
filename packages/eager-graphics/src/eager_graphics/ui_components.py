@@ -937,6 +937,7 @@ class UIOverlay:
     height: int = 720
     dialogue_style: TextboxStyle | None = None
     choice_style: ChoiceMenuStyle | None = None
+    error_overlay: str | None = None
     dialogue_box: DialogueBox = field(init=False)
     choice_menu: ChoiceMenu = field(init=False)
     end_notice: EndNotice = field(init=False)
@@ -1083,8 +1084,44 @@ class UIOverlay:
                 anchor_y=TextAnchor.MIDDLE,
             )
 
-        if finished:
+        if self.error_overlay:
+            self._draw_error_overlay(backend, self.error_overlay)
+        elif finished:
             self.end_notice.draw(backend)
+
+    def _draw_error_overlay(self, backend: UIDrawBackend, message: str) -> None:
+        """Draw a safe error overlay box centered on screen."""
+        box_w = min(float(self.width) - 80.0, 680.0)
+        box_h = 160.0
+        bx = (float(self.width) - box_w) / 2.0
+        by = (float(self.height) - box_h) / 2.0
+
+        fill = Color(0.12, 0.03, 0.03, 0.94)
+        border = Color(0.85, 0.25, 0.25, 0.95)
+        backend.draw_rect(bx, by, box_w, box_h, fill, border_color=border, border_width=2.0)
+
+        backend.draw_text(
+            bx + 24.0,
+            by + 24.0,
+            "Scene Not Found",
+            font_size=18,
+            color=Color(1.0, 0.4, 0.4, 1.0),
+            bold=True,
+        )
+        backend.draw_text(
+            bx + 24.0,
+            by + 64.0,
+            message,
+            font_size=14,
+            color=Color(0.95, 0.95, 0.95, 1.0),
+        )
+        backend.draw_text(
+            bx + 24.0,
+            by + 112.0,
+            "Hot-Reload: Edit screenplay and press Shift+R to reload.",
+            font_size=12,
+            color=Color(0.7, 0.7, 0.75, 0.8),
+        )
 
 
     # ── input ──────────────────────────────────────────────────────────

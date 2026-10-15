@@ -1937,6 +1937,9 @@ if PIL_AVAILABLE:
             """Advance compositor animations by dt and pump audio."""
             if self.session is not None:
                 self.session.update(dt)
+                if getattr(self.session, "_ui_dirty", False):
+                    self._ui_dirty = True
+                    self.session._ui_dirty = False
                 self.active_choice_prompt = self.session.active_choice_prompt
                 self.is_finished = self.session.is_finished
                 if self.session.text_reveal is not None and not self.session.text_reveal.is_complete:
@@ -1950,6 +1953,17 @@ if PIL_AVAILABLE:
             self.compositor.step(dt)
             if self.audio is not None:
                 self.audio.update(dt)
+
+        def hot_reload(self) -> bool:
+            """Hot-reload screenplay from disk, hot-swap VM, reconcile state, and force a redraw."""
+            result = False
+            if self.session is not None and hasattr(self.session, "hot_reload"):
+                result = self.session.hot_reload()
+                self.active_choice_prompt = self.session.active_choice_prompt
+                self.is_finished = self.session.is_finished
+                self._sync_overlay()
+            self._ui_dirty = True
+            return result
 
         def on_draw(self) -> None:
             """Render frame: stage graphics followed by UI textbox and choices."""
@@ -2207,6 +2221,9 @@ if PIL_AVAILABLE:
             elif keysym in ("control_l", "control_r"):
                 keysym = "ctrl"
 
+            is_shift = bool(getattr(event, "state", 0) & 0x0001) or getattr(event, "keysym", "").isupper()
+            combo = f"shift+{keysym}" if is_shift else keysym
+
             if self.session is not None:
                 # 1-9 choice keys
                 if self.active_choice_prompt is not None and keysym in "123456789":
@@ -2219,12 +2236,15 @@ if PIL_AVAILABLE:
                         self._sync_overlay()
                         return
 
-                action = self.keymap.map_key(keysym)
+                action = self.keymap.map_key(combo) or self.keymap.map_key(keysym)
                 if action == InputAction.QUIT:
                     self.close()
                     return
                 elif action == InputAction.DEBUG_OVERLAY:
                     self.show_fps = not self.show_fps
+                    return
+                elif action == InputAction.RELOAD:
+                    self.hot_reload()
                     return
                 elif action:
                     self._ui_dirty = True

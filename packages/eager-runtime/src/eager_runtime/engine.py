@@ -80,6 +80,8 @@ class VisualEngine:
         virtual_height: int = 1080,
         plain: bool = False,
         max_history: int = 500,
+        auto_reload: bool = False,
+        watch: bool = False,
     ) -> None:
         from eager_runtime.session import GameSession
 
@@ -92,6 +94,7 @@ class VisualEngine:
             candidate = self.script_path.resolve().parent / "assets"
             self.asset_dir = candidate if candidate.is_dir() else None
         self.plain = plain
+        self._ui_dirty: bool = True
         # Create session wrapping the VM and director
         self.session = GameSession(
             self.script_path,
@@ -102,6 +105,8 @@ class VisualEngine:
             virtual_height=virtual_height,
             plain=plain,
             rollback_limit=max_history,
+            auto_reload=auto_reload,
+            watch=watch,
         )
 
         # Mirror session components on VisualEngine for backwards compatibility
@@ -234,3 +239,11 @@ class VisualEngine:
         story_ok = self.vm.rollback()
         visual_ok = self.director.rollback_visual_state()
         return story_ok and visual_ok
+
+    def hot_reload(self, script_path: str | Path | None = None) -> bool:
+        """Hot-reload script from disk and trigger re-render."""
+        result = self.session.hot_reload(script_path)
+        self.vm = self.session.vm
+        self._ui_dirty = True
+        self.render()
+        return result

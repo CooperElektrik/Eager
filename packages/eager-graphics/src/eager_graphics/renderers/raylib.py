@@ -891,6 +891,10 @@ class RaylibPlayer:
         """Advance animations and pump audio mixer / session logic."""
         if self.session is not None:
             self.session.update(dt)
+            if getattr(self.session, "_ui_dirty", False):
+                self._ui_dirty = True
+                self.session._ui_dirty = False
+                self._sync_overlay()
             self.active_choice_prompt = self.session.active_choice_prompt
             self.is_finished = self.session.is_finished
             return
@@ -898,6 +902,17 @@ class RaylibPlayer:
         self.compositor.step(dt)
         if self.audio is not None:
             self.audio.update(dt)
+
+    def hot_reload(self) -> bool:
+        """Hot-reload screenplay from disk, hot-swap VM, reconcile state, and force a redraw."""
+        result = False
+        if self.session is not None and hasattr(self.session, "hot_reload"):
+            result = self.session.hot_reload()
+            self.active_choice_prompt = self.session.active_choice_prompt
+            self.is_finished = self.session.is_finished
+            self._sync_overlay()
+        self._ui_dirty = True
+        return result
 
     # ------------------------------------------------------------------ #
     # Rendering
@@ -1008,6 +1023,12 @@ class RaylibPlayer:
                 (pyray.KEY_F3, "f3"),
                 (pyray.KEY_Q, "q"),
             ]
+            if pyray.is_key_pressed(pyray.KEY_R) and (
+                pyray.is_key_down(pyray.KEY_LEFT_SHIFT) or pyray.is_key_down(pyray.KEY_RIGHT_SHIFT)
+            ):
+                self.hot_reload()
+                return
+
             for rk, key_name in ray_key_map:
                 if pyray.is_key_pressed(rk):
                     action = self.keymap.map_key(key_name)

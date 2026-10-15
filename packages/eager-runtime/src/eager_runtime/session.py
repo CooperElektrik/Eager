@@ -116,6 +116,8 @@ class GameSession:
         plain: bool = False,
         rollback_limit: int = 100,
         config: Any = None,
+        auto_reload: bool = False,
+        watch: bool = False,
     ) -> None:
         self.script_path = Path(project_or_script) if isinstance(project_or_script, (str, Path)) else None
         self.backend = backend
@@ -123,11 +125,13 @@ class GameSession:
         self.plain = plain
         self.virtual_width = virtual_width
         self.virtual_height = virtual_height
+        self.auto_reload = auto_reload or watch
+        self._ui_dirty: bool = True
 
         # Parse scene graph
         if self.script_path is not None:
             text = self.script_path.read_text(encoding="utf-8")
-            self.graph = parse_graph(text, plain=plain)
+            self.graph: Any = parse_graph(text, plain=plain)
         elif hasattr(project_or_script, "graph"):
             self.graph = project_or_script.graph
         else:
@@ -213,6 +217,12 @@ class GameSession:
         self.text_reveal: Any | None = None
 
         self._last_event: StoryEvent | None = None
+        if self.script_path is not None:
+            from eager_runtime.watcher import FileWatcher
+
+            self.watcher: FileWatcher | None = FileWatcher(self.script_path)
+        else:
+            self.watcher = None
 
     def apply_preferences(self) -> None:
         """Apply current preferences to audio mixer, translation locale, and subsystems."""
@@ -446,6 +456,10 @@ class GameSession:
         self.compositor.step(dt)
         self.audio.update(dt)
 
+        # Automatic hot-reload via file-watcher
+        if self.auto_reload and self.watcher is not None and self.watcher.check_modified():
+            self.hot_reload()
+
         # Update typewriter text reveal
         if self.text_reveal is not None and not self.text_reveal.is_complete:
             self.text_reveal.update(dt)
@@ -613,6 +627,8 @@ class GameSession:
         elif action == InputAction.HISTORY:
             if hasattr(self, "screens"):
                 return self.screens.show("history", self)
+        elif action == InputAction.RELOAD:
+            return self.hot_reload()
         elif action == InputAction.POINTER_CLICK:
             x = payload.get("x", 0.0)
             y = payload.get("y", 0.0)
@@ -640,3 +656,107 @@ class GameSession:
         elif action == InputAction.POINTER_MOVE:
             return None
         return None
+
+    def _set_error_overlay(self, msg: str) -> None:
+        """Set error overlay and clear active choices/prompts."""
+        if hasattr(self, "overlay") and self.overlay is not None:
+            self.overlay.error_overlay = msg
+        if hasattr(self, "director") and self.director is not None:
+            self.director.ui_state.speaker = "Error"
+            self.director.ui_state.text = msg
+            self.director.ui_state.clear_choices()
+        self.active_choice_prompt = None
+
+    def _clear_error_overlay(self) -> None:
+        """Clear the error overlay from the UI."""
+        if hasattr(self, "overlay") and self.overlay is not None:
+            self.overlay.error_overlay = None
+
+    def _refresh_presentation_after_reload(self, new_scene: Any, display_idx: int) -> None:
+        """Update active dialogue/choice display to reflect the reloaded scene body."""
+        if not new_scene.body:
+            return
+        if 0 <= display_idx < len(new_scene.body):
+            from eager_script import ParsedChoiceSet, ParsedDialogue, ParsedNarration
+
+            item = new_scene.body[display_idx]
+            if isinstance(item, ParsedDialogue):
+                self.director.ui_state.speaker = item.speaker
+                self.director.ui_state.text = self.vm.interpolate(item.text)
+                self.director.ui_state.emotion = item.emotion
+                self.director.ui_state.visible_chars = None
+                self.text_reveal = None
+            elif isinstance(item, ParsedNarration):
+                self.director.ui_state.speaker = None
+                self.director.ui_state.text = self.vm.interpolate(item.text)
+                self.director.ui_state.emotion = None
+                self.director.ui_state.visible_chars = None
+                self.text_reveal = None
+            elif isinstance(item, ParsedChoiceSet):
+                if self.active_choice_prompt is not None or self.vm.pending_choice is not None:
+                    prompt = self.vm._build_choice_prompt(item)
+                    self.active_choice_prompt = prompt
+                    self.vm._pending_choice = prompt
+
+    def hot_reload(self, script_path: str | Path | None = None) -> bool:
+        """Hot-reload the screenplay from disk, hot-swapping the VM and reconciling state.
+
+        1. Capture current state: vm.current_scene_id, vm.beat_index, vm.variables.
+        2. Re-parse script: read .es file and generate fresh SceneGraph.
+        3. Hot-swap VM: swap vm.graph reference.
+        4. Reconcile state:
+           - If current_scene_id still exists, cap beat_index to len(new_scene.body) - 1.
+           - If scene was deleted, gracefully jump to entry node or display a safe
+             "Scene not found" error overlay.
+        5. Force a redraw: set self._ui_dirty = True and trigger a re-render.
+        """
+        target_path = Path(script_path) if script_path else self.script_path
+        if target_path is None or not target_path.exists():
+            self._set_error_overlay("Hot-reload error: script file not found.")
+            self._ui_dirty = True
+            return False
+
+        # 1. Capture current state
+        cur_scene_id = self.vm.current_scene_id
+        b_idx = self.vm.beat_index
+        _variables = self.vm.variables
+
+        # 2. Re-parse the script
+        try:
+            text = target_path.read_text(encoding="utf-8")
+            new_graph = parse_graph(text, plain=self.plain)
+        except Exception as exc:  # noqa: BLE001
+            self._set_error_overlay(f"Hot-reload parse error: {exc}")
+            self._ui_dirty = True
+            return False
+
+        # 3. Hot-swap the VM
+        self.graph = new_graph
+        self.vm.graph = new_graph
+
+        # 4. Reconcile State
+        if cur_scene_id is not None and cur_scene_id in new_graph.nodes:
+            new_scene = new_graph.nodes[cur_scene_id]
+            if new_scene.body:
+                self.vm.beat_index = max(0, min(b_idx, len(new_scene.body) - 1))
+                active_idx = min(max(0, b_idx - 1) if b_idx > 0 else 0, len(new_scene.body) - 1)
+            else:
+                self.vm.beat_index = 0
+                active_idx = 0
+            self._clear_error_overlay()
+            self._refresh_presentation_after_reload(new_scene, active_idx)
+        else:
+            # Scene was deleted
+            if new_graph.entry and new_graph.entry in new_graph.nodes:
+                self._clear_error_overlay()
+                self.vm.jump(new_graph.entry)
+                self.advance()
+            else:
+                self._set_error_overlay(f"Scene not found: '{cur_scene_id}'")
+
+        # 5. Force a redraw
+        self._ui_dirty = True
+        if hasattr(self, "overlay") and self.overlay is not None and hasattr(self.overlay, "sync"):
+            self.overlay.sync(self.director.ui_state, self.active_choice_prompt)
+
+        return True

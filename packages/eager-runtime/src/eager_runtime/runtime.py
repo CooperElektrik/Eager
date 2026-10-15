@@ -199,20 +199,66 @@ class StoryVM:
 
         return _INTERPOLATION_PATTERN.sub(repl, text)
 
+    def interpolate(self, text: str) -> str:
+        """Perform [var_name] text interpolation with [[ literal escape."""
+        return self._interpolate(text)
+
     @property
     def graph(self) -> SceneGraph:
         """The underlying scene graph being executed."""
         return self._graph
+
+    @graph.setter
+    def graph(self, new_graph: SceneGraph) -> None:
+        self._graph = new_graph
 
     @property
     def current_scene_id(self) -> str | None:
         """ID of the current active scene, or None if story hasn't started or ended."""
         return self._current_scene_id
 
+    @current_scene_id.setter
+    def current_scene_id(self, scene_id: str | None) -> None:
+        self._current_scene_id = scene_id
+
     @property
     def beat_index(self) -> int:
         """Index of the next beat to execute in the current scene."""
         return self._beat_index
+
+    @beat_index.setter
+    def beat_index(self, index: int) -> None:
+        self._beat_index = max(0, index)
+
+    def hot_reload(self, new_graph: SceneGraph) -> bool:
+        """Hot-swap the underlying scene graph and reconcile execution state.
+
+        1. Capture current state: current_scene_id, beat_index, variables.
+        2. Swap self._graph reference.
+        3. Reconcile state:
+           - If current_scene_id exists, cap beat_index to len(new_scene.body) - 1.
+           - If scene was deleted, gracefully jump to entry node if available,
+             or clear current scene.
+        """
+        cur_scene = self._current_scene_id
+        b_idx = self._beat_index
+        self._graph = new_graph
+
+        if cur_scene is not None and cur_scene in new_graph.nodes:
+            new_scene = new_graph.nodes[cur_scene]
+            if new_scene.body:
+                self._beat_index = max(0, min(b_idx, len(new_scene.body) - 1))
+            else:
+                self._beat_index = 0
+            return True
+        else:
+            if new_graph.entry and new_graph.entry in new_graph.nodes:
+                self._enter_scene(new_graph.entry)
+                return True
+            else:
+                self._current_scene_id = None
+                self._beat_index = 0
+                return False
 
     @property
     def is_ended(self) -> bool:
