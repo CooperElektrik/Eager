@@ -1,7 +1,6 @@
 """Unit tests for VisualHistoryManager, StageDirector rollback, and interactive players."""
 
 import pytest
-from eager_runtime import EventDispatcher, StoryVM
 from eager_script import parse_graph
 
 from eager_graphics import StageCompositor, StageDirector, VisualHistoryManager
@@ -139,18 +138,14 @@ def test_interactive_player_rollback_updates_compositor_stage_pyglet() -> None:
     ~ show bob sad at right with cut
     Bob: I am sad.
     """
+    from eager_runtime import GameSession
+
     graph = parse_graph(screenplay)
-    vm = StoryVM(graph)
-    dispatcher = EventDispatcher()
-    compositor = StageCompositor(1920, 1080)
-    director = StageDirector(compositor)
-    director.bind(dispatcher)
+    session = GameSession(graph)
+    compositor = session.compositor
 
     player = PygletPlayer(
-        vm=vm,
-        compositor=compositor,
-        director=director,
-        dispatcher=dispatcher,
+        session=session,
         width=800,
         height=450,
         visible=False,
@@ -195,18 +190,14 @@ def test_interactive_player_rollback_updates_compositor_stage_pil() -> None:
     ~ show bob sad at right with cut
     Bob: I am sad.
     """
+    from eager_runtime import GameSession
+
     graph = parse_graph(screenplay)
-    vm = StoryVM(graph)
-    dispatcher = EventDispatcher()
-    compositor = StageCompositor(1920, 1080)
-    director = StageDirector(compositor)
-    director.bind(dispatcher)
+    session = GameSession(graph)
+    compositor = session.compositor
 
     player = PILPlayer(
-        vm=vm,
-        compositor=compositor,
-        director=director,
-        dispatcher=dispatcher,
+        session=session,
         width=800,
         height=450,
         visible=False,

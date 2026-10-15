@@ -686,32 +686,22 @@ def launch_interactive(
         print(f"Error: PIL renderer unavailable: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    from eager_core.i18n import TranslationManager
+    from eager_runtime.session import GameSession
 
     graph = parse_graph(script_text)
-    tm = TranslationManager()
+    session = GameSession(graph)
     locales_dir = Path(__file__).resolve().parent / "locales"
     if locales_dir.is_dir():
-        tm.load_directory(locales_dir)
+        session.translation_manager.load_directory(locales_dir)
     if locale:
-        tm.set_locale(locale)
-
-    vm = StoryVM(graph, translation_manager=tm)
-    dispatcher = EventDispatcher()
-    compositor = StageCompositor(virtual_width=1920, virtual_height=1080)
-    director = StageDirector(compositor)
-    director.enable_visual_history(max_history=100)
-    director.bind(dispatcher)
+        session.set_language(locale)
 
     print("Launching Eager visual novel (PIL)...")
     if uncapped:
         print("  [Uncapped FPS mode enabled: V-Sync disabled, redraw timer limit removed]")
     print("Controls: Click / Space / Enter = Advance | 1-9 = Choices | Backspace = Undo | Esc/Q = Quit")
     player = PILPlayer(
-        vm=vm,
-        compositor=compositor,
-        director=director,
-        dispatcher=dispatcher,
+        session=session,
         width=width,
         height=height,
         title="Eager Demo — After School with Hoshiko",

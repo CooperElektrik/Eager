@@ -322,24 +322,16 @@ def test_background_crossfade_image_blend():
 
 def test_pil_player_idle_frame_skipping():
     """PILPlayer should track _ui_dirty and skip redundant blits on static frames."""
-    from eager_runtime import EventDispatcher, StoryVM
+    from eager_runtime import GameSession
     from eager_script import parse_graph
 
-    from eager_graphics import StageDirector
     from eager_graphics.renderers.pil import PILPlayer
 
     graph = parse_graph("## Start --- start\nAlice: Hello!\n")
-    vm = StoryVM(graph)
-    dispatcher = EventDispatcher()
-    comp = StageCompositor(1920, 1080)
-    director = StageDirector(comp)
-    director.bind(dispatcher)
+    session = GameSession(graph)
 
     player = PILPlayer(
-        vm=vm,
-        compositor=comp,
-        director=director,
-        dispatcher=dispatcher,
+        session=session,
         width=800,
         height=600,
         visible=False,
@@ -365,24 +357,16 @@ def test_pil_player_idle_frame_skipping():
 
 def test_pil_player_uncapped_mode():
     """PILPlayer with uncapped=True should configure vsync=False and uncapped clock tick."""
-    from eager_runtime import EventDispatcher, StoryVM
+    from eager_runtime import GameSession
     from eager_script import parse_graph
 
-    from eager_graphics import StageDirector
     from eager_graphics.renderers.pil import PILPlayer
 
     graph = parse_graph("## Start --- start\nAlice: Hello!\n")
-    vm = StoryVM(graph)
-    dispatcher = EventDispatcher()
-    comp = StageCompositor(1920, 1080)
-    director = StageDirector(comp)
-    director.bind(dispatcher)
+    session = GameSession(graph)
 
     player = PILPlayer(
-        vm=vm,
-        compositor=comp,
-        director=director,
-        dispatcher=dispatcher,
+        session=session,
         width=800,
         height=600,
         visible=False,

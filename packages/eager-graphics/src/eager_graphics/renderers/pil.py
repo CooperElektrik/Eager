@@ -34,11 +34,9 @@ from eager_graphics.types import BLACK, WHITE, Color, ScaleMode
 from eager_graphics.ui_components import UIOverlay
 
 if TYPE_CHECKING:
-    from eager_core.audio import AudioMixer
-    from eager_runtime import ChoicePromptEvent, EventDispatcher, StoryVM
+    from eager_runtime import ChoicePromptEvent
 
     from eager_graphics.compositor import StageCompositor
-    from eager_graphics.director import StageDirector
 
 _EXTENSIONS: tuple[str, ...] = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
 _IDENTITY_256: list[int] = list(range(256))
@@ -1716,25 +1714,21 @@ class PILRenderer(RenderBackend):
 if PIL_AVAILABLE:
 
     class PILPlayer:
-        """Interactive visual-novel window player: Pillow software frames in a tkinter window.
+        """Thin interactive window shell driving a :class:`GameSession` with Pillow frames.
 
-        Only Pillow is required to construct and drive the player — story logic
-        (``advance_story`` / ``make_choice`` / ``rollback``) and frame rendering
-        (``on_draw``) all work headless, which keeps the player fully testable
-        without a display.  The tkinter window itself is created lazily by
-        :meth:`run`, so constructing the player never needs Tk bindings either;
-        only entering the event loop does.
+        The player owns no narrative state: all story advancement, branching,
+        rollback, typewriter reveal, and input semantics live in the injected
+        :class:`~eager_runtime.session.GameSession`.  Window events are forwarded
+        to ``session.handle_input(...)`` and frames are produced by
+        ``session.draw(...)``.  Only Pillow is required to construct and drive
+        the player headless; the tkinter window is created lazily by :meth:`run`,
+        so only entering the event loop needs Tk bindings.
         """
 
         def __init__(
             self,
-            vm: StoryVM | None = None,
-            compositor: StageCompositor | None = None,
-            director: StageDirector | None = None,
-            dispatcher: EventDispatcher | None = None,
             *,
-            session: Any | None = None,
-            audio: AudioMixer | None = None,
+            session: Any,
             width: int = 1280,
             height: int = 720,
             title: str = "Eager-Graphics Visual Novel (PIL)",
@@ -1755,22 +1749,13 @@ if PIL_AVAILABLE:
             self.height: int = height
 
             self.session = session
-            if session is not None:
-                self.vm = session.vm
-                self.compositor = session.compositor
-                self.director = session.director
-                self.dispatcher = session.dispatcher
-                self.audio = getattr(session, "audio", audio)
-                self.keymap = getattr(session, "keymap", None) or Keymap()
-                self.overlay = getattr(session, "overlay", None) or UIOverlay(width=width, height=height)
-            else:
-                self.vm = vm  # type: ignore[assignment]
-                self.compositor = compositor  # type: ignore[assignment]
-                self.director = director  # type: ignore[assignment]
-                self.dispatcher = dispatcher  # type: ignore[assignment]
-                self.audio = audio
-                self.keymap = Keymap()
-                self.overlay = UIOverlay(width=width, height=height)
+            self.vm = session.vm
+            self.compositor = session.compositor
+            self.director = session.director
+            self.dispatcher = session.dispatcher
+            self.audio = getattr(session, "audio", None)
+            self.keymap = getattr(session, "keymap", None) or Keymap()
+            self.overlay = getattr(session, "overlay", None) or UIOverlay(width=width, height=height)
 
             self.renderer = PILRenderer(
                 width=width,
@@ -1829,139 +1814,51 @@ if PIL_AVAILABLE:
             self.overlay.sync(self.director.ui_state, self.active_choice_prompt)
 
         def advance_story(self) -> None:
-            """Advance the story by one dialogue beat or hook."""
+            """Advance the story by forwarding to the owning :class:`GameSession`."""
             self._ui_dirty = True
-            if self.session is not None:
-                self.session.advance()
-                self.active_choice_prompt = self.session.active_choice_prompt
-                self.is_finished = self.session.is_finished
-                self._sync_overlay()
-                return
-
-            if self.is_finished or self.vm.is_ended:
-                self.is_finished = True
-                self._sync_overlay()
-                return
-
-            if self.active_choice_prompt is not None:
-                self._sync_overlay()
-                return
-
-            # Snapshot visual and UI state before advancing to the next narrative beat
-            self.director.snapshot_visual_state()
-
-            while not self.vm.is_ended:
-                event = self.vm.step()
-                if event is None:
-                    self.is_finished = True
-                    break
-
-                self.dispatcher.dispatch(event)
-
-                if event.type == "dialogue":
-                    diag = event  # type: ignore[attr-defined]
-                    self.current_speaker = diag.speaker
-                    self.current_text = diag.text
-                    self.current_emotion = diag.emotion
-                    break
-
-                if event.type == "narration":
-                    narr = event  # type: ignore[attr-defined]
-                    self.current_speaker = None
-                    self.current_text = narr.text
-                    self.current_emotion = None
-                    break
-
-                if event.type == "append":
-                    self.current_text += f" {event.text}"  # type: ignore[attr-defined]
-                    break
-
-                if event.type == "fresh_box":
-                    self.current_text = event.text  # type: ignore[attr-defined]
-                    break
-
-                if event.type == "choice_prompt":
-                    self.active_choice_prompt = event  # type: ignore[assignment]
-                    break
-
-                if event.type == "story_end":
-                    self.is_finished = True
-                    break
-
+            self.session.advance()
+            self.active_choice_prompt = self.session.active_choice_prompt
+            self.is_finished = self.session.is_finished
             self._sync_overlay()
 
         def make_choice(self, choice_index: int) -> None:
             """Select a branching choice option and continue execution."""
             self._ui_dirty = True
-            if self.session is not None:
-                self.session.choose(choice_index)
-                self.active_choice_prompt = self.session.active_choice_prompt
-                self.is_finished = self.session.is_finished
-                self._sync_overlay()
-                return
-
-            if self.active_choice_prompt is None:
-                return
-
-            if 0 <= choice_index < len(self.active_choice_prompt.options):
-                self.active_choice_prompt = None
-                self.vm.choose(choice_index)
-                self.advance_story()
+            self.session.choose(choice_index)
+            self.active_choice_prompt = self.session.active_choice_prompt
+            self.is_finished = self.session.is_finished
+            self._sync_overlay()
 
         def rollback(self) -> bool:
             """Rollback narrative and stage state by one beat."""
-            if self.session is not None:
-                self._ui_dirty = True
-                success = self.session.rollback()
-                self.active_choice_prompt = self.session.active_choice_prompt
-                self.is_finished = self.session.is_finished
-                self._sync_overlay()
-                return success
-
-            if not self.vm.can_rollback:
-                return False
-
-            success = self.vm.rollback()
-            if success:
-                self._ui_dirty = True
-                self.director.rollback_visual_state()
-                self.active_choice_prompt = None
-                self.current_speaker = self.director.ui_state.speaker
-                self.current_text = self.director.ui_state.text
-                self.current_emotion = self.director.ui_state.emotion
-                self.is_finished = self.director.ui_state.is_finished
-                self._sync_overlay()
+            self._ui_dirty = True
+            success = self.session.rollback()
+            self.active_choice_prompt = self.session.active_choice_prompt
+            self.is_finished = self.session.is_finished
+            self._sync_overlay()
             return success
 
         def tick(self, dt: float) -> None:
-            """Advance compositor animations by dt and pump audio."""
-            if self.session is not None:
-                self.session.update(dt)
-                if getattr(self.session, "_ui_dirty", False):
-                    self._ui_dirty = True
-                    self.session._ui_dirty = False
-                self.active_choice_prompt = self.session.active_choice_prompt
-                self.is_finished = self.session.is_finished
-                if self.session.text_reveal is not None and not self.session.text_reveal.is_complete:
-                    self._ui_dirty = True
-                cur_vc = self.director.ui_state.visible_chars
-                if cur_vc != self._last_visible_chars:
-                    self._last_visible_chars = cur_vc
-                    self._ui_dirty = True
-                return
-
-            self.compositor.step(dt)
-            if self.audio is not None:
-                self.audio.update(dt)
+            """Advance compositor animations, audio, and session logic by dt."""
+            self.session.update(dt)
+            if getattr(self.session, "_ui_dirty", False):
+                self._ui_dirty = True
+                self.session._ui_dirty = False
+            self.active_choice_prompt = self.session.active_choice_prompt
+            self.is_finished = self.session.is_finished
+            if self.session.text_reveal is not None and not self.session.text_reveal.is_complete:
+                self._ui_dirty = True
+            cur_vc = self.director.ui_state.visible_chars
+            if cur_vc != self._last_visible_chars:
+                self._last_visible_chars = cur_vc
+                self._ui_dirty = True
 
         def hot_reload(self) -> bool:
             """Hot-reload screenplay from disk, hot-swap VM, reconcile state, and force a redraw."""
-            result = False
-            if self.session is not None and hasattr(self.session, "hot_reload"):
-                result = self.session.hot_reload()
-                self.active_choice_prompt = self.session.active_choice_prompt
-                self.is_finished = self.session.is_finished
-                self._sync_overlay()
+            result = self.session.hot_reload()
+            self.active_choice_prompt = self.session.active_choice_prompt
+            self.is_finished = self.session.is_finished
+            self._sync_overlay()
             self._ui_dirty = True
             return result
 
@@ -1977,8 +1874,7 @@ if PIL_AVAILABLE:
                 and self.renderer._stage_cache.size == (self.width, self.height)
             )
             is_text_revealing = bool(
-                self.session is not None
-                and self.session.text_reveal is not None
+                self.session.text_reveal is not None
                 and not self.session.text_reveal.is_complete
             )
             is_screen_active = bool(
@@ -1998,20 +1894,7 @@ if PIL_AVAILABLE:
                 self._draw_fps()
                 return
 
-            if self.session is not None:
-                self.session.draw(self.renderer, self.width, self.height)
-            else:
-                # 1. Render Stage Elements using PILRenderer
-                self.renderer.render_compositor(self.compositor, self.width, self.height)
-
-                # 2-4. Dialogue textbox, branching choices, and story-end notice,
-                #      all delegated to the renderer-agnostic UI components.
-                self.overlay.draw(
-                    self.renderer,
-                    self.director.ui_state,
-                    self.active_choice_prompt,
-                    is_finished=self.is_finished,
-                )
+            self.session.draw(self.renderer, self.width, self.height)
             self._ui_dirty = False
 
             # Present the composited PIL frame to the tkinter window
@@ -2142,20 +2025,18 @@ if PIL_AVAILABLE:
                     pass
 
         def _on_scroll_up(self, event: Any) -> None:
-            if self.session is not None:
-                self._ui_dirty = True
-                self.session.handle_input(InputAction.ROLLBACK)
-                self.active_choice_prompt = self.session.active_choice_prompt
-                self.is_finished = self.session.is_finished
-                self._sync_overlay()
+            self._ui_dirty = True
+            self.session.handle_input(InputAction.ROLLBACK)
+            self.active_choice_prompt = self.session.active_choice_prompt
+            self.is_finished = self.session.is_finished
+            self._sync_overlay()
 
         def _on_scroll_down(self, event: Any) -> None:
-            if self.session is not None:
-                self._ui_dirty = True
-                self.session.handle_input(InputAction.ROLL_FORWARD)
-                self.active_choice_prompt = self.session.active_choice_prompt
-                self.is_finished = self.session.is_finished
-                self._sync_overlay()
+            self._ui_dirty = True
+            self.session.handle_input(InputAction.ROLL_FORWARD)
+            self.active_choice_prompt = self.session.active_choice_prompt
+            self.is_finished = self.session.is_finished
+            self._sync_overlay()
 
         def _on_mousewheel(self, event: Any) -> None:
             if getattr(event, "delta", 0) > 0:
@@ -2164,32 +2045,20 @@ if PIL_AVAILABLE:
                 self._on_scroll_down(event)
 
         def _on_ctrl_release(self, event: Any) -> None:
-            if self.session is not None:
-                self.session.handle_input(InputAction.SKIP_RELEASE)
+            self.session.handle_input(InputAction.SKIP_RELEASE)
 
         def _on_motion(self, event: Any) -> None:
             """Handle mouse movement for screen and button hover states."""
-            if self.session is not None:
-                self.session.handle_input(InputAction.POINTER_MOVE, x=float(event.x), y=float(event.y))
-                self._ui_dirty = True
+            self.session.handle_input(InputAction.POINTER_MOVE, x=float(event.x), y=float(event.y))
+            self._ui_dirty = True
 
         def _on_click(self, event: Any) -> None:
             """Handle mouse clicks for advancement or choice selection."""
             self._ui_dirty = True
-            if self.session is not None:
-                self.session.handle_input(InputAction.POINTER_CLICK, x=float(event.x), y=float(event.y))
-                self.active_choice_prompt = self.session.active_choice_prompt
-                self.is_finished = self.session.is_finished
-                self._sync_overlay()
-                return
-
-            if self.active_choice_prompt is not None:
-                index = self.overlay.hit_test_choice(event.x, event.y)
-                if index is not None:
-                    self.make_choice(index)
-                return
-
-            self.advance_story()
+            self.session.handle_input(InputAction.POINTER_CLICK, x=float(event.x), y=float(event.y))
+            self.active_choice_prompt = self.session.active_choice_prompt
+            self.is_finished = self.session.is_finished
+            self._sync_overlay()
 
         def _on_configure(self, event: Any) -> None:
             """Keep the UI components laid out against the new window size."""
@@ -2212,8 +2081,6 @@ if PIL_AVAILABLE:
             keysym = event.keysym.lower()
             if keysym == "return":
                 keysym = "enter"
-            elif keysym == "backspace":
-                keysym = "backspace"
             elif keysym == "prior":
                 keysym = "pageup"
             elif keysym == "next":
@@ -2224,55 +2091,28 @@ if PIL_AVAILABLE:
             is_shift = bool(getattr(event, "state", 0) & 0x0001) or getattr(event, "keysym", "").isupper()
             combo = f"shift+{keysym}" if is_shift else keysym
 
-            if self.session is not None:
-                # 1-9 choice keys
-                if self.active_choice_prompt is not None and keysym in "123456789":
-                    idx = int(keysym) - 1
-                    if idx < len(self.active_choice_prompt.options):
-                        self._ui_dirty = True
-                        self.session.handle_input(InputAction.CHOOSE, index=idx)
-                        self.active_choice_prompt = self.session.active_choice_prompt
-                        self.is_finished = self.session.is_finished
-                        self._sync_overlay()
-                        return
-
-                action = self.keymap.map_key(combo) or self.keymap.map_key(keysym)
-                if action == InputAction.QUIT:
-                    self.close()
-                    return
-                elif action == InputAction.DEBUG_OVERLAY:
-                    self.show_fps = not self.show_fps
-                    return
-                elif action == InputAction.RELOAD:
-                    self.hot_reload()
-                    return
-                elif action:
+            # 1-9 choice keys
+            if self.active_choice_prompt is not None and keysym in "123456789":
+                idx = int(keysym) - 1
+                if idx < len(self.active_choice_prompt.options):
                     self._ui_dirty = True
-                    self.session.handle_input(action)
+                    self.session.handle_input(InputAction.CHOOSE, index=idx)
                     self.active_choice_prompt = self.session.active_choice_prompt
                     self.is_finished = self.session.is_finished
                     self._sync_overlay()
                     return
 
-            # Fallback if running without session
-            if keysym in ("space", "enter"):
-                if self.active_choice_prompt is None:
-                    self.advance_story()
-
-            elif self.active_choice_prompt is not None:
-                if len(keysym) == 1 and keysym in "123456789":
-                    idx = int(keysym) - 1
-                    if idx < len(self.active_choice_prompt.options):
-                        self.make_choice(idx)
-
-            elif keysym == "backspace":
-                self.rollback()
-
-            elif keysym == "f3":
-                self.show_fps = not self.show_fps
-
-            elif keysym in ("escape", "q"):
+            action = self.keymap.map_key(combo) or self.keymap.map_key(keysym)
+            if action == InputAction.QUIT:
                 self.close()
+            elif action == InputAction.DEBUG_OVERLAY:
+                self.show_fps = not self.show_fps
+            elif action:
+                self._ui_dirty = True
+                self.session.handle_input(action)
+                self.active_choice_prompt = self.session.active_choice_prompt
+                self.is_finished = self.session.is_finished
+                self._sync_overlay()
 
 else:
 

@@ -18,7 +18,6 @@ try:
 except ImportError:
     PYGLET_AVAILABLE = False
 
-from eager_runtime import EventDispatcher, StoryVM
 from eager_script import parse_graph
 
 from eager_graphics import (
@@ -28,7 +27,6 @@ from eager_graphics import (
     RenderItem,
     ScaleMode,
     StageCompositor,
-    StageDirector,
 )
 
 pytestmark = pytest.mark.skipif(not PYGLET_AVAILABLE, reason="Pyglet not installed")
@@ -168,19 +166,14 @@ def test_pyglet_player_story_progression() -> None:
     ## Option 2 --- opt2
     Alice: You picked option 2.
     """
+    from eager_runtime import GameSession
+
     graph = parse_graph(screenplay)
-    vm = StoryVM(graph)
-    dispatcher = EventDispatcher()
-    compositor = StageCompositor(1920, 1080)
-    director = StageDirector(compositor)
-    director.bind(dispatcher)
+    session = GameSession(graph)
 
     # Initialize headless PygletPlayer
     player = PygletPlayer(
-        vm=vm,
-        compositor=compositor,
-        director=director,
-        dispatcher=dispatcher,
+        session=session,
         width=800,
         height=450,
         visible=False,
@@ -289,18 +282,13 @@ def test_pyglet_player_choice_mouse_click() -> None:
     ## Option B --- opt_b
     Alice: B selected.
     """
+    from eager_runtime import GameSession
+
     graph = parse_graph(screenplay)
-    vm = StoryVM(graph)
-    dispatcher = EventDispatcher()
-    compositor = StageCompositor(1920, 1080)
-    director = StageDirector(compositor)
-    director.bind(dispatcher)
+    session = GameSession(graph)
 
     player = PygletPlayer(
-        vm=vm,
-        compositor=compositor,
-        director=director,
-        dispatcher=dispatcher,
+        session=session,
         width=800,
         height=600,
         visible=False,

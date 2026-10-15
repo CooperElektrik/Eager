@@ -70,7 +70,7 @@ from eager_graphics import StageCompositor, StageDirector
 from eager_graphics.protocol import RenderItem
 from eager_graphics.types import BLACK
 from eager_graphics.renderers.raylib import RaylibAssetResolver, RaylibRenderer, RaylibPlayer
-from eager_runtime import EventDispatcher, StoryVM, VisualEngine
+from eager_runtime import EventDispatcher, GameSession, StoryVM, VisualEngine
 from eager_script import parse_graph
 
 results = {}
@@ -443,13 +443,10 @@ Alice: You picked option 2.
 
 try:
     graph = parse_graph(_SCREENPLAY)
-    vm = StoryVM(graph)
-    dispatcher = EventDispatcher()
-    comp = StageCompositor(1920, 1080)
-    director = StageDirector(comp)
-    director.bind(dispatcher)
+    session = GameSession(graph)
+    comp = session.compositor
     player = RaylibPlayer(
-        vm=vm, compositor=comp, director=director, dispatcher=dispatcher,
+        session=session,
         width=800, height=450,
     )
     try:
@@ -473,13 +470,10 @@ except Exception as exc:
 
 try:
     graph = parse_graph(_SCREENPLAY)
-    vm = StoryVM(graph)
-    dispatcher = EventDispatcher()
-    comp = StageCompositor(1920, 1080)
-    director = StageDirector(comp)
-    director.bind(dispatcher)
+    session = GameSession(graph)
+    comp = session.compositor
     player = RaylibPlayer(
-        vm=vm, compositor=comp, director=director, dispatcher=dispatcher,
+        session=session,
         width=800, height=450,
     )
     try:
@@ -496,13 +490,10 @@ except Exception as exc:
 
 try:
     graph = parse_graph(_SCREENPLAY)
-    vm = StoryVM(graph)
-    dispatcher = EventDispatcher()
-    comp = StageCompositor(1920, 1080)
-    director = StageDirector(comp)
-    director.bind(dispatcher)
+    session = GameSession(graph)
+    comp = session.compositor
     player = RaylibPlayer(
-        vm=vm, compositor=comp, director=director, dispatcher=dispatcher,
+        session=session,
         width=800, height=450,
     )
     try:
@@ -517,13 +508,10 @@ except Exception as exc:
 
 try:
     graph = parse_graph(_SCREENPLAY)
-    vm = StoryVM(graph)
-    dispatcher = EventDispatcher()
-    comp = StageCompositor(1920, 1080)
-    director = StageDirector(comp)
-    director.bind(dispatcher)
+    session = GameSession(graph)
+    comp = session.compositor
     player = RaylibPlayer(
-        vm=vm, compositor=comp, director=director, dispatcher=dispatcher,
+        session=session,
         width=800, height=450,
     )
     try:

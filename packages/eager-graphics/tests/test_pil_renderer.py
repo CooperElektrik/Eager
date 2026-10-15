@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from eager_runtime import EventDispatcher, StoryVM
 from eager_script import parse_graph
 
 from eager_graphics import (
@@ -15,7 +14,6 @@ from eager_graphics import (
     RenderItem,
     ScaleMode,
     StageCompositor,
-    StageDirector,
 )
 from eager_graphics.renderers.pil import (
     PIL_AVAILABLE,
@@ -465,18 +463,13 @@ def test_pil_player_story_progression() -> None:
     ## Option 2 --- opt2
     Alice: You picked option 2.
     """
+    from eager_runtime import GameSession
+
     graph = parse_graph(screenplay)
-    vm = StoryVM(graph)
-    dispatcher = EventDispatcher()
-    compositor = StageCompositor(1920, 1080)
-    director = StageDirector(compositor)
-    director.bind(dispatcher)
+    session = GameSession(graph)
 
     player = PILPlayer(
-        vm=vm,
-        compositor=compositor,
-        director=director,
-        dispatcher=dispatcher,
+        session=session,
         width=800,
         height=450,
         visible=False,

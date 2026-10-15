@@ -48,11 +48,9 @@ from eager_graphics.types import BLACK, WHITE, Color, ScaleMode
 from eager_graphics.ui_components import UIOverlay
 
 if TYPE_CHECKING:
-    from eager_core.audio import AudioMixer
-    from eager_runtime import ChoicePromptEvent, EventDispatcher, StoryVM
+    from eager_runtime import ChoicePromptEvent
 
     from eager_graphics.compositor import StageCompositor
-    from eager_graphics.director import StageDirector
 
 
 _EXTENSIONS: tuple[str, ...] = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
@@ -701,24 +699,21 @@ class RaylibAudioBackend:
 
 
 class RaylibPlayer:
-    """Full-featured interactive visual-novel player powered by Raylib.
+    """Thin Raylib window shell driving a :class:`GameSession`.
 
     Creates its own window via ``pyray.init_window`` and runs the main loop
-    in :meth:`run`.  Shares the same narrative-interface as
-    :class:`~eager_graphics.renderers.pyglet.PygletPlayer`:
-    ``advance_story()``, ``make_choice(idx)``, ``rollback()``,
-    ``on_draw()``, ``active_choice_prompt``, ``is_finished``, ``close()``.
+    in :meth:`run`.  Story advancement, branching, rollback, typewriter reveal,
+    and input semantics all live in the injected
+    :class:`~eager_runtime.session.GameSession`; the player forwards window
+    events to ``session.handle_input(...)`` and renders via ``session.draw(...)``,
+    exposing the same ``advance_story()`` / ``make_choice(idx)`` / ``rollback()``
+    convenience interface as :class:`~eager_graphics.renderers.pyglet.PygletPlayer`.
     """
 
     def __init__(
         self,
-        vm: StoryVM | None = None,
-        compositor: StageCompositor | None = None,
-        director: StageDirector | None = None,
-        dispatcher: EventDispatcher | None = None,
         *,
-        session: Any | None = None,
-        audio: AudioMixer | None = None,
+        session: Any,
         width: int = 1280,
         height: int = 720,
         title: str = "Eager Visual Novel (Raylib)",
@@ -736,22 +731,13 @@ class RaylibPlayer:
         pyray.set_target_fps(60)
 
         self.session = session
-        if session is not None:
-            self.vm = session.vm
-            self.compositor = session.compositor
-            self.director = session.director
-            self.dispatcher = session.dispatcher
-            self.audio = getattr(session, "audio", audio)
-            self.keymap = getattr(session, "keymap", None) or Keymap()
-            self.overlay = getattr(session, "overlay", None) or UIOverlay(width=width, height=height)
-        else:
-            self.vm = vm  # type: ignore[assignment]
-            self.compositor = compositor  # type: ignore[assignment]
-            self.director = director  # type: ignore[assignment]
-            self.dispatcher = dispatcher  # type: ignore[assignment]
-            self.audio = audio
-            self.keymap = Keymap()
-            self.overlay = UIOverlay(width=width, height=height)
+        self.vm = session.vm
+        self.compositor = session.compositor
+        self.director = session.director
+        self.dispatcher = session.dispatcher
+        self.audio = getattr(session, "audio", None)
+        self.keymap = getattr(session, "keymap", None) or Keymap()
+        self.overlay = getattr(session, "overlay", None) or UIOverlay(width=width, height=height)
 
         self.width = width
         self.height = height
@@ -784,134 +770,46 @@ class RaylibPlayer:
 
     def _sync_overlay(self) -> None:
         """Mirror current narrative state onto the UI components."""
+        self.current_speaker = self.director.ui_state.speaker
+        self.current_text = self.director.ui_state.text
+        self.current_emotion = self.director.ui_state.emotion
         self.overlay.sync(self.director.ui_state, self.active_choice_prompt)
 
-    def advance_story(self) -> None:
-        """Advance the story by one dialogue beat or hook."""
-        if self.session is not None:
-            self.session.advance()
-            self.active_choice_prompt = self.session.active_choice_prompt
-            self.is_finished = self.session.is_finished
-            self._sync_overlay()
-            return
-
-        if self.is_finished or self.vm.is_ended:
-            self.is_finished = True
-            self._sync_overlay()
-            return
-
-        if self.active_choice_prompt is not None:
-            self._sync_overlay()
-            return
-
-        # Snapshot visual and UI state before advancing to the next narrative beat
-        self.director.snapshot_visual_state()
-
-        while not self.vm.is_ended:
-            event = self.vm.step()
-            if event is None:
-                self.is_finished = True
-                break
-
-            self.dispatcher.dispatch(event)
-
-            if event.type == "dialogue":
-                diag = event  # type: ignore[attr-defined]
-                self.current_speaker = diag.speaker
-                self.current_text = diag.text
-                self.current_emotion = diag.emotion
-                break
-
-            if event.type == "narration":
-                narr = event  # type: ignore[attr-defined]
-                self.current_speaker = None
-                self.current_text = narr.text
-                self.current_emotion = None
-                break
-
-            if event.type == "append":
-                self.current_text += f" {event.text}"  # type: ignore[attr-defined]
-                break
-
-            if event.type == "fresh_box":
-                self.current_text = event.text  # type: ignore[attr-defined]
-                break
-
-            if event.type == "choice_prompt":
-                self.active_choice_prompt = event  # type: ignore[assignment]
-                break
-
-            if event.type == "story_end":
-                self.is_finished = True
-                break
-
+    def _sync_from_session(self) -> None:
+        """Mirror the owning session's narrative state onto the player."""
+        self.active_choice_prompt = self.session.active_choice_prompt
+        self.is_finished = self.session.is_finished
         self._sync_overlay()
+
+    def advance_story(self) -> None:
+        """Advance the story by forwarding to the owning :class:`GameSession`."""
+        self.session.advance()
+        self._sync_from_session()
 
     def make_choice(self, choice_index: int) -> None:
         """Select a branching choice option and continue execution."""
-        if self.session is not None:
-            self.session.choose(choice_index)
-            self.active_choice_prompt = self.session.active_choice_prompt
-            self.is_finished = self.session.is_finished
-            self._sync_overlay()
-            return
-
-        if self.active_choice_prompt is None:
-            return
-
-        if 0 <= choice_index < len(self.active_choice_prompt.options):
-            self.active_choice_prompt = None
-            self.vm.choose(choice_index)
-            self.advance_story()
+        self.session.choose(choice_index)
+        self._sync_from_session()
 
     def rollback(self) -> bool:
         """Rollback narrative and stage state by one beat."""
-        if self.session is not None:
-            success = self.session.rollback()
-            self.active_choice_prompt = self.session.active_choice_prompt
-            self.is_finished = self.session.is_finished
-            self._sync_overlay()
-            return success
-
-        if not self.vm.can_rollback:
-            return False
-
-        success = self.vm.rollback()
-        if success:
-            self.director.rollback_visual_state()
-            self.active_choice_prompt = None
-            self.current_speaker = self.director.ui_state.speaker
-            self.current_text = self.director.ui_state.text
-            self.current_emotion = self.director.ui_state.emotion
-            self.is_finished = self.director.ui_state.is_finished
-            self._sync_overlay()
+        success = self.session.rollback()
+        self._sync_from_session()
         return success
 
     def tick(self, dt: float) -> None:
         """Advance animations and pump audio mixer / session logic."""
-        if self.session is not None:
-            self.session.update(dt)
-            if getattr(self.session, "_ui_dirty", False):
-                self._ui_dirty = True
-                self.session._ui_dirty = False
-                self._sync_overlay()
-            self.active_choice_prompt = self.session.active_choice_prompt
-            self.is_finished = self.session.is_finished
-            return
-
-        self.compositor.step(dt)
-        if self.audio is not None:
-            self.audio.update(dt)
+        self.session.update(dt)
+        if getattr(self.session, "_ui_dirty", False):
+            self.session._ui_dirty = False
+            self._sync_from_session()
+        self.active_choice_prompt = self.session.active_choice_prompt
+        self.is_finished = self.session.is_finished
 
     def hot_reload(self) -> bool:
         """Hot-reload screenplay from disk, hot-swap VM, reconcile state, and force a redraw."""
-        result = False
-        if self.session is not None and hasattr(self.session, "hot_reload"):
-            result = self.session.hot_reload()
-            self.active_choice_prompt = self.session.active_choice_prompt
-            self.is_finished = self.session.is_finished
-            self._sync_overlay()
-        self._ui_dirty = True
+        result = self.session.hot_reload()
+        self._sync_from_session()
         return result
 
     # ------------------------------------------------------------------ #
@@ -923,19 +821,7 @@ class RaylibPlayer:
         pyray.begin_drawing()
         pyray.clear_background(pyray.BLACK)
 
-        if self.session is not None:
-            self.session.draw(self.renderer, self.width, self.height)
-        else:
-            # 1. Render Stage Elements
-            self.renderer.render_compositor(self.compositor, self.width, self.height)
-
-            # 2-4. Dialogue textbox, branching choices, and story-end notice
-            self.overlay.draw(
-                self.renderer,
-                self.director.ui_state,
-                self.active_choice_prompt,
-                is_finished=self.is_finished,
-            )
+        self.session.draw(self.renderer, self.width, self.height)
 
         # 5. Render FPS counter
         if self.show_fps:
@@ -961,122 +847,78 @@ class RaylibPlayer:
         mx = float(pyray.get_mouse_x())
         my = float(pyray.get_mouse_y())
 
-        if self.session is not None:
-            self.session.handle_input(InputAction.POINTER_MOVE, x=mx, y=my)
+        self.session.handle_input(InputAction.POINTER_MOVE, x=mx, y=my)
 
-            if pyray.is_mouse_button_pressed(pyray.MOUSE_LEFT_BUTTON):
-                self.session.handle_input(InputAction.POINTER_CLICK, x=mx, y=my)
-                self.active_choice_prompt = self.session.active_choice_prompt
-                self.is_finished = self.session.is_finished
-                self._sync_overlay()
+        if pyray.is_mouse_button_pressed(pyray.MOUSE_LEFT_BUTTON):
+            self.session.handle_input(InputAction.POINTER_CLICK, x=mx, y=my)
+            self._sync_from_session()
 
-            # Mouse wheel scrolling
-            wheel_move = pyray.get_mouse_wheel_move()
-            if wheel_move > 0:
-                self.session.handle_input(InputAction.ROLLBACK)
-                self.active_choice_prompt = self.session.active_choice_prompt
-                self.is_finished = self.session.is_finished
-                self._sync_overlay()
-            elif wheel_move < 0:
-                self.session.handle_input(InputAction.ROLL_FORWARD)
-                self.active_choice_prompt = self.session.active_choice_prompt
-                self.is_finished = self.session.is_finished
-                self._sync_overlay()
+        # Mouse wheel scrolling
+        wheel_move = pyray.get_mouse_wheel_move()
+        if wheel_move > 0:
+            self.session.handle_input(InputAction.ROLLBACK)
+            self._sync_from_session()
+        elif wheel_move < 0:
+            self.session.handle_input(InputAction.ROLL_FORWARD)
+            self._sync_from_session()
 
-            # Key release (Ctrl skip release)
-            if pyray.is_key_released(pyray.KEY_LEFT_CONTROL) or pyray.is_key_released(pyray.KEY_RIGHT_CONTROL):
-                self.session.handle_input(InputAction.SKIP_RELEASE)
+        # Key release (Ctrl skip release)
+        if pyray.is_key_released(pyray.KEY_LEFT_CONTROL) or pyray.is_key_released(pyray.KEY_RIGHT_CONTROL):
+            self.session.handle_input(InputAction.SKIP_RELEASE)
 
-            # Check 1-9 choice keys
-            if self.active_choice_prompt is not None:
-                num_keys = [
-                    pyray.KEY_ONE, pyray.KEY_TWO, pyray.KEY_THREE,
-                    pyray.KEY_FOUR, pyray.KEY_FIVE, pyray.KEY_SIX,
-                    pyray.KEY_SEVEN, pyray.KEY_EIGHT, pyray.KEY_NINE,
-                ]
-                for idx, k in enumerate(num_keys):
-                    if pyray.is_key_pressed(k) and idx < len(self.active_choice_prompt.options):
-                        self.session.handle_input(InputAction.CHOOSE, index=idx)
-                        self.active_choice_prompt = self.session.active_choice_prompt
-                        self.is_finished = self.session.is_finished
-                        self._sync_overlay()
-                        return
-
-            # Key mappings
-            ray_key_map = [
-                (pyray.KEY_SPACE, "space"),
-                (pyray.KEY_ENTER, "enter"),
-                (pyray.KEY_UP, "up"),
-                (pyray.KEY_DOWN, "down"),
-                (pyray.KEY_BACKSPACE, "backspace"),
-                (pyray.KEY_PAGE_UP, "pageup"),
-                (pyray.KEY_PAGE_DOWN, "pagedown"),
-                (pyray.KEY_TAB, "tab"),
-                (pyray.KEY_LEFT_CONTROL, "ctrl"),
-                (pyray.KEY_RIGHT_CONTROL, "ctrl"),
-                (pyray.KEY_A, "a"),
-                (pyray.KEY_H, "h"),
-                (pyray.KEY_V, "v"),
-                (pyray.KEY_F5, "f5"),
-                (pyray.KEY_F9, "f9"),
-                (pyray.KEY_ESCAPE, "escape"),
-                (pyray.KEY_F3, "f3"),
-                (pyray.KEY_Q, "q"),
-            ]
-            if pyray.is_key_pressed(pyray.KEY_R) and (
-                pyray.is_key_down(pyray.KEY_LEFT_SHIFT) or pyray.is_key_down(pyray.KEY_RIGHT_SHIFT)
-            ):
-                self.hot_reload()
-                return
-
-            for rk, key_name in ray_key_map:
-                if pyray.is_key_pressed(rk):
-                    action = self.keymap.map_key(key_name)
-                    if action == InputAction.QUIT:
-                        pyray.close_window()
-                        return
-                    elif action == InputAction.DEBUG_OVERLAY:
-                        self.show_fps = not self.show_fps
-                        return
-                    elif action:
-                        self.session.handle_input(action)
-                        self.active_choice_prompt = self.session.active_choice_prompt
-                        self.is_finished = self.session.is_finished
-                        self._sync_overlay()
-                        return
-            return
-
-        # Fallback if running without session
-        if pyray.is_key_pressed(pyray.KEY_SPACE) or pyray.is_key_pressed(pyray.KEY_ENTER):
-            if self.active_choice_prompt is None:
-                self.advance_story()
-        elif self.active_choice_prompt is not None:
+        # Check 1-9 choice keys
+        if self.active_choice_prompt is not None:
             num_keys = [
                 pyray.KEY_ONE, pyray.KEY_TWO, pyray.KEY_THREE,
                 pyray.KEY_FOUR, pyray.KEY_FIVE, pyray.KEY_SIX,
                 pyray.KEY_SEVEN, pyray.KEY_EIGHT, pyray.KEY_NINE,
             ]
             for idx, k in enumerate(num_keys):
-                if pyray.is_key_pressed(k) and idx < len(
-                    self.active_choice_prompt.options
-                ):
-                    self.make_choice(idx)
-                    break
-        elif pyray.is_key_pressed(pyray.KEY_BACKSPACE):
-            self.rollback()
-        elif pyray.is_key_pressed(pyray.KEY_F3):
-            self.show_fps = not self.show_fps
+                if pyray.is_key_pressed(k) and idx < len(self.active_choice_prompt.options):
+                    self.session.handle_input(InputAction.CHOOSE, index=idx)
+                    self._sync_from_session()
+                    return
 
-        if pyray.is_key_pressed(pyray.KEY_ESCAPE) or pyray.is_key_pressed(pyray.KEY_Q):
-            pyray.close_window()
+        # Key mappings
+        ray_key_map = [
+            (pyray.KEY_SPACE, "space"),
+            (pyray.KEY_ENTER, "enter"),
+            (pyray.KEY_UP, "up"),
+            (pyray.KEY_DOWN, "down"),
+            (pyray.KEY_BACKSPACE, "backspace"),
+            (pyray.KEY_PAGE_UP, "pageup"),
+            (pyray.KEY_PAGE_DOWN, "pagedown"),
+            (pyray.KEY_TAB, "tab"),
+            (pyray.KEY_LEFT_CONTROL, "ctrl"),
+            (pyray.KEY_RIGHT_CONTROL, "ctrl"),
+            (pyray.KEY_A, "a"),
+            (pyray.KEY_H, "h"),
+            (pyray.KEY_V, "v"),
+            (pyray.KEY_F5, "f5"),
+            (pyray.KEY_F9, "f9"),
+            (pyray.KEY_ESCAPE, "escape"),
+            (pyray.KEY_F3, "f3"),
+            (pyray.KEY_Q, "q"),
+        ]
+        if pyray.is_key_pressed(pyray.KEY_R) and (
+            pyray.is_key_down(pyray.KEY_LEFT_SHIFT) or pyray.is_key_down(pyray.KEY_RIGHT_SHIFT)
+        ):
+            self.hot_reload()
+            return
 
-        if pyray.is_mouse_button_pressed(pyray.MOUSE_LEFT_BUTTON):
-            if self.active_choice_prompt is not None:
-                index = self.overlay.hit_test_choice(mx, my)
-                if index is not None:
-                    self.make_choice(index)
-            else:
-                self.advance_story()
+        for rk, key_name in ray_key_map:
+            if pyray.is_key_pressed(rk):
+                action = self.keymap.map_key(key_name)
+                if action == InputAction.QUIT:
+                    pyray.close_window()
+                    return
+                elif action == InputAction.DEBUG_OVERLAY:
+                    self.show_fps = not self.show_fps
+                    return
+                elif action:
+                    self.session.handle_input(action)
+                    self._sync_from_session()
+                    return
 
     # ------------------------------------------------------------------ #
     # Main loop

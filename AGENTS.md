@@ -156,6 +156,7 @@ Useful CLI entry points include `eager-script check`, `eager-script graph`, `eag
 - **New script hook:** register the hook through `StageDirector`, parse its arguments with `eager_script.parse_hook_args`, and test its effect through event dispatch and presentation state.
 - **New narrative event:** define the event in `eager_core.events`, update the `StoryEvent` union, emit it from the VM, and handle it at every relevant dispatcher/session/player/presentation boundary.
 - **New renderer backend:** implement the stage and UI protocols as required, keep imports optional/lazy, wire backend selection and player/audio integration, and test protocol behavior without requiring a real window where possible.
+- **Interactive window players** (`PILPlayer`, `PygletPlayer`, `RaylibPlayer`) are thin shells over `GameSession`: they forward window input to `session.handle_input(...)` and render via `session.draw(...)`. Do not reimplement story advancement, branching, rollback, hot-reload, or checkpointing inside a backend — that state machine lives in `GameSession`.
 - **New package:** add a package directory with its own `pyproject.toml`, source, and tests; verify workspace membership and dependency direction; run `uv sync`.
 
 ## 9. Subagent workflow

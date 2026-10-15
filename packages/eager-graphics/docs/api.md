@@ -221,14 +221,13 @@ PygletRenderer(
 - **`frame_count: int`**: Total frames rendered.
 
 ### `PygletPlayer`
-An interactive visual novel window (`pyglet.window.Window`):
+A thin interactive visual-novel window (`pyglet.window.Window`) shell over a
+`GameSession` — it forwards window input to `session.handle_input(...)` and
+renders via `session.draw(...)`:
 ```python
 PygletPlayer(
-    vm: StoryVM,
-    compositor: StageCompositor,
-    director: StageDirector,
-    dispatcher: EventDispatcher,
     *,
+    session: GameSession,
     width: int = 1280,
     height: int = 720,
     title: str = "Eager-Graphics Visual Novel (Pyglet)",

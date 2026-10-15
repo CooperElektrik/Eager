@@ -88,18 +88,16 @@ origin**. Backends whose native origin differs — Pyglet uses bottom-left — f
 `y` when issuing primitives, so components never need to know which backend they
 are talking to.
 
-Players (`PILPlayer`, `PygletPlayer`) hold a `UIOverlay` and delegate:
+Players (`PILPlayer`, `PygletPlayer`, `RaylibPlayer`) are thin window shells over a
+`GameSession`: they forward window input to `session.handle_input(...)` and render
+via `session.draw(...)`, which drives both the stage compositor and the
+`UIOverlay`.  The players hold no narrative state of their own — advancement,
+branching, rollback, typewriter reveal, and checkpointing all live in the session.
 
 ```python
 def on_draw(self):
     self.clear()
-    self.renderer.render_compositor(self.compositor, self.width, self.height)
-    self.overlay.draw(
-        self.renderer,
-        self.director.ui_state,
-        self.active_choice_prompt,
-        is_finished=self.is_finished,
-    )
+    self.session.draw(self.renderer, self.width, self.height)
 ```
 
 ---
@@ -247,7 +245,7 @@ Install via `pip install eager-graphics[software]` or `pip install pillow`. (Pla
 
 - High-performance software rendering backend with all optimizations.
 - `PILRenderer`: Implements `RenderBackend`, viewport scaling (`LETTERBOX`, `STRETCH`, etc.), LRU sprite transform caching, opaque direct-blit fast-path (13x speedup), and precomputed LUT tinting.
-- `PILPlayer`: Interactive game window supporting dialogue, choices, rollback, and custom assets. Frames are rendered in software via PIL and presented in a tkinter window (`run()`); story logic works headless, so only Pillow is required unless a window is opened.
+- `PILPlayer`: Thin tkinter window shell over a `GameSession`, supporting dialogue, choices, rollback, and custom assets. Frames are rendered in software via PIL and presented in a tkinter window (`run()`); only Pillow is required unless a window is opened.
 - Procedural placeholder generator for zero-asset prototyping.
 
 ```python

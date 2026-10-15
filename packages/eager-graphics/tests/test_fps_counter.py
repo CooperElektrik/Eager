@@ -218,26 +218,19 @@ class TestPILRendererFPS:
         try:
             from types import SimpleNamespace
 
-            from eager_runtime import EventDispatcher, StoryVM
             from eager_script import parse_graph
 
-            from eager_graphics import StageDirector
             from eager_graphics.renderers.pil import PILPlayer
         except ImportError:
             pytest.skip("Pillow is not installed")
 
+        from eager_runtime import GameSession
+
         graph = parse_graph("## Start --- start\nAlice: Hi!\n")
-        vm = StoryVM(graph)
-        dispatcher = EventDispatcher()
-        comp = StageCompositor(1920, 1080)
-        director = StageDirector(comp)
-        director.bind(dispatcher)
+        session = GameSession(graph)
 
         player = PILPlayer(
-            vm=vm,
-            compositor=comp,
-            director=director,
-            dispatcher=dispatcher,
+            session=session,
             width=800,
             height=600,
             visible=False,
@@ -247,7 +240,7 @@ class TestPILRendererFPS:
             assert player.show_fps is True
             # Advance tick: step compositor so FPS clock ticks
             player.tick(0.016)
-            assert comp.clock.frame_count == 1
+            assert session.compositor.clock.frame_count == 1
             # Render frame with FPS overlay
             player.on_draw()
             assert player.renderer.frame_count == 1
