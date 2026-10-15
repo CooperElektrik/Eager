@@ -197,27 +197,37 @@ class SaveManager:
             return max(existing, key=self._slot_sort_key)
         return None
 
-    def quicksave(self, checkpoint: Checkpoint, **extra: Any) -> SaveMetadata:
-        """Save to circular quicksave slot."""
-        slot = self._next_rotated_slot("quick", self.max_quicksaves)
+    def quicksave(
+        self,
+        checkpoint: Checkpoint,
+        *,
+        prefix: str = "quick",
+        max_slots: int | None = None,
+        **extra: Any,
+    ) -> SaveMetadata:
+        """Save to circular quicksave slot (or custom prefix)."""
+        limit = self.max_quicksaves if max_slots is None else max_slots
+        slot = self._next_rotated_slot(prefix, limit)
         return self.save_slot(slot, checkpoint, extra)
 
-    def quickload(self) -> Checkpoint | None:
-        """Load from most recent quicksave slot."""
-        slot = self._latest_rotated_slot("quick", self.max_quicksaves)
+    def quickload(
+        self,
+        *,
+        prefix: str = "quick",
+        max_slots: int | None = None,
+    ) -> Checkpoint | None:
+        """Load from most recent quicksave slot (or custom prefix)."""
+        limit = self.max_quicksaves if max_slots is None else max_slots
+        slot = self._latest_rotated_slot(prefix, limit)
         if slot is None:
             return None
         return self.load_slot(slot)
 
     def autosave(self, checkpoint: Checkpoint, **extra: Any) -> SaveMetadata:
         """Save to circular autosave slot."""
-        slot = self._next_rotated_slot("auto", self.max_autosaves)
-        return self.save_slot(slot, checkpoint, extra)
+        return self.quicksave(checkpoint, prefix="auto", max_slots=self.max_autosaves, **extra)
 
     def autoload(self) -> Checkpoint | None:
         """Load from most recent autosave slot."""
-        slot = self._latest_rotated_slot("auto", self.max_autosaves)
-        if slot is None:
-            return None
-        return self.load_slot(slot)
+        return self.quickload(prefix="auto", max_slots=self.max_autosaves)
 
