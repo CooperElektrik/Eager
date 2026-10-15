@@ -6,8 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from eager_graphics.easing import EasingFunc, linear
-from eager_graphics.types import Color, Vec2
+from eager_core.easing import EasingFunc, linear
+from eager_core.types import Color, Vec2
 
 
 @dataclass

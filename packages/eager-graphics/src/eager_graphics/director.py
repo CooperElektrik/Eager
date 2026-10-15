@@ -6,11 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from eager_core.audio import AudioMixer
+from eager_core.types import BLACK, WHITE, Color
 from eager_script import HookArgs, parse_hook_args
 
 from eager_graphics.compositor import StageCompositor
 from eager_graphics.history import VisualHistoryManager
-from eager_graphics.types import BLACK, WHITE, Color
 from eager_graphics.ui_state import ChoiceOption, NVLEntry, UIState
 
 

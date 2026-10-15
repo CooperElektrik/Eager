@@ -29,9 +29,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from eager_core.timing import FrameClock
+from eager_core.types import BLACK, WHITE, Color
+
 from eager_graphics.protocol import RenderBackend, RenderItem
-from eager_graphics.timing import FrameClock
-from eager_graphics.types import BLACK, WHITE, Color
 
 
 class NullRenderer(RenderBackend):

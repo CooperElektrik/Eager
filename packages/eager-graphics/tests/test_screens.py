@@ -4,11 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from eager_core.types import Color, Rect
 from eager_runtime.project import ProjectConfig, merge_graphs
 from eager_script import parse_graph
 
 from eager_graphics.screens import Button, ScreenManager, TitleScreen
-from eager_graphics.types import Color, Rect
 
 
 class MockUIDrawBackend:
@@ -103,8 +103,9 @@ height = 720
         self.assertIn("p2", merged.nodes)
 
     def test_widgets_bar_and_grid(self):
+        from eager_core.types import Color, Rect
+
         from eager_graphics.screens import Bar, Grid
-        from eager_graphics.types import Color, Rect
 
         bar = Bar(Rect(10, 10, 100, 20), value=0.5, max_value=1.0)
         backend = MockUIDrawBackend()

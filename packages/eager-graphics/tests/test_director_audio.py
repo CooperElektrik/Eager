@@ -7,14 +7,14 @@ layer's director integration with it.
 import unittest
 
 from eager_core import AudioMixer, NullAudioBackend
-from eager_runtime.dispatcher import EventDispatcher
-from eager_runtime.events import (
+from eager_core.events import (
     DialogueEvent,
     HookEvent,
     NarrationEvent,
     SceneExitEvent,
     StoryEndEvent,
 )
+from eager_runtime.dispatcher import EventDispatcher
 
 from eager_graphics.compositor import StageCompositor
 from eager_graphics.director import StageDirector

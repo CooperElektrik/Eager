@@ -481,7 +481,7 @@ def test_null_renderer_implements_uidraw_backend(method: str) -> None:
 
 
 def test_null_renderer_records_rect_primitives() -> None:
-    from eager_graphics.types import RED, WHITE
+    from eager_core.types import RED, WHITE
 
     backend = NullRenderer()
     backend.draw_rect(10, 20, 30, 40, RED, border_color=WHITE, border_width=2)
@@ -530,8 +530,9 @@ def test_pil_renderer_implements_uidraw_backend() -> None:
 
 @pytest.mark.skipif(importlib.util.find_spec("PIL") is None, reason="Pillow not installed")
 def test_pil_draw_rect_repaints_frame_buffer() -> None:
+    from eager_core.types import WHITE
+
     from eager_graphics.renderers.pil import PILRenderer
-    from eager_graphics.types import WHITE
 
     renderer = PILRenderer(width=64, height=64)
     renderer.clear()

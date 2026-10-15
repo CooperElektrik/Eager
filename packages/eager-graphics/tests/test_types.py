@@ -1,18 +1,17 @@
 """Tests for geometry, color, and coordinate types."""
 
 import pytest
-
-from eager_graphics.types import (
+from eager_core.types import (
     BLACK,
     RED,
     TRANSPARENT,
     WHITE,
-    Anchor,
     Color,
     Rect,
-    TransitionKind,
     Vec2,
 )
+
+from eager_graphics.types import Anchor, TransitionKind
 
 
 def test_vec2_arithmetic() -> None:

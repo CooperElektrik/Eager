@@ -7,9 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from eager_core.storage import atomic_write_json, safe_read_json
+
 if TYPE_CHECKING:
     from eager_runtime.session import Checkpoint
-from eager_runtime.storage import atomic_write_json, safe_read_json
 
 
 @dataclass(frozen=True, slots=True)

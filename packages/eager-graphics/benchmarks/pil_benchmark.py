@@ -188,7 +188,7 @@ def sc_char_zoom(mod, assets, w, h, n):
     r = _new_renderer(mod, assets, w, h)
     r.render_compositor(comp, w, h)
     st = _char_state(comp, "alice")
-    from eager_graphics.types import Vec2
+    from eager_core.types import Vec2
 
     def frame(i):
         s = 1.0 + 0.002 * (i + 1)

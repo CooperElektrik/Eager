@@ -162,7 +162,7 @@ Each backend iterates over `compositor.render_list()` and draws each `RenderItem
 
 ## 4.2 `FrameClock` — FPS Measurement
 
-`FrameClock` is a lightweight, zero-dependency utility (`eager_graphics.timing`) that records wall-clock frame timestamps via `time.perf_counter()` and derives three FPS views:
+`FrameClock` is a lightweight, zero-dependency utility (`eager_core.timing`) that records wall-clock frame timestamps via `time.perf_counter()` and derives three FPS views:
 
 | Property | Description |
 |---|---|

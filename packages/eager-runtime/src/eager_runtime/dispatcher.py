@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from eager_runtime.events import (
+from eager_core.events import (
     ChoicePromptEvent,
     HookEvent,
     StoryEndEvent,

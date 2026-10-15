@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import pytest
+from eager_core.types import Vec2
 
 from eager_graphics import NullRenderer, StageCompositor
-from eager_graphics.types import Vec2
 
 
 def test_step_advances_tweens() -> None:

@@ -43,7 +43,7 @@ eager-script ─┐
 ```
 
 - **`eager-script` (`eager_script`)** — dependency-free screenplay language tooling. Parses `.es` scripts into AST nodes, builds a scene graph, validates scripts, supports plain-manuscript mode, and provides safe expression evaluation. The expression API is defined in `eager_script.expr`, not re-exported from the package root.
-- **`eager-core` (`eager_core`)** — dependency-free shared primitives used by multiple layers: audio mixing protocols, geometry and color types, easing, timing, input mapping, storage helpers, narrative events, and text-tag/reveal utilities. Keep genuinely shared, lower-level implementations here rather than duplicating them in higher layers.
+- **`eager-core` (`eager_core`)** — dependency-free shared primitives used by multiple layers: audio mixing protocols, geometry and color types, easing, timing, input mapping, storage helpers, narrative events, and text-tag/reveal utilities. Keep genuinely shared, lower-level implementations here rather than duplicating them in higher layers. Higher layers import them directly from `eager_core.<module>` (`eager_core.events`, `eager_core.types`, and so on); packages provide no thin re-export shims for them.
 - **`eager-runtime` (`eager_runtime`)** — narrative execution and game-session logic. `StoryVM` is the headless story virtual machine; `EventDispatcher` routes its events; `GameSession` coordinates interactive play, presentation state, audio, UI, checkpoints, save/load, preferences, and persistent data. Graphics-dependent exports are lazy so a basic `import eager_runtime` remains headless-capable. `GameSession` is the sole top-level orchestrator; there is no separate visual-engine facade.
 - **`eager-graphics` (`eager_graphics`)** — renderer-agnostic presentation. It coordinates stage elements, animation, screenplay hooks, dialogue UI, screens, and rendering/audio backends. It depends on `eager-script` and `eager-core`, not on the runtime's implementation.
 
@@ -92,7 +92,7 @@ The main narrative path is:
 
 ### Events, hooks, and presentation
 
-- Narrative event dataclasses are defined in `eager_core.events`; runtime-facing modules re-export them. When adding an event, update the event union and every relevant producer/consumer, including pause/checkpoint behavior, terminal playback, UI handling, and tests.
+- Narrative event dataclasses are defined in `eager_core.events` and imported from there directly by every layer; there is no `eager_runtime.events` shim. When adding an event, update the event union and every relevant producer/consumer, including pause/checkpoint behavior, terminal playback, UI handling, and tests.
 - Screenplay hook argument parsing belongs to `eager_script`; presentation handlers belong in `eager_graphics` (principally `StageDirector`). Keep rendering-specific behavior out of the headless VM.
 - Keep stage and UI rendering protocols separate. New backends should implement the relevant protocols and avoid making optional backend packages mandatory imports.
 - Backend selection and interactive player integration also involve the runtime CLI; adding a renderer is more than adding a renderer class.

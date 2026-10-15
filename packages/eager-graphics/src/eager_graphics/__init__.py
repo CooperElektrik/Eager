@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from eager_graphics.compositor import StageCompositor
-from eager_graphics.director import CharacterConfig, StageDirector
-from eager_graphics.easing import (
+from eager_core.easing import (
     EasingFunc,
     ease_in_back,
     ease_in_bounce,
@@ -30,32 +28,33 @@ from eager_graphics.easing import (
     get_easing,
     linear,
 )
-from eager_graphics.history import VisualHistoryManager
-from eager_graphics.layout import LayoutResolver, ViewportTransform
-from eager_graphics.protocol import RenderBackend, RenderItem, UIDrawBackend
-from eager_graphics.stage import ElementState, Layer, Stage, StageElement
-from eager_graphics.text import (
+from eager_core.text import (
     FormattedText,
     PausePoint,
     TextReveal,
     TextSegment,
     parse_text_tags,
 )
-from eager_graphics.timeline import Timeline, Tween
-from eager_graphics.types import (
+from eager_core.types import (
     BLACK,
     BLUE,
     GREEN,
     RED,
     TRANSPARENT,
     WHITE,
-    Anchor,
     Color,
     Rect,
-    ScaleMode,
-    TransitionKind,
     Vec2,
 )
+
+from eager_graphics.compositor import StageCompositor
+from eager_graphics.director import CharacterConfig, StageDirector
+from eager_graphics.history import VisualHistoryManager
+from eager_graphics.layout import LayoutResolver, ViewportTransform
+from eager_graphics.protocol import RenderBackend, RenderItem, UIDrawBackend
+from eager_graphics.stage import ElementState, Layer, Stage, StageElement
+from eager_graphics.timeline import Timeline, Tween
+from eager_graphics.types import Anchor, ScaleMode, TransitionKind
 from eager_graphics.ui_components import (
     ChoiceMenu,
     ChoiceMenuStyle,
@@ -140,8 +139,9 @@ __all__ = [
 ]
 
 # NullRenderer is dependency-free and always available for headless rendering.
+from eager_core.timing import FrameClock  # noqa: F401
+
 from eager_graphics.renderers.null import NullRenderer  # noqa: F401
-from eager_graphics.timing import FrameClock  # noqa: F401
 
 __all__.append("NullRenderer")
 __all__.append("FrameClock")
@@ -170,6 +170,3 @@ def __getattr__(name: str) -> object:
     if name in renderers.__all__:
         return getattr(renderers, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-

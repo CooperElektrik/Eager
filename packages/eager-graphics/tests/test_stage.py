@@ -1,7 +1,9 @@
 """Tests for Stage, Layer, and Element state management and serialization."""
 
+from eager_core.types import Color, Vec2
+
 from eager_graphics.stage import ElementState, Layer, Stage, StageElement
-from eager_graphics.types import Anchor, Color, Vec2
+from eager_graphics.types import Anchor
 
 
 def test_element_state_clone_and_mutation() -> None:

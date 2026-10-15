@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import pytest
+from eager_core.types import BLACK, RED
 
 from eager_graphics import NullRenderer, StageCompositor
 from eager_graphics.protocol import RenderItem
-from eager_graphics.types import BLACK, RED
 
 
 def _build_compositor() -> StageCompositor:

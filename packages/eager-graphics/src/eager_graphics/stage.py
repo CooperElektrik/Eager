@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from eager_graphics.types import WHITE, Anchor, Color, Vec2
+from eager_core.types import WHITE, Color, Vec2
+
+from eager_graphics.types import Anchor
 
 
 @dataclass

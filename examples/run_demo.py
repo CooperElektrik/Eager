@@ -29,7 +29,7 @@ from typing import Any
 from eager_graphics import StageCompositor, StageDirector
 from eager_graphics.renderers.null import NullRenderer
 from eager_runtime import EventDispatcher, StoryVM
-from eager_runtime.events import (
+from eager_core.events import (
     AppendEvent,
     ChoicePromptEvent,
     DialogueEvent,

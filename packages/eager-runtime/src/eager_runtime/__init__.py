@@ -11,8 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from eager_runtime.dispatcher import EventDispatcher
-from eager_runtime.events import (
+from eager_core.events import (
     AppendEvent,
     ChoiceOption,
     ChoicePromptEvent,
@@ -26,7 +25,9 @@ from eager_runtime.events import (
     StoryEndEvent,
     StoryEvent,
 )
-from eager_runtime.input import InputAction, Keymap
+from eager_core.input import InputAction, Keymap
+
+from eager_runtime.dispatcher import EventDispatcher
 from eager_runtime.player import TerminalPlayer
 from eager_runtime.runtime import StoryRuntimeError, StoryVM
 from eager_runtime.state import CallFrame, HistoryManager, StorySnapshot

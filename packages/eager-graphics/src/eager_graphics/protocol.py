@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from eager_graphics.types import WHITE, Anchor, Color
+from eager_core.types import WHITE, Color
+
+from eager_graphics.types import Anchor
 
 
 @dataclass(frozen=True, slots=True)

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from eager_runtime.events import InputPromptEvent
+from eager_core.events import InputPromptEvent
 from eager_runtime.persistent import PersistentData
 from eager_runtime.session import GameSession
 

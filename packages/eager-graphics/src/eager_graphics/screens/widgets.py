@@ -6,8 +6,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from eager_core.types import Color, Rect
+
 from eager_graphics.protocol import UIDrawBackend
-from eager_graphics.types import Color, Rect
 from eager_graphics.ui_components import TextAnchor
 
 

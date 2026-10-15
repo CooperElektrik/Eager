@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from eager_runtime.storage import atomic_write_json, safe_read_json
+from eager_core.storage import atomic_write_json, safe_read_json
 
 
 @dataclass

@@ -104,7 +104,7 @@ def test_director_dialogue_emotion_auto_sync() -> None:
 
     # Trigger dialogue with emotion tag
     try:
-        from eager_runtime.events import DialogueEvent
+        from eager_core.events import DialogueEvent
 
         dlg = DialogueEvent(
             speaker="Alice",
@@ -130,7 +130,7 @@ def test_director_scene_bg_auto_mapping() -> None:
     director.register_scene_bg("forest_clearing", "bg/forest", transition="cut")
 
     try:
-        from eager_runtime.events import SceneEnterEvent
+        from eager_core.events import SceneEnterEvent
 
         enter_event = SceneEnterEvent(
             scene_id="forest_clearing",
@@ -153,7 +153,7 @@ def test_director_ui_state_tracks_dialogue() -> None:
     director.bind(disp)
 
     try:
-        from eager_runtime.events import DialogueEvent
+        from eager_core.events import DialogueEvent
 
         dlg = DialogueEvent(
             speaker="Alice",
@@ -202,7 +202,7 @@ def test_director_ui_state_tracks_narration() -> None:
     director.ui_state.emotion = "happy"
 
     try:
-        from eager_runtime.events import NarrationEvent
+        from eager_core.events import NarrationEvent
 
         narr = NarrationEvent(text="The sun began to set.", line_number=12)
     except ImportError:
@@ -236,8 +236,8 @@ def test_director_ui_state_tracks_choices() -> None:
     director.bind(disp)
 
     try:
-        from eager_runtime.events import ChoiceOption as EagerChoiceOption
-        from eager_runtime.events import ChoicePromptEvent
+        from eager_core.events import ChoiceOption as EagerChoiceOption
+        from eager_core.events import ChoicePromptEvent
 
         choices_event = ChoicePromptEvent(
             options=(
@@ -298,7 +298,7 @@ def test_director_ui_state_scene_exit_clears() -> None:
     director.ui_state.choices = [ChoiceOption(0, "Option A")]
 
     try:
-        from eager_runtime.events import SceneExitEvent
+        from eager_core.events import SceneExitEvent
 
         exit_evt = SceneExitEvent(
             scene_id="clearing",
@@ -339,7 +339,7 @@ def test_director_ui_state_story_end() -> None:
     assert not director.ui_state.is_finished
 
     try:
-        from eager_runtime.events import StoryEndEvent
+        from eager_core.events import StoryEndEvent
 
         end_evt = StoryEndEvent(scene_id="ending", reason="completed")
     except ImportError:
@@ -366,7 +366,7 @@ def test_director_ui_state_append_and_fresh_box() -> None:
     disp = MockEventDispatcher()
     director.bind(disp)
 
-    from eager_runtime.events import AppendEvent, DialogueEvent, FreshBoxEvent
+    from eager_core.events import AppendEvent, DialogueEvent, FreshBoxEvent
 
     # Dialogue
     disp.emit_event(DialogueEvent(speaker="Alice", text="One", voice=None, emotion=None, line_number=1))

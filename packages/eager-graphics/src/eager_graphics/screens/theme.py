@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from eager_graphics.types import Color
+from eager_core.types import Color
 
 _CINEMATIC_BG_COLOR = Color(0.06, 0.07, 0.09, 1.0)
 _CINEMATIC_PRIMARY_COLOR = Color(0.28, 0.38, 0.52, 1.0)

@@ -30,6 +30,7 @@ except ImportError:
     RAYLIB_AVAILABLE = False
 
 import pytest
+from eager_core.types import BLACK
 
 from eager_graphics import (
     Anchor,
@@ -39,7 +40,6 @@ from eager_graphics.protocol import RenderItem
 from eager_graphics.renderers.raylib import (
     RaylibRenderer,
 )
-from eager_graphics.types import BLACK
 
 pytestmark = pytest.mark.skipif(not RAYLIB_AVAILABLE, reason="raylib (pyray) is not installed")
 
@@ -68,7 +68,7 @@ pyray.set_target_fps(60)
 from eager_graphics import Anchor, Color, LayoutResolver, ScaleMode
 from eager_graphics import StageCompositor, StageDirector
 from eager_graphics.protocol import RenderItem
-from eager_graphics.types import BLACK
+from eager_core.types import BLACK
 from eager_graphics.renderers.raylib import RaylibAssetResolver, RaylibRenderer, RaylibPlayer
 from eager_runtime import EventDispatcher, GameSession, StoryVM
 from eager_script import parse_graph

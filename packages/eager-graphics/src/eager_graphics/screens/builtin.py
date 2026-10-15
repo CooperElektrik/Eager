@@ -5,10 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from eager_core.types import Rect
+
 from eager_graphics.protocol import UIDrawBackend
 from eager_graphics.screens.screen import Screen
 from eager_graphics.screens.widgets import Button, Grid, Label, Slider
-from eager_graphics.types import Rect
 from eager_graphics.ui_components import TextAnchor
 
 

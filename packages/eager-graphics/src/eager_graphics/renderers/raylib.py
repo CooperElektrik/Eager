@@ -38,13 +38,14 @@ except ImportError as err:
     _raylib_import_error: Any = err
 
 from eager_core.input import InputAction, Keymap
+from eager_core.timing import FrameClock
+from eager_core.types import BLACK, WHITE, Color
 
 from eager_graphics.layout import ViewportTransform
 
 # Protocol import is always available (RenderBackend is a typing.Protocol)
 from eager_graphics.protocol import RenderBackend, RenderItem, UIDrawBackend
-from eager_graphics.timing import FrameClock
-from eager_graphics.types import BLACK, WHITE, Color, ScaleMode
+from eager_graphics.types import ScaleMode
 from eager_graphics.ui_components import UIOverlay
 
 if TYPE_CHECKING:
@@ -67,7 +68,7 @@ def _check_raylib_available() -> None:
 
 
 def _to_pyray_color(color: Color) -> Any:
-    """Convert an Eager :class:`~eager_graphics.types.Color` to a ``pyray.Color``.
+    """Convert an Eager :class:`~eager_core.types.Color` to a ``pyray.Color``.
 
     Eager colors use normalised floats [0.0, 1.0]; Raylib colours use 0–255
     integers.

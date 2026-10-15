@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import pytest
+from eager_core.types import BLACK, WHITE
 
 from eager_graphics import Anchor, ScaleMode, StageCompositor
 from eager_graphics.renderers.pil import PIL_AVAILABLE, PILAssetResolver, PILRenderer
-from eager_graphics.types import BLACK, WHITE
 
 try:
     import pyglet

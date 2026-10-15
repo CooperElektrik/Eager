@@ -26,11 +26,12 @@ except ImportError:
     TKINTER_AVAILABLE = False
 
 from eager_core.input import InputAction, Keymap
+from eager_core.timing import FrameClock
+from eager_core.types import BLACK, WHITE, Color
 
 from eager_graphics.layout import ViewportTransform
 from eager_graphics.protocol import RenderBackend, RenderItem
-from eager_graphics.timing import FrameClock
-from eager_graphics.types import BLACK, WHITE, Color, ScaleMode
+from eager_graphics.types import ScaleMode
 from eager_graphics.ui_components import UIOverlay
 
 if TYPE_CHECKING:

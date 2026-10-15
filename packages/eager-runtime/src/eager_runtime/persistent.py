@@ -6,7 +6,7 @@ import collections.abc
 from pathlib import Path
 from typing import Any
 
-from eager_runtime.storage import atomic_write_json, safe_read_json
+from eager_core.storage import atomic_write_json, safe_read_json
 
 
 class PersistentData(collections.abc.MutableMapping[str, Any]):

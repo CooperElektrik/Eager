@@ -1,34 +1,18 @@
-"""Core geometry, color, and coordinate types for Eager-Graphics."""
+"""Graphics-only presentation enums: anchoring, viewport scaling, and transitions.
+
+Shared geometry, color, and coordinate primitives (``Color``, ``Rect``,
+``Vec2``, and the named colors) live in :mod:`eager_core.types`; import them
+from there rather than from this module.
+"""
 
 from __future__ import annotations
 
 from enum import Enum
 
-from eager_core.types import (
-    BLACK,
-    BLUE,
-    GREEN,
-    RED,
-    TRANSPARENT,
-    WHITE,
-    Color,
-    Rect,
-    Vec2,
-)
-
 __all__ = [
-    "BLACK",
-    "BLUE",
-    "GREEN",
-    "RED",
-    "TRANSPARENT",
-    "WHITE",
     "Anchor",
-    "Color",
-    "Rect",
     "ScaleMode",
     "TransitionKind",
-    "Vec2",
 ]
 
 

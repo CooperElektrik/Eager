@@ -23,8 +23,7 @@ except ImportError:
     UIOverlay = None  # type: ignore[assignment, misc]
     UIState = None  # type: ignore[assignment, misc]
 
-from eager_runtime.dispatcher import EventDispatcher
-from eager_runtime.events import (
+from eager_core.events import (
     AppendEvent,
     ChoicePromptEvent,
     DialogueEvent,
@@ -32,13 +31,15 @@ from eager_runtime.events import (
     NarrationEvent,
     StoryEvent,
 )
-from eager_runtime.input import InputAction, Keymap
+from eager_core.input import InputAction, Keymap
+from eager_core.storage import get_default_save_dir
+
+from eager_runtime.dispatcher import EventDispatcher
 from eager_runtime.persistent import PersistentData
 from eager_runtime.preferences import Preferences
 from eager_runtime.runtime import StoryVM
 from eager_runtime.saves import SaveManager
 from eager_runtime.state import StorySnapshot
-from eager_runtime.storage import get_default_save_dir
 
 
 @dataclass(frozen=True, slots=True)

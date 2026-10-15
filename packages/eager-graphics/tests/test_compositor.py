@@ -1,9 +1,9 @@
 """Tests for StageCompositor visual composition, transitions, and render lists."""
 
 import pytest
+from eager_core.types import BLACK, Vec2
 
 from eager_graphics.compositor import StageCompositor
-from eager_graphics.types import BLACK, Vec2
 
 
 def test_compositor_background_instant_and_crossfade() -> None:

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 
+from eager_core.types import BLACK
+
 from eager_graphics.compositor import StageCompositor
-from eager_graphics.types import BLACK
 
 
 def _build_sample_compositor() -> StageCompositor:

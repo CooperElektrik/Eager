@@ -6,13 +6,15 @@ import math
 from collections.abc import Callable
 from typing import Any
 
-from eager_graphics.easing import get_easing
+from eager_core.easing import get_easing
+from eager_core.timing import FrameClock
+from eager_core.types import BLACK, WHITE, Color, Vec2
+
 from eager_graphics.layout import LayoutResolver
 from eager_graphics.protocol import RenderBackend, RenderItem
 from eager_graphics.stage import ElementState, Stage, StageElement
 from eager_graphics.timeline import Timeline
-from eager_graphics.timing import FrameClock
-from eager_graphics.types import BLACK, WHITE, Anchor, Color, TransitionKind, Vec2
+from eager_graphics.types import Anchor, TransitionKind
 
 
 class StageCompositor:
@@ -871,7 +873,7 @@ class StageCompositor:
         :meth:`render_list` via any :class:`~eager_graphics.protocol.RenderBackend`
         (e.g. :class:`~eager_graphics.renderers.null.NullRenderer`).
 
-        The internal :class:`~eager_graphics.timing.FrameClock` is ticked on every
+        The internal :class:`~eager_core.timing.FrameClock` is ticked on every
         call, so :attr:`fps`, :attr:`fps_avg`, and :attr:`fps_overall`
         reflect real wall-clock frame throughput.
         """

@@ -6,7 +6,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TypeAlias
 
-from eager_graphics.types import Rect, ScaleMode, Vec2
+from eager_core.types import Rect, Vec2
+
+from eager_graphics.types import ScaleMode
 
 PositionFactory: TypeAlias = Callable[[int, int], Vec2]
 

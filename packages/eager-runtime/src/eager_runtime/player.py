@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from typing import IO
 
-from eager_runtime.events import (
+from eager_core.events import (
     AppendEvent,
     ChoicePromptEvent,
     DialogueEvent,
@@ -16,6 +16,7 @@ from eager_runtime.events import (
     SceneExitEvent,
     StoryEndEvent,
 )
+
 from eager_runtime.runtime import StoryVM
 from eager_runtime.state import StorySnapshot
 

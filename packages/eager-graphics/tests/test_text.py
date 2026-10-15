@@ -4,10 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from eager_core.text import TextReveal, parse_text_tags
 from eager_runtime.backlog import Backlog
 from eager_runtime.session import GameSession
-
-from eager_graphics.text import TextReveal, parse_text_tags
 
 SAMPLE_SCRIPT = """
 ## Start --- start

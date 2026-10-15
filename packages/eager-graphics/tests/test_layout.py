@@ -1,9 +1,10 @@
 """Tests for layout resolver and viewport transforms."""
 
 import pytest
+from eager_core.types import Vec2
 
 from eager_graphics.layout import LayoutResolver
-from eager_graphics.types import ScaleMode, Vec2
+from eager_graphics.types import ScaleMode
 
 
 def test_layout_resolve_named_positions() -> None:

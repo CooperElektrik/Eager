@@ -2,7 +2,7 @@
 
 Eager-Graphics is a **headless, renderer-agnostic, resolution-independent Graphics & Stage Compositor** designed for the [Eager](https://github.com/CooperElektrik/Eager) visual novel engine ecosystem.
 
-- **FPS monitoring**: Every render backend and the `StageCompositor` itself own a `FrameClock` (`eager_graphics.timing`) that tracks real wall-clock frame intervals, computing instantaneous, rolling-average, and overall FPS for debug HUDs and headless benchmarks.
+- **FPS monitoring**: Every render backend and the `StageCompositor` itself own a `FrameClock` (`eager_core.timing`) that tracks real wall-clock frame intervals, computing instantaneous, rolling-average, and overall FPS for debug HUDs and headless benchmarks.
 
 ---
 
@@ -152,7 +152,7 @@ Backends implement the lightweight `RenderBackend` protocol:
 ```python
 from typing import Protocol
 from eager_graphics.protocol import RenderItem
-from eager_graphics.types import Color
+from eager_core.types import Color
 
 class RenderBackend(Protocol):
     def begin_frame(self) -> None: ...

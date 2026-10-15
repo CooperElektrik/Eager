@@ -2,10 +2,10 @@
 
 import unittest
 
+from eager_core.events import ChoicePromptEvent, DialogueEvent
 from eager_script import parse, parse_graph, validate
 
 from eager_runtime import PersistentData, StoryRuntimeError, StoryVM
-from eager_runtime.events import ChoicePromptEvent, DialogueEvent
 
 
 class TestScriptLogic(unittest.TestCase):

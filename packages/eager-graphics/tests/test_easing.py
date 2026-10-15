@@ -1,8 +1,7 @@
 """Tests for easing functions."""
 
 import pytest
-
-from eager_graphics.easing import (
+from eager_core.easing import (
     EASING_MAP,
     ease_in_cubic,
     ease_in_out_quad,

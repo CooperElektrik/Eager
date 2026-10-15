@@ -383,12 +383,6 @@ def run_test_run(args: argparse.Namespace) -> int:
 # ── eager CLI (unified, graphics optional) ────────────────────────────────
 
 
-def build_x_parser() -> argparse.ArgumentParser:
-    """Deprecated alias for :func:`build_parser` (``eager-x`` merged into ``eager``)."""
-    return build_parser()
-
-
-
 def _create_audio_backend(backend: str, *, no_audio: bool = False) -> Any:
     """Instantiate the matching audio backend for the given render backend."""
     from eager_core import NullAudioBackend
@@ -1004,11 +998,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)
-
-
-def main_x(argv: Sequence[str] | None = None) -> int:
-    """Deprecated alias for :func:`main` (``eager-x`` merged into ``eager``)."""
-    return main(argv)
 
 
 if __name__ == "__main__":

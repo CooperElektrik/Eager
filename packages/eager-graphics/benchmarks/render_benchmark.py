@@ -60,9 +60,9 @@ for _pkg in ("eager-core", "eager-script", "eager-runtime", "eager-graphics"):
         sys.path.insert(0, str(_pkg_src))
 
 from eager_core.events import ChoiceOption, ChoicePromptEvent
+from eager_core.types import Vec2
 
 from eager_graphics import Color, ScaleMode, StageCompositor
-from eager_graphics.types import Vec2
 from eager_graphics.ui_components import UIOverlay
 from eager_graphics.ui_state import UIState
 

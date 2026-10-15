@@ -17,6 +17,20 @@ def _to_nested_tuple(obj: Any) -> Any:
         return tuple(_to_nested_tuple(x) for x in obj)
     return obj
 
+from eager_core.events import (
+    AppendEvent,
+    ChoiceOption,
+    ChoicePromptEvent,
+    DialogueEvent,
+    FreshBoxEvent,
+    HookEvent,
+    InputPromptEvent,
+    NarrationEvent,
+    SceneEnterEvent,
+    SceneExitEvent,
+    StoryEndEvent,
+    StoryEvent,
+)
 from eager_core.i18n import TranslationManager
 from eager_script import (
     ParsedAppend,
@@ -34,20 +48,6 @@ from eager_script import (
 )
 from eager_script.expr import ExprError, compile_expr
 
-from eager_runtime.events import (
-    AppendEvent,
-    ChoiceOption,
-    ChoicePromptEvent,
-    DialogueEvent,
-    FreshBoxEvent,
-    HookEvent,
-    InputPromptEvent,
-    NarrationEvent,
-    SceneEnterEvent,
-    SceneExitEvent,
-    StoryEndEvent,
-    StoryEvent,
-)
 from eager_runtime.i18n import compute_beat_id, get_beat_occurrence, strip_explicit_id
 from eager_runtime.state import CallFrame, HistoryManager, StorySnapshot
 

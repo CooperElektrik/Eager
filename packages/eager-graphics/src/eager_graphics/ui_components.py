@@ -15,7 +15,7 @@ Coordinate space
 ----------------
 All layout is computed in **window pixels with a top-left origin** (``y``
 increases downward), matching the convention used throughout
-:mod:`eager_graphics.types`.  Backends with a different native origin (such as
+:mod:`eager_core.types`.  Backends with a different native origin (such as
 Pyglet) flip ``y`` when issuing primitives, so components never need to care.
 
 Typical use::
@@ -32,8 +32,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from eager_core.text import parse_text_tags
-
-from eager_graphics.types import Color
+from eager_core.types import Color
 
 if TYPE_CHECKING:
     from eager_graphics.protocol import UIDrawBackend
