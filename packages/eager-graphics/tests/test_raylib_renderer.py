@@ -70,7 +70,7 @@ from eager_graphics import StageCompositor, StageDirector
 from eager_graphics.protocol import RenderItem
 from eager_graphics.types import BLACK
 from eager_graphics.renderers.raylib import RaylibAssetResolver, RaylibRenderer, RaylibPlayer
-from eager_runtime import EventDispatcher, GameSession, StoryVM, VisualEngine
+from eager_runtime import EventDispatcher, GameSession, StoryVM
 from eager_script import parse_graph
 
 results = {}
@@ -523,7 +523,7 @@ except Exception as exc:
     _fail("test_raylib_player_on_draw_no_crash", exc)
 
 # ------------------------------------------------------------------
-# VisualEngine integration (opens its own window)
+# RaylibRenderer compositor integration (opens its own window)
 # ------------------------------------------------------------------
 try:
     import os
@@ -532,21 +532,19 @@ try:
     script_path = os.path.join(tmpdir, "story.es")
     with open(script_path, "w") as f:
         f.write(_SCREENPLAY)
-    pyray.init_window(1280, 720, "raylib-ve-test")
-    engine = VisualEngine(script_path, backend="raylib")
-    from eager_graphics.renderers.raylib import RaylibRenderer
-    assert isinstance(engine.renderer, RaylibRenderer)
-    assert engine.backend == "raylib"
-    engine.advance()
+    pyray.init_window(1280, 720, "raylib-renderer-test")
+    renderer = RaylibRenderer(asset_dir=None)
+    session = GameSession(script_path)
+    session.advance()
     pyray.begin_drawing()
-    engine.render(1280, 720)
+    renderer.render_compositor(session.compositor, 1280, 720)
     pyray.end_drawing()
-    assert len(engine.render_items) > 0
-    engine.renderer.asset_resolver.unload_all()
+    assert len(session.compositor.render_list()) > 0
+    renderer.asset_resolver.unload_all()
     pyray.close_window()
-    _ok("test_raylib_renderer_in_visual_engine")
+    _ok("test_raylib_renderer_compositor")
 except Exception as exc:
-    _fail("test_raylib_renderer_in_visual_engine", exc)
+    _fail("test_raylib_renderer_compositor", exc)
 
 print("===GPU_RESULTS_JSON===")
 print(json.dumps(results))
@@ -813,6 +811,6 @@ def test_raylib_player_on_draw_no_crash(gpu_results) -> None:
     _check_gpu_result("test_raylib_player_on_draw_no_crash", gpu_results)
 
 
-def test_raylib_renderer_in_visual_engine(gpu_results) -> None:
-    """VisualEngine should use RaylibRenderer when backend='raylib'."""
-    _check_gpu_result("test_raylib_renderer_in_visual_engine", gpu_results)
+def test_raylib_renderer_compositor(gpu_results) -> None:
+    """RaylibRenderer should render a GameSession compositor without error."""
+    _check_gpu_result("test_raylib_renderer_compositor", gpu_results)

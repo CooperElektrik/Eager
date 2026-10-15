@@ -421,11 +421,70 @@ def _create_audio_backend(backend: str, *, no_audio: bool = False) -> Any:
     return NullAudioBackend()
 
 
+def _resolve_asset_dir(
+    script_path: str | Path | None,
+    asset_dir: str | Path | None,
+) -> str | None:
+    """Resolve the asset directory, falling back to ``assets/`` beside the script."""
+    if asset_dir is not None:
+        return str(asset_dir)
+    if script_path is None:
+        return None
+    candidate = Path(script_path).resolve().parent / "assets"
+    return str(candidate) if candidate.is_dir() else None
+
+
+def _run_headless(
+    session: Any,
+    renderer: Any,
+    *,
+    dt: float = 1.0 / 60.0,
+    max_steps: int | None = None,
+    auto_choose: int | str | None = None,
+) -> dict[str, Any]:
+    """Drive a :class:`GameSession` to completion without a window.
+
+    Advances to each interactive point, auto-selecting *auto_choose* when a
+    choice prompt is reached, and renders every beat through *renderer*.
+    Returns a summary dict with the step/render counts and whether the story
+    ended.
+    """
+    steps = 0
+    render_frames = 0
+
+    while not session.vm.is_ended and not session.is_finished:
+        if max_steps is not None and steps >= max_steps:
+            break
+
+        event = session.advance()
+        steps += 1
+
+        if event is not None and event.type == "choice_prompt":
+            if auto_choose is not None:
+                session.choose(auto_choose)
+                continue
+            break
+
+        if event is None:
+            break
+
+        session.update(dt)
+        renderer.render_compositor(session.compositor, 1280, 720)
+        render_frames += 1
+
+    return {
+        "steps": steps,
+        "ended": session.vm.is_ended or session.is_finished,
+        "render_frames": render_frames,
+        "final_ui_state": session.director.ui_state,
+    }
+
+
 def _cmd_play(args: argparse.Namespace) -> int:
     """Launch an interactive visual novel via the selected backend."""
     _ensure_graphics()
 
-    # Verify backend availability before constructing the engine.
+    # Verify backend availability before constructing the session.
     if args.backend == "pyglet":
         try:
             import pyglet  # noqa: F401
@@ -454,35 +513,35 @@ def _cmd_play(args: argparse.Namespace) -> int:
             )
             return 1
 
-    from eager_runtime.engine import VisualEngine
+    from eager_runtime.session import GameSession
 
     audio_backend = _create_audio_backend(
         args.backend,
         no_audio=getattr(args, "no_audio", False),
     )
 
-    engine = VisualEngine(
-        script_path=args.script,
+    session = GameSession(
+        args.script,
         backend=args.backend,
         audio_backend=audio_backend,
-        asset_dir=args.asset_dir,
+        asset_dir=_resolve_asset_dir(args.script, args.asset_dir),
         plain=args.plain,
         auto_reload=getattr(args, "watch", False),
     )
 
     if getattr(args, "lang", None):
-        engine.session.set_language(args.lang)
+        session.set_language(args.lang)
 
     if getattr(args, "warp", None):
         target_scene = args.warp
-        if target_scene in engine.vm.graph.nodes:
-            engine.vm.jump(target_scene)
+        if target_scene in session.vm.graph.nodes:
+            session.vm.jump(target_scene)
             sys.stderr.write(f"Warped directly to scene '{target_scene}'.\n")
         else:
             sys.stderr.write(f"Warning: Warp target '{target_scene}' not found in script.\n")
 
     sys.stderr.write(f"Launching Eager visual novel ({args.backend})...\n")
-    _run_interactive_player(engine, backend=args.backend)
+    _run_interactive_player(session, backend=args.backend)
     return 0
 
 
@@ -491,21 +550,25 @@ def _cmd_render(args: argparse.Namespace) -> int:
     """Run a story to completion in headless mode (NullRenderer)."""
     _ensure_graphics()
 
-    from eager_runtime.engine import VisualEngine
+    from eager_graphics.renderers.null import NullRenderer
 
-    engine = VisualEngine(
-        script_path=args.script,
+    from eager_runtime.session import GameSession
+
+    session = GameSession(
+        args.script,
         backend="null",
-        asset_dir=args.asset_dir,
+        asset_dir=_resolve_asset_dir(args.script, args.asset_dir),
         plain=args.plain,
     )
 
     if getattr(args, "lang", None):
-        engine.session.set_language(args.lang)
+        session.set_language(args.lang)
 
     sys.stderr.write(f"Rendering '{args.script}' headlessly...\n")
 
-    result = engine.run_headless(
+    result = _run_headless(
+        session,
+        NullRenderer(),
         dt=args.dt,
         max_steps=args.max_steps,
         auto_choose=args.auto_choose,
@@ -522,14 +585,13 @@ def _cmd_render(args: argparse.Namespace) -> int:
 # ── Interactive player loop ────────────────────────────────────────────
 
 
-def _run_interactive_player(engine: Any, *, backend: str) -> None:
+def _run_interactive_player(session: Any, *, backend: str) -> None:
     """Run the interactive player loop for the given backend.
 
     All interactive players (PygletPlayer, RaylibPlayer, and PILPlayer) share a
     common interface and run their own event loops via ``run()``.
     """
-    session = getattr(engine, "session", engine)
-    asset_dir = str(engine.asset_dir) if getattr(engine, "asset_dir", None) else None
+    asset_dir = str(session.asset_dir) if getattr(session, "asset_dir", None) else None
 
     if backend == "raylib":
         from eager_graphics.renderers.raylib import RaylibPlayer
@@ -574,8 +636,8 @@ def _run_interactive_player(engine: Any, *, backend: str) -> None:
 def _cmd_run(args: argparse.Namespace) -> int:
     """Run an Eager visual novel project directory."""
     _ensure_graphics()
-    from eager_runtime.engine import VisualEngine
     from eager_runtime.project import ProjectConfig
+    from eager_runtime.session import GameSession
 
     proj_dir = Path(args.project_dir)
     toml_path = proj_dir / "game.toml"
@@ -597,14 +659,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
         no_audio=getattr(args, "no_audio", False),
     )
 
-    engine = VisualEngine(
+    session = GameSession(
         str(script_path),
         backend=args.backend,
         audio_backend=audio_backend,
-        asset_dir=str(asset_dir) if asset_dir else None,
+        asset_dir=_resolve_asset_dir(script_path, asset_dir),
         auto_reload=getattr(args, "watch", False),
     )
-    _run_interactive_player(engine, backend=args.backend)
+    _run_interactive_player(session, backend=args.backend)
     return 0
 
 

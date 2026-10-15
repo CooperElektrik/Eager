@@ -1,10 +1,10 @@
 """Eager: Lightweight narrative runtime engine for Eager-Script screenplays.
 
 The headless VM, events, dispatcher, and state management are always
-available.  The :class:`~eager_runtime.engine.VisualEngine` façade — which
-adds visual compositing — is imported lazily so that a bare ``import
-eager_runtime`` stays headless and dependency-free (it does not require
-``eager_graphics`` to be installed).
+available.  The graphics-dependent
+:class:`~eager_runtime.session.GameSession` controller is imported lazily so
+that a bare ``import eager_runtime`` stays headless and dependency-free (it
+does not require ``eager_graphics`` to be installed).
 """
 
 from __future__ import annotations
@@ -61,17 +61,14 @@ __all__ = [
     "SaveData",
     "SaveManager",
     "SaveMetadata",
-    "SaveSlot",
     "SceneEnterEvent",
     "SceneExitEvent",
-    "StateCorruptionError",
     "StoryEndEvent",
     "StoryEvent",
     "StoryRuntimeError",
     "StorySnapshot",
     "StoryVM",
     "TerminalPlayer",
-    "VisualEngine",
     "check_assets",
 ]
 
@@ -81,9 +78,6 @@ _LAZY_EXPORTS = {
     "AssetReference": "eager_runtime.assets",
     "MissingAssetIssue": "eager_runtime.assets",
     "check_assets": "eager_runtime.assets",
-    "VisualEngine": "eager_runtime.engine",
-    "SaveSlot": "eager_runtime.engine",
-    "StateCorruptionError": "eager_runtime.engine",
     "GameSession": "eager_runtime.session",
     "Checkpoint": "eager_runtime.session",
     "CheckpointHistory": "eager_runtime.session",
