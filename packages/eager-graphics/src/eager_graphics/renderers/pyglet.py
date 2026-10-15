@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -18,10 +20,10 @@ except ImportError as err:
 
 from eager_core.input import InputAction, Keymap
 
-from eager_graphics.layout import ViewportTransform
+from eager_graphics.layout import LayoutResolver, ViewportTransform
 from eager_graphics.protocol import RenderBackend, RenderItem
 from eager_graphics.timing import FrameClock
-from eager_graphics.types import BLACK, WHITE, Color, ScaleMode
+from eager_graphics.types import BLACK, WHITE, Anchor, Color, ScaleMode
 from eager_graphics.ui_components import UIOverlay
 
 if TYPE_CHECKING:
@@ -38,6 +40,29 @@ class PygletAssetResolver:
     def __init__(self, asset_dir: str | Path | None = None) -> None:
         self.asset_dir = Path(asset_dir) if asset_dir is not None else None
         self._cache: dict[str, pyglet.image.AbstractImage] = {}
+        self._asset_index: dict[str, Path] = {}
+        if self.asset_dir is not None and self.asset_dir.is_dir():
+            self._index_asset_dir(self.asset_dir)
+
+    def _index_asset_dir(self, dir_path: Path) -> None:
+        """Pre-index asset directory once at startup with a single directory walk."""
+        try:
+            for p in dir_path.rglob("*"):
+                if p.is_file():
+                    rel = p.relative_to(dir_path).as_posix()
+                    self._asset_index[rel] = p
+                    rel_no_ext = str(Path(rel).with_suffix(""))
+                    self._asset_index[rel_no_ext] = p
+                    self._asset_index[p.stem] = p
+        except OSError:
+            pass
+
+    def clear_cache(self) -> None:
+        """Clear texture cache and refresh directory index."""
+        self._cache.clear()
+        self._asset_index.clear()
+        if self.asset_dir is not None and self.asset_dir.is_dir():
+            self._index_asset_dir(self.asset_dir)
 
     def get_texture(
         self,
@@ -66,18 +91,39 @@ class PygletAssetResolver:
 
             extensions = [".png", ".jpg", ".jpeg", ".webp"]
             for cid in candidate_ids:
-                for ext in extensions:
-                    file_path = self.asset_dir / f"{cid}{ext}"
-                    if file_path.is_file():
+                if self._asset_index:
+                    if cid in self._asset_index:
+                        file_path = self._asset_index[cid]
                         try:
-                            tex = pyglet.image.load(str(file_path))
+                            tex = pyglet.image.load(str(file_path)).get_texture()
                             self._cache[asset_id] = tex
                             return tex
                         except (OSError, pyglet.image.ImageDecodeException):
                             pass
+                    for ext in extensions:
+                        target = f"{cid}{ext}"
+                        if target in self._asset_index:
+                            file_path = self._asset_index[target]
+                            try:
+                                tex = pyglet.image.load(str(file_path)).get_texture()
+                                self._cache[asset_id] = tex
+                                return tex
+                            except (OSError, pyglet.image.ImageDecodeException):
+                                pass
+                else:
+                    for ext in extensions:
+                        file_path = self.asset_dir / f"{cid}{ext}"
+                        if file_path.is_file():
+                            try:
+                                tex = pyglet.image.load(str(file_path)).get_texture()
+                                self._cache[asset_id] = tex
+                                return tex
+                            except (OSError, pyglet.image.ImageDecodeException):
+                                pass
 
         # 2. Generate placeholder texture
-        tex = self._generate_placeholder(asset_id, default_width, default_height)
+        img = self._generate_placeholder(asset_id, default_width, default_height)
+        tex = img.get_texture()
         self._cache[asset_id] = tex
         return tex
 
@@ -167,8 +213,35 @@ class PygletAssetResolver:
         return pyglet.image.ImageData(w, h, "RGBA", buf)
 
 
+@functools.lru_cache(maxsize=4096)
+def _cached_measure_text(
+    font_name: str,
+    font_size: int,
+    bold: bool,
+    italic: bool,
+    text: str,
+) -> tuple[float, float]:
+    """Fast cached text extents calculation querying font metrics without instantiating Labels."""
+    try:
+        font = pyglet.font.load(
+            font_name,
+            size=font_size,
+            weight="bold" if bold else "normal",
+            italic=italic,
+        )
+        lines = text.split("\n")
+        line_height = float(font.ascent - font.descent)
+        if line_height <= 0:
+            line_height = float(font_size) * 1.2
+        width = max((float(font.get_text_size(line)[0]) for line in lines), default=0.0)
+        height = line_height * max(1, len(lines))
+        return (width, height)
+    except (AttributeError, TypeError, ValueError, RuntimeError, OSError):
+        return (float(font_size) * 0.5 * len(text), float(font_size) * 1.2)
+
+
 class PygletRenderer(RenderBackend):
-    """Pyglet 2D stage renderer implementing RenderBackend protocol."""
+    """Pyglet 2D stage renderer implementing RenderBackend and UIDrawBackend protocols."""
 
     def __init__(
         self,
@@ -178,6 +251,7 @@ class PygletRenderer(RenderBackend):
         asset_dir: str | Path | None = None,
         scale_mode: ScaleMode = ScaleMode.LETTERBOX,
         window: pyglet.window.Window | None = None,
+        ui_batch: Batch | None = None,
     ) -> None:
         self.asset_resolver = PygletAssetResolver(asset_dir)
         self.scale_mode = scale_mode
@@ -185,32 +259,221 @@ class PygletRenderer(RenderBackend):
         self.width: int = window.width if window is not None else width
         self.height: int = window.height if window is not None else height
         self._current_transform: ViewportTransform | None = None
+        self._cached_win_w: int = -1
+        self._cached_win_h: int = -1
+        self._cached_scale_mode: ScaleMode | None = None
+        self._cached_virt_size: tuple[int, int] | None = None
+
+        # Persistent Batches for Stage and UI
+        self._stage_batch: Batch = Batch()
+        self._ui_batch: Batch = ui_batch if ui_batch is not None else Batch()
+        self._ui_flushed: bool = False
+
+        # Group caches to allow draw call merging
+        self._stage_groups: dict[int, Group] = {}
+        self._ui_groups: dict[int, Group] = {}
+
+        # Texture region cache keyed by (asset_id, anchor)
+        self._region_cache: dict[tuple[str, Anchor], pyglet.image.TextureRegion] = {}
+
+        # Stage Sprite pooling
+        self._pooled_stage_sprites: list[pyglet.sprite.Sprite] = []
         self._active_sprites: list[pyglet.sprite.Sprite] = []
+        self._sprite_cursor: int = 0
+
+        # UI element pools
+        self._rect_pool: list[Rectangle] = []
+        self._box_pool: list[Box] = []
+        self._grad_pool: list[tuple[Rectangle, tuple[tuple[int, int, int, int], tuple[int, int, int, int]] | None]] = []
+        self._label_pool: list[Label] = []
+        self._ui_sprite_pool: list[pyglet.sprite.Sprite] = []
+
+        self._rect_cursor: int = 0
+        self._box_cursor: int = 0
+        self._grad_cursor: int = 0
+        self._label_cursor: int = 0
+        self._ui_sprite_cursor: int = 0
+        self._ui_order: int = 0
+
+        # Letterbox bars caching
+        self._bar_left: Rectangle | None = None
+        self._bar_right: Rectangle | None = None
+        self._bar_bottom: Rectangle | None = None
+        self._bar_top: Rectangle | None = None
         self._letterbox_bars: list[Rectangle] = []
+
+        # Clear state tracking to deduplicate glClearColor calls
+        self._last_clear_color: Color | None = None
+
         self.clock: FrameClock = FrameClock()
         self.frame_count: int = 0
         self.last_frame: list[RenderItem] = []
+
+        # Initial viewport & letterbox setup
+        self._update_viewport_and_letterbox()
 
     def set_window(self, window: pyglet.window.Window) -> None:
         """Associate renderer with an active Pyglet Window."""
         self.window = window
         self.width = window.width
         self.height = window.height
+        self._update_viewport_and_letterbox()
+
+    def on_resize(self, width: int, height: int) -> None:
+        """Update dimensions and recalculate viewport transform & letterbox bars."""
+        self.width = width
+        self.height = height
+        self._update_viewport_and_letterbox()
+
+    def clear_cache(self) -> None:
+        """Clear cached textures, texture regions, and text metrics."""
+        self.asset_resolver.clear_cache()
+        self._region_cache.clear()
+        self._stage_groups.clear()
+        self._ui_groups.clear()
+        self._cached_measure_text.cache_clear()
+
+    def _get_stage_group(self, z_order: int) -> Group:
+        group = self._stage_groups.get(z_order)
+        if group is None:
+            group = Group(order=z_order)
+            self._stage_groups[z_order] = group
+        return group
+
+    def _get_ui_group(self, order: int) -> Group:
+        group = self._ui_groups.get(order)
+        if group is None:
+            group = Group(order=order)
+            self._ui_groups[order] = group
+        return group
+
+    def _update_viewport_and_letterbox(self, layout: LayoutResolver | None = None) -> None:
+        """Compute viewport transform and update persistent letterbox bars."""
+        if layout is None:
+            layout = LayoutResolver(1920, 1080)
+        self._current_transform = layout.compute_viewport_transform(
+            self.width,
+            self.height,
+            mode=self.scale_mode,
+        )
+        self._cached_win_w = self.width
+        self._cached_win_h = self.height
+        self._cached_scale_mode = self.scale_mode
+        self._cached_virt_size = (layout.virtual_width, layout.virtual_height)
+
+        trans = self._current_transform
+        win_w, win_h = self.width, self.height
+        lb_group = self._get_stage_group(10_000_000)
+
+        # 1. Pillarbox bars (left & right)
+        if trans.offset_x > 0:
+            ox = float(trans.offset_x)
+            if self._bar_left is None:
+                self._bar_left = Rectangle(
+                    0.0, 0.0, ox, float(win_h), color=(0, 0, 0, 255), batch=self._stage_batch, group=lb_group
+                )
+            else:
+                if self._bar_left.x != 0.0:
+                    self._bar_left.x = 0.0
+                if self._bar_left.y != 0.0:
+                    self._bar_left.y = 0.0
+                if self._bar_left.width != ox:
+                    self._bar_left.width = ox
+                if self._bar_left.height != float(win_h):
+                    self._bar_left.height = float(win_h)
+                if not self._bar_left.visible:
+                    self._bar_left.visible = True
+
+            rx = float(win_w - trans.offset_x)
+            if self._bar_right is None:
+                self._bar_right = Rectangle(
+                    rx, 0.0, ox, float(win_h), color=(0, 0, 0, 255), batch=self._stage_batch, group=lb_group
+                )
+            else:
+                if self._bar_right.x != rx:
+                    self._bar_right.x = rx
+                if self._bar_right.y != 0.0:
+                    self._bar_right.y = 0.0
+                if self._bar_right.width != ox:
+                    self._bar_right.width = ox
+                if self._bar_right.height != float(win_h):
+                    self._bar_right.height = float(win_h)
+                if not self._bar_right.visible:
+                    self._bar_right.visible = True
+        else:
+            if self._bar_left is not None and self._bar_left.visible:
+                self._bar_left.visible = False
+            if self._bar_right is not None and self._bar_right.visible:
+                self._bar_right.visible = False
+
+        # 2. Letterbox bars (bottom & top)
+        if trans.offset_y > 0:
+            oy = float(trans.offset_y)
+            if self._bar_bottom is None:
+                self._bar_bottom = Rectangle(
+                    0.0, 0.0, float(win_w), oy, color=(0, 0, 0, 255), batch=self._stage_batch, group=lb_group
+                )
+            else:
+                if self._bar_bottom.x != 0.0:
+                    self._bar_bottom.x = 0.0
+                if self._bar_bottom.y != 0.0:
+                    self._bar_bottom.y = 0.0
+                if self._bar_bottom.width != float(win_w):
+                    self._bar_bottom.width = float(win_w)
+                if self._bar_bottom.height != oy:
+                    self._bar_bottom.height = oy
+                if not self._bar_bottom.visible:
+                    self._bar_bottom.visible = True
+
+            ty = float(win_h - trans.offset_y)
+            if self._bar_top is None:
+                self._bar_top = Rectangle(
+                    0.0, ty, float(win_w), oy, color=(0, 0, 0, 255), batch=self._stage_batch, group=lb_group
+                )
+            else:
+                if self._bar_top.x != 0.0:
+                    self._bar_top.x = 0.0
+                if self._bar_top.y != ty:
+                    self._bar_top.y = ty
+                if self._bar_top.width != float(win_w):
+                    self._bar_top.width = float(win_w)
+                if self._bar_top.height != oy:
+                    self._bar_top.height = oy
+                if not self._bar_top.visible:
+                    self._bar_top.visible = True
+        else:
+            if self._bar_bottom is not None and self._bar_bottom.visible:
+                self._bar_bottom.visible = False
+            if self._bar_top is not None and self._bar_top.visible:
+                self._bar_top.visible = False
+
+        self._letterbox_bars = [
+            b for b in (self._bar_left, self._bar_right, self._bar_bottom, self._bar_top)
+            if b is not None and b.visible
+        ]
 
     def begin_frame(self) -> None:
         """Prepare for new frame rendering pass."""
         self._active_sprites.clear()
-        self._letterbox_bars.clear()
+        self._sprite_cursor = 0
+        self._rect_cursor = 0
+        self._box_cursor = 0
+        self._grad_cursor = 0
+        self._label_cursor = 0
+        self._ui_sprite_cursor = 0
+        self._ui_order = 0
+        self._ui_flushed = False
 
     def clear(self, color: Color = BLACK) -> None:
-        """Clear OpenGL framebuffer with color."""
-        r, g, b, a = color.r, color.g, color.b, color.a
-        pyglet.gl.glClearColor(r, g, b, a)
+        """Clear OpenGL framebuffer with color, deduplicating glClearColor."""
+        if self._last_clear_color != color:
+            pyglet.gl.glClearColor(color.r, color.g, color.b, color.a)
+            self._last_clear_color = color
         if self.window is not None:
             self.window.clear()
 
     def draw_item(self, item: RenderItem) -> None:
-        """Render a single compositor item."""
+        """Render a single compositor item using pooled, batched sprites."""
         if self._current_transform is None:
             msg = "draw_item called before render_compositor set the viewport transform"
             raise RuntimeError(msg)
@@ -243,20 +506,15 @@ class PygletRenderer(RenderBackend):
         pyglet_anchor_x = anchor_s_x
         pyglet_anchor_y = win_h - anchor_s_y
 
-        # Configure texture region with anchor matching item.anchor
-        tex = texture.get_texture()
-        region = tex.get_region(0, 0, tex.width, tex.height)
-        region.anchor_x = texture.width * fx
-        region.anchor_y = texture.height * (1.0 - fy)
-
-        # Create and configure Pyglet sprite
-        sprite = pyglet.sprite.Sprite(
-            region,
-            x=pyglet_anchor_x,
-            y=pyglet_anchor_y,
-            group=Group(order=item.z_order),
-            subpixel=True,
-        )
+        # Configure or retrieve cached texture region with anchor matching item.anchor
+        region_key = (item.asset_id, item.anchor)
+        region = self._region_cache.get(region_key)
+        if region is None:
+            tex = texture.get_texture()
+            region = tex.get_region(0, 0, tex.width, tex.height)
+            region.anchor_x = texture.width * fx
+            region.anchor_y = texture.height * (1.0 - fy)
+            self._region_cache[region_key] = region
 
         scale_x_dir = -1.0 if item.flip_h else 1.0
         if item.scale_x < 0:
@@ -265,53 +523,109 @@ class PygletRenderer(RenderBackend):
         if item.scale_y < 0:
             scale_y_dir = -scale_y_dir
 
-        sprite.scale_x = scale_x_dir * (draw_w / texture.width)
-        sprite.scale_y = scale_y_dir * (draw_h / texture.height)
-        sprite.rotation = item.rotation
+        target_scale_x = scale_x_dir * (draw_w / texture.width)
+        target_scale_y = scale_y_dir * (draw_h / texture.height)
+        target_rotation = item.rotation
 
         # Opacity & Tint
         final_alpha = max(0.0, min(1.0, item.opacity * item.tint.a))
-        sprite.color = (
+        target_color = (
             round(item.tint.r * 255),
             round(item.tint.g * 255),
             round(item.tint.b * 255),
             round(final_alpha * 255),
         )
+        target_group = self._get_stage_group(item.z_order)
 
-        sprite.draw()
+        if self._sprite_cursor < len(self._pooled_stage_sprites):
+            sprite = self._pooled_stage_sprites[self._sprite_cursor]
+        else:
+            sprite = pyglet.sprite.Sprite(
+                region,
+                x=pyglet_anchor_x,
+                y=pyglet_anchor_y,
+                group=target_group,
+                batch=self._stage_batch,
+                subpixel=True,
+            )
+            self._pooled_stage_sprites.append(sprite)
+        self._sprite_cursor += 1
+
+        # Guard property mutations behind equality checks to prevent VBO re-uploads
+        if sprite.image is not region:
+            sprite.image = region
+        if sprite.x != pyglet_anchor_x:
+            sprite.x = pyglet_anchor_x
+        if sprite.y != pyglet_anchor_y:
+            sprite.y = pyglet_anchor_y
+        if sprite.scale_x != target_scale_x:
+            sprite.scale_x = target_scale_x
+        if sprite.scale_y != target_scale_y:
+            sprite.scale_y = target_scale_y
+        if sprite.rotation != target_rotation:
+            sprite.rotation = target_rotation
+        if sprite.color != target_color:
+            sprite.color = target_color
+        if sprite.group is not target_group:
+            sprite.group = target_group
+        if not sprite.visible:
+            sprite.visible = True
+
         self._active_sprites.append(sprite)
 
     def end_frame(self) -> None:
-        """Conclude frame render pass, drawing letterbox black bars if necessary."""
+        """Conclude frame render pass, drawing stage elements and letterbox bars."""
+        # Hide any unused stage sprites in the pool
+        for i in range(self._sprite_cursor, len(self._pooled_stage_sprites)):
+            sp = self._pooled_stage_sprites[i]
+            if sp.visible:
+                sp.visible = False
+
         self.frame_count += 1
         self.clock.tick()
 
-        if self.window is None or self._current_transform is None:
+        # Submit batched stage sprites and letterbox bars in a single OpenGL batch
+        self._stage_batch.draw()
+
+        # Flush any batched UI elements if UI drawing primitives were issued before end_frame
+        if not self._ui_flushed and (
+            self._rect_cursor > 0
+            or self._box_cursor > 0
+            or self._grad_cursor > 0
+            or self._label_cursor > 0
+            or self._ui_sprite_cursor > 0
+        ):
+            self.flush_ui()
+
+    def flush_ui(self) -> None:
+        """Draw all pending batched UI elements."""
+        if self._ui_flushed:
             return
 
-        win_w, win_h = self.width, self.height
-        trans = self._current_transform
+        # Hide any inactive pooled UI shapes & labels
+        for i in range(self._rect_cursor, len(self._rect_pool)):
+            r = self._rect_pool[i]
+            if r.visible:
+                r.visible = False
+        for i in range(self._box_cursor, len(self._box_pool)):
+            b = self._box_pool[i]
+            if b.visible:
+                b.visible = False
+        for i in range(self._grad_cursor, len(self._grad_pool)):
+            g, _ = self._grad_pool[i]
+            if g.visible:
+                g.visible = False
+        for i in range(self._label_cursor, len(self._label_pool)):
+            l = self._label_pool[i]
+            if l.visible:
+                l.visible = False
+        for i in range(self._ui_sprite_cursor, len(self._ui_sprite_pool)):
+            s = self._ui_sprite_pool[i]
+            if s.visible:
+                s.visible = False
 
-        # Draw letterbox/pillarbox borders if window exceeds virtual aspect ratio
-        if trans.offset_x > 0:
-            # Left & right pillarbox bars
-            left_bar = Rectangle(0, 0, trans.offset_x, win_h, color=(0, 0, 0, 255))
-            right_bar = Rectangle(
-                win_w - trans.offset_x, 0, trans.offset_x, win_h, color=(0, 0, 0, 255)
-            )
-            left_bar.draw()
-            right_bar.draw()
-            self._letterbox_bars.extend([left_bar, right_bar])
-
-        if trans.offset_y > 0:
-            # Top & bottom letterbox bars
-            bottom_bar = Rectangle(0, 0, win_w, trans.offset_y, color=(0, 0, 0, 255))
-            top_bar = Rectangle(
-                0, win_h - trans.offset_y, win_w, trans.offset_y, color=(0, 0, 0, 255)
-            )
-            bottom_bar.draw()
-            top_bar.draw()
-            self._letterbox_bars.extend([bottom_bar, top_bar])
+        self._ui_batch.draw()
+        self._ui_flushed = True
 
     # ------------------------------------------------------------------ #
     # FPS properties (delegate to the FrameClock for a uniform API)
@@ -341,11 +655,15 @@ class PygletRenderer(RenderBackend):
         """Render all active compositor layers to the window."""
         self.width = window_width
         self.height = window_height
-        self._current_transform = compositor.layout.compute_viewport_transform(
-            window_width,
-            window_height,
-            mode=self.scale_mode,
-        )
+        layout = compositor.layout
+        if (
+            self._current_transform is None
+            or self._cached_win_w != window_width
+            or self._cached_win_h != window_height
+            or self._cached_scale_mode != self.scale_mode
+            or self._cached_virt_size != (layout.virtual_width, layout.virtual_height)
+        ):
+            self._update_viewport_and_letterbox(layout)
 
         self.begin_frame()
         self.clear(BLACK)
@@ -382,7 +700,8 @@ class PygletRenderer(RenderBackend):
 
     def _flip_y(self, y: float, extent: float = 0.0) -> float:
         """Convert a top-left-origin *y* (optionally spanning *extent*) to Pyglet space."""
-        return float(self.height) - y - extent
+        win_h = float(self.window.height if self.window is not None else self.height)
+        return win_h - y - extent
 
     def draw_rect(
         self,
@@ -396,25 +715,65 @@ class PygletRenderer(RenderBackend):
         border_width: float = 0.0,
     ) -> None:
         """Draw a filled rectangle, optionally stroked with a border."""
-        rect = pyglet.shapes.Rectangle(
-            x=float(x),
-            y=self._flip_y(y, height),
-            width=float(width),
-            height=float(height),
-            color=color.to_rgba_bytes(),
-        )
-        rect.draw()
+        w = max(0.0, float(width))
+        h = max(0.0, float(height))
+        fx = float(x)
+        fy = self._flip_y(y, h)
+        col_rgba = color.to_rgba_bytes()
+        group = self._get_ui_group(self._ui_order)
+        self._ui_order += 1
+
+        if self._rect_cursor < len(self._rect_pool):
+            rect = self._rect_pool[self._rect_cursor]
+        else:
+            rect = Rectangle(fx, fy, w, h, color=col_rgba, batch=self._ui_batch, group=group)
+            self._rect_pool.append(rect)
+        self._rect_cursor += 1
+
+        if rect.x != fx:
+            rect.x = fx
+        if rect.y != fy:
+            rect.y = fy
+        if rect.width != w:
+            rect.width = w
+        if rect.height != h:
+            rect.height = h
+        if rect.color != col_rgba:
+            rect.color = col_rgba
+        if rect.group is not group:
+            rect.group = group
+        if not rect.visible:
+            rect.visible = True
 
         if border_color is not None and border_width > 0.0:
-            box = Box(
-                x=float(x),
-                y=self._flip_y(y, height),
-                width=float(width),
-                height=float(height),
-                thickness=float(border_width),
-                color=border_color.to_rgba_bytes(),
-            )
-            box.draw()
+            b_group = self._get_ui_group(self._ui_order)
+            self._ui_order += 1
+            bw = float(border_width)
+            b_col_rgba = border_color.to_rgba_bytes()
+
+            if self._box_cursor < len(self._box_pool):
+                box = self._box_pool[self._box_cursor]
+            else:
+                box = Box(fx, fy, w, h, thickness=bw, color=b_col_rgba, batch=self._ui_batch, group=b_group)
+                self._box_pool.append(box)
+            self._box_cursor += 1
+
+            if box.x != fx:
+                box.x = fx
+            if box.y != fy:
+                box.y = fy
+            if box.width != w:
+                box.width = w
+            if box.height != h:
+                box.height = h
+            if box.thickness != bw:
+                box.thickness = bw
+            if box.color != b_col_rgba:
+                box.color = b_col_rgba
+            if box.group is not b_group:
+                box.group = b_group
+            if not box.visible:
+                box.visible = True
 
     def draw_rect_outline(
         self,
@@ -427,15 +786,38 @@ class PygletRenderer(RenderBackend):
         line_width: float = 1.0,
     ) -> None:
         """Draw an unfilled rectangle outline with thickness *line_width*."""
-        box = Box(
-            x=float(x),
-            y=self._flip_y(y, height),
-            width=float(width),
-            height=float(height),
-            thickness=float(line_width),
-            color=color.to_rgba_bytes(),
-        )
-        box.draw()
+        w = max(0.0, float(width))
+        h = max(0.0, float(height))
+        fx = float(x)
+        fy = self._flip_y(y, h)
+        bw = float(line_width)
+        col_rgba = color.to_rgba_bytes()
+        group = self._get_ui_group(self._ui_order)
+        self._ui_order += 1
+
+        if self._box_cursor < len(self._box_pool):
+            box = self._box_pool[self._box_cursor]
+        else:
+            box = Box(fx, fy, w, h, thickness=bw, color=col_rgba, batch=self._ui_batch, group=group)
+            self._box_pool.append(box)
+        self._box_cursor += 1
+
+        if box.x != fx:
+            box.x = fx
+        if box.y != fy:
+            box.y = fy
+        if box.width != w:
+            box.width = w
+        if box.height != h:
+            box.height = h
+        if box.thickness != bw:
+            box.thickness = bw
+        if box.color != col_rgba:
+            box.color = col_rgba
+        if box.group is not group:
+            box.group = group
+        if not box.visible:
+            box.visible = True
 
     def draw_gradient_rect(
         self,
@@ -449,19 +831,42 @@ class PygletRenderer(RenderBackend):
         """Draw a rectangle filled with a vertical linear gradient."""
         w = max(1.0, float(width))
         h = max(1.0, float(height))
-        flipped_y = self._flip_y(y, h)
+        fx = float(x)
+        fy = self._flip_y(y, h)
+        group = self._get_ui_group(self._ui_order)
+        self._ui_order += 1
 
-        rect = pyglet.shapes.Rectangle(
-            x=float(x),
-            y=flipped_y,
-            width=w,
-            height=h,
-            color=bottom_color.to_rgba_bytes(),
-        )
-        bot = list(bottom_color.to_rgba_bytes())
-        top = list(top_color.to_rgba_bytes())
-        rect._vertex_list.colors[:] = bot + bot + top + bot + top + top
-        rect.draw()
+        bot_rgba = bottom_color.to_rgba_bytes()
+        top_rgba = top_color.to_rgba_bytes()
+        grad_colors = (top_rgba, bot_rgba)
+
+        if self._grad_cursor < len(self._grad_pool):
+            rect, last_colors = self._grad_pool[self._grad_cursor]
+        else:
+            rect = Rectangle(fx, fy, w, h, color=bot_rgba, batch=self._ui_batch, group=group)
+            last_colors = None
+            self._grad_pool.append((rect, last_colors))
+        idx = self._grad_cursor
+        self._grad_cursor += 1
+
+        if rect.x != fx:
+            rect.x = fx
+        if rect.y != fy:
+            rect.y = fy
+        if rect.width != w:
+            rect.width = w
+        if rect.height != h:
+            rect.height = h
+        if rect.group is not group:
+            rect.group = group
+        if not rect.visible:
+            rect.visible = True
+
+        if last_colors != grad_colors:
+            bot = list(bot_rgba)
+            top = list(top_rgba)
+            rect._vertex_list.colors[:] = bot + bot + top + bot + top + top
+            self._grad_pool[idx] = (rect, grad_colors)
 
     def draw_text(
         self,
@@ -480,29 +885,62 @@ class PygletRenderer(RenderBackend):
         pyglet_anchor_x = {"left": "left", "center": "center", "right": "right"}.get(
             anchor_x, "left"
         )
-
-        # Map the top-left convention onto Pyglet's vertical anchors.  Because
-        # the y coordinate has already been flipped, "top" in our space is the
-        # higher of the two Pyglet anchors.
         pyglet_anchor_y = {
             "top": "top",
             "middle": "center",
             "bottom": "bottom",
         }.get(anchor_y, "top")
 
-        label = pyglet.text.Label(
-            text,
-            font_name=self._ui_font_name(),
-            font_size=font_size,
-            weight="bold" if bold else "normal",
-            italic=italic,
-            x=float(x),
-            y=self._flip_y(y),
-            anchor_x=pyglet_anchor_x,
-            anchor_y=pyglet_anchor_y,
-            color=color.to_rgba_bytes(),
-        )
-        label.draw()
+        fx = float(x)
+        fy = self._flip_y(y)
+        weight_str = "bold" if bold else "normal"
+        col_rgba = color.to_rgba_bytes()
+        group = self._get_ui_group(self._ui_order)
+        self._ui_order += 1
+
+        if self._label_cursor < len(self._label_pool):
+            label = self._label_pool[self._label_cursor]
+        else:
+            label = Label(
+                text,
+                font_name=self._ui_font_name(),
+                font_size=font_size,
+                weight=weight_str,
+                italic=italic,
+                x=fx,
+                y=fy,
+                anchor_x=pyglet_anchor_x,
+                anchor_y=pyglet_anchor_y,
+                color=col_rgba,
+                batch=self._ui_batch,
+                group=group,
+            )
+            self._label_pool.append(label)
+        self._label_cursor += 1
+
+        # Guard property mutations behind equality checks to avoid layout recomputes
+        if label.text != text:
+            label.text = text
+        if label.font_size != font_size:
+            label.font_size = font_size
+        if label.weight != weight_str:
+            label.weight = weight_str
+        if label.italic != italic:
+            label.italic = italic
+        if label.x != fx:
+            label.x = fx
+        if label.y != fy:
+            label.y = fy
+        if label.anchor_x != pyglet_anchor_x:
+            label.anchor_x = pyglet_anchor_x
+        if label.anchor_y != pyglet_anchor_y:
+            label.anchor_y = pyglet_anchor_y
+        if label.color != col_rgba:
+            label.color = col_rgba
+        if label.group is not group:
+            label.group = group
+        if not label.visible:
+            label.visible = True
 
     def draw_image(
         self,
@@ -517,14 +955,11 @@ class PygletRenderer(RenderBackend):
         anchor_y: str = "top",
     ) -> None:
         """Draw a resolved asset scaled into the given box."""
-        texture = self.asset_resolver.get_texture(
-            asset_id, max(1, round(width)), max(1, round(height))
-        )
-        if texture is None:
-            return
-
         target_w = max(1, round(width))
         target_h = max(1, round(height))
+        texture = self.asset_resolver.get_texture(asset_id, target_w, target_h)
+        if texture is None:
+            return
 
         dest_x = float(x)
         dest_y = float(y)
@@ -537,17 +972,42 @@ class PygletRenderer(RenderBackend):
         elif anchor_y == "bottom":
             dest_y -= target_h
 
-        sprite = pyglet.sprite.Sprite(
-            texture,
-            x=dest_x,
-            y=self._flip_y(dest_y, target_h),
-        )
-        sprite.scale_x = target_w / max(1, texture.width)
-        sprite.scale_y = target_h / max(1, texture.height)
+        fy = self._flip_y(dest_y, target_h)
+        target_scale_x = target_w / max(1, texture.width)
+        target_scale_y = target_h / max(1, texture.height)
+        target_color = tint.to_rgba_bytes() if tint != WHITE else (255, 255, 255, 255)
+        group = self._get_ui_group(self._ui_order)
+        self._ui_order += 1
 
-        if tint != WHITE:
-            sprite.color = tint.to_rgba_bytes()
-        sprite.draw()
+        if self._ui_sprite_cursor < len(self._ui_sprite_pool):
+            sprite = self._ui_sprite_pool[self._ui_sprite_cursor]
+        else:
+            sprite = pyglet.sprite.Sprite(
+                texture,
+                x=dest_x,
+                y=fy,
+                batch=self._ui_batch,
+                group=group,
+            )
+            self._ui_sprite_pool.append(sprite)
+        self._ui_sprite_cursor += 1
+
+        if sprite.image is not texture:
+            sprite.image = texture
+        if sprite.x != dest_x:
+            sprite.x = dest_x
+        if sprite.y != fy:
+            sprite.y = fy
+        if sprite.scale_x != target_scale_x:
+            sprite.scale_x = target_scale_x
+        if sprite.scale_y != target_scale_y:
+            sprite.scale_y = target_scale_y
+        if sprite.color != target_color:
+            sprite.color = target_color
+        if sprite.group is not group:
+            sprite.group = group
+        if not sprite.visible:
+            sprite.visible = True
 
     def _ui_font_name(self) -> str:
         """Return the font family used for UI text."""
@@ -561,25 +1021,17 @@ class PygletRenderer(RenderBackend):
         bold: bool = False,
         italic: bool = False,
     ) -> tuple[float, float]:
-        """Measure the pixel extents *text* would occupy at *font_size*.
+        """Measure the pixel extents *text* would occupy at *font_size*."""
+        return _cached_measure_text(
+            self._ui_font_name(),
+            font_size,
+            bold,
+            italic,
+            text,
+        )
 
-        Reads the label's ``content_width`` / ``content_height`` rather than
-        ``width`` / ``height``: the latter are only populated once the label has
-        been laid out in a draw pass, and report ``None`` beforehand.
-        """
-        try:
-            label = pyglet.text.Label(
-                text,
-                font_name=self._ui_font_name(),
-                font_size=font_size,
-                weight="bold" if bold else "normal",
-                italic=italic,
-            )
-            width = float(label.content_width)
-            height = float(label.content_height)
-        except (AttributeError, TypeError, ValueError, RuntimeError):
-            return (float(font_size) * 0.5 * len(text), float(font_size) * 1.2)
-        return (width, height)
+    # Alias for introspection and testing
+    _cached_measure_text = staticmethod(_cached_measure_text)
 
 
 class PygletAudioBackend:
@@ -587,11 +1039,13 @@ class PygletAudioBackend:
 
     Uses a `pyglet.media.Player` per channel for playback, volume, and looping.
     Supports whole-file looping and seamless loop points (loop_start/loop_end).
+    Caches StaticSource for short SFX sounds to avoid repeated disk reads and decodes.
     """
 
     def __init__(self) -> None:
         self._players: dict[str, pyglet.media.Player] = {}
         self._loop_points: dict[str, tuple[float | None, float | None]] = {}
+        self._static_sources: dict[str, pyglet.media.Source] = {}
 
     def play(
         self,
@@ -613,13 +1067,32 @@ class PygletAudioBackend:
             except Exception:  # noqa: BLE001, S110
                 pass
 
-        try:
-            source = pyglet.media.load(path_str, streaming=True)
-        except Exception:  # noqa: BLE001
+        is_sfx = not loop or channel in ("sfx", "voice", "ui", "sound")
+        source: pyglet.media.Source | None = None
+
+        if is_sfx:
+            source = self._static_sources.get(path_str)
+            if source is None:
+                try:
+                    loaded = pyglet.media.load(path_str, streaming=False)
+                    static_src = (
+                        pyglet.media.StaticSource(loaded)
+                        if not isinstance(loaded, pyglet.media.StaticSource)
+                        else loaded
+                    )
+                    self._static_sources[path_str] = static_src
+                    source = static_src
+                except Exception:  # noqa: BLE001, S110
+                    pass
+
+        if source is None:
             try:
-                source = pyglet.media.load(path_str, streaming=False)
+                source = pyglet.media.load(path_str, streaming=True)
             except Exception:  # noqa: BLE001
-                return
+                try:
+                    source = pyglet.media.load(path_str, streaming=False)
+                except Exception:  # noqa: BLE001
+                    return
 
         player = pyglet.media.Player()
         player.queue(source)
@@ -698,6 +1171,7 @@ class PygletAudioBackend:
                 pass
         self._players.clear()
         self._loop_points.clear()
+        self._static_sources.clear()
 
 
 class PygletPlayer(pyglet.window.Window):
@@ -756,12 +1230,16 @@ class PygletPlayer(pyglet.window.Window):
             self.keymap = Keymap()
             self.overlay = UIOverlay(width=width, height=height)
 
+        # UI elements batch shared with PygletRenderer
+        self._ui_batch = Batch()
+
         self.renderer = PygletRenderer(
             width=width,
             height=height,
             asset_dir=asset_dir,
             scale_mode=scale_mode,
             window=self,
+            ui_batch=self._ui_batch,
         )
 
         # Narrative UI State
@@ -771,11 +1249,9 @@ class PygletPlayer(pyglet.window.Window):
         self.active_choice_prompt: ChoicePromptEvent | None = None
         self.is_finished: bool = False
 
-        # UI elements batch
-        self._ui_batch = Batch()
-
         # On-screen FPS debug overlay
         self.show_fps: bool = show_fps
+        self._last_fps_update: float = 0.0
         self._fps_label: Label = Label(
             "",
             font_name="sans-serif",
@@ -794,8 +1270,11 @@ class PygletPlayer(pyglet.window.Window):
         if not has_active_screen:
             self.advance_story()
 
-        # Schedule animation tick at 60 FPS
-        pyglet.clock.schedule_interval(self.tick, 1.0 / 60.0)
+        # Schedule animation tick at 60 FPS or uncapped
+        if self.uncapped:
+            pyglet.clock.schedule(self.tick)
+        else:
+            pyglet.clock.schedule_interval(self.tick, 1.0 / 60.0)
 
     def on_resize(self, width: int, height: int) -> None:
         """Keep the UI components laid out against the new window size."""
@@ -803,8 +1282,7 @@ class PygletPlayer(pyglet.window.Window):
         self.overlay.set_viewport(width, height)
         if self.session is not None and hasattr(self.session, "overlay"):
             self.session.overlay.set_viewport(width, height)
-        self.renderer.width = width
-        self.renderer.height = height
+        self.renderer.on_resize(width, height)
 
     def _sync_overlay(self) -> None:
         """Mirror current narrative state onto the UI components.
@@ -940,12 +1418,13 @@ class PygletPlayer(pyglet.window.Window):
 
     def run(self) -> None:
         """Run the interactive visual-novel main loop (blocks until window closes)."""
-        pyglet.app.run()
+        if self.uncapped:
+            pyglet.app.run(interval=0.0)
+        else:
+            pyglet.app.run()
 
     def on_draw(self) -> None:
         """Render frame: stage graphics followed by UI textbox, choices, screens, and FPS."""
-        self.clear()
-
         if self.session is not None:
             self.session.draw(self.renderer, self.width, self.height)
         else:
@@ -960,6 +1439,9 @@ class PygletPlayer(pyglet.window.Window):
                 is_finished=self.is_finished,
             )
 
+        # Flush batched UI elements
+        self.renderer.flush_ui()
+
         # 5. Render FPS counter
         if self.show_fps and self._fps_label is not None:
             self._draw_fps()
@@ -968,10 +1450,13 @@ class PygletPlayer(pyglet.window.Window):
         """Update and draw the on-screen FPS counter overlay."""
         if self._fps_label is None:
             return
-        fps = self.renderer.fps
-        fps_avg = self.renderer.fps_avg
-        frames = self.renderer.frame_count
-        self._fps_label.text = f"FPS: {fps:.1f}  (avg: {fps_avg:.1f}, frames: {frames})"
+        now = time.monotonic()
+        if not self._fps_label.text or (now - self._last_fps_update) >= 0.25:
+            fps = self.renderer.fps
+            fps_avg = self.renderer.fps_avg
+            frames = self.renderer.frame_count
+            self._fps_label.text = f"FPS: {fps:.1f}  (avg: {fps_avg:.1f}, frames: {frames})"
+            self._last_fps_update = now
         self._fps_label.draw()
 
     def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
@@ -987,11 +1472,6 @@ class PygletPlayer(pyglet.window.Window):
         flipped_y = self.height - y
         if self.session is not None:
             self.session.handle_input(InputAction.POINTER_MOVE, x=x, y=flipped_y)
-            if buttons & mouse.LEFT:
-                self.session.handle_input(InputAction.POINTER_CLICK, x=x, y=flipped_y)
-                self.active_choice_prompt = self.session.active_choice_prompt
-                self.is_finished = self.session.is_finished
-                self._sync_overlay()
 
     def on_mouse_press(self, x: int, y: int, button: int, modifiers: int) -> None:
         """Handle mouse clicks for advancement, screens, or choice selection."""

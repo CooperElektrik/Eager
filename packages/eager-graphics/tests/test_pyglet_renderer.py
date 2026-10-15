@@ -1,13 +1,18 @@
-"""Tests for PygletRenderer and PygletPlayer."""
-
 from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
 
 try:
     import pyglet
 
-    from eager_graphics.renderers.pyglet import PygletAssetResolver, PygletPlayer, PygletRenderer
+    from eager_graphics.renderers.pyglet import (
+        PygletAssetResolver,
+        PygletAudioBackend,
+        PygletPlayer,
+        PygletRenderer,
+    )
 
     PYGLET_AVAILABLE = True
 except ImportError:
@@ -379,9 +384,9 @@ def test_pyglet_player_run_and_input_handling(monkeypatch: pytest.MonkeyPatch) -
     assert not player.vsync
 
     run_called = []
-    monkeypatch.setattr(pyglet.app, "run", lambda: run_called.append(True))
+    monkeypatch.setattr(pyglet.app, "run", lambda *a, **kw: run_called.append(kw.get("interval", None)))
     player.run()
-    assert run_called == [True]
+    assert run_called == [0.0]
 
     try:
         # FPS overlay toggle
@@ -412,21 +417,199 @@ def test_pyglet_player_run_and_input_handling(monkeypatch: pytest.MonkeyPatch) -
         player.on_mouse_press(100, 100, pyglet.window.mouse.RIGHT, 0)
         assert game_menu_dispatched == [True]
 
-        # Mouse drag forwards pointer move and click
+        # Mouse drag forwards pointer move and does NOT spam synthetic click events
+        drag_moves = []
         drag_clicks = []
 
-        def spy_drag_click(action: InputAction, **kw: object) -> object:
-            if action == InputAction.POINTER_CLICK:
+        def spy_drag_events(action: InputAction, **kw: object) -> object:
+            if action == InputAction.POINTER_MOVE:
+                drag_moves.append(kw)
+            elif action == InputAction.POINTER_CLICK:
                 drag_clicks.append(kw)
             return orig_handle_input(action, **kw)
 
-        monkeypatch.setattr(session, "handle_input", spy_drag_click)
+        monkeypatch.setattr(session, "handle_input", spy_drag_events)
         player.on_mouse_drag(150, 200, 5, 5, pyglet.window.mouse.LEFT, 0)
+        assert len(drag_moves) == 1
+        assert drag_moves[0]["x"] == 150
+        assert drag_moves[0]["y"] == 720 - 200
+        assert len(drag_clicks) == 0
+
+        # Click press dispatches click
+        player.on_mouse_press(150, 200, pyglet.window.mouse.LEFT, 0)
         assert len(drag_clicks) == 1
         assert drag_clicks[0]["x"] == 150
         assert drag_clicks[0]["y"] == 720 - 200
 
     finally:
         player.close()
+
+
+def test_pyglet_stage_sprite_pooling(invisible_window: pyglet.window.Window) -> None:
+    """Verify stage sprites are pooled, reused across frames, and hidden when unused."""
+    renderer = PygletRenderer(scale_mode=ScaleMode.LETTERBOX, window=invisible_window)
+    compositor = StageCompositor(1920, 1080)
+    compositor.set_background("bg/castle", duration=0.0)
+    compositor.show_character("alice", "happy", position="left", duration=0.0)
+
+    # Frame 1: 2 items
+    renderer.render_compositor(compositor, invisible_window.width, invisible_window.height)
+    assert len(renderer._active_sprites) == 2
+    assert len(renderer._pooled_stage_sprites) == 2
+    bg_sp1, alice_sp1 = renderer._active_sprites
+    assert bg_sp1.visible is True
+    assert alice_sp1.visible is True
+
+    # Frame 2: Same 2 items should reuse the exact same Sprite instances
+    renderer.render_compositor(compositor, invisible_window.width, invisible_window.height)
+    assert len(renderer._active_sprites) == 2
+    assert renderer._active_sprites[0] is bg_sp1
+    assert renderer._active_sprites[1] is alice_sp1
+
+    # Frame 3: Add a 3rd character
+    compositor.show_character("bob", "serious", position="right", duration=0.0)
+    renderer.render_compositor(compositor, invisible_window.width, invisible_window.height)
+    assert len(renderer._active_sprites) == 3
+    assert len(renderer._pooled_stage_sprites) == 3
+    assert renderer._active_sprites[0] is bg_sp1
+    assert renderer._active_sprites[1] is alice_sp1
+
+    # Frame 4: Hide both characters -> only background remains
+    compositor.hide_character("alice", duration=0.0)
+    compositor.hide_character("bob", duration=0.0)
+    renderer.render_compositor(compositor, invisible_window.width, invisible_window.height)
+    assert len(renderer._active_sprites) == 1
+    assert renderer._active_sprites[0] is bg_sp1
+    # Unused pooled sprites should be hidden (visible=False)
+    assert len(renderer._pooled_stage_sprites) == 3
+    assert renderer._pooled_stage_sprites[1].visible is False
+    assert renderer._pooled_stage_sprites[2].visible is False
+
+
+def test_pyglet_ui_pooling_and_batching(invisible_window: pyglet.window.Window) -> None:
+    """Verify UI rectangles, boxes, gradient rects, labels, and sprites are pooled and batched."""
+    renderer = PygletRenderer(scale_mode=ScaleMode.LETTERBOX, window=invisible_window)
+
+    # Pass 1: Draw UI primitives
+    renderer.begin_frame()
+    renderer.draw_rect(10, 10, 200, 50, Color(0.1, 0.2, 0.3, 1.0), border_color=Color(1, 1, 1, 1), border_width=2.0)
+    renderer.draw_rect_outline(15, 15, 100, 40, Color(0.5, 0.5, 0.5, 1.0), line_width=1.0)
+    renderer.draw_gradient_rect(0, 0, 300, 80, Color(0.2, 0.2, 0.2, 1.0), Color(0.8, 0.8, 0.8, 1.0))
+    renderer.draw_text(20, 20, "Test Line 1", font_size=16)
+    renderer.draw_image("bg/castle", 0, 0, 100, 50)
+    renderer.flush_ui()
+
+    assert len(renderer._rect_pool) == 1
+    assert len(renderer._box_pool) == 2  # 1 from border, 1 from outline
+    assert len(renderer._grad_pool) == 1
+    assert len(renderer._label_pool) == 1
+    assert len(renderer._ui_sprite_pool) == 1
+
+    rect_inst = renderer._rect_pool[0]
+    label_inst = renderer._label_pool[0]
+    grad_inst = renderer._grad_pool[0][0]
+
+    # Pass 2: Re-render UI primitives -> should reuse pooled instances
+    renderer.begin_frame()
+    renderer.draw_rect(10, 10, 200, 50, Color(0.1, 0.2, 0.3, 1.0), border_color=Color(1, 1, 1, 1), border_width=2.0)
+    renderer.draw_rect_outline(15, 15, 100, 40, Color(0.5, 0.5, 0.5, 1.0), line_width=1.0)
+    renderer.draw_gradient_rect(0, 0, 300, 80, Color(0.2, 0.2, 0.2, 1.0), Color(0.8, 0.8, 0.8, 1.0))
+    renderer.draw_text(20, 20, "Test Line 1", font_size=16)
+    renderer.draw_image("bg/castle", 0, 0, 100, 50)
+    renderer.flush_ui()
+
+    assert renderer._rect_pool[0] is rect_inst
+    assert renderer._label_pool[0] is label_inst
+    assert renderer._grad_pool[0][0] is grad_inst
+
+    # Pass 3: Draw empty frame -> pooled UI elements should be hidden
+    renderer.begin_frame()
+    renderer.flush_ui()
+    assert rect_inst.visible is False
+    assert label_inst.visible is False
+    assert grad_inst.visible is False
+
+
+def test_pyglet_measure_text_caching(invisible_window: pyglet.window.Window) -> None:
+    """Verify that measure_text uses the LRU cache and avoids recalculations."""
+    renderer = PygletRenderer(window=invisible_window)
+    renderer._cached_measure_text.cache_clear()
+
+    info_before = renderer._cached_measure_text.cache_info()
+    assert info_before.hits == 0
+
+    w1, h1 = renderer.measure_text("Cached text string", font_size=16, bold=True)
+    assert w1 > 0
+    assert h1 > 0
+
+    w2, h2 = renderer.measure_text("Cached text string", font_size=16, bold=True)
+    assert w1 == w2
+    assert h1 == h2
+
+    info_after = renderer._cached_measure_text.cache_info()
+    assert info_after.hits >= 1
+
+
+def test_pyglet_letterbox_caching(invisible_window: pyglet.window.Window) -> None:
+    """Verify letterbox bars are computed and cached, avoiding recreation every frame."""
+    renderer = PygletRenderer(width=1600, height=720, scale_mode=ScaleMode.LETTERBOX, window=invisible_window)
+    compositor = StageCompositor(1920, 1080)
+    compositor.set_background("bg/castle", duration=0.0)
+
+    # 1600x720 window with 16:9 (1280x720) stage -> pillarbox bars with offset_x = (1600-1280)/2 = 160
+    renderer.render_compositor(compositor, 1600, 720)
+    assert len(renderer._letterbox_bars) == 2
+    left_bar = renderer._bar_left
+    right_bar = renderer._bar_right
+    assert left_bar is not None and left_bar.visible is True
+    assert right_bar is not None and right_bar.visible is True
+
+    # Frame 2: Same size -> letterbox bars must be the exact same instances
+    renderer.render_compositor(compositor, 1600, 720)
+    assert renderer._bar_left is left_bar
+    assert renderer._bar_right is right_bar
+
+
+def test_pyglet_audio_backend_static_source_caching(tmp_path: Path) -> None:
+    """Verify short sound effects (sfx) cache StaticSource instances."""
+    import struct
+    import wave
+
+    audio_dir = tmp_path / "audio"
+    audio_dir.mkdir(parents=True)
+    wav_file = audio_dir / "sfx.wav"
+    with wave.open(str(wav_file), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(44100)
+        wf.writeframes(struct.pack("<h", 0) * 4410)
+
+    backend = PygletAudioBackend()
+    try:
+        backend.play("sfx", str(wav_file), loop=False)
+        assert str(wav_file) in backend._static_sources
+        cached_source = backend._static_sources[str(wav_file)]
+
+        # Second play of the same sfx should reuse the cached source
+        backend.play("sfx", str(wav_file), loop=False)
+        assert backend._static_sources[str(wav_file)] is cached_source
+    finally:
+        backend.shutdown()
+        assert len(backend._static_sources) == 0
+
+
+def test_pyglet_asset_resolver_preindexing(tmp_path: Path) -> None:
+    """Verify asset directory is pre-indexed once on startup."""
+    asset_dir = tmp_path / "assets"
+    bg_dir = asset_dir / "bg"
+    bg_dir.mkdir(parents=True)
+    sample_file = bg_dir / "forest.png"
+    sample_file.write_bytes(b"dummy")
+
+    resolver = PygletAssetResolver(asset_dir=asset_dir)
+    assert "bg/forest.png" in resolver._asset_index
+    assert "bg/forest" in resolver._asset_index
+    assert "forest" in resolver._asset_index
+    assert resolver._asset_index["bg/forest"] == sample_file
 
 

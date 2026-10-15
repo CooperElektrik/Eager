@@ -637,10 +637,10 @@ class PygletBackendAdapter(BaseBackendAdapter):
         ui_state: UIState | None,
         choices: ChoicePromptEvent | None,
     ) -> None:
-        self.window.clear()
         self.renderer.render_compositor(comp, self.width, self.height)
         if overlay is not None and ui_state is not None:
             overlay.draw(self.renderer, ui_state, choices, is_finished=False)
+        self.renderer.flush_ui()
         self.window.flip()
 
     def teardown(self) -> None:
