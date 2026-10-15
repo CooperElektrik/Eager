@@ -67,26 +67,6 @@ def _cmd_check(args: argparse.Namespace) -> int:
         return 1
 
 
-def _cmd_edit(args: argparse.Namespace) -> int:
-    try:
-        from eager_script.editor import is_editor_available, run_editor
-    except ImportError:
-        sys.stderr.write(
-            "Error: The Eager-Script terminal editor requires 'blessed'.\n"
-            'Install it with: pip install "eager-script[editor]"\n'
-        )
-        return 1
-
-    if not is_editor_available():
-        sys.stderr.write(
-            "Error: The Eager-Script terminal editor requires 'blessed'.\n"
-            'Install it with: pip install "eager-script[editor]"\n'
-        )
-        return 1
-
-    return run_editor(filepath=args.file, read_only=args.read_only, plain=args.plain)
-
-
 def _cmd_graph(args: argparse.Namespace) -> int:
     path = Path(args.file)
     if not path.exists():
@@ -195,28 +175,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Enable Eager-SP validation mode",
     )
 
-    # edit subcommand
-    edit_cmd = subparsers.add_parser(
-        "edit",
-        help="Open screenplay in interactive terminal text editor (requires blessed)",
-    )
-    edit_cmd.add_argument(
-        "file",
-        nargs="?",
-        default=None,
-        help="Path to .es screenplay file to edit (optional)",
-    )
-    edit_cmd.add_argument(
-        "--read-only",
-        action="store_true",
-        help="Open file in read-only mode",
-    )
-    edit_cmd.add_argument(
-        "--plain",
-        action="store_true",
-        help="Open editor in Eager-SP mode",
-    )
-
     return parser
 
 
@@ -230,8 +188,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_graph(args)
     elif args.command == "check":
         return _cmd_check(args)
-    elif args.command == "edit":
-        return _cmd_edit(args)
     else:
         parser.print_help()
         return 0

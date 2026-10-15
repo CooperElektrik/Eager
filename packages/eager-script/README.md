@@ -12,18 +12,11 @@ It parses screenplay text into an abstract syntax tree (AST) and directed scene 
 - Static validation for broken links, duplicate labels, dead code, and loops
 - Exports to JSON, Graphviz DOT, and Mermaid
 - Eager-SP mode for branching novels without engine markup
-- Optional terminal text editor with live syntax highlighting and diagnostics
 
 ## Installation
 
 ```bash
 pip install eager-script
-```
-
-To install the optional terminal editor:
-
-```bash
-pip install "eager-script[editor]"
 ```
 
 ## DSL Example
@@ -103,9 +96,6 @@ eager-script parse script.es -o script.json
 eager-script graph script.es -o graph.json
 eager-script graph script.es --format dot -o story.dot
 eager-script graph script.es --format mermaid
-
-# Open terminal editor
-eager-script edit script.es
 ```
 
 ## Documentation
@@ -115,7 +105,6 @@ Detailed guides are in [docs/](docs/):
 - [DSL Syntax Reference](docs/syntax.md): Syntax rules, Eager-SP mode, escaping
 - [Directed Scene Graph](docs/scene-graph.md): Graph model, queries, DOT and Mermaid exports
 - [Static Validation](docs/validation.md): Checks, errors, warnings
-- [Terminal Editor](docs/editor.md): Editor controls, keybindings
 - [API Reference](docs/api-reference.md): AST nodes, functions, exceptions
 - [Benchmarks](docs/benchmarks.md): Performance numbers across script sizes
 

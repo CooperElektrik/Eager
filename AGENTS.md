@@ -79,7 +79,7 @@ The main narrative path is:
 - Script expressions must use the whitelist-based evaluator. Do not replace it with Python `eval` or broaden allowed AST operations casually.
 - Conditional `@if` blocks are lowered by the graph-building layer into flat conditional/local-jump nodes. Preserve the flat beat-index model used by the VM.
 - Inline choice blocks (indented content beneath a `?` option, written without a `(target)`) are lowered by the graph builder into **anonymous scenes** with generated ids (`<scene_id>__anon_<line>`), marked with `SceneNode.is_anonymous`. The option's target is rewritten to that scene id, and the anonymous body ends in an implicit return.
-- If a language feature changes, consider parser/AST serialization, graph construction, validation, editor highlighting, tests, and syntax/API documentation—not only the parser branch.
+- If a language feature changes, consider parser/AST serialization, graph construction, validation, tests, and syntax/API documentation—not only the parser branch.
 
 ### Runtime and state
 
@@ -146,13 +146,13 @@ ruff check packages/
 (cd packages/eager-graphics && basedpyright)
 ```
 
-Optional-dependency tests may be skipped when their backend/editor libraries are unavailable. The workspace development setup is intended to install the full test toolchain.
+Optional-dependency tests may be skipped when their backend libraries are unavailable. The workspace development setup is intended to install the full test toolchain.
 
 Useful CLI entry points include `eager-script check`, `eager-script graph`, `eager play`, `eager inspect`, `eager test-run`, `eager i18n extract` / `check`, and `eager play --backend` / `run` / `check` / `build` / `render`. Use each command's `--help` for its current arguments rather than maintaining an exhaustive command list here.
 
 ## 8. Common extension paths
 
-- **New DSL syntax:** add or modify AST/parser behavior; update graph lowering or edges if needed; validate it; cover it with tests; update the relevant syntax/API docs and editor highlighting.
+- **New DSL syntax:** add or modify AST/parser behavior; update graph lowering or edges if needed; validate it; cover it with tests; update the relevant syntax/API docs.
 - **New script hook:** register the hook through `StageDirector`, parse its arguments with `eager_script.parse_hook_args`, and test its effect through event dispatch and presentation state.
 - **New narrative event:** define the event in `eager_core.events`, update the `StoryEvent` union, emit it from the VM, and handle it at every relevant dispatcher/session/player/presentation boundary.
 - **New renderer backend:** implement the stage and UI protocols as required, keep imports optional/lazy, wire backend selection and player/audio integration, and test protocol behavior without requiring a real window where possible.
