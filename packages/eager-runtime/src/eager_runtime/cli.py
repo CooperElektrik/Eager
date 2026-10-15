@@ -118,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
     play_p.add_argument("--no-color", action="store_true", help="Disable colored terminal output.")
     play_p.add_argument(
         "--backend",
-        choices=["terminal", "pyglet", "pil", "raylib"],
+        choices=["terminal", "pyglet", "pil"],
         default="terminal",
         help="Player backend (default: terminal). Graphical backends require eager-graphics.",
     )
@@ -197,7 +197,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run project in directory containing game.toml or script.",
     )
     run_p.add_argument("project_dir", nargs="?", default=".", help="Project directory (default: current directory)")
-    run_p.add_argument("--backend", choices=["pyglet", "pil", "raylib"], default="pil", help="Rendering backend")
+    run_p.add_argument("--backend", choices=["pyglet", "pil"], default="pil", help="Rendering backend")
     run_p.add_argument("--no-audio", action="store_true", help="Disable audio playback (use NullAudioBackend).")
     run_p.add_argument("--watch", "--hot-reload", dest="watch", action="store_true", help="Automatically hot-reload when script changes on disk.")
     run_p.set_defaults(func=_cmd_run)
@@ -397,13 +397,6 @@ def _create_audio_backend(backend: str, *, no_audio: bool = False) -> Any:
             return PygletAudioBackend()
         except Exception:  # noqa: BLE001
             return NullAudioBackend()
-    if backend == "raylib":
-        try:
-            from eager_graphics.renderers.raylib import RaylibAudioBackend
-
-            return RaylibAudioBackend()
-        except Exception:  # noqa: BLE001
-            return NullAudioBackend()
     if backend == "pil":
         try:
             from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
@@ -497,15 +490,6 @@ def _cmd_play(args: argparse.Namespace) -> int:
                 "Install it with: pip install eager-graphics[software]\n"
             )
             return 1
-    elif args.backend == "raylib":
-        try:
-            import pyray  # noqa: F401
-        except ImportError:
-            sys.stderr.write(
-                "Error: Raylib (pyray) is required for --backend raylib.\n"
-                "Install it with: pip install eager-graphics[raylib]\n"
-            )
-            return 1
 
     from eager_runtime.session import GameSession
 
@@ -582,23 +566,10 @@ def _cmd_render(args: argparse.Namespace) -> int:
 def _run_interactive_player(session: Any, *, backend: str) -> None:
     """Run the interactive player loop for the given backend.
 
-    All interactive players (PygletPlayer, RaylibPlayer, and PILPlayer) share a
+    All interactive players (PygletPlayer and PILPlayer) share a
     common interface and run their own event loops via ``run()``.
     """
     asset_dir = str(session.asset_dir) if getattr(session, "asset_dir", None) else None
-
-    if backend == "raylib":
-        from eager_graphics.renderers.raylib import RaylibPlayer
-
-        player = RaylibPlayer(
-            session=session,
-            width=1280,
-            height=720,
-            title="Eager Visual Novel (Raylib)",
-            asset_dir=asset_dir,
-        )
-        player.run()
-        return
 
     if backend == "pil":
         from eager_graphics.renderers.pil import PILPlayer

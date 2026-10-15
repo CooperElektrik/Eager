@@ -20,7 +20,6 @@ dev-dependencies = [
     "ruff>=0.4.0",
     "pyglet>=2.0",
     "pillow>=10.0",
-    "raylib>=6.0.0",
     "miniaudio>=0.12.4",
 ]
 

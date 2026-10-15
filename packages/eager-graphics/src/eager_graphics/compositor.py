@@ -766,7 +766,7 @@ class StageCompositor:
         """Render a human-readable, multi-line debug report of the compositor state.
 
         Suitable for printing to stdout or drawing into an on-screen text overlay
-        in any renderer (Pyglet label, Raylib ``draw_text``, etc.).
+        in any renderer (e.g. a Pyglet label).
 
         Pass ``include_layers=False`` to omit the per-layer element listing when
         you only want a compact status line (shake + timelines).

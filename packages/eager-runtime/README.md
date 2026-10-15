@@ -6,7 +6,7 @@ Eager is a render-agnostic story virtual machine (VM). It handles execution flow
 
 ## Features
 
-- **Headless Runtime**: Render-agnostic story VM designed to drive any frontend (Terminal, Pygame, Godot, Web).
+- **Headless Runtime**: Render-agnostic story VM designed to drive any frontend (e.g. the built-in terminal player, or the graphics backends in eager-graphics).
 - **Deterministic State & Save/Load**: Serializable snapshot model for instant JSON save states.
 - **Time-Travel Rollback**: Effortless step-by-step history rewind.
 - **Engine Hooks**: Typed dispatcher connecting screenplay `~` markup to arbitrary game callbacks.

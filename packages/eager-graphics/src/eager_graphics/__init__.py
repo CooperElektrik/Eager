@@ -146,10 +146,9 @@ from eager_graphics.renderers.null import NullRenderer  # noqa: F401
 __all__.append("NullRenderer")
 __all__.append("FrameClock")
 
-# Optional backends (Pyglet, PIL, Raylib) are NOT eagerly imported here to
-# avoid side effects — e.g. Pyglet initialises GTK/EGL on Wayland, which
-# conflicts with Raylib's GL context creation.  They are resolved lazily
-# via renderers.__getattr__ when accessed.
+# Optional backends (Pyglet, PIL) are NOT eagerly imported here to
+# avoid side effects — e.g. Pyglet initialises GTK/EGL on Wayland.
+# They are resolved lazily via renderers.__getattr__ when accessed.
 __all__.extend([
     "PILAssetResolver",
     "PILPlayer",
@@ -157,9 +156,6 @@ __all__.extend([
     "PygletAssetResolver",
     "PygletPlayer",
     "PygletRenderer",
-    "RaylibAssetResolver",
-    "RaylibPlayer",
-    "RaylibRenderer",
 ])
 
 

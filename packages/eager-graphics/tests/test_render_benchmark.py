@@ -197,11 +197,11 @@ class TestFormatting:
 
     def test_format_summary_table(self) -> None:
         m1 = BenchmarkMetrics.compute("null", "static", [10_000_000] * 50)
-        m2 = BenchmarkMetrics.compute("raylib", "static", [2_000_000] * 50)
+        m2 = BenchmarkMetrics.compute("pyglet", "static", [2_000_000] * 50)
         table = format_summary_table([m1, m2])
 
         assert "null" in table
-        assert "raylib" in table
+        assert "pyglet" in table
         assert "static" in table
         assert "Avg FPS" in table
         assert "1% Low" in table

@@ -1,7 +1,7 @@
 """Comprehensive unbounded-FPS benchmark suite for Eager-Graphics rendering backends.
 
-Benchmarks each rendering backend (NullRenderer, PILRenderer, PygletRenderer,
-RaylibRenderer) across realistic visual novel workloads (static scene, dynamic
+Benchmarks each rendering backend (NullRenderer, PILRenderer, PygletRenderer)
+across realistic visual novel workloads (static scene, dynamic
 animations, scene crossfades, branching choice menus, text reveal progression,
 and heavy multi-character stress scenes) for 5k frames at unbounded FPS.
 
@@ -17,8 +17,8 @@ Metrics recorded:
 Architecture:
   When benchmarking multiple backends or using `--backend all`, each backend is
   executed in an isolated worker subprocess.  This prevents OpenGL/EGL/GLFW
-  driver collisions (e.g. Pyglet's GTK/EGL conflicting with Raylib's GLFW context
-  on Wayland) and guarantees clean memory and texture caches for every run.
+  driver collisions (e.g. Pyglet's GTK/EGL context on Wayland clashing with
+  another backend) and guarantees clean memory and texture caches for every run.
 
 Usage::
 
@@ -26,10 +26,10 @@ Usage::
     python packages/eager-graphics/benchmarks/render_benchmark.py
 
     # Run a specific backend and scenario for 5000 frames
-    python packages/eager-graphics/benchmarks/render_benchmark.py -b raylib -s static -n 5000
+    python packages/eager-graphics/benchmarks/render_benchmark.py -b pyglet -s static -n 5000
 
-    # Compare Raylib vs Pyglet on dynamic scene
-    python packages/eager-graphics/benchmarks/render_benchmark.py -b raylib -b pyglet -s dynamic
+    # Compare Pyglet vs PIL on dynamic scene
+    python packages/eager-graphics/benchmarks/render_benchmark.py -b pyglet -b pil -s dynamic
 
     # Output JSON or Markdown
     python packages/eager-graphics/benchmarks/render_benchmark.py --markdown
@@ -650,59 +650,6 @@ class PygletBackendAdapter(BaseBackendAdapter):
             pass
 
 
-class RaylibBackendAdapter(BaseBackendAdapter):
-    name = "raylib"
-    width: int = 1280
-    height: int = 720
-    pyray: Any = None
-    renderer: Any = None
-
-    def initialize(self, width: int, height: int, asset_dir: Path | None) -> None:
-        import pyray
-
-        from eager_graphics.renderers.raylib import RaylibRenderer
-
-        self.pyray = pyray
-        self.width = width
-        self.height = height
-
-        log_warning = getattr(pyray, "LOG_WARNING", 3)
-        win_hidden = getattr(pyray, "FLAG_WINDOW_HIDDEN", 128)
-        pyray.set_trace_log_level(log_warning)
-        pyray.set_config_flags(win_hidden)
-        pyray.init_window(width, height, "eager_benchmark_raylib")
-        pyray.set_target_fps(0)  # Uncapped / unbounded FPS
-
-        self.renderer = RaylibRenderer(
-            width=width,
-            height=height,
-            asset_dir=asset_dir,
-            scale_mode=ScaleMode.LETTERBOX,
-        )
-
-    def render_frame(
-        self,
-        comp: StageCompositor,
-        overlay: UIOverlay | None,
-        ui_state: UIState | None,
-        choices: ChoicePromptEvent | None,
-    ) -> None:
-        self.pyray.begin_drawing()
-        self.pyray.clear_background(self.pyray.BLACK)
-        self.renderer.render_compositor(comp, self.width, self.height)
-        if overlay is not None and ui_state is not None:
-            overlay.draw(self.renderer, ui_state, choices, is_finished=False)
-        self.pyray.end_drawing()
-
-    def teardown(self) -> None:
-        try:
-            if hasattr(self.renderer, "asset_resolver"):
-                self.renderer.asset_resolver.unload_all()
-            self.pyray.close_window()
-        except Exception:  # noqa: BLE001, S110
-            pass
-
-
 def get_backend_adapter(backend_name: str) -> BaseBackendAdapter:
     """Instantiate adapter for backend, raising ImportError if backend library is missing."""
     match backend_name.lower():
@@ -722,15 +669,8 @@ def get_backend_adapter(backend_name: str) -> BaseBackendAdapter:
                 msg = f"Pyglet backend is not available: {exc}"
                 raise ImportError(msg) from exc
             return PygletBackendAdapter()
-        case "raylib":
-            try:
-                import pyray  # noqa: F401
-            except ImportError as exc:
-                msg = f"Raylib backend is not available: {exc}"
-                raise ImportError(msg) from exc
-            return RaylibBackendAdapter()
         case _:
-            msg = f"Unknown backend: {backend_name!r}. Available: null, pil, pyglet, raylib"
+            msg = f"Unknown backend: {backend_name!r}. Available: null, pil, pyglet"
             raise ValueError(msg)
 
 
@@ -743,7 +683,7 @@ def check_backend_availability(backend_name: str) -> tuple[bool, str]:
         return False, str(exc)
 
 
-ALL_BACKENDS = ["null", "pil", "pyglet", "raylib"]
+ALL_BACKENDS = ["null", "pil", "pyglet"]
 
 
 # --------------------------------------------------------------------------- #

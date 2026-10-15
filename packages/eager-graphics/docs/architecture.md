@@ -45,8 +45,8 @@ Eager-Graphics is a **headless, renderer-agnostic, resolution-independent Graphi
                              list[RenderItem] ──────────────────────────►  same RenderBackend
                                     │                                                   ▲
                     ┌─────────────────┼───────────────────────┼───────────────────────┘
-                    ▼                 ▼                       ▼                      ▼
-              Pygame Backend     Raylib Backend          Godot Engine            Web / Canvas
+                    ▼                 ▼                       ▼
+              NullRenderer        PILRenderer            PygletRenderer
 ```
 
 ### Two layers, two draw-command styles
@@ -88,7 +88,7 @@ origin**. Backends whose native origin differs — Pyglet uses bottom-left — f
 `y` when issuing primitives, so components never need to know which backend they
 are talking to.
 
-Players (`PILPlayer`, `PygletPlayer`, `RaylibPlayer`) are thin window shells over a
+Players (`PILPlayer`, `PygletPlayer`) are thin window shells over a
 `GameSession`: they forward window input to `session.handle_input(...)` and render
 via `session.draw(...)`, which drives both the stage compositor and the
 `UIOverlay`.  The players hold no narrative state of their own — advancement,

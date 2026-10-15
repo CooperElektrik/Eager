@@ -67,7 +67,7 @@ class RenderItem:
 
 
 class RenderBackend(Protocol):
-    """Protocol implemented by rendering frontends (Pygame, Raylib, Godot, Web Canvas)."""
+    """Protocol implemented by the rendering backends (Null, PIL, Pyglet)."""
 
     def begin_frame(self) -> None:
         """Invoked at the beginning of each frame render pass."""

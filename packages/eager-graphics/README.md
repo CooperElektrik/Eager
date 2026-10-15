@@ -2,7 +2,7 @@
 
 > A lightweight, renderer-agnostic, resolution-independent Graphics & Stage Compositor with pluggable backends for the Eager narrative engine.
 
-Eager-Graphics is the **presentation layer** of the Eager visual novel engine. It provides stage compositing, scene layers, tweens and camera shake, UI overlays, dialogue boxes, choice menus, screens, NVL mode, and pluggable backends (Null, PIL, Pyglet, Raylib). Audio playback is driven through engine hooks, but the mixer itself lives in the sibling leaf package [`eager-core`](../eager-core/README.md).
+Eager-Graphics is the **presentation layer** of the Eager visual novel engine. It provides stage compositing, scene layers, tweens and camera shake, UI overlays, dialogue boxes, choice menus, screens, NVL mode, and pluggable backends (Null, PIL, Pyglet). Audio playback is driven through engine hooks, but the mixer itself lives in the sibling leaf package [`eager-core`](../eager-core/README.md).
 
 ---
 
@@ -11,12 +11,11 @@ Eager-Graphics is the **presentation layer** of the Eager visual novel engine. I
 - **Three Pluggable Backends**:
   - `NullRenderer`: Zero-dependency, headless frame recording for automated CI and tests.
   - `PILRenderer`: High-performance software rendering with LRU texture caching and direct-blit optimizations.
-  - `PygletRenderer` / `RaylibRenderer`: Hardware-accelerated OpenGL 2D backends for high-framerate visual novel gaming.
+  - `PygletRenderer`: Hardware-accelerated OpenGL 2D backend for high-framerate visual novel gaming.
 - **Stage Compositor & Transitions**: Backgrounds, character sprites, z-ordering, viewport letterboxing/scaling, fades, and camera shake.
 - **Renderer-Agnostic UI Chrome**: Bottom-docked dialogue boxes, speaker nameplates, side images, branch selection menus, and full-screen NVL novel mode.
 - **Pluggable Audio Backends**:
   - `PygletAudioBackend`: Per-channel streaming and seamless looping via `pyglet.media.Player`.
-  - `RaylibAudioBackend`: Low-level music stream playback and loop points via Raylib audio device.
   - `MiniaudioAudioBackend`: Low-latency PCM soft-mixing engine and loop points via `miniaudio` (`pip install eager-graphics[audio]`).
   - `NullAudioBackend`: Headless no-op audio backend recording calls for CI and tests.
 - **Audio Hooks & Voice**: `~ play` / `~ stop` / `~ volume` with seamless intro/loop points (`loop_start`, `loop_end`), automatic dialogue voice playback and auto-stop, and skip-mode sound/voice suppression. Driven by `AudioMixer` from [`eager-core`](../eager-core/README.md).
@@ -24,7 +23,7 @@ Eager-Graphics is the **presentation layer** of the Eager visual novel engine. I
 - **CLI Commands (`eager`)**:
   - `eager new <project_name> [--demo]` — Scaffolds a new visual novel project with starter assets (or full showcase with `--demo`).
   - `eager run [project_dir]` — Runs a project directory using game.toml configuration.
-  - `eager play <script.es>` — Launches an interactive player (`--backend terminal|pil|pyglet|raylib`, `--warp scene_id`).
+  - `eager play <script.es>` — Launches an interactive player (`--backend terminal|pil|pyglet`, `--warp scene_id`).
   - `eager check <script_or_project>` — Validates script logic and graph integrity.
   - `eager build [project_dir]` — Bundles project into a standalone distribution archive.
   - `eager render <script.es>` — Headless render pass to completion.

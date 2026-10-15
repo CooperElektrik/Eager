@@ -1,4 +1,4 @@
-"""Tests for PygletAudioBackend, RaylibAudioBackend, and MiniaudioAudioBackend."""
+"""Tests for PygletAudioBackend and MiniaudioAudioBackend."""
 
 import os
 import tempfile
@@ -40,25 +40,6 @@ class TestHardwareAudioBackends(unittest.TestCase):
         backend.update(0.1)
 
         backend.pause("music")
-        backend.resume("music")
-
-        backend.stop("music")
-        self.assertFalse(backend.is_playing("music"))
-
-        backend.shutdown()
-
-    def test_raylib_audio_backend(self) -> None:
-        pytest.importorskip("pyray")
-        from eager_graphics.renderers.raylib import RaylibAudioBackend
-
-        backend = RaylibAudioBackend()
-        backend.play("music", self.wav_path, loop=True, volume=0.8, loop_start=0.1, loop_end=0.4)
-
-        backend.set_volume("music", 0.5)
-        backend.update(0.1)
-
-        backend.pause("music")
-        self.assertFalse(backend.is_playing("music"))
         backend.resume("music")
 
         backend.stop("music")

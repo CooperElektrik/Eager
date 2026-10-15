@@ -126,7 +126,7 @@ class PygletAssetResolver:
         self._cache[asset_id] = tex
         return tex
 
-    # Alias matching PIL and Raylib resolvers
+    # Alias matching the PIL resolver
     get_image = get_texture
 
     def _generate_placeholder(

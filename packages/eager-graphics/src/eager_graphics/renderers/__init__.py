@@ -3,13 +3,12 @@
 The ``NullRenderer`` is pure-Python and dependency-free, so it is always
 available — even when no graphical backend (e.g. Pyglet) is installed.
 
-Optional backends (Pyglet, PIL, Raylib) are **not** eagerly imported here
+Optional backends (Pyglet, PIL) are **not** eagerly imported here
 because doing so can have global side effects (e.g. Pyglet initialises GTK/EGL
-on Wayland, which conflicts with Raylib's own GL context creation).
-Instead, they are resolved lazily via ``__getattr__`` when accessed.
-This means importing a specific renderer module — e.g.
-``from eager_graphics.renderers.raylib import RaylibRenderer`` — will **not**
-trigger an import of the pyglet or PIL backend modules.
+on Wayland). Instead, they are resolved lazily via ``__getattr__`` when
+accessed. This means importing a specific renderer module — e.g.
+``from eager_graphics.renderers.pil import PILRenderer`` — will **not**
+trigger an import of the pyglet backend module.
 """
 
 from __future__ import annotations
@@ -30,10 +29,6 @@ __all__ = [
     "PygletAudioBackend",
     "PygletPlayer",
     "PygletRenderer",
-    "RaylibAssetResolver",
-    "RaylibAudioBackend",
-    "RaylibPlayer",
-    "RaylibRenderer",
 ]
 
 
@@ -46,12 +41,6 @@ if TYPE_CHECKING:
         PygletAudioBackend,
         PygletPlayer,
         PygletRenderer,
-    )
-    from eager_graphics.renderers.raylib import (
-        RaylibAssetResolver,
-        RaylibAudioBackend,
-        RaylibPlayer,
-        RaylibRenderer,
     )
 
 
@@ -66,10 +55,6 @@ _LAZY: dict[str, tuple[str, str]] = {
     "PILAssetResolver": ("eager_graphics.renderers.pil", "PILAssetResolver"),
     "PILPlayer": ("eager_graphics.renderers.pil", "PILPlayer"),
     "PILRenderer": ("eager_graphics.renderers.pil", "PILRenderer"),
-    "RaylibAssetResolver": ("eager_graphics.renderers.raylib", "RaylibAssetResolver"),
-    "RaylibAudioBackend": ("eager_graphics.renderers.raylib", "RaylibAudioBackend"),
-    "RaylibPlayer": ("eager_graphics.renderers.raylib", "RaylibPlayer"),
-    "RaylibRenderer": ("eager_graphics.renderers.raylib", "RaylibRenderer"),
 }
 
 _CACHE: dict[str, object] = {}
@@ -80,7 +65,7 @@ def __getattr__(name: str) -> object:
 
     This avoids importing Pyglet (which has global side effects such as
     initialising GTK/EGL on Wayland) when the caller only wants a different
-    backend like Raylib or PIL.
+    backend like PIL.
     """
     if name in _LAZY:
         if name not in _CACHE:

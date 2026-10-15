@@ -53,13 +53,9 @@ hardware = [
 software = [
     "Pillow>=10.0.0",
 ]
-raylib = [
-    "raylib>=6.0.0",
-]
 all = [
     "pyglet>=2.0.0",
     "Pillow>=10.0.0",
-    "raylib>=6.0.0",
     "miniaudio>=0.12.4",
 ]
 audio = [
