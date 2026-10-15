@@ -20,6 +20,7 @@ class Button:
     action: Callable[[], Any] | None = None
     enabled: bool = True
     hovered: bool = False
+    voice: str | None = None
 
     def hit_test(self, x: float, y: float) -> bool:
         """Return True if (x, y) coordinates fall within the button boundary."""

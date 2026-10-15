@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from eager_graphics.protocol import UIDrawBackend
@@ -328,11 +329,31 @@ class HistoryScreen(Screen):
         super().__init__("history")
         self.session: Any = None
         self.scroll_offset: int = 0
+        self._last_built_scroll_offset: int | None = None
+        self._last_built_entry_count: int | None = None
 
     def on_enter(self, session: Any) -> None:
         super().on_enter(session)
         self.session = session
         self.scroll_offset = 0
+        self._rebuild_buttons()
+
+    def _make_voice_action(self, voice_path: str) -> Callable[[], None]:
+        return lambda: self.replay_voice(voice_path)
+
+    def replay_voice(self, voice: str) -> None:
+        """Replay recorded voice audio for a backlog entry."""
+        if not voice:
+            return
+        if hasattr(self.session, "play_voice") and callable(self.session.play_voice):
+            self.session.play_voice(voice)
+            return
+
+        audio = getattr(self.session, "audio", None) or getattr(getattr(self.session, "director", None), "audio", None)
+        if audio is not None and hasattr(audio, "play") and callable(audio.play):
+            audio.play("voice", str(voice), loop=False)
+
+    def _rebuild_buttons(self) -> None:
         self.buttons.clear()
 
         # Up, Down, Back buttons
@@ -354,21 +375,61 @@ class HistoryScreen(Screen):
             Button(
                 Rect(100.0, 620.0, 140.0, 40.0),
                 "Back",
-                action=lambda: getattr(session, "screens", None) and session.screens.hide(session),
+                action=lambda: getattr(self.session, "screens", None) and self.session.screens.hide(self.session),
             )
         )
+
+        backlog = getattr(self.session, "backlog", None)
+        entries = backlog.entries if backlog else []
+        self._last_built_scroll_offset = self.scroll_offset
+        self._last_built_entry_count = len(entries)
+
+        if not entries:
+            return
+
+        # Display up to 7 most recent entries with scroll offset
+        visible_count = 7
+        end_idx = len(entries) - self.scroll_offset
+        start_idx = max(0, end_idx - visible_count)
+        displayed_slice = entries[start_idx:end_idx]
+
+        curr_y = 110.0
+        for entry in displayed_slice:
+            voice = getattr(entry, "voice", None)
+            if voice:
+                voice_str = str(voice)
+                self.buttons.append(
+                    Button(
+                        Rect(52.0, curr_y - 6.0, 36.0, 28.0),
+                        "🔊",
+                        action=self._make_voice_action(voice_str),
+                        voice=voice_str,
+                    )
+                )
+            curr_y += 65.0
 
     def scroll_up(self) -> None:
         backlog = getattr(self.session, "backlog", None)
         max_entries = len(backlog.entries) if backlog else 0
         if self.scroll_offset + 5 < max_entries:
             self.scroll_offset += 1
+            self._rebuild_buttons()
 
     def scroll_down(self) -> None:
         if self.scroll_offset > 0:
             self.scroll_offset -= 1
+            self._rebuild_buttons()
 
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
+        backlog = getattr(self.session, "backlog", None)
+        entries = backlog.entries if backlog else []
+        if (
+            not self.buttons
+            or self._last_built_scroll_offset != self.scroll_offset
+            or self._last_built_entry_count != len(entries)
+        ):
+            self._rebuild_buttons()
+
         backend.draw_rect(0, 0, width, height, self.theme.bg_color)
         backend.draw_text(
             100.0,
@@ -379,9 +440,6 @@ class HistoryScreen(Screen):
             anchor_x=TextAnchor.LEFT,
             anchor_y=TextAnchor.TOP,
         )
-
-        backlog = getattr(self.session, "backlog", None)
-        entries = backlog.entries if backlog else []
 
         if not entries:
             backend.draw_text(

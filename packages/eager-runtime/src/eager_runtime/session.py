@@ -231,6 +231,11 @@ class GameSession:
         save_dir = get_default_save_dir(self.script_path.stem if self.script_path else "default")
         self.preferences.save(save_dir / "preferences.json")
 
+    def play_voice(self, voice_path: str) -> None:
+        """Replay a voice clip on the voice channel."""
+        if hasattr(self, "audio") and self.audio is not None:
+            self.audio.play("voice", str(voice_path), loop=False)
+
     def _capture_checkpoint(self) -> Checkpoint:
         """Generate a unified checkpoint of the current session state."""
         input_data = (

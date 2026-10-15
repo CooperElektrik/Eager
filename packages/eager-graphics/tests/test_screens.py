@@ -306,6 +306,97 @@ height = 720
         self.assertIn("Subtitle Line", drawn_texts)
         self.assertIn("Snippet Line", drawn_texts)
 
+    def test_history_screen_voice_replay_speaker_buttons(self):
+        from eager_graphics.screens import HistoryScreen
+
+        class DummyEntry:
+            def __init__(self, speaker, text, voice=None):
+                self.speaker = speaker
+                self.text = text
+                self.voice = voice
+
+        class DummyBacklog:
+            def __init__(self, entries):
+                self.entries = entries
+
+        class MockAudio:
+            def __init__(self):
+                self.played = []
+
+            def play(self, channel, asset_path, *, loop=False, **kwargs):
+                self.played.append((channel, str(asset_path), loop))
+
+        class DummySession:
+            def __init__(self, entries):
+                self.backlog = DummyBacklog(entries)
+                self.screens = ScreenManager()
+                self.audio = MockAudio()
+
+        entries = [
+            DummyEntry("Alice", "Hello without voice", voice=None),
+            DummyEntry("Bob", "Voice clip 1", voice="bob_01.ogg"),
+            DummyEntry("Alice", "Voice clip 2", voice="alice_02.ogg"),
+            DummyEntry(None, "Narration voice", voice="narrator_01.ogg"),
+        ]
+        session = DummySession(entries)
+        history_screen = HistoryScreen()
+        session.screens.register(history_screen)
+        session.screens.show("history", session)
+
+        # Check buttons: Up, Down, Back + 3 speaker buttons for the 3 entries with voice
+        speaker_buttons = [b for b in history_screen.buttons if b.text == "🔊"]
+        self.assertEqual(len(speaker_buttons), 3)
+        self.assertEqual(speaker_buttons[0].voice, "bob_01.ogg")
+        self.assertEqual(speaker_buttons[1].voice, "alice_02.ogg")
+        self.assertEqual(speaker_buttons[2].voice, "narrator_01.ogg")
+
+        # Test hover state
+        history_screen.handle_mouse_move(speaker_buttons[0].rect.x + 2, speaker_buttons[0].rect.y + 2)
+        self.assertTrue(speaker_buttons[0].hovered)
+
+        # Click the first speaker button to replay voice
+        clicked = history_screen.handle_mouse_click(speaker_buttons[0].rect.x + 2, speaker_buttons[0].rect.y + 2)
+        self.assertTrue(clicked)
+        self.assertEqual(session.audio.played, [("voice", "bob_01.ogg", False)])
+
+        # Click the second speaker button
+        clicked2 = history_screen.handle_mouse_click(speaker_buttons[1].rect.x + 2, speaker_buttons[1].rect.y + 2)
+        self.assertTrue(clicked2)
+        self.assertEqual(session.audio.played[-1], ("voice", "alice_02.ogg", False))
+
+        # Test draw with mock backend
+        backend = MockUIDrawBackend()
+        history_screen.draw(backend, 1280, 720)
+        speaker_draws = [t for t in backend.texts if t[0] == "🔊"]
+        self.assertEqual(len(speaker_draws), 3)
+
+        # Test session.play_voice delegation if play_voice is provided on session
+        session.play_voice_calls = []
+        session.play_voice = lambda v: session.play_voice_calls.append(v)
+        history_screen.replay_voice("custom_voice.ogg")
+        self.assertEqual(session.play_voice_calls, ["custom_voice.ogg"])
+
+        # Scrolling test with voice buttons
+        many_entries = [
+            DummyEntry("Char", f"Line {i}", voice=f"voice_{i}.ogg" if i % 2 == 0 else None)
+            for i in range(15)
+        ]
+        scroll_session = DummySession(many_entries)
+        history_screen2 = HistoryScreen()
+        scroll_session.screens.register(history_screen2)
+        scroll_session.screens.show("history", scroll_session)
+
+        # Offset 0: displays slice 8..15 (7 entries: indices 8, 9, 10, 11, 12, 13, 14)
+        # Even indices in 8..14 are 8, 10, 12, 14 -> 4 speaker buttons
+        btn_voices = [b.voice for b in history_screen2.buttons if b.voice]
+        self.assertEqual(btn_voices, ["voice_8.ogg", "voice_10.ogg", "voice_12.ogg", "voice_14.ogg"])
+
+        history_screen2.scroll_up()
+        # After scroll_up (offset 1): displays slice 7..14 (indices 7, 8, 9, 10, 11, 12, 13)
+        # Even indices: 8, 10, 12 -> 3 speaker buttons
+        btn_voices2 = [b.voice for b in history_screen2.buttons if b.voice]
+        self.assertEqual(btn_voices2, ["voice_8.ogg", "voice_10.ogg", "voice_12.ogg"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -354,4 +354,63 @@ Narrator: Gamma chosen.
     assert session.director.ui_state.text == "Gamma chosen."
 
 
+def test_session_backlog_voice_replay_in_history_screen() -> None:
+    story = """
+## Main --- main
+Alice: {voice:alice_01.ogg} Line with voice.
+Bob: Line without voice.
+Alice: {voice:alice_02.ogg} Second line with voice.
+"""
+    graph = eager_script.parse_graph(story)
+    session = GameSession(graph)
+
+    # Step through all 3 lines
+    session.advance()
+    session.advance()
+    session.advance()
+
+    assert len(session.backlog.entries) == 3
+    assert session.backlog.entries[0].voice == "alice_01.ogg"
+    assert session.backlog.entries[1].voice is None
+    assert session.backlog.entries[2].voice == "alice_02.ogg"
+
+    # Open history screen
+    session.handle_input(InputAction.HISTORY)
+    assert session.screens.is_active
+    assert session.screens.active_screen is not None
+    assert session.screens.active_screen.name == "history"
+
+    history_screen = session.screens.active_screen
+    # Should have 2 speaker buttons (indices 0 and 2 have voice)
+    speaker_btns = [b for b in history_screen.buttons if b.text == "🔊"]
+    assert len(speaker_btns) == 2
+    assert speaker_btns[0].voice == "alice_01.ogg"
+    assert speaker_btns[1].voice == "alice_02.ogg"
+
+    class MockBackend:
+        def __init__(self):
+            self.calls = []
+
+        def play(self, channel, path, **kwargs):
+            self.calls.append((channel, str(path)))
+
+        def stop(self, channel, **kwargs):
+            pass
+
+        def is_playing(self, channel):
+            return False
+
+    mock_backend = MockBackend()
+    session.audio.backend = mock_backend
+
+    # Click the first speaker button via session click input
+    btn0 = speaker_btns[0]
+    session.handle_input(InputAction.POINTER_CLICK, x=btn0.rect.x + 1, y=btn0.rect.y + 1)
+    assert any(c[0] == "voice" and "alice_01.ogg" in c[1] for c in mock_backend.calls)
+
+    # Also test session.play_voice directly
+    session.play_voice("direct_call.ogg")
+    assert any(c[0] == "voice" and "direct_call.ogg" in c[1] for c in mock_backend.calls)
+
+
 
