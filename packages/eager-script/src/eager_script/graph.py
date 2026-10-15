@@ -574,9 +574,9 @@ def to_graph(items: Sequence[ParsedItem] | Iterable[ParsedItem]) -> SceneGraph:
     )
 
 
-def parse_graph(text: str, *, plain: bool = False) -> SceneGraph:
+def parse_graph(text: str) -> SceneGraph:
     """Parse screenplay text directly into a SceneGraph."""
     from eager_script import parse
 
-    return to_graph(parse(text, plain=plain))
+    return to_graph(parse(text))
 

@@ -163,7 +163,6 @@ Narrator: All good.
 
     args = argparse.Namespace(
         script=str(script_file),
-        plain=False,
         assets=True,
         asset_dir=str(asset_dir),
     )

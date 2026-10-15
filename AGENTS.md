@@ -42,7 +42,7 @@ eager-script ─┐
       └──────── eager-runtime ── optional graphics extra ── eager-graphics
 ```
 
-- **`eager-script` (`eager_script`)** — dependency-free screenplay language tooling. Parses `.es` scripts into AST nodes, builds a scene graph, validates scripts, supports plain-manuscript mode, and provides safe expression evaluation. The expression API is defined in `eager_script.expr`, not re-exported from the package root.
+- **`eager-script` (`eager_script`)** — dependency-free screenplay language tooling. Parses `.es` scripts into AST nodes, builds a scene graph, validates scripts, and provides safe expression evaluation. The expression API is defined in `eager_script.expr`, not re-exported from the package root.
 - **`eager-core` (`eager_core`)** — dependency-free shared primitives used by multiple layers: audio mixing protocols, geometry and color types, easing, timing, input mapping, storage helpers, narrative events, and text-tag/reveal utilities. Keep genuinely shared, lower-level implementations here rather than duplicating them in higher layers. Higher layers import them directly from `eager_core.<module>` (`eager_core.events`, `eager_core.types`, and so on); packages provide no thin re-export shims for them.
 - **`eager-runtime` (`eager_runtime`)** — narrative execution and game-session logic. `StoryVM` is the headless story virtual machine; `EventDispatcher` routes its events; `GameSession` coordinates interactive play, presentation state, audio, UI, checkpoints, save/load, preferences, and persistent data. Graphics-dependent exports are lazy so a basic `import eager_runtime` remains headless-capable. `GameSession` is the sole top-level orchestrator; there is no separate visual-engine facade.
 - **`eager-graphics` (`eager_graphics`)** — renderer-agnostic presentation. It coordinates stage elements, animation, screenplay hooks, dialogue UI, screens, and rendering/audio backends. It depends on `eager-script` and `eager-core`, not on the runtime's implementation.
@@ -75,7 +75,6 @@ The main narrative path is:
 
 ### Script and scene graph
 
-- Standard DSL syntax and plain-manuscript mode are distinct; plain mode must reject standard-only directives where specified.
 - Script expressions must use the whitelist-based evaluator. Do not replace it with Python `eval` or broaden allowed AST operations casually.
 - Conditional `@if` blocks are lowered by the graph-building layer into flat conditional/local-jump nodes. Preserve the flat beat-index model used by the VM.
 - Inline choice blocks (indented content beneath a `?` option, written without a `(target)`) are lowered by the graph builder into **anonymous scenes** with generated ids (`<scene_id>__anon_<line>`), marked with `SceneNode.is_anonymous`. The option's target is rewritten to that scene id, and the anonymous body ends in an implicit return.

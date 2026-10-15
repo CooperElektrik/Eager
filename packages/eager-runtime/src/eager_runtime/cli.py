@@ -26,11 +26,6 @@ from eager_runtime.runtime import StoryVM
 def _build_common_script_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("script", help="Path to the .es screenplay script file.")
     parser.add_argument(
-        "--plain",
-        action="store_true",
-        help="Parse script using Eager-SP mode.",
-    )
-    parser.add_argument(
         "--lang",
         "--locale",
         default=None,
@@ -77,7 +72,6 @@ def _add_i18n_subparser(subparsers: Any) -> None:
     ext_p.add_argument("script", help="Path to .es screenplay file or project directory.")
     ext_p.add_argument("-o", "--output", default=None, help="Output JSON path (default: locales/<locale>.json).")
     ext_p.add_argument("--locale", default="template", help="Target locale code (default: template).")
-    ext_p.add_argument("--plain", action="store_true", help="Parse script using Eager-SP mode.")
     ext_p.add_argument("--merge", action="store_true", help="Merge with existing output file, preserving translations.")
     ext_p.set_defaults(func=_cmd_i18n_extract)
 
@@ -87,7 +81,6 @@ def _add_i18n_subparser(subparsers: Any) -> None:
     )
     chk_p.add_argument("catalog", help="Path to translation catalog JSON file or locales directory.")
     chk_p.add_argument("--script", required=True, help="Path to .es screenplay file or project directory.")
-    chk_p.add_argument("--plain", action="store_true", help="Parse script using Eager-SP mode.")
     chk_p.add_argument(
         "--strict",
         action="store_true",
@@ -149,7 +142,6 @@ def build_parser() -> argparse.ArgumentParser:
         "check", help="Validate screenplay script, project directory, and asset consistency."
     )
     check_p.add_argument("script", help="Path to .es screenplay file or project directory.")
-    check_p.add_argument("--plain", action="store_true", help="Parse script using Eager-SP mode.")
     check_p.add_argument(
         "--assets",
         action="store_true",
@@ -169,7 +161,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     render_p.add_argument("script", help="Path to .es screenplay file")
     render_p.add_argument("--asset-dir", default=None, help="Directory containing sprite/background assets.")
-    render_p.add_argument("--plain", action="store_true", help="Parse script in Eager-SP plain mode.")
     render_p.add_argument("--lang", "--locale", default=None, help="Language locale for translations (e.g. 'vi').")
     render_p.add_argument(
         "--dt",
@@ -242,7 +233,7 @@ def run_play(args: argparse.Namespace) -> int:
         return 1
 
     text = script_path.read_text(encoding="utf-8")
-    graph = eager_script.parse_graph(text, plain=args.plain)
+    graph = eager_script.parse_graph(text)
 
     if not graph.nodes:
         print("Warning: Script contains no scenes.", file=sys.stderr)
@@ -271,7 +262,7 @@ def run_inspect(args: argparse.Namespace) -> int:
         return 1
 
     text = script_path.read_text(encoding="utf-8")
-    graph = eager_script.parse_graph(text, plain=args.plain)
+    graph = eager_script.parse_graph(text)
 
     print(f"File: {script_path.name}")
     print(f"Entry Scene: {graph.entry or '(None)'}")
@@ -292,7 +283,7 @@ def run_test_run(args: argparse.Namespace) -> int:
         return 1
 
     text = script_path.read_text(encoding="utf-8")
-    graph = eager_script.parse_graph(text, plain=args.plain)
+    graph = eager_script.parse_graph(text)
 
     from eager_core.i18n import TranslationManager
 
@@ -503,7 +494,6 @@ def _cmd_play(args: argparse.Namespace) -> int:
         backend=args.backend,
         audio_backend=audio_backend,
         asset_dir=_resolve_asset_dir(args.script, args.asset_dir),
-        plain=args.plain,
         auto_reload=getattr(args, "watch", False),
     )
 
@@ -536,7 +526,6 @@ def _cmd_render(args: argparse.Namespace) -> int:
         args.script,
         backend="null",
         asset_dir=_resolve_asset_dir(args.script, args.asset_dir),
-        plain=args.plain,
     )
 
     if getattr(args, "lang", None):
@@ -763,8 +752,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
     try:
         text = script_file.read_text(encoding="utf-8")
-        items = eager_script.parse(text, plain=args.plain)
-        result = eager_script.validate(items, plain=args.plain)
+        items = eager_script.parse(text)
+        result = eager_script.validate(items)
     except (eager_script.ParseError, OSError, ValueError, TypeError) as err:
         sys.stderr.write(f"Check failed with error: {err}\n")
         return 1
@@ -875,7 +864,7 @@ def _cmd_i18n_extract(args: argparse.Namespace) -> int:
         return 1
 
     text = script_file.read_text(encoding="utf-8")
-    graph = eager_script.parse_graph(text, plain=args.plain)
+    graph = eager_script.parse_graph(text)
 
     from eager_core.i18n import TranslationCatalog
 
@@ -920,7 +909,7 @@ def _cmd_i18n_check(args: argparse.Namespace) -> int:
         return 1
 
     text = script_file.read_text(encoding="utf-8")
-    graph = eager_script.parse_graph(text, plain=args.plain)
+    graph = eager_script.parse_graph(text)
 
     from eager_core.i18n import TranslationCatalog
 

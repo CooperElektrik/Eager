@@ -114,7 +114,6 @@ class GameSession:
         asset_dir: str | Path | None = None,
         virtual_width: int = 1920,
         virtual_height: int = 1080,
-        plain: bool = False,
         rollback_limit: int = 100,
         config: Any = None,
         auto_reload: bool = False,
@@ -123,7 +122,6 @@ class GameSession:
         self.script_path = Path(project_or_script) if isinstance(project_or_script, (str, Path)) else None
         self.backend = backend
         self.asset_dir = Path(asset_dir) if asset_dir is not None else None
-        self.plain = plain
         self.virtual_width = virtual_width
         self.virtual_height = virtual_height
         self.auto_reload = auto_reload or watch
@@ -132,7 +130,7 @@ class GameSession:
         # Parse scene graph
         if self.script_path is not None:
             text = self.script_path.read_text(encoding="utf-8")
-            self.graph: Any = parse_graph(text, plain=plain)
+            self.graph: Any = parse_graph(text)
         elif hasattr(project_or_script, "graph"):
             self.graph = project_or_script.graph
         else:
@@ -725,7 +723,7 @@ class GameSession:
         # 2. Re-parse the script
         try:
             text = target_path.read_text(encoding="utf-8")
-            new_graph = parse_graph(text, plain=self.plain)
+            new_graph = parse_graph(text)
         except Exception as exc:  # noqa: BLE001
             self._set_error_overlay(f"Hot-reload parse error: {exc}")
             self._ui_dirty = True

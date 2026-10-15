@@ -18,7 +18,7 @@ def _cmd_parse(args: argparse.Namespace) -> int:
 
     try:
         content = path.read_text(encoding="utf-8")
-        items = eager_script.parse(content, plain=args.plain)
+        items = eager_script.parse(content)
         json_output = eager_script.to_json(items, indent=args.indent)
         if args.output:
             out_path = Path(args.output)
@@ -42,8 +42,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
     try:
         content = path.read_text(encoding="utf-8")
-        items = eager_script.parse(content, plain=args.plain)
-        result = eager_script.validate(items, plain=args.plain)
+        items = eager_script.parse(content)
+        result = eager_script.validate(items)
 
         for warning in result.warnings:
             sys.stderr.write(f"WARNING: Line {warning.line_number}: {warning.message}\n")
@@ -75,7 +75,7 @@ def _cmd_graph(args: argparse.Namespace) -> int:
 
     try:
         content = path.read_text(encoding="utf-8")
-        graph = eager_script.parse_graph(content, plain=args.plain)
+        graph = eager_script.parse_graph(content)
 
         if args.format == "dot":
             output_text = graph.to_dot()
@@ -127,11 +127,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=2,
         help="JSON indentation spaces (default: 2)",
     )
-    parse_cmd.add_argument(
-        "--plain",
-        action="store_true",
-        help="Enable Eager-SP mode (strict conventions, natural scene titles)",
-    )
 
     # graph subcommand
     graph_cmd = subparsers.add_parser("graph", help="Export screenplay as a directed scene graph")
@@ -158,20 +153,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=2,
         help="JSON indentation spaces (default: 2)",
     )
-    graph_cmd.add_argument(
-        "--plain",
-        action="store_true",
-        help="Enable Eager-SP mode",
-    )
 
     # check subcommand
     check_cmd = subparsers.add_parser("check", help="Validate screenplay syntax and links")
     check_cmd.add_argument("file", help="Path to .es screenplay file")
-    check_cmd.add_argument(
-        "--plain",
-        action="store_true",
-        help="Enable Eager-SP validation mode",
-    )
 
     return parser
 

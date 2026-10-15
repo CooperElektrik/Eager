@@ -215,32 +215,6 @@ Narrator: Done.
         self.assertIn("combat_start -.->|call| trigger_combat", mermaid)
         self.assertIn("peaceful_entry --> finish", mermaid)
 
-    def test_eager_sp_mode(self):
-        plain_script = """
-## The Entrance
-Guard: Halt!
-? Sneak past (The Shadows)
-? Talk (The Gate)
-
-## The Shadows
-Narrator: You slip through darkness.
-> The Courtyard
-
-## The Gate
-Guard: Welcome.
-> The Courtyard
-
-## The Courtyard
-Narrator: You arrived.
-"""
-        graph = parse_graph(plain_script, plain=True)
-        self.assertEqual(graph.entry, "the_entrance")
-        self.assertIn("the_entrance", graph.nodes)
-        self.assertIn("the_shadows", graph.nodes)
-        self.assertIn("the_gate", graph.nodes)
-        self.assertIn("the_courtyard", graph.nodes)
-        self.assertEqual(len(graph.edges), 4)
-
     def test_empty_and_preamble_only_graph(self):
         empty_graph = to_graph([])
         self.assertIsNone(empty_graph.entry)

@@ -11,7 +11,6 @@ It parses screenplay text into an abstract syntax tree (AST) and directed scene 
 - Inline choice blocks that lower into anonymous scenes (no label ceremony)
 - Static validation for broken links, duplicate labels, dead code, and loops
 - Exports to JSON, Graphviz DOT, and Mermaid
-- Eager-SP mode for branching novels without engine markup
 
 ## Installation
 
@@ -102,7 +101,7 @@ eager-script graph script.es --format mermaid
 
 Detailed guides are in [docs/](docs/):
 
-- [DSL Syntax Reference](docs/syntax.md): Syntax rules, Eager-SP mode, escaping
+- [DSL Syntax Reference](docs/syntax.md): Syntax rules, escaping
 - [Directed Scene Graph](docs/scene-graph.md): Graph model, queries, DOT and Mermaid exports
 - [Static Validation](docs/validation.md): Checks, errors, warnings
 - [API Reference](docs/api-reference.md): AST nodes, functions, exceptions

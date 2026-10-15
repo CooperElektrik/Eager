@@ -209,16 +209,3 @@ Trigger runtime events, camera shakes, sound effects, or visual presentation com
   ```es
   Alice: Call \#1 cost \$5 dollars.
   ```
-
----
-
-## Eager-SP Mode (`--plain`)
-
-Designed for interactive fiction, branching gamebooks, and visual novels that read like natural literary manuscripts without engine syntax tags.
-
-In `--plain` mode:
-- **Natural scene headings only**: Must use `## Title` (e.g., `## The Hidden Room`). Explicit identifiers (`--- id`) are rejected.
-- **Natural choice & jump targets**: `? Search room (The Hidden Room)` and `> The Hidden Room` target the natural title and are automatically slugified to match headings.
-- **Paragraph dialogue continuation**: Lines under a character speaker continue that character's dialogue without needing `-`. A blank line ends the beat.
-- **Engine markup disallowed**: Subroutines (`>>`, `<<`), engine hooks (`~`), text-box layout beats (`-`, `/`), voice tags (`{voice:...}`), preamble directives (`@default`, `@character`), variable assignments (`$`), conditional blocks (`@if`, `@elif`, `@else`, `@end`), and conditional choices (`if ...`) raise validation errors.
-- **Inline choice blocks allowed**: `? Option` with an indented block of dialogue/narration is supported; engine markup nested inside the block follows the same restrictions as above.

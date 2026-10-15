@@ -514,17 +514,12 @@ def _strip_line_comment(line: str) -> str:
     return _INLINE_COMMENT_PATTERN.sub("", line).rstrip()
 
 
-def _parse_label(line: str, line_number: int, *, plain: bool = False) -> ParsedLabel:
+def _parse_label(line: str, line_number: int) -> ParsedLabel:
     """Parse a label definition ('## Name --- id' or '## Name')."""
     rest = line[2:].strip()
     if not rest:
         raise ParseError("Empty label definition", line_number)
     if "---" in rest:
-        if plain:
-            raise ParseError(
-                "Explicit label identifiers ('---') are not allowed in Eager-SP mode. Use '## Scene Name'",
-                line_number,
-            )
         display, name = rest.split("---", 1)
         name = sys.intern(name.strip())
         display = display.strip()
@@ -543,7 +538,7 @@ def _parse_label(line: str, line_number: int, *, plain: bool = False) -> ParsedL
     return ParsedLabel(name=slug, display_name=rest, line_number=line_number)
 
 
-def _parse_choice(line: str, line_number: int, *, plain: bool = False) -> ParsedChoiceOption:
+def _parse_choice(line: str, line_number: int) -> ParsedChoiceOption:
     """Parse a single choice line.
 
     Supports a named option (``? Text (target_label)`` / ``? Text (target_label) if cond``)
@@ -566,12 +561,6 @@ def _parse_choice(line: str, line_number: int, *, plain: bool = False) -> Parsed
         raw_target = None
         condition = inline_match.group(2).strip() if inline_match.group(2) else None
 
-    if plain and condition:
-        raise ParseError(
-            "Conditional choices ('if ...') are not allowed in Eager-SP mode",
-            line_number,
-        )
-
     if not text:
         raise ParseError("Empty choice text", line_number)
 
@@ -579,12 +568,7 @@ def _parse_choice(line: str, line_number: int, *, plain: bool = False) -> Parsed
     if raw_target is not None:
         if not raw_target:
             raise ParseError("Empty choice target", line_number)
-        target = _slugify(raw_target) if plain else raw_target
-        if plain and not target:
-            raise ParseError(
-                f"Invalid choice target '{raw_target}' cannot be converted to a valid identifier",
-                line_number,
-            )
+        target = raw_target
     return ParsedChoiceOption(
         text=text,
         target=sys.intern(target) if target else None,
@@ -594,7 +578,7 @@ def _parse_choice(line: str, line_number: int, *, plain: bool = False) -> Parsed
 
 
 def _parse_dialogue(
-    speaker: str, raw_text: str, emotion: str | None, line_number: int, *, plain: bool = False
+    speaker: str, raw_text: str, emotion: str | None, line_number: int
 ) -> ParsedDialogue:
     """Extract optional voice tag and return ParsedDialogue."""
     voice: str | None = None
@@ -602,11 +586,6 @@ def _parse_dialogue(
     if text.startswith("{voice:"):
         end_idx = text.find("}", 7)
         if end_idx != -1:
-            if plain:
-                raise ParseError(
-                    "Voice tags ('{voice:...}') are not supported in Eager-SP mode",
-                    line_number,
-                )
             v = text[7:end_idx].strip()
             if v:
                 voice = v
@@ -621,13 +600,10 @@ def _parse_dialogue(
 
 
 class ScreenplayParser:
-    """Parses Eager-Script screenplay text into a sequence of parsed AST items (standard mode).
+    """Parses Eager-Script screenplay text into a sequence of parsed AST items.
 
-    Standard mode supports the full DSL: hooks, subroutine calls, fresh-box/append
-    beats, voice tags, and explicit label identifiers.  Subclasses can override
-    the dispatch hooks (_parse_prefixed, _build_choice, _start_dialogue,
-    _handle_continuation, _flush_dialogue) to implement alternative parsing modes
-    such as Eager-SP plain mode.
+    Supports the full DSL: hooks, subroutine calls, fresh-box/append
+    beats, voice tags, and explicit label identifiers.
     """
 
     def __init__(self) -> None:
@@ -636,10 +612,6 @@ class ScreenplayParser:
         self._choice_buffer: list[ParsedChoiceOption] = []
         self._choice_bodies: list[list[ParsedItem]] = []
         self._choice_indent: int = 0
-        self._dialogue_speaker: str | None = None
-        self._dialogue_emotion: str | None = None
-        self._dialogue_parts: list[str] = []
-        self._dialogue_line: int = 0
 
     # ------------------------------------------------------------------
     # Flush helpers — each returns a list so both parse() and parse_iter()
@@ -656,20 +628,6 @@ class ScreenplayParser:
                     line_number=self._narration_line,
                 )
             ]
-        return []
-
-    def _flush_dialogue(self) -> list[ParsedItem]:
-        if self._dialogue_speaker is not None:
-            speaker = self._dialogue_speaker
-            emotion = self._dialogue_emotion
-            parts = self._dialogue_parts
-            combined = parts[0] if len(parts) == 1 else " ".join(parts) if parts else ""
-            line_no = self._dialogue_line
-            self._dialogue_speaker = None
-            self._dialogue_emotion = None
-            self._dialogue_parts = []
-            self._dialogue_line = 0
-            return [_parse_dialogue(speaker, combined, emotion, line_no)]
         return []
 
     def _flush_choices(self) -> list[ParsedItem]:
@@ -696,17 +654,8 @@ class ScreenplayParser:
     def _flush_all(self) -> list[ParsedItem]:
         items: list[ParsedItem] = []
         items.extend(self._flush_narration())
-        items.extend(self._flush_dialogue())
         items.extend(self._flush_choices())
         return items
-
-    # ------------------------------------------------------------------
-    # Overridable dispatch hooks
-    # ------------------------------------------------------------------
-
-    def _slugify_target(self, target: str) -> str:
-        """Slugify a jump or choice target.  Standard mode: identity (no-op)."""
-        return target
 
     def _build_choice(self, clean: str, idx: int) -> ParsedChoiceOption:
         """Parse a ``?`` line into a :class:`ParsedChoiceOption`."""
@@ -732,12 +681,6 @@ class ScreenplayParser:
             target = line[1:].strip()
             if not target:
                 raise ParseError("Empty jump target", idx)
-            target = self._slugify_target(target)
-            if not target:
-                raise ParseError(
-                    f"Invalid jump target '{line[1:].strip()}' cannot be converted to a valid identifier",
-                    idx,
-                )
             return ParsedJump(target=sys.intern(target), line_number=idx)
         elif line.startswith("~"):
             hook = line[1:].strip()
@@ -795,24 +738,6 @@ class ScreenplayParser:
             else:
                 raise ParseError(f"Unknown directive '{line.split()[0]}'", idx)
         return None  # e.g. bare '<' — not a control sequence
-
-    def _start_dialogue(
-        self, speaker: str, emotion: str | None, text: str, idx: int
-    ) -> ParsedItem | None:
-        """Begin a dialogue beat.
-
-        Standard mode emits the :class:`ParsedDialogue` immediately and returns
-        it.  Subclasses that buffer multi-line dialogue return *None*.
-        """
-        return _parse_dialogue(speaker, text, emotion, idx)
-
-    def _handle_continuation(self, clean: str) -> bool:
-        """Try to treat *clean* as a continuation of a buffered dialogue.
-
-        Returns *True* when the line is consumed as a continuation; *False*
-        otherwise (so the caller falls through to narration handling).
-        """
-        return False
 
     # ------------------------------------------------------------------
     # Shared parse loop
@@ -882,10 +807,6 @@ class ScreenplayParser:
         self._choice_buffer.clear()
         self._choice_bodies.clear()
         self._choice_indent = 0
-        self._dialogue_speaker = None
-        self._dialogue_emotion = None
-        self._dialogue_parts.clear()
-        self._dialogue_line = 0
 
         line_iter = self._iter_raw_lines(text)
         pending: tuple[int, str] | None = None
@@ -921,8 +842,6 @@ class ScreenplayParser:
             if c0 == "?":
                 if self._narration_buffer:
                     yield from self._flush_narration()
-                if self._dialogue_speaker is not None:
-                    yield from self._flush_dialogue()
                 choice_opt = self._build_choice(clean, idx)
                 choice_indent = _leading_indent(raw_line)
 
@@ -982,8 +901,6 @@ class ScreenplayParser:
                 if item is not None:
                     if self._narration_buffer:
                         yield from self._flush_narration()
-                    if self._dialogue_speaker is not None:
-                        yield from self._flush_dialogue()
                     yield item
                     continue
 
@@ -994,21 +911,11 @@ class ScreenplayParser:
                     speaker, emotion, raw_text = match.groups()
                     if self._narration_buffer:
                         yield from self._flush_narration()
-                    if self._dialogue_speaker is not None:
-                        yield from self._flush_dialogue()
                     text_content = (raw_text or "").strip()
-                    item = self._start_dialogue(speaker.strip(), emotion, text_content, idx)
-                    if item is not None:
-                        yield item
+                    yield _parse_dialogue(speaker.strip(), text_content, emotion, idx)
                     continue
 
-            # ── Continuation (plain-mode multi-line dialogue) ──────
-            if self._handle_continuation(clean):
-                continue
-
             # ── Narration ──────────────────────────────────────────
-            if self._dialogue_speaker is not None:
-                yield from self._flush_dialogue()
             if not self._narration_buffer:
                 self._narration_line = idx
             self._narration_buffer.append(clean)
@@ -1024,133 +931,14 @@ class ScreenplayParser:
         return self._parse(text)
 
 
-class PlainScreenplayParser(ScreenplayParser):
-    """Parses Eager-Script screenplays in Eager-SP plain mode.
-
-    In plain mode the screenplay reads like a natural manuscript:
-
-    * Scene headings use ``## Title`` only (explicit ``--- id`` is rejected).
-    * Jump and choice targets are auto-slugified to match headings.
-    * Character dialogue may span multiple lines (a blank line ends the beat).
-    * Engine markup — subroutines (``>>``/``<<``), hooks (``~``), box-control
-      beats (``-``/``/``), and voice tags (``{voice:...}``) — is rejected.
-    """
-
-    def _slugify_target(self, target: str) -> str:
-        """Auto-slugify jump and choice targets to match heading identifiers."""
-        return _slugify(target)
-
-    def _build_choice(self, clean: str, idx: int) -> ParsedChoiceOption:
-        """Parse a ``?`` choice line with auto-slugified target."""
-        return _parse_choice(clean, idx, plain=True)
-
-    def _parse_prefixed(self, line: str, idx: int) -> ParsedItem | None:
-        """Dispatch control characters in Eager-SP mode.
-
-        Only ``##`` labels and ``>`` jumps are accepted; ``>>``, ``<<``, ``~``,
-        ``-``, and ``/`` raise :class:`ParseError`.
-        """
-        if line.startswith("##"):
-            return _parse_label(line, idx, plain=True)
-        elif line.startswith(">>"):
-            raise ParseError(
-                "Subroutine calls ('>>') are not supported in Eager-SP mode",
-                idx,
-            )
-        elif line.startswith("<<"):
-            raise ParseError(
-                "Subroutine returns ('<<') are not supported in Eager-SP mode",
-                idx,
-            )
-        elif line.startswith(">"):
-            target_str = line[1:].strip()
-            if not target_str:
-                raise ParseError("Empty jump target", idx)
-            target = self._slugify_target(target_str)
-            if not target:
-                raise ParseError(
-                    f"Invalid jump target '{target_str}' cannot be converted to a valid identifier",
-                    idx,
-                )
-            return ParsedJump(target=sys.intern(target), line_number=idx)
-        elif line.startswith("~"):
-            raise ParseError(
-                "Engine hooks ('~') are not supported in Eager-SP mode",
-                idx,
-            )
-        elif line.startswith("-"):
-            raise ParseError(
-                "Append beats ('-') are not supported in Eager-SP mode",
-                idx,
-            )
-        elif line.startswith("/"):
-            raise ParseError(
-                "Fresh box beats ('/') are not supported in Eager-SP mode",
-                idx,
-            )
-        elif line.startswith("$"):
-            raise ParseError(
-                "Variable set statements ('$') are not supported in Eager-SP mode",
-                idx,
-            )
-        elif line.startswith("@"):
-            raise ParseError(
-                "Directives ('@') are not supported in Eager-SP mode",
-                idx,
-            )
-        return None
-
-    def _start_dialogue(
-        self, speaker: str, emotion: str | None, text: str, idx: int
-    ) -> ParsedItem | None:
-        """Buffer dialogue for multi-line continuation in plain mode."""
-        self._dialogue_speaker = speaker
-        self._dialogue_emotion = emotion
-        self._dialogue_line = idx
-        self._dialogue_parts = [text] if text else []
-        return None  # Buffered — no immediate emit
-
-    def _handle_continuation(self, clean: str) -> bool:
-        """Append non-empty lines to the buffered dialogue in plain mode."""
-        if self._dialogue_speaker is not None:
-            self._dialogue_parts.append(clean)
-            return True
-        return False
-
-    def _flush_dialogue(self) -> list[ParsedItem]:
-        """Flush buffered dialogue, validating voice-tag rejection (plain=True)."""
-        if self._dialogue_speaker is not None:
-            speaker = self._dialogue_speaker
-            emotion = self._dialogue_emotion
-            line_no = self._dialogue_line
-            parts = self._dialogue_parts
-            combined = parts[0] if len(parts) == 1 else " ".join(parts)
-            self._dialogue_speaker = None
-            self._dialogue_emotion = None
-            self._dialogue_parts = []
-            self._dialogue_line = 0
-            return [
-                _parse_dialogue(
-                    speaker=speaker,
-                    raw_text=combined,
-                    emotion=emotion,
-                    line_number=line_no,
-                    plain=True,
-                )
-            ]
-        return []
-
-
-def parse(text: str, *, plain: bool = False) -> list[ParsedItem]:
+def parse(text: str) -> list[ParsedItem]:
     """Parse screenplay text into AST items."""
-    parser: ScreenplayParser = PlainScreenplayParser() if plain else ScreenplayParser()
-    return parser.parse(text)
+    return ScreenplayParser().parse(text)
 
 
-def parse_iter(text: str, *, plain: bool = False) -> Iterator[ParsedItem]:
+def parse_iter(text: str) -> Iterator[ParsedItem]:
     """Stream screenplay text into AST items with O(1) memory."""
-    parser: ScreenplayParser = PlainScreenplayParser() if plain else ScreenplayParser()
-    return parser.parse_iter(text)
+    return ScreenplayParser().parse_iter(text)
 
 
 def to_dict(items: Sequence[ParsedItem]) -> list[dict[str, Any]]:
@@ -1199,7 +987,6 @@ __all__ = [
     "ParsedNarration",
     "ParsedReturn",
     "ParsedSet",
-    "PlainScreenplayParser",
     "SceneEdge",
     "SceneGraph",
     "SceneNode",

@@ -77,7 +77,7 @@ Represents an engine hook invocation (`~ hook_name`).
 
 ## Core Functions
 
-### `parse(text: str, *, plain: bool = False) -> list[ParsedItem]`
+### `parse(text: str) -> list[ParsedItem]`
 Parses screenplay source text into a linear list of AST nodes.
 Raises `ParseError` on syntax errors.
 
@@ -87,13 +87,13 @@ Converts AST nodes into dictionaries with `"type"` discriminators.
 ### `to_json(items: Sequence[ParsedItem], *, indent: int | None = 2) -> str`
 Serializes AST nodes directly to a JSON string.
 
-### `validate(items: Sequence[ParsedItem], *, plain: bool = False) -> ValidationResult`
+### `validate(items: Sequence[ParsedItem]) -> ValidationResult`
 Validates AST items for broken links, duplicate labels, orphan scenes, and infinite loops.
 
 ### `to_graph(items: Sequence[ParsedItem]) -> SceneGraph`
 Transforms an AST item sequence into a directed scene graph. Inline choice options are lowered into anonymous scenes (nodes with `is_anonymous=True`); see the [Directed Scene Graph](scene-graph.md) guide.
 
-### `parse_graph(text: str, *, plain: bool = False) -> SceneGraph`
+### `parse_graph(text: str) -> SceneGraph`
 Parses screenplay text directly into a directed scene graph.
 
 ---

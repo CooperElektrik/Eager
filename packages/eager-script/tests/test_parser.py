@@ -275,12 +275,6 @@ class TestScreenplayParser(unittest.TestCase):
         iter_list = list(parse_iter(SAMPLE_SCRIPT))
         self.assertEqual(to_dict(parsed_list), to_dict(iter_list))
 
-    def test_parse_iter_plain_mode(self) -> None:
-        """Verify parse_iter works equivalently in Eager-SP plain mode."""
-        plain_script = "## Chapter One\nAlice: Hello world\n> chapter_two"
-        parsed_list = parse(plain_script, plain=True)
-        iter_list = list(parse_iter(plain_script, plain=True))
-        self.assertEqual(to_dict(parsed_list), to_dict(iter_list))
 
 
 class TestSerialization(unittest.TestCase):
@@ -513,171 +507,7 @@ class TestCLI(unittest.TestCase):
             Path(tmp_path).unlink(missing_ok=True)
 
 
-class TestEagerSP(unittest.TestCase):
-    """Test suite for Eager-SP (--plain) parsing, validation, and CLI behavior."""
 
-    PLAIN_SCRIPT = """
-    ## The Ancient Courtyard
-
-    Alice: Look at this place.
-    It has been abandoned for centuries.
-
-    A cold wind blows through the crumbling archway.
-    The leaves dance across the stone pavers.
-
-    ? Enter the grand hall (The Grand Hall)
-    ? Walk down into the crypt (The Crypt)
-
-    ## The Grand Hall
-    Alice (whispering): Stay close.
-    The shadows seem alive in here.
-    > The Crypt
-
-    ## The Crypt
-    The air here is damp and thick with dust.
-    """
-
-    def test_eager_sp_parsing_and_continuation(self) -> None:
-        """Verify Eager-SP parses natural titles, dialogue continuation, and auto-slug targets."""
-        items = parse(self.PLAIN_SCRIPT, plain=True)
-
-        # 1. Label
-        self.assertIsInstance(items[0], ParsedLabel)
-        self.assertEqual(items[0].name, "the_ancient_courtyard")
-        self.assertEqual(items[0].display_name, "The Ancient Courtyard")
-
-        # 2. Multi-line dialogue continuation without '-'
-        self.assertIsInstance(items[1], ParsedDialogue)
-        self.assertEqual(items[1].speaker, "Alice")
-        self.assertEqual(items[1].text, "Look at this place. It has been abandoned for centuries.")
-        self.assertIsNone(items[1].voice)
-
-        # 3. Narration paragraph
-        self.assertIsInstance(items[2], ParsedNarration)
-        self.assertEqual(
-            items[2].text,
-            "A cold wind blows through the crumbling archway. The leaves dance across the stone pavers.",
-        )
-
-        # 4. Choice set with slugified natural titles
-        self.assertIsInstance(items[3], ParsedChoiceSet)
-        self.assertEqual(len(items[3].options), 2)
-        self.assertEqual(items[3].options[0].text, "Enter the grand hall")
-        self.assertEqual(items[3].options[0].target, "the_grand_hall")
-        self.assertEqual(items[3].options[1].text, "Walk down into the crypt")
-        self.assertEqual(items[3].options[1].target, "the_crypt")
-
-        # 5. Label
-        self.assertIsInstance(items[4], ParsedLabel)
-        self.assertEqual(items[4].name, "the_grand_hall")
-
-        # 6. Dialogue with emotion and continuation
-        self.assertIsInstance(items[5], ParsedDialogue)
-        self.assertEqual(items[5].speaker, "Alice")
-        self.assertEqual(items[5].emotion, "whispering")
-        self.assertEqual(items[5].text, "Stay close. The shadows seem alive in here.")
-
-        # 7. Jump with natural title
-        self.assertIsInstance(items[6], ParsedJump)
-        self.assertEqual(items[6].target, "the_crypt")
-
-        # 8. Label
-        self.assertIsInstance(items[7], ParsedLabel)
-        self.assertEqual(items[7].name, "the_crypt")
-
-        # 9. Narration
-        self.assertIsInstance(items[8], ParsedNarration)
-        self.assertEqual(items[8].text, "The air here is damp and thick with dust.")
-
-        # Validation passes cleanly
-        result = validate(items, plain=True)
-        self.assertTrue(result.is_valid)
-        self.assertEqual(len(result.errors), 0)
-
-    def test_plain_disallowed_syntax_raises_parse_error(self) -> None:
-        """Verify engine constructs raise ParseError in Eager-SP mode."""
-        # Explicit label IDs
-        with self.assertRaises(ParseError) as ctx:
-            parse("## Scene --- scene_id", plain=True)
-        self.assertIn("Explicit label identifiers ('---') are not allowed", str(ctx.exception))
-
-        # Append beats
-        with self.assertRaises(ParseError) as ctx:
-            parse("- Appended beat", plain=True)
-        self.assertIn("Append beats ('-') are not supported", str(ctx.exception))
-
-        # Fresh box beats
-        with self.assertRaises(ParseError) as ctx:
-            parse("/ Fresh box beat", plain=True)
-        self.assertIn("Fresh box beats ('/') are not supported", str(ctx.exception))
-
-        # Engine hooks
-        with self.assertRaises(ParseError) as ctx:
-            parse("~ screen_shake", plain=True)
-        self.assertIn("Engine hooks ('~') are not supported", str(ctx.exception))
-
-        # Subroutine calls
-        with self.assertRaises(ParseError) as ctx:
-            parse(">> sub_label", plain=True)
-        self.assertIn("Subroutine calls ('>>') are not supported", str(ctx.exception))
-
-        # Subroutine returns
-        with self.assertRaises(ParseError) as ctx:
-            parse("<<", plain=True)
-        self.assertIn("Subroutine returns ('<<') are not supported", str(ctx.exception))
-
-        # Voice clips
-        with self.assertRaises(ParseError) as ctx:
-            parse("Alice: {voice:clip.ogg} Hello", plain=True)
-        self.assertIn("Voice tags ('{voice:...}') are not supported", str(ctx.exception))
-
-    def test_plain_validator_catches_disallowed_nodes(self) -> None:
-        """Verify validator flags non-plain nodes when plain=True."""
-        standard_items = parse(
-            "## Scene --- custom_id\nAlice: {voice:a.ogg} Hi\n~ hook", plain=False
-        )
-        result = validate(standard_items, plain=True)
-        self.assertFalse(result.is_valid)
-        error_msgs = [e.message for e in result.errors]
-        self.assertTrue(any("Explicit label identifier" in m for m in error_msgs))
-        self.assertTrue(any("Voice tags" in m for m in error_msgs))
-        self.assertTrue(any("Engine hooks" in m for m in error_msgs))
-
-    def test_plain_cli_check_and_parse(self) -> None:
-        """Verify CLI check and parse commands with --plain flag."""
-        with tempfile.NamedTemporaryFile(
-            mode="w+", suffix=".es", delete=False, encoding="utf-8"
-        ) as tmp:
-            tmp.write(self.PLAIN_SCRIPT)
-            tmp_path = tmp.name
-
-        try:
-            # Check with --plain
-            exit_code = main(["check", "--plain", tmp_path])
-            self.assertEqual(exit_code, 0)
-
-            # Parse with --plain
-            out_file = tmp_path + ".json"
-            exit_code = main(["parse", "--plain", tmp_path, "-o", out_file])
-            self.assertEqual(exit_code, 0)
-            data = json.loads(Path(out_file).read_text(encoding="utf-8"))
-            self.assertEqual(len(data), 9)
-            Path(out_file).unlink(missing_ok=True)
-        finally:
-            Path(tmp_path).unlink(missing_ok=True)
-
-        # Disallowed syntax in check --plain should fail
-        with tempfile.NamedTemporaryFile(
-            mode="w+", suffix=".es", delete=False, encoding="utf-8"
-        ) as tmp_err:
-            tmp_err.write("## Start --- start_id\n~ hook\n")
-            tmp_err_path = tmp_err.name
-
-        try:
-            exit_code = main(["check", "--plain", tmp_err_path])
-            self.assertEqual(exit_code, 1)
-        finally:
-            Path(tmp_err_path).unlink(missing_ok=True)
 
 
 INLINE_CHOICE_SCRIPT = """\
@@ -826,11 +656,6 @@ class TestInlineChoiceBlocks(unittest.TestCase):
         self.assertIsInstance(opt.body[1], ParsedSet)
         self.assertEqual(opt.body[1].target, "b")
 
-    def test_validator_rejects_plain_mode_violations_in_inline_blocks(self) -> None:
-        items = parse("## A --- a\n? Go\n    ~ screen_shake\n")
-        result = validate(items, plain=True)
-        self.assertFalse(result.is_valid)
-        self.assertTrue(any("Engine hooks" in err.message for err in result.errors))
 
     def test_validator_rejects_unclosed_if_in_inline_block(self) -> None:
         items = parse("## A --- a\n? Go\n    @if cond\n        Alice: hi\n")

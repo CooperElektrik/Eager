@@ -43,26 +43,20 @@ def _iter_choice_bodies(items: Sequence[Any]) -> Iterator[Any]:
                 yield from _iter_choice_bodies(opt.body)
 
 
-def validate(items: Sequence[ParsedItem], *, plain: bool = False) -> ValidationResult:
+def validate(items: Sequence[ParsedItem]) -> ValidationResult:
     """Validate a parsed screenplay AST for broken links, duplicate labels, and issues."""
     from eager_script import (
-        ParsedAppend,
         ParsedCall,
-        ParsedCharacter,
         ParsedChoiceSet,
         ParsedDefault,
-        ParsedDialogue,
         ParsedElif,
         ParsedElse,
         ParsedEnd,
-        ParsedFreshBox,
-        ParsedHook,
         ParsedIf,
         ParsedJump,
         ParsedLabel,
         ParsedReturn,
         ParsedSet,
-        slugify,
     )
     from eager_script.expr import ExprError, compile_expr
 
@@ -86,48 +80,6 @@ def validate(items: Sequence[ParsedItem], *, plain: bool = False) -> ValidationR
         inline_if_stack: list[dict[str, Any]] = []
 
         for sub in nested_items:
-            if plain:
-                if isinstance(sub, (ParsedCall, ParsedReturn)):
-                    errors.append(
-                        ValidationError(
-                            message="Subroutines ('>>', '<<') are not allowed in Eager-SP mode",
-                            line_number=sub.line_number,
-                            level="error",
-                        )
-                    )
-                elif isinstance(sub, ParsedHook):
-                    errors.append(
-                        ValidationError(
-                            message="Engine hooks ('~') are not allowed in Eager-SP mode",
-                            line_number=sub.line_number,
-                            level="error",
-                        )
-                    )
-                elif isinstance(sub, (ParsedAppend, ParsedFreshBox)):
-                    errors.append(
-                        ValidationError(
-                            message="Box control beats ('-', '/') are not allowed in Eager-SP mode",
-                            line_number=sub.line_number,
-                            level="error",
-                        )
-                    )
-                elif isinstance(sub, (ParsedSet, ParsedDefault, ParsedCharacter, ParsedIf, ParsedElif, ParsedElse, ParsedEnd)):
-                    errors.append(
-                        ValidationError(
-                            message="Script logic and directives are not allowed in Eager-SP mode",
-                            line_number=sub.line_number,
-                            level="error",
-                        )
-                    )
-                elif isinstance(sub, ParsedDialogue) and sub.voice:
-                    errors.append(
-                        ValidationError(
-                            message="Voice tags ('{voice:...}') are not allowed in Eager-SP mode",
-                            line_number=sub.line_number,
-                            level="error",
-                        )
-                    )
-
             if terminator is not None:
                 warnings.append(
                     ValidationError(
@@ -155,14 +107,6 @@ def validate(items: Sequence[ParsedItem], *, plain: bool = False) -> ValidationR
                     if opt.target is not None:
                         references.append((opt.target, opt.line_number, "choice"))
                     if opt.condition:
-                        if plain:
-                            errors.append(
-                                ValidationError(
-                                    message="Conditional choices are not allowed in Eager-SP mode",
-                                    line_number=opt.line_number,
-                                    level="error",
-                                )
-                            )
                         try:
                             compile_expr(opt.condition)
                         except ExprError as e:
@@ -270,71 +214,6 @@ def validate(items: Sequence[ParsedItem], *, plain: bool = False) -> ValidationR
                 )
 
     for item in items:
-        if plain:
-            if isinstance(item, (ParsedCall, ParsedReturn)):
-                errors.append(
-                    ValidationError(
-                        message="Subroutines ('>>', '<<') are not allowed in Eager-SP mode",
-                        line_number=item.line_number,
-                        level="error",
-                    )
-                )
-            elif isinstance(item, ParsedHook):
-                errors.append(
-                    ValidationError(
-                        message="Engine hooks ('~') are not allowed in Eager-SP mode",
-                        line_number=item.line_number,
-                        level="error",
-                    )
-                )
-            elif isinstance(item, (ParsedAppend, ParsedFreshBox)):
-                errors.append(
-                    ValidationError(
-                        message="Box control beats ('-', '/') are not allowed in Eager-SP mode",
-                        line_number=item.line_number,
-                        level="error",
-                    )
-                )
-            elif isinstance(item, (ParsedSet, ParsedDefault, ParsedCharacter, ParsedIf, ParsedElif, ParsedElse, ParsedEnd)):
-                errors.append(
-                    ValidationError(
-                        message="Script logic and directives are not allowed in Eager-SP mode",
-                        line_number=item.line_number,
-                        level="error",
-                    )
-                )
-            elif isinstance(item, ParsedDialogue) and item.voice:
-                errors.append(
-                    ValidationError(
-                        message="Voice tags ('{voice:...}') are not allowed in Eager-SP mode",
-                        line_number=item.line_number,
-                        level="error",
-                    )
-                )
-            elif isinstance(item, ParsedChoiceSet):
-                for opt in item.options:
-                    if opt.condition:
-                        errors.append(
-                            ValidationError(
-                                message="Conditional choices are not allowed in Eager-SP mode",
-                                line_number=opt.line_number,
-                                level="error",
-                            )
-                        )
-            elif isinstance(item, ParsedLabel):
-                expected_slug = slugify(item.display_name)
-                if item.name != expected_slug:
-                    errors.append(
-                        ValidationError(
-                            message=(
-                                f"Explicit label identifier '{item.name}' does not match "
-                                f"auto-slug of '{item.display_name}' (explicit IDs are not allowed in Eager-SP mode)"
-                            ),
-                            line_number=item.line_number,
-                            level="error",
-                        )
-                    )
-
         if isinstance(item, ParsedLabel):
             if current_label_seen and if_stack:
                 errors.append(

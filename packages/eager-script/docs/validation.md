@@ -10,7 +10,6 @@
 | :--- | :--- | :--- |
 | **Undefined Target** | `error` | A jump (`>`), subroutine call (`>>`), or choice option (`?`) points to a non-existent scene label. Targets inside inline choice blocks are checked too. |
 | **Duplicate Label** | `error` | Two or more scenes declare the same identifier. |
-| **Plain Mode Violations** | `error` | Script contains engine hooks, subroutine calls, text-box controls, or voice tags while running in `--plain` mode. |
 | **Unreturned Subroutine** | `warning` | A subroutine call (`>>`) exists, but the script contains no return instruction (`<<`). |
 | **Dead Code / Unreachable Statements** | `warning` | Statements located after an unconditional jump (`>`), return (`<<`), or a choice menu with no inline blocks within the same scene (and inside inline choice blocks). |
 | **Orphan Scene Label** | `warning` | A scene label is declared but never targeted by any jump, call, or choice. |
@@ -31,7 +30,7 @@ Because an inline choice block returns to the line after the menu, statements th
 import eager_script
 
 items = eager_script.parse(script)
-result = eager_script.validate(items, plain=False)
+result = eager_script.validate(items)
 
 if not result.is_valid:
     print(f"Validation failed with {len(result.errors)} errors.")
@@ -62,9 +61,6 @@ Validate scripts directly in terminal or CI/CD pipelines:
 ```bash
 # Validate screenplay DSL
 eager-script check script.es
-
-# Validate using strict Eager-SP rules
-eager-script check --plain manuscript.es
 ```
 
 Example output:

@@ -194,7 +194,6 @@ Guide: Welcome!
         script=str(script_file),
         output=str(out_json),
         locale="template",
-        plain=False,
         merge=False,
     )
     code_ext = _cmd_i18n_extract(args_ext)
@@ -208,7 +207,6 @@ Guide: Welcome!
     args_chk = argparse.Namespace(
         catalog=str(out_json),
         script=str(script_file),
-        plain=False,
         strict=True,
     )
     code_chk = _cmd_i18n_check(args_chk)
@@ -237,7 +235,6 @@ Guide: Welcome!
 
     args = argparse.Namespace(
         script=str(script_file),
-        plain=False,
         lang="vi",
         all_paths=False,
         max_steps=10,
