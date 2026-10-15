@@ -259,16 +259,6 @@ Narrator: You arrived.
         graph_from_iter = to_graph(parse_iter(SAMPLE_SCRIPT))
         self.assertEqual(graph_from_list, graph_from_iter)
 
-    def test_html_export(self):
-        graph = parse_graph(SAMPLE_SCRIPT)
-        html_out = graph.to_html(title="Sample Adventure")
-        self.assertIn("<!DOCTYPE html>", html_out)
-        self.assertIn("Sample Adventure", html_out)
-        self.assertIn("courtyard", html_out)
-        self.assertIn("mermaid", html_out)
-        self.assertIn("scene-list", html_out)
-        self.assertIn("inspector", html_out)
-
 
 class TestGraphCLI(unittest.TestCase):
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
@@ -324,12 +314,6 @@ class TestGraphCLI(unittest.TestCase):
             res_mmd = self.run_cli("graph", f_path, "--format", "mermaid")
             self.assertEqual(res_mmd.returncode, 0)
             self.assertIn("flowchart TD", res_mmd.stdout)
-
-            # HTML format
-            res_html = self.run_cli("graph", f_path, "--format", "html")
-            self.assertEqual(res_html.returncode, 0)
-            self.assertIn("<!DOCTYPE html>", res_html.stdout)
-            self.assertIn("Eager Scene Graph", res_html.stdout)
         finally:
             Path(f_path).unlink(missing_ok=True)
 
@@ -402,10 +386,6 @@ class TestAnonymousScenes(unittest.TestCase):
         self.assertNotIn("tavern__anon_3", self.graph.terminal_scenes())
         self.assertNotIn("tavern__anon_3", self.graph.dead_ends())
         self.assertIn("nightfall", self.graph.terminal_scenes())
-
-    def test_html_export_tags_anonymous_scenes(self) -> None:
-        html_out = self.graph.to_html()
-        self.assertIn('"anonymous"', html_out)
 
     def test_anonymous_jump_inside_block_leaves_scene(self) -> None:
         script = """\

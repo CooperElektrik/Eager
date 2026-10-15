@@ -81,8 +81,6 @@ def _cmd_graph(args: argparse.Namespace) -> int:
             output_text = graph.to_dot()
         elif args.format == "mermaid":
             output_text = graph.to_mermaid()
-        elif args.format == "html":
-            output_text = graph.to_html(title=path.stem)
         else:  # json
             include_body = not args.no_body
             output_text = graph.to_json(include_body=include_body, indent=args.indent)
@@ -145,9 +143,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     graph_cmd.add_argument(
         "--format",
-        choices=["json", "dot", "mermaid", "html"],
+        choices=["json", "dot", "mermaid"],
         default="json",
-        help="Graph output format: json, dot, mermaid, or html (default: json)",
+        help="Graph output format: json, dot, or mermaid (default: json)",
     )
     graph_cmd.add_argument(
         "--no-body",
