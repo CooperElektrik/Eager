@@ -49,6 +49,7 @@ _ALPHA_MODULATION_1024: list[list[int]] = [
 ]
 _QUANT_ALPHA_LUT = [255 if i == 255 else max(1, min(254, round(i / 4) * 4)) for i in range(256)]
 _PLACEHOLDER_GRAD_LUT: list[int] = [int(200 + p * 0.21) for p in range(256)]
+_OPAQUE_LUT: list[int] = [255 if i == 255 else 0 for i in range(256)]
 _WHITE_RGBA: tuple[int, int, int, int] = (255, 255, 255, 255)
 _PIL_ANCHOR_X: dict[str, str] = {"left": "l", "center": "m", "right": "r"}
 _PIL_ANCHOR_Y: dict[str, str] = {"top": "t", "middle": "m", "bottom": "s"}
@@ -95,6 +96,110 @@ def _alpha_bbox(img: Image.Image) -> tuple[int, int, int, int] | None:
         return img.getbbox(alpha_only=True)
     except TypeError:  # Pillow < 9.4 lacks the alpha_only keyword
         return img.getchannel("A").getbbox()
+
+
+def _max_rect(data: bytes, cw: int, ch: int) -> tuple[int, int, int, int] | None:
+    """Largest all-``255`` rectangle in a ``cw`` x ``ch`` byte grid (cell coords, end-exclusive)."""
+    heights = [0] * cw
+    best: tuple[int, int, int, int] | None = None
+    best_area = 0
+    for y in range(ch):
+        base = y * cw
+        for x in range(cw):
+            heights[x] = heights[x] + 1 if data[base + x] else 0
+        stack: list[tuple[int, int]] = []
+        for x in range(cw + 1):
+            h_cur = heights[x] if x < cw else 0
+            start = x
+            while stack and stack[-1][1] > h_cur:
+                sx, sh = stack.pop()
+                area = sh * (x - sx)
+                if area > best_area:
+                    best_area = area
+                    best = (sx, y - sh + 1, x, y + 1)
+                start = sx
+            stack.append((start, h_cur))
+    return best
+
+
+def _largest_opaque_rect(
+    mask: Image.Image, *, min_frac: float = 0.15, min_area: int = 4096
+) -> tuple[int, int, int, int] | None:
+    """Largest axis-aligned rectangle of fully-opaque pixels in an ``L`` *mask*.
+
+    The search runs on a coarse downsampled grid (a ``BOX`` average of a 0/255
+    mask is 255 only when *every* contributing pixel is opaque), so it is cheap
+    even for multi-megapixel sprites and never reports a rectangle containing
+    partially-transparent pixels.  Returns ``None`` when no worthwhile interior
+    exists (e.g. soft glows), leaving the caller on the general masked path.
+    """
+    w, h = mask.size
+    if w * h < min_area:
+        return None
+    op = mask.point(_OPAQUE_LUT)
+    if op.getbbox() is None:
+        return None
+    step = max(1, int((w * h / 8000) ** 0.5))
+    cw, ch = w // step, h // step
+    if cw < 1 or ch < 1:
+        return None
+    best = _max_rect(op.resize((cw, ch), Image.Resampling.BOX).tobytes(), cw, ch)
+    if best is None:
+        return None
+    rect = (best[0] * step, best[1] * step, min(w, best[2] * step), min(h, best[3] * step))
+    for _ in range(4):
+        if rect[2] - rect[0] <= 0 or rect[3] - rect[1] <= 0:
+            return None
+        if op.crop(rect).getextrema() == (255, 255):
+            break
+        rect = (rect[0] + step, rect[1] + step, rect[2] - step, rect[3] - step)
+    else:
+        return None
+    if (rect[2] - rect[0]) * (rect[3] - rect[1]) < min_frac * w * h:
+        return None
+    return rect
+
+
+def _solid_band(
+    color: Image.Image, mask: Image.Image, box: tuple[int, int, int, int]
+) -> tuple[Image.Image, Image.Image | None, int, int] | None:
+    """Build a compositing patch for *box*: unmasked when opaque, else masked."""
+    m = mask.crop(box)
+    lo, hi = m.getextrema()
+    if hi == 0:
+        return None  # fully transparent band — nothing to draw
+    patch_mask = None if lo == 255 else m  # fully opaque band needs no mask
+    return (color.crop(box), patch_mask, box[0], box[1])
+
+
+def _split_patches(
+    color: Image.Image, mask: Image.Image
+) -> list[tuple[Image.Image, Image.Image | None, int, int]] | None:
+    """Decompose a masked sprite into patches whose *interior* can be pasted unmasked.
+
+    Masked ``paste`` blends every pixel in the bounding box; pasting a large
+    fully-opaque interior without a mask is ~10x cheaper, so we split the sprite
+    into that interior (unmasked) plus up to four masked fringe bands (which
+    exactly tile the remaining pixels).  The result is byte-identical to a single
+    masked paste.  Returns ``None`` when the decomposition would not pay off.
+    """
+    rect = _largest_opaque_rect(mask)
+    if rect is None:
+        return None
+    x0, y0, x1, y1 = rect
+    w, h = mask.size
+    patches: list[tuple[Image.Image, Image.Image | None, int, int] | None] = [
+        (color.crop(rect), None, x0, y0)
+    ]
+    if y0 > 0:
+        patches.append(_solid_band(color, mask, (0, 0, w, y0)))
+    if y1 < h:
+        patches.append(_solid_band(color, mask, (0, y1, w, h)))
+    if x0 > 0:
+        patches.append(_solid_band(color, mask, (0, y0, x0, y1)))
+    if x1 < w:
+        patches.append(_solid_band(color, mask, (x1, y0, w, y1)))
+    return [p for p in patches if p is not None]
 
 
 class _ImageLRU(OrderedDict):  # type: ignore[type-arg]
@@ -145,7 +250,7 @@ class _CachedSprite:
     straight-alpha RGBA sprite (materialised lazily).
     """
 
-    __slots__ = ("_image", "color", "mask", "nbytes", "off_x", "off_y")
+    __slots__ = ("_image", "color", "mask", "nbytes", "off_x", "off_y", "patches")
 
     def __init__(
         self,
@@ -153,11 +258,16 @@ class _CachedSprite:
         mask: Image.Image | None,
         off_x: float,
         off_y: float,
+        patches: list[tuple[Image.Image, Image.Image | None, int, int]] | None = None,
     ) -> None:
         self.color = color
         self.mask = mask
         self.off_x = off_x
         self.off_y = off_y
+        # Optional opaque-core + fringe decomposition.  When present it is
+        # byte-identical to compositing ``color`` through ``mask`` but lets the
+        # hot path use cheap unmasked pastes for the bulk of the sprite.
+        self.patches = patches
         self.nbytes = _image_nbytes(color) + _image_nbytes(mask)
         self._image: Image.Image | None = None
 
@@ -212,7 +322,15 @@ class _CachedSprite:
 class _GeomEntry:
     """Base geometry for a sprite before opacity modulation."""
 
-    __slots__ = ("alpha_masks", "color", "natural_mask", "nbytes", "off_x", "off_y")
+    __slots__ = (
+        "alpha_masks",
+        "color",
+        "natural_mask",
+        "nbytes",
+        "off_x",
+        "off_y",
+        "patches",
+    )
 
     def __init__(
         self,
@@ -220,13 +338,20 @@ class _GeomEntry:
         natural_mask: Image.Image | None,
         off_x: float,
         off_y: float,
+        patches: list[tuple[Image.Image, Image.Image | None, int, int]] | None = None,
     ) -> None:
         self.color = color
         self.natural_mask = natural_mask
         self.off_x = off_x
         self.off_y = off_y
+        self.patches = patches
         self.alpha_masks: dict[int, Image.Image] = {}
-        self.nbytes = _image_nbytes(color) + _image_nbytes(natural_mask)
+        patch_bytes = (
+            sum(_image_nbytes(p[0]) + _image_nbytes(p[1]) for p in patches)
+            if patches is not None
+            else 0
+        )
+        self.nbytes = _image_nbytes(color) + _image_nbytes(natural_mask) + patch_bytes
 
     def __len__(self) -> int:
         return 4
@@ -912,6 +1037,18 @@ class PILRenderer(RenderBackend):
         else:
             if self._needs_clear:
                 self._execute_clear()
+            patches = cached_sprite.patches
+            if patches is not None:
+                # Opaque-core + fringe decomposition: the bulk of the sprite is
+                # pasted unmasked (no per-pixel blend), the rest exactly as the
+                # single masked paste would have been.
+                for patch_color, patch_mask, patch_dx, patch_dy in patches:
+                    pos = (dest_x + patch_dx, dest_y + patch_dy)
+                    if patch_mask is None:
+                        self._image.paste(patch_color, pos)
+                    else:
+                        self._image.paste(patch_color, pos, patch_mask)
+                return
             if cached_sprite.mask is not None:
                 self._image.paste(cached_sprite.color, (dest_x, dest_y), cached_sprite.mask)
             elif self.mode == "RGBA":
@@ -1081,6 +1218,26 @@ class PILRenderer(RenderBackend):
                 img = img.point(lut)
                 shared_img = False
 
+            # D2. Tighten to the non-transparent region.
+            #
+            # ``paste(color, box, mask)`` blends *every* pixel in the sprite's
+            # bounding box, including fully-transparent margins.  Cropping an
+            # axis-aligned masked sprite to its alpha bounding box shrinks the
+            # per-frame blend area (and the cached geometry) for free.  Rotated
+            # sprites are already tightened above; opaque sprites keep their
+            # full frame so the "background replaces the canvas" fast path
+            # still applies.
+            if is_ortho and not base_is_opaque:
+                bbox = _alpha_bbox(img)
+                if bbox is None:
+                    return _CachedSprite(None, None, off_x, off_y)
+                if bbox != (0, 0, img.width, img.height):
+                    img = img.crop(bbox)
+                    off_x += bbox[0]
+                    off_y += bbox[1]
+                    # ``img`` is now a private crop, so splitting can mutate it.
+                    shared_img = False
+
             # E. Split into color + mask
             if base_is_opaque and is_ortho:
                 geom_color = img
@@ -1088,7 +1245,16 @@ class PILRenderer(RenderBackend):
             else:
                 geom_color, natural_mask = _split_rgba(img, shared=shared_img)
 
-            geom = _GeomEntry(geom_color, natural_mask, off_x, off_y)
+            # The opaque-core decomposition costs a one-off search, so only build
+            # it for geometry that gets cached.  In-motion sprites rebuild their
+            # transform every frame; the search would then run per frame and cost
+            # more than it saves, so they stay on the plain masked path.
+            patches = (
+                _split_patches(geom_color, natural_mask)
+                if natural_mask is not None and not is_in_motion
+                else None
+            )
+            geom = _GeomEntry(geom_color, natural_mask, off_x, off_y, patches)
             if not is_in_motion:
                 self._geom_cache.put(geom_key, geom, geom.nbytes)
 
@@ -1097,7 +1263,11 @@ class PILRenderer(RenderBackend):
         final_alpha_byte = round(final_alpha_f * 255)
 
         if final_alpha_byte == 255:
-            mask = geom.natural_mask
+            # Full opacity: reuse the natural mask verbatim, along with the
+            # opaque-core decomposition when one was prepared for this geometry.
+            return _CachedSprite(
+                geom.color, geom.natural_mask, geom.off_x, geom.off_y, geom.patches
+            )
         else:
             effective_alpha = quant_alpha if quant_alpha is not None else round(final_alpha_f * 255)
             mask = geom.alpha_masks.get(effective_alpha)
@@ -1557,8 +1727,14 @@ class PILRenderer(RenderBackend):
                 nbytes = _image_nbytes(grad_resized)
             else:
                 color_plane = grad_resized.convert("RGB")
-                mask_plane = grad_resized.getchannel("A")
-                nbytes = _image_nbytes(color_plane) + _image_nbytes(mask_plane)
+                # A fully opaque ramp needs no mask; pasting the colour plane
+                # directly is ~10x faster than a masked blend.
+                if tc[3] == 255 and bc[3] == 255:
+                    mask_plane = None
+                    nbytes = _image_nbytes(color_plane)
+                else:
+                    mask_plane = grad_resized.getchannel("A")
+                    nbytes = _image_nbytes(color_plane) + _image_nbytes(mask_plane)
 
             entry = (color_plane, mask_plane)
             self._gradient_cache.put(cache_key, entry, nbytes)
@@ -1566,8 +1742,10 @@ class PILRenderer(RenderBackend):
         color_plane, mask_plane = entry
         if self.mode == "RGBA":
             self._image.alpha_composite(color_plane, (left, top))
-        else:
+        elif mask_plane is not None:
             self._image.paste(color_plane, (left, top), mask_plane)
+        else:
+            self._image.paste(color_plane, (left, top))
 
     def draw_text(
         self,
@@ -2041,22 +2219,35 @@ if PIL_AVAILABLE:
             # Present the already-stepped first beat, then enter the loop.
             self.on_draw()
             self._last_tick = time.perf_counter()
-            self._tick_loop()
-            root.mainloop()
+            self._run_loop()
 
-        def _tick_loop(self) -> None:
-            """Advance animations, redraw, and reschedule (drives itself via after)."""
-            if self._closed or self._root is None:
-                return
-            now = time.perf_counter()
-            dt = now - self._last_tick if self._last_tick > 0.0 else (1.0 / 60.0)
-            self._last_tick = now
-            self.tick(dt)
-            self.on_draw()
-            target_interval = 16 if (self.vsync and not self.uncapped) else 1
-            elapsed_ms = (time.perf_counter() - now) * 1000.0
-            delay = max(1, round(target_interval - elapsed_ms)) if target_interval > 1 else 1
-            self._root.after(delay, self._tick_loop)
+        def _run_loop(self) -> None:
+            """Drive the frame loop until the window closes (blocking).
+
+            Tk's ``after(delay)`` timer has a coarse floor on many X11 setups
+            (observed ~20 ms here), which hard-caps the whole loop near 50 FPS
+            no matter what delay is requested -- including the ``uncapped``
+            path, which only asks for ``after(1)``.  Instead we pump the event
+            queue non-blockingly with ``update()`` and sleep out the remainder
+            of the frame budget.  That keeps input responsive, honours the
+            target cadence, and lets ``uncapped`` actually run unthrottled.
+            """
+            root = self._root
+            period = (1.0 / 60.0) if (self.vsync and not self.uncapped) else 0.0
+            while not self._closed and self._root is root:
+                started = time.perf_counter()
+                dt = started - self._last_tick if self._last_tick > 0.0 else (1.0 / 60.0)
+                self._last_tick = started
+                self.tick(dt)
+                self.on_draw()
+                try:
+                    root.update()  # process pending input/window events
+                except tk.TclError:  # window torn down from a callback
+                    break
+                if period:
+                    remaining = period - (time.perf_counter() - started)
+                    if remaining > 0.0:
+                        time.sleep(remaining)
 
         def close(self) -> None:
             """Close the player window (marks closed when running headless)."""
