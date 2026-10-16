@@ -543,4 +543,125 @@ def test_pil_player_shift_r_hot_reload(tmp_path: Path) -> None:
         player.close()
 
 
+def test_dirty_rectangle_tracking_single_moving_actor() -> None:
+    """When a single character moves, only damaged region is restored and only moving actor redrawn."""
+    from PIL import ImageChops
+
+    comp = StageCompositor(1280, 720)
+    comp.set_background("bg/tavern", duration=0.0)
+    comp.show_character("alice", "smiling", position="left", duration=0.0)
+    comp.show_character("bob", "smiling", position="right", duration=0.0)
+
+    renderer = PILRenderer(1280, 720)
+    # Frame 1: Full render populating _bg_cache
+    renderer.render_compositor(comp, 1280, 720)
+    assert renderer._last_dirty_bbox is None
+    assert renderer._bg_cache is not None
+
+    drawn_items: list[str] = []
+    orig_draw_item = renderer.draw_item
+
+    def tracking_draw_item(item: RenderItem) -> None:
+        drawn_items.append(item.asset_id)
+        orig_draw_item(item)
+
+    renderer.draw_item = tracking_draw_item  # type: ignore[method-assign]
+
+    # Frame 2: Bob moves towards center; Alice remains stationary on the left
+    comp.move_character("bob", "center", duration=1.0)
+    comp.step(0.1)
+
+    img = renderer.render_compositor(comp, 1280, 720)
+
+    # Verify dirty rect optimization was used and tracked
+    assert renderer._last_dirty_bbox is not None
+    dx0, _dy0, _dx1, _dy1 = renderer._last_dirty_bbox
+    # Bob is on the right/center; Alice is on the left (< 450)
+    assert dx0 > 450
+    assert "bob/smiling" in drawn_items
+    assert "alice/smiling" not in drawn_items
+
+    # Verify pixel-perfect fidelity against a fresh scratch render
+    fresh_renderer = PILRenderer(1280, 720)
+    fresh_img = fresh_renderer.render_compositor(comp, 1280, 720)
+    diff = ImageChops.difference(img, fresh_img)
+    assert diff.getbbox() is None
+
+
+def test_dirty_rectangle_intersecting_actors_redrawn() -> None:
+    """When a moving actor's bounding box intersects another actor, both are cleanly redrawn."""
+    from PIL import ImageChops
+
+    comp = StageCompositor(1280, 720)
+    comp.set_background("bg/tavern", duration=0.0)
+    # Place Alice and Bob close enough to overlap (left and center_left), Charlie far right
+    comp.show_character("alice", "smiling", position="left", duration=0.0)
+    comp.show_character("bob", "smiling", position="center_left", duration=0.0)
+    comp.show_character("charlie", "smiling", position="right", duration=0.0)
+
+    renderer = PILRenderer(1280, 720)
+    renderer.render_compositor(comp, 1280, 720)
+
+    drawn_items: list[str] = []
+    orig_draw_item = renderer.draw_item
+
+    def tracking_draw_item(item: RenderItem) -> None:
+        drawn_items.append(item.asset_id)
+        orig_draw_item(item)
+
+    renderer.draw_item = tracking_draw_item  # type: ignore[method-assign]
+
+    # Alice moves towards center_left (intersecting Bob)
+    comp.move_character("alice", "center_left", duration=1.0)
+    comp.step(0.1)
+
+    img = renderer.render_compositor(comp, 1280, 720)
+
+    # Intersecting actors Alice and Bob are redrawn; Charlie (far right) is untouched
+    assert renderer._last_dirty_bbox is not None
+    assert "alice/smiling" in drawn_items
+    assert "bob/smiling" in drawn_items
+    assert "charlie/smiling" not in drawn_items
+
+    # Verify pixel accuracy
+    fresh_renderer = PILRenderer(1280, 720)
+    fresh_img = fresh_renderer.render_compositor(comp, 1280, 720)
+    diff = ImageChops.difference(img, fresh_img)
+    assert diff.getbbox() is None
+
+
+def test_dirty_rectangle_actor_glow_tint_tracked() -> None:
+    """When an actor's tint or opacity changes (e.g. glow effect), dirty rect tracking activates."""
+    comp = StageCompositor(1280, 720)
+    comp.set_background("bg/tavern", duration=0.0)
+    comp.show_character("alice", "smiling", position="left", duration=0.0)
+    comp.show_character("bob", "smiling", position="right", duration=0.0)
+
+    renderer = PILRenderer(1280, 720)
+    renderer.render_compositor(comp, 1280, 720)
+
+    # Glow Alice: change tint
+    char_layer = comp.stage.get_layer("characters")
+    assert char_layer is not None
+    elem = char_layer.get_element("alice")
+    assert elem is not None
+    elem.state.tint = Color(1.0, 0.8, 0.2, 1.0)
+
+    drawn_items: list[str] = []
+    orig_draw_item = renderer.draw_item
+
+    def tracking_draw_item(item: RenderItem) -> None:
+        drawn_items.append(item.asset_id)
+        orig_draw_item(item)
+
+    renderer.draw_item = tracking_draw_item  # type: ignore[method-assign]
+
+    renderer.render_compositor(comp, 1280, 720)
+
+    assert "alice/smiling" in renderer._in_motion_assets
+    assert renderer._last_dirty_bbox is not None
+    assert "alice/smiling" in drawn_items
+    assert "bob/smiling" not in drawn_items
+
+
 

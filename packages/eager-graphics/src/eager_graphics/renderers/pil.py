@@ -98,6 +98,27 @@ def _alpha_bbox(img: Image.Image) -> tuple[int, int, int, int] | None:
         return img.getchannel("A").getbbox()
 
 
+def _union_bboxes(
+    a: tuple[int, int, int, int],
+    b: tuple[int, int, int, int],
+) -> tuple[int, int, int, int]:
+    """Return the minimal bounding box enclosing both a and b."""
+    return (
+        min(a[0], b[0]),
+        min(a[1], b[1]),
+        max(a[2], b[2]),
+        max(a[3], b[3]),
+    )
+
+
+def _bboxes_intersect(
+    a: tuple[int, int, int, int],
+    b: tuple[int, int, int, int],
+) -> bool:
+    """Return True if two (x0, y0, x1, y1) bounding boxes intersect."""
+    return a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]
+
+
 def _max_rect(data: bytes, cw: int, ch: int) -> tuple[int, int, int, int] | None:
     """Largest all-``255`` rectangle in a ``cw`` x ``ch`` byte grid (cell coords, end-exclusive)."""
     heights = [0] * cw
@@ -640,9 +661,13 @@ class PILRenderer(RenderBackend):
         self._ui_dirty_bbox: tuple[int, int, int, int] | None = None
 
         # Adaptive resampling & motion tracking
-        self._prev_item_geom: dict[tuple[str, str, int], tuple[float, float, float, float, float]] = {}
-        self._curr_item_geom: dict[tuple[str, str, int], tuple[float, float, float, float, float]] = {}
+        self._prev_item_geom: dict[tuple[str, str, int], tuple[Any, ...]] = {}
+        self._curr_item_geom: dict[tuple[str, str, int], tuple[Any, ...]] = {}
         self._in_motion_assets: set[str] = set()
+        self._prev_item_bboxes: dict[tuple[str, str, int], tuple[int, int, int, int]] = {}
+        self._curr_item_bboxes: dict[tuple[str, str, int], tuple[int, int, int, int]] = {}
+        self._last_had_overlay: bool = False
+        self._last_dirty_bbox: tuple[int, int, int, int] | None = None
 
     def set_window(self, window: Any) -> None:
         """Associate renderer with a player window (any object with .width/.height)."""
@@ -662,6 +687,10 @@ class PILRenderer(RenderBackend):
             self._base_cache = None
             self._stage_cache = None
             self._ui_dirty_bbox = None
+            self._prev_item_bboxes.clear()
+            self._curr_item_bboxes.clear()
+            self._last_had_overlay = False
+            self._last_dirty_bbox = None
 
     def _snapshot(self, target: Image.Image | None) -> Image.Image:
         """Snapshot current self._image into a pooled/reused target buffer without reallocating."""
@@ -721,6 +750,10 @@ class PILRenderer(RenderBackend):
         self._prev_item_geom.clear()
         self._curr_item_geom.clear()
         self._in_motion_assets.clear()
+        self._prev_item_bboxes.clear()
+        self._curr_item_bboxes.clear()
+        self._last_had_overlay = False
+        self._last_dirty_bbox = None
 
     def cache_info(self) -> dict[str, Any]:
         """Return diagnostic metrics about cache hits, misses, and current size."""
@@ -837,6 +870,66 @@ class PILRenderer(RenderBackend):
             )
         self._ensure_buffer()
         self._needs_clear = True
+
+    def _compute_item_bbox(
+        self,
+        item: RenderItem,
+        transform: ViewportTransform | None,
+    ) -> tuple[int, int, int, int] | None:
+        """Calculate the axis-aligned screen-space bounding box of a RenderItem."""
+        if transform is None:
+            return None
+        if item.opacity <= 0.0 or not (item.scale_x and item.scale_y) or item.tint.a <= 0.0:
+            return None
+
+        is_bg = item.layer == "background" or item.asset_id.startswith("bg/")
+        def_w = 1920 if is_bg else 400
+        def_h = 1080 if is_bg else 800
+        base_tex = self.asset_resolver.get_image(item.asset_id, def_w, def_h)
+
+        eff_w = base_tex.width * abs(item.scale_x)
+        eff_h = base_tex.height * abs(item.scale_y)
+        fx, fy = item.anchor.get_offset_factor()
+
+        draw_w = max(1, round(eff_w * transform.scale_x))
+        draw_h = max(1, round(eff_h * transform.scale_y))
+
+        anchor_s_x = transform.offset_x + item.x * transform.scale_x
+        anchor_s_y = transform.offset_y + item.y * transform.scale_y
+
+        rot_norm = round(item.rotation % 360.0, 2) if item.rotation != 0.0 else 0.0
+
+        if rot_norm == 0.0:
+            dest_x0 = round(anchor_s_x - draw_w * fx)
+            dest_y0 = round(anchor_s_y - draw_h * fy)
+            dest_x1 = dest_x0 + draw_w
+            dest_y1 = dest_y0 + draw_h
+        else:
+            corners = (
+                (-draw_w * fx, -draw_h * fy),
+                (draw_w * (1.0 - fx), -draw_h * fy),
+                (draw_w * (1.0 - fx), draw_h * (1.0 - fy)),
+                (-draw_w * fx, draw_h * (1.0 - fy)),
+            )
+            rad = math.radians(rot_norm)
+            cos_t = math.cos(rad)
+            sin_t = math.sin(rad)
+            xs = [anchor_s_x + (cx * cos_t - cy * sin_t) for cx, cy in corners]
+            ys = [anchor_s_y + (cx * sin_t + cy * cos_t) for cx, cy in corners]
+            dest_x0 = math.floor(min(xs))
+            dest_y0 = math.floor(min(ys))
+            dest_x1 = math.ceil(max(xs))
+            dest_y1 = math.ceil(max(ys))
+
+        # Clamp to canvas boundaries with a 1-pixel margin for anti-aliasing / filtering
+        x0 = max(0, min(self.width, dest_x0 - 1))
+        y0 = max(0, min(self.height, dest_y0 - 1))
+        x1 = max(0, min(self.width, dest_x1 + 1))
+        y1 = max(0, min(self.height, dest_y1 + 1))
+
+        if x1 <= x0 or y1 <= y0:
+            return None
+        return (x0, y0, x1, y1)
 
     def draw_item(self, item: RenderItem) -> None:
         """Render a single compositor item."""
@@ -1310,6 +1403,7 @@ class PILRenderer(RenderBackend):
         self._frame_buffer = []
         self._in_frame = False
         self._prev_item_geom = self._curr_item_geom
+        self._prev_item_bboxes = self._curr_item_bboxes
         self.frame_count += 1
         self.clock.tick()
 
@@ -1362,6 +1456,7 @@ class PILRenderer(RenderBackend):
             self.frame_count += 1
             self.clock.tick()
             self._in_motion_assets = set()
+            self._last_dirty_bbox = None
             if self._ui_dirty_bbox is not None:
                 # Localized dirty subregion restore from clean stage cache
                 x0, y0, x1, y1 = self._ui_dirty_bbox
@@ -1376,28 +1471,36 @@ class PILRenderer(RenderBackend):
                 self._image.paste(self._stage_cache, (0, 0))
             return self._image
 
-        # Temporal filter adaptation: detect which items are actively moving/tweening
-        if self.adaptive_resampling:
-            curr_geom: dict[tuple[str, str, int], tuple[float, float, float, float, float]] = {}
-            in_motion: set[str] = set()
-            for it in items:
-                k = (it.layer, it.asset_id, it.z_order)
-                g = (
-                    it.x,
-                    it.y,
-                    it.scale_x,
-                    it.scale_y,
-                    it.rotation,
-                )
-                curr_geom[k] = g
-                prev = self._prev_item_geom.get(k)
-                if prev is not None and prev != g:
-                    in_motion.add(it.asset_id)
-            self._curr_item_geom = curr_geom
-            self._in_motion_assets = in_motion
-        else:
-            self._curr_item_geom = {}
-            self._in_motion_assets = set()
+        # Motion tracking: detect which items are actively moving/tweening/changing
+        curr_geom: dict[tuple[str, str, int], tuple[Any, ...]] = {}
+        in_motion: set[str] = set()
+        for it in items:
+            k = (it.layer, it.asset_id, it.z_order)
+            t = it.tint
+            tint_key = t.to_rgba_bytes() if hasattr(t, "to_rgba_bytes") else (t.r, t.g, t.b, t.a)
+            g = (
+                it.x,
+                it.y,
+                it.scale_x,
+                it.scale_y,
+                it.rotation,
+                it.opacity,
+                tint_key,
+            )
+            curr_geom[k] = g
+            prev = self._prev_item_geom.get(k)
+            if prev is not None and prev != g:
+                in_motion.add(it.asset_id)
+        self._curr_item_geom = curr_geom
+        self._in_motion_assets = in_motion
+
+        curr_bboxes: dict[tuple[str, str, int], tuple[int, int, int, int]] = {}
+        for it in items:
+            k = (it.layer, it.asset_id, it.z_order)
+            bb = self._compute_item_bbox(it, self._current_transform)
+            if bb is not None:
+                curr_bboxes[k] = bb
+        self._curr_item_bboxes = curr_bboxes
 
         # Separate items into 3 composition tiers: Background, Actors, Overlay
         bg_items: list[RenderItem] = []
@@ -1443,12 +1546,84 @@ class PILRenderer(RenderBackend):
             self._frame_buffer.extend(base_items)
             for item in overlay_items:
                 self.draw_item(item)
+            self._last_dirty_bbox = None
         elif can_use_bg_cache:
-            self._image.paste(self._bg_cache, (0, 0))
-            self._needs_clear = False
-            self._frame_buffer.extend(bg_items)
-            for item in actor_items:
-                self.draw_item(item)
+            assert self._bg_cache is not None
+            use_dirty_rect = False
+            dirty_bbox: tuple[int, int, int, int] | None = None
+            if (
+                self._last_stage_items is not None
+                and not overlay_items
+                and not self._last_had_overlay
+                and bool(self._in_motion_assets)
+            ):
+                dirty_boxes: list[tuple[int, int, int, int]] = []
+                for it in actor_items:
+                    k = (it.layer, it.asset_id, it.z_order)
+                    if it.asset_id in self._in_motion_assets:
+                        curr_bb = curr_bboxes.get(k)
+                        prev_bb = self._prev_item_bboxes.get(k)
+                        if curr_bb is not None and prev_bb is not None:
+                            dirty_boxes.append(_union_bboxes(curr_bb, prev_bb))
+                        elif curr_bb is not None:
+                            dirty_boxes.append(curr_bb)
+                        elif prev_bb is not None:
+                            dirty_boxes.append(prev_bb)
+
+                for k, prev_bb in self._prev_item_bboxes.items():
+                    if k[0] not in ("background", "overlay") and k not in curr_bboxes:
+                        dirty_boxes.append(prev_bb)
+
+                if self._ui_dirty_bbox is not None:
+                    dirty_boxes.append(self._ui_dirty_bbox)
+
+                if dirty_boxes:
+                    dirty_bbox = dirty_boxes[0]
+                    for db in dirty_boxes[1:]:
+                        dirty_bbox = _union_bboxes(dirty_bbox, db)
+
+                    # Expand dirty_bbox to include any intersecting actors
+                    expanded = True
+                    while expanded:
+                        expanded = False
+                        for it in actor_items:
+                            k = (it.layer, it.asset_id, it.z_order)
+                            bb = curr_bboxes.get(k)
+                            if bb is not None and _bboxes_intersect(bb, dirty_bbox):
+                                new_dirty = _union_bboxes(dirty_bbox, bb)
+                                if new_dirty != dirty_bbox:
+                                    dirty_bbox = new_dirty
+                                    expanded = True
+
+                    x0, y0, x1, y1 = dirty_bbox
+                    w_box, h_box = x1 - x0, y1 - y0
+                    if w_box > 0 and h_box > 0 and (w_box * h_box < 0.85 * window_width * window_height):
+                        use_dirty_rect = True
+
+            if use_dirty_rect and dirty_bbox is not None:
+                crop = self._bg_cache.crop(dirty_bbox)
+                self._image.paste(crop, (dirty_bbox[0], dirty_bbox[1]))
+                self._needs_clear = False
+                self._frame_buffer.extend(bg_items)
+
+                for item in actor_items:
+                    k = (item.layer, item.asset_id, item.z_order)
+                    bb = curr_bboxes.get(k)
+                    if bb is not None and _bboxes_intersect(bb, dirty_bbox):
+                        self.draw_item(item)
+                    else:
+                        self._frame_buffer.append(item)
+
+                self._ui_dirty_bbox = None
+                self._last_dirty_bbox = dirty_bbox
+            else:
+                self._image.paste(self._bg_cache, (0, 0))
+                self._needs_clear = False
+                self._frame_buffer.extend(bg_items)
+                for item in actor_items:
+                    self.draw_item(item)
+                self._ui_dirty_bbox = None
+                self._last_dirty_bbox = None
 
             if overlay_items:
                 self._base_cache = self._snapshot(self._base_cache)
@@ -1462,6 +1637,7 @@ class PILRenderer(RenderBackend):
             for item in overlay_items:
                 self.draw_item(item)
         else:
+            self._last_dirty_bbox = None
             self.clear(BLACK)
 
             skip_count = 0
@@ -1589,6 +1765,7 @@ class PILRenderer(RenderBackend):
         self._last_stage_items = items
         self._last_transform = self._current_transform
         self._ui_dirty_bbox = None
+        self._last_had_overlay = bool(overlay_items)
 
         return self._image
 
