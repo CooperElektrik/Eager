@@ -47,6 +47,7 @@ _ALPHA_LUTS: list[list[int]] = [
 _ALPHA_MODULATION_1024: list[list[int]] = [
     _IDENTITY_256 + _IDENTITY_256 + _IDENTITY_256 + _ALPHA_LUTS[a] for a in range(256)
 ]
+_QUANT_ALPHA_LUT = [255 if i == 255 else max(1, min(254, round(i / 4) * 4)) for i in range(256)]
 _PLACEHOLDER_GRAD_LUT: list[int] = [int(200 + p * 0.21) for p in range(256)]
 _WHITE_RGBA: tuple[int, int, int, int] = (255, 255, 255, 255)
 _PIL_ANCHOR_X: dict[str, str] = {"left": "l", "center": "m", "right": "r"}
@@ -750,7 +751,7 @@ class PILRenderer(RenderBackend):
             ):
                 return
         else:
-            rad = math.hypot(draw_w, draw_h) * 0.5
+            rad = max(draw_w, draw_h)
             if (
                 anchor_s_x + rad <= 0
                 or anchor_s_y + rad <= 0
@@ -770,27 +771,41 @@ class PILRenderer(RenderBackend):
         final_alpha_byte = round(final_alpha_f * 255)
         color_tint = tint_rgba[:3]
 
-        # Fast path for 1x1 solid color texture (e.g. fullscreen screen fades and flashes)
+        # Fast path for 1x1 solid color texture (UI blocks, screen fades, flashes)
         if base_tex.size == (1, 1) and rot_norm == 0.0:
+            if final_alpha_byte == 0:
+                return
             dest_x = round(anchor_s_x - draw_w * fx)
             dest_y = round(anchor_s_y - draw_h * fy)
+            px = base_tex.getpixel((0, 0))
+            r = round(px[0] * (tint_rgba[0] / 255.0))
+            g = round(px[1] * (tint_rgba[1] / 255.0))
+            b = round(px[2] * (tint_rgba[2] / 255.0))
+
+            if final_alpha_byte == 255:
+                # Opaque shape of any size: bypass Image.new() allocation and use paste(color, box)
+                c_fill = (r, g, b) if self.mode == "RGB" else (r, g, b, 255)
+                box = (dest_x, dest_y, dest_x + draw_w, dest_y + draw_h)
+                if (
+                    dest_x <= 0
+                    and dest_y <= 0
+                    and dest_x + draw_w >= self.width
+                    and dest_y + draw_h >= self.height
+                ):
+                    self._image.paste(c_fill, box)
+                    self._needs_clear = False
+                else:
+                    if self._needs_clear:
+                        self._execute_clear()
+                    self._image.paste(c_fill, box)
+                return
+
             if (
                 dest_x <= 0
                 and dest_y <= 0
                 and dest_x + draw_w >= self.width
                 and dest_y + draw_h >= self.height
             ):
-                if final_alpha_byte == 0:
-                    return
-                px = base_tex.getpixel((0, 0))
-                r = round(px[0] * (tint_rgba[0] / 255.0))
-                g = round(px[1] * (tint_rgba[1] / 255.0))
-                b = round(px[2] * (tint_rgba[2] / 255.0))
-                if final_alpha_byte == 255:
-                    c_fill = (r, g, b) if self.mode == "RGB" else (r, g, b, 255)
-                    self._image.paste(c_fill, (0, 0, self.width, self.height))
-                    self._needs_clear = False
-                    return
                 if self._needs_clear:
                     self._execute_clear()
                 lut_key = (r, g, b, final_alpha_byte, self.mode)
@@ -812,11 +827,7 @@ class PILRenderer(RenderBackend):
 
         # 5. Transform Cache Lookup with Quantized Alpha Decoupling
         op_quant = 1.0 if item.opacity == 1.0 else round(item.opacity, 3)
-        quant_alpha = (
-            255
-            if final_alpha_byte == 255
-            else max(1, min(254, round(final_alpha_byte / 4) * 4))
-        )
+        quant_alpha = _QUANT_ALPHA_LUT[final_alpha_byte]
         cache_key = (
             item.asset_id,
             draw_w,
@@ -1157,6 +1168,8 @@ class PILRenderer(RenderBackend):
         # Fast-path (Tier 3): Check if full stage is identical to previous frame
         if (
             self._stage_cache is not None
+            and self._last_stage_items is not None
+            and len(self._last_stage_items) == len(items)
             and self._last_stage_items == items
             and self._last_transform == self._current_transform
             and self._stage_cache.size == (window_width, window_height)
@@ -1186,11 +1199,11 @@ class PILRenderer(RenderBackend):
             for it in items:
                 k = (it.layer, it.asset_id, it.z_order)
                 g = (
-                    round(it.x, 1),
-                    round(it.y, 1),
-                    round(it.scale_x, 3),
-                    round(it.scale_y, 3),
-                    round(it.rotation, 1),
+                    it.x,
+                    it.y,
+                    it.scale_x,
+                    it.scale_y,
+                    it.rotation,
                 )
                 curr_geom[k] = g
                 prev = self._prev_item_geom.get(k)
@@ -1221,6 +1234,8 @@ class PILRenderer(RenderBackend):
         can_use_base_cache = (
             bool(overlay_items)
             and self._base_cache is not None
+            and self._last_base_items is not None
+            and len(self._last_base_items) == len(base_items)
             and self._last_base_items == base_items
             and self._last_base_transform == self._current_transform
             and self._base_cache.size == (window_width, window_height)
@@ -1230,6 +1245,8 @@ class PILRenderer(RenderBackend):
         can_use_bg_cache = (
             bool(bg_items)
             and self._bg_cache is not None
+            and self._last_bg_items is not None
+            and len(self._last_bg_items) == len(bg_items)
             and self._last_bg_items == bg_items
             and self._last_bg_transform == self._current_transform
             and self._bg_cache.size == (window_width, window_height)
@@ -1377,7 +1394,11 @@ class PILRenderer(RenderBackend):
         self.end_frame()
 
         # Snapshot clean stage buffer for static scene caching (Tier 3).
-        if self._last_stage_items == items or self._stage_cache is None:
+        if (
+            self._last_stage_items is not None
+            and len(self._last_stage_items) == len(items)
+            and self._last_stage_items == items
+        ) or self._stage_cache is None:
             self._stage_cache = self._image.copy()
         else:
             self._stage_cache = None
