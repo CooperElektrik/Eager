@@ -23,19 +23,10 @@ from eager_graphics.ui_state import ChoiceOption, UIState
 
 
 def test_dialogue_box_is_docked_at_the_bottom() -> None:
-    # Classic boxed mode has margins and bottom gap
-    classic_box = DialogueBox(1280, 720, style=TextboxStyle.classic())
-    classic_box.set_content(None, "Hello")
-    bx, by, bw, bh = classic_box.layout().box
-
-    assert by + bh == pytest.approx(720 - 25)
-    assert bx == pytest.approx(64)
-    assert bw == pytest.approx(1152)
-
-    # Cinematic mode spans full width and docks flush to the bottom edge
-    cinematic_box = DialogueBox(1280, 720, style=TextboxStyle.cinematic())
-    cinematic_box.set_content(None, "Hello")
-    cx, cy, cw, ch = cinematic_box.layout().box
+    # Default cinematic mode spans full width and docks flush to the bottom edge
+    box = DialogueBox(1280, 720)
+    box.set_content(None, "Hello")
+    cx, cy, cw, ch = box.layout().box
 
     assert cy + ch == pytest.approx(720)
     assert cx == pytest.approx(0)
@@ -43,7 +34,15 @@ def test_dialogue_box_is_docked_at_the_bottom() -> None:
 
 
 def test_dialogue_box_nameplate_straddles_top_edge() -> None:
-    box = DialogueBox(1280, 720, style=TextboxStyle.classic())
+    boxed_style = TextboxStyle(
+        layout_mode="classic",
+        show_nameplate_box=True,
+        min_margin=20.0,
+        margin_ratio=0.05,
+        bottom_gap=25.0,
+        nameplate_overlap=15.0,
+    )
+    box = DialogueBox(1280, 720, style=boxed_style)
     box.set_content("Meris", "You have returned.")
 
     layout = box.layout()
@@ -59,7 +58,7 @@ def test_dialogue_box_nameplate_straddles_top_edge() -> None:
 
 
 def test_dialogue_box_cinematic_inline_speaker() -> None:
-    box = DialogueBox(1280, 720, style=TextboxStyle.cinematic())
+    box = DialogueBox(1280, 720)
     box.set_content("Meris", "You have returned.")
 
     layout = box.layout()
@@ -67,16 +66,18 @@ def test_dialogue_box_cinematic_inline_speaker() -> None:
 
 
 def test_dialogue_box_no_nameplate_for_narration() -> None:
-    box = DialogueBox(1280, 720, style=TextboxStyle.classic())
+    boxed_style = TextboxStyle(layout_mode="classic", show_nameplate_box=True)
+    box = DialogueBox(1280, 720, style=boxed_style)
     box.set_content(None, "The wind howls.")
 
     assert box.layout().nameplate is None
 
 
 def test_dialogue_box_nameplate_width_scales_with_name() -> None:
-    short = DialogueBox(1280, 720, style=TextboxStyle.classic())
+    boxed_style = TextboxStyle(layout_mode="classic", show_nameplate_box=True)
+    short = DialogueBox(1280, 720, style=boxed_style)
     short.set_content("Al", "x")
-    long = DialogueBox(1280, 720, style=TextboxStyle.classic())
+    long = DialogueBox(1280, 720, style=boxed_style)
     long.set_content("Bartholomew", "x")
 
     assert long.nameplate_width() > short.nameplate_width()
@@ -105,7 +106,13 @@ def test_dialogue_box_cache_key_tracks_visible_state() -> None:
 
 def test_dialogue_box_draw_emits_expected_primitives() -> None:
     backend = NullRenderer()
-    box = DialogueBox(1280, 720, style=TextboxStyle.classic())
+    boxed_style = TextboxStyle(
+        layout_mode="classic",
+        show_nameplate_box=True,
+        gradient_top=None,
+        gradient_bottom=None,
+    )
+    box = DialogueBox(1280, 720, style=boxed_style)
     box.set_content("Meris", "You have returned.")
 
     box.draw(backend)
@@ -123,7 +130,7 @@ def test_dialogue_box_draw_emits_expected_primitives() -> None:
 
 def test_dialogue_box_cinematic_draw_emits_gradient_and_inline_text() -> None:
     backend = NullRenderer()
-    box = DialogueBox(1280, 720, style=TextboxStyle.cinematic())
+    box = DialogueBox(1280, 720)
     box.set_content("Meris", "You have returned.")
 
     box.draw(backend)
@@ -192,7 +199,12 @@ def test_dialogue_box_respects_viewport_changes() -> None:
 
 
 def test_textbox_style_scaling_helpers() -> None:
-    style = TextboxStyle.classic()
+    style = TextboxStyle(
+        min_margin=20.0,
+        margin_ratio=0.05,
+        min_height=110.0,
+        height_ratio=0.22,
+    )
 
     assert style.box_margin(1280) == pytest.approx(64)
     assert style.box_margin(320) == pytest.approx(20)
@@ -276,7 +288,7 @@ def test_choice_menu_scales_with_resolution() -> None:
 
 
 def test_choice_menu_style_button_width_cap() -> None:
-    style = ChoiceMenuStyle.classic()
+    style = ChoiceMenuStyle(button_width=600, button_width_ratio=0.6)
     # Capped at the absolute maximum on wide viewports.
     assert style.button_width_for(4000) == pytest.approx(600)
     # Proportional on narrow ones.
@@ -285,7 +297,7 @@ def test_choice_menu_style_button_width_cap() -> None:
 
 def test_choice_menu_draw_labels_are_numbered_from_one() -> None:
     backend = NullRenderer()
-    menu = ChoiceMenu(1280, 720, style=ChoiceMenuStyle.classic())
+    menu = ChoiceMenu(1280, 720, style=ChoiceMenuStyle(show_numbering=True))
     menu.set_options(_options(2))
 
     menu.draw(backend)
@@ -296,7 +308,7 @@ def test_choice_menu_draw_labels_are_numbered_from_one() -> None:
 
 def test_choice_menu_cinematic_draw_is_clean_without_number_brackets() -> None:
     backend = NullRenderer()
-    menu = ChoiceMenu(1280, 720, style=ChoiceMenuStyle.cinematic())
+    menu = ChoiceMenu(1280, 720)
     menu.set_options(_options(2))
 
     menu.draw(backend)
@@ -357,8 +369,13 @@ def test_overlay_draws_all_three_layers_when_appropriate() -> None:
     overlay = UIOverlay(
         1280,
         720,
-        dialogue_style=TextboxStyle.classic(),
-        choice_style=ChoiceMenuStyle.classic(),
+        dialogue_style=TextboxStyle(
+            layout_mode="classic",
+            show_nameplate_box=True,
+            gradient_top=None,
+            gradient_bottom=None,
+        ),
+        choice_style=ChoiceMenuStyle(),
     )
 
     ui = UIState(speaker="Meris", text="Choose.")
@@ -616,7 +633,7 @@ def test_dialogue_box_typewriter_reveal_draws_partial_text_and_hides_arrow() -> 
 
 def test_choice_menu_selection_highlight_and_prefix() -> None:
     backend = NullRenderer()
-    menu = ChoiceMenu(1280, 720, style=ChoiceMenuStyle.classic())
+    menu = ChoiceMenu(1280, 720, style=ChoiceMenuStyle(layout_mode="classic", show_numbering=True))
     opts = [ChoiceOption(0, "Fight"), ChoiceOption(1, "Flee")]
     menu.set_options(opts)
 

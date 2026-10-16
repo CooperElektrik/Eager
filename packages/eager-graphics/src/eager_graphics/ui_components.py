@@ -68,20 +68,7 @@ _CINEMATIC_CHOICE_HOVER_FILL = Color(0.15, 0.18, 0.25, 0.94)
 _CINEMATIC_CHOICE_HOVER_BORDER = Color(0.95, 0.86, 0.62, 0.50)
 _CINEMATIC_CHOICE_ACCENT = Color(0.95, 0.86, 0.62, 0.95)
 
-# Legacy retro palette
-_CLASSIC_TEXTBOX_FILL = Color(0.059, 0.071, 0.098, 0.863)
-_CLASSIC_TEXTBOX_BORDER = Color(0.471, 0.549, 0.706, 1.0)
-_CLASSIC_NAMEPLATE_FILL = Color(0.137, 0.176, 0.255, 0.941)
-_CLASSIC_NAMEPLATE_BORDER = Color(0.627, 0.706, 0.863, 1.0)
-_CLASSIC_NAMEPLATE_TEXT = Color(1.0, 0.902, 0.471, 1.0)
-_CLASSIC_DIALOGUE_TEXT = Color(0.961, 0.961, 0.961, 1.0)
-_CLASSIC_ADVANCE_ARROW = Color(0.784, 0.784, 0.784, 0.784)
 
-_CLASSIC_CHOICE_FILL = Color(0.098, 0.118, 0.176, 0.902)
-_CLASSIC_CHOICE_BORDER = Color(0.353, 0.510, 0.784, 1.0)
-_CLASSIC_CHOICE_TEXT = Color(1.0, 1.0, 1.0, 1.0)
-_CLASSIC_CHOICE_HOVER_FILL = Color(0.18, 0.24, 0.35, 0.95)
-_CLASSIC_CHOICE_HOVER_BORDER = Color(0.6, 0.8, 1.0, 1.0)
 
 _END_BANNER_FILL = Color(0.04, 0.05, 0.07, 0.78)
 _END_TEXT = Color(0.85, 0.88, 0.92, 0.85)
@@ -103,8 +90,7 @@ class TextAnchor:
 class TextboxStyle:
     """Visual styling for :class:`DialogueBox`.
 
-    Defaults to a clean, minimal cinematic scrim docked to the bottom of the screen.
-    Use :meth:`classic` for the legacy boxed layout with retro high-contrast borders.
+    Configures a clean, minimal cinematic scrim docked to the bottom of the screen.
     """
 
     layout_mode: str = "cinematic"  # "cinematic" or "classic"
@@ -137,40 +123,6 @@ class TextboxStyle:
     min_margin: float = 0.0
     bottom_gap: float = 0.0
     nameplate_overlap: float = 0.0
-
-    @classmethod
-    def cinematic(cls) -> TextboxStyle:
-        """Full-width bottom cinematic scrim with clean inline speaker label."""
-        return cls()
-
-    @classmethod
-    def classic(cls) -> TextboxStyle:
-        """Legacy boxed layout with high-contrast borders and raised nameplate."""
-        return cls(
-            layout_mode="classic",
-            box_fill=_CLASSIC_TEXTBOX_FILL,
-            box_border=_CLASSIC_TEXTBOX_BORDER,
-            box_border_width=2.0,
-            gradient_top=None,
-            gradient_bottom=None,
-            nameplate_fill=_CLASSIC_NAMEPLATE_FILL,
-            nameplate_border=_CLASSIC_NAMEPLATE_BORDER,
-            nameplate_text=_CLASSIC_NAMEPLATE_TEXT,
-            nameplate_font_size=13,
-            show_nameplate_box=True,
-            text_color=_CLASSIC_DIALOGUE_TEXT,
-            text_font_size=14,
-            text_padding=20.0,
-            arrow_color=_CLASSIC_ADVANCE_ARROW,
-            arrow_font_size=12,
-            arrow_symbol="▼",
-            min_height=110.0,
-            height_ratio=0.22,
-            margin_ratio=0.05,
-            min_margin=20.0,
-            bottom_gap=25.0,
-            nameplate_overlap=15.0,
-        )
 
     def box_height(self, viewport_height: float) -> float:
         """Return the textbox height for a viewport of *viewport_height* pixels."""
@@ -613,8 +565,7 @@ class DialogueBox:
 class ChoiceMenuStyle:
     """Visual styling for :class:`ChoiceMenu`.
 
-    Defaults to a clean, minimal card button with subtle hover highlighting.
-    Use :meth:`classic` for the legacy boxed buttons with high-contrast borders and >[1] numbering.
+    Configures clean, minimal card buttons with subtle hover highlighting.
     """
 
     layout_mode: str = "cinematic"  # "cinematic" or "classic"
@@ -633,32 +584,6 @@ class ChoiceMenuStyle:
     text_font_size: int = 14
     text_padding: float = 24.0
     show_numbering: bool = False
-
-    @classmethod
-    def cinematic(cls) -> ChoiceMenuStyle:
-        """Clean minimal card buttons with soft hover highlight and left accent line."""
-        return cls()
-
-    @classmethod
-    def classic(cls) -> ChoiceMenuStyle:
-        """Legacy boxed buttons with retro blue borders and >[1] prefixes."""
-        return cls(
-            layout_mode="classic",
-            button_fill=_CLASSIC_CHOICE_FILL,
-            button_border=_CLASSIC_CHOICE_BORDER,
-            button_border_width=2.0,
-            button_hover_fill=_CLASSIC_CHOICE_HOVER_FILL,
-            button_hover_border=_CLASSIC_CHOICE_HOVER_BORDER,
-            accent_bar_color=Color(0.6, 0.8, 1.0, 1.0),
-            button_width=600,
-            button_width_ratio=0.6,
-            button_height=42.0,
-            spacing=12.0,
-            text_color=_CLASSIC_CHOICE_TEXT,
-            text_font_size=13,
-            text_padding=20.0,
-            show_numbering=True,
-        )
 
     def button_width_for(self, viewport_width: float) -> float:
         """Return the button width for a viewport of *viewport_width* pixels."""
