@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -662,6 +663,87 @@ def test_dirty_rectangle_actor_glow_tint_tracked() -> None:
     assert renderer._last_dirty_bbox is not None
     assert "alice/smiling" in drawn_items
     assert "bob/smiling" not in drawn_items
+
+
+def test_adaptive_resampling_settles_to_high_quality_on_rest() -> None:
+    """When a character finishes a fade or tween, the settled frame must re-render with high-quality resampling."""
+    from PIL import Image
+
+    comp = StageCompositor(1920, 1080)
+    comp.set_background("bg/tavern", duration=0.0)
+    comp.show_character("alice", "smiling", position="left", duration=0.3)
+
+    renderer = PILRenderer(1280, 720, resampling=Image.Resampling.BILINEAR, adaptive_resampling=True)
+
+    resamples_used: list[tuple[str, str, bool]] = []
+    orig_transform = renderer._transform_sprite
+
+    def logged_transform(*args: Any, **kwargs: Any) -> Any:
+        item = args[1]
+        is_in_motion = renderer.adaptive_resampling and (item.asset_id in renderer._in_motion_assets)
+        cur_resample = Image.Resampling.NEAREST if is_in_motion else renderer.resampling
+        resamples_used.append((item.asset_id, cur_resample.name, is_in_motion))
+        return orig_transform(*args, **kwargs)
+
+    renderer._transform_sprite = logged_transform  # type: ignore[method-assign]
+
+    # Step through 0.3s fade
+    for _ in range(3):
+        comp.step(0.1)
+        renderer.render_compositor(comp, 1280, 720)
+
+    # During the fade, alice was rendered with NEAREST
+    fade_resamples = [r for r in resamples_used if r[0] == "alice/smiling"]
+    assert any(r[1] == "NEAREST" for r in fade_resamples)
+
+    # While still in motion on final step of tween, stage cache must NOT be snapshotted
+    # (prevents freezing the in-motion NEAREST frame)
+    assert "alice/smiling" in renderer._in_motion_assets
+    assert renderer._stage_cache is None
+
+    # Step once more to complete rest (no geometry change)
+    comp.step(0.1)
+    renderer.render_compositor(comp, 1280, 720)
+
+    # Motion has ceased
+    assert "alice/smiling" not in renderer._in_motion_assets
+    # Settled render must have executed with BILINEAR (high quality)
+    assert resamples_used[-1] == ("alice/smiling", "BILINEAR", False)
+    # Stage cache is now populated with the clean high-quality render
+    assert renderer._stage_cache is not None
+
+    # On next static frame, Tier 3 cache hits without re-running transforms
+    count_before = len(resamples_used)
+    comp.step(0.1)
+    renderer.render_compositor(comp, 1280, 720)
+    assert len(resamples_used) == count_before
+
+
+def test_in_motion_sprites_do_not_poison_sprite_cache() -> None:
+    """Sprites scaled with NEAREST while in motion must not be stored in _sprite_cache."""
+    from PIL import Image
+
+    comp = StageCompositor(1920, 1080)
+    comp.set_background("bg/tavern", duration=0.0)
+    comp.show_character("alice", "smiling", position="left", duration=0.0)
+
+    renderer = PILRenderer(1280, 720, resampling=Image.Resampling.BILINEAR, adaptive_resampling=True)
+    renderer.render_compositor(comp, 1280, 720)
+    assert len(renderer._in_motion_assets) == 0
+
+    # Clear sprite cache to start fresh
+    renderer._sprite_cache.clear()
+
+    # Move character across frames
+    comp.move_character("alice", "center", duration=1.0)
+    comp.step(0.5)
+    renderer.render_compositor(comp, 1280, 720)
+    assert "alice/smiling" in renderer._in_motion_assets
+
+    # _sprite_cache must NOT contain alice while she is in motion
+    alice_keys = [k for k in renderer._sprite_cache if k[0] == "alice/smiling"]
+    assert len(alice_keys) == 0
+
 
 
 

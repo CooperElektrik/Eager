@@ -1073,6 +1073,8 @@ class PILRenderer(RenderBackend):
             fy,
         )
 
+        is_in_motion = self.adaptive_resampling and (item.asset_id in self._in_motion_assets)
+
         cached = self._sprite_cache.lookup(cache_key)
         if cached is not None:
             self._cache_hits += 1
@@ -1098,7 +1100,8 @@ class PILRenderer(RenderBackend):
                 if final_alpha_byte == 255
                 else _image_nbytes(cached_sprite.mask)
             )
-            self._sprite_cache.put(cache_key, cached_sprite, sprite_bytes)
+            if not is_in_motion:
+                self._sprite_cache.put(cache_key, cached_sprite, sprite_bytes)
 
         # 6. Final destination coordinates on canvas
         if cached_sprite.color is None:
@@ -1548,7 +1551,6 @@ class PILRenderer(RenderBackend):
                 self.draw_item(item)
             self._last_dirty_bbox = None
         elif can_use_bg_cache:
-            assert self._bg_cache is not None
             use_dirty_rect = False
             dirty_bbox: tuple[int, int, int, int] | None = None
             if (
@@ -1625,7 +1627,7 @@ class PILRenderer(RenderBackend):
                 self._ui_dirty_bbox = None
                 self._last_dirty_bbox = None
 
-            if overlay_items:
+            if overlay_items and not self._in_motion_assets:
                 self._base_cache = self._snapshot(self._base_cache)
                 self._last_base_items = list(base_items)
                 self._last_base_transform = self._current_transform
@@ -1726,7 +1728,7 @@ class PILRenderer(RenderBackend):
                 self.draw_item(item)
 
             # Snapshot Tier 1 background cache if background items exist
-            if bg_items:
+            if bg_items and not any(it.asset_id in self._in_motion_assets for it in bg_items):
                 self._bg_cache = self._image.copy()
                 self._last_bg_items = list(bg_items)
                 self._last_bg_transform = self._current_transform
@@ -1739,7 +1741,7 @@ class PILRenderer(RenderBackend):
                 self.draw_item(item)
 
             # Snapshot Tier 2 base scene cache if overlay items are present
-            if overlay_items:
+            if overlay_items and not self._in_motion_assets:
                 self._base_cache = self._snapshot(self._base_cache)
                 self._last_base_items = list(base_items)
                 self._last_base_transform = self._current_transform
@@ -1754,11 +1756,19 @@ class PILRenderer(RenderBackend):
         self.end_frame()
 
         # Snapshot clean stage buffer for static scene caching (Tier 3).
+        # Only snapshot when no assets are in motion to ensure the cache
+        # contains settled high-quality renderings.
         if (
-            self._last_stage_items is not None
-            and len(self._last_stage_items) == len(items)
-            and self._last_stage_items == items
-        ) or self._stage_cache is None:
+            not self._in_motion_assets
+            and (
+                (
+                    self._last_stage_items is not None
+                    and len(self._last_stage_items) == len(items)
+                    and self._last_stage_items == items
+                )
+                or self._stage_cache is None
+            )
+        ):
             self._stage_cache = self._snapshot(self._stage_cache)
         else:
             self._stage_cache = None
