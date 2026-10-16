@@ -61,6 +61,7 @@ _DEFAULT_CACHE_BYTES: int = 256 * 1024 * 1024
 _MAX_TEXT_CACHE: int = 1024
 _MAX_RGBA_LUTS: int = 256
 _MAX_MIP_CACHE: int = 128
+_MAX_GRADIENT_CACHE: int = 256
 _NO_CACHE: Any = object()
 
 
@@ -489,6 +490,10 @@ class PILRenderer(RenderBackend):
         self._rgba_lut_cache: dict[tuple[int, int, int, int], list[int]] = {}
         self._fade_lut_cache: dict[tuple[Any, ...], list[int]] = {}
         self._mip_cache: dict[tuple[str, int], Image.Image] = {}
+        self._gradient_cache: _ImageLRU = _ImageLRU(
+            max_items=_MAX_GRADIENT_CACHE,
+            max_bytes=64 * 1024 * 1024,
+        )
         self._cache_hits: int = 0
         self._cache_misses: int = 0
 
@@ -574,6 +579,7 @@ class PILRenderer(RenderBackend):
         self._measure_cache.clear()
         self._fade_lut_cache.clear()
         self._mip_cache.clear()
+        self._gradient_cache.clear()
         self._cache_hits = 0
         self._cache_misses = 0
         self._bg_cache = None
@@ -1530,22 +1536,38 @@ class PILRenderer(RenderBackend):
         top = round(y)
         self._mark_ui_dirty(left, top, left + w + 1, top + h + 1)
 
-        grad = Image.new("RGBA", (1, h))
         tc = top_color.to_rgba_bytes()
         bc = bottom_color.to_rgba_bytes()
-        pixels = [
-            tuple(int(tc[i] + (bc[i] - tc[i]) * y_step / (h - 1)) for i in range(4))
-            for y_step in range(h)
-        ]
-        grad.putdata(pixels)
-        grad_resized = grad.resize((w, h), Image.Resampling.BILINEAR)
+        cache_key = (w, h, tc, bc, self.mode)
+        entry = self._gradient_cache.lookup(cache_key)
 
+        if entry is None:
+            # Generate and scale gradient once
+            grad = Image.new("RGBA", (1, h))
+            pixels = [
+                tuple(int(tc[i] + (bc[i] - tc[i]) * y_step / (h - 1)) for i in range(4))
+                for y_step in range(h)
+            ]
+            grad.putdata(pixels)
+            grad_resized = grad.resize((w, h), Image.Resampling.BILINEAR)
+
+            if self.mode == "RGBA":
+                color_plane = grad_resized
+                mask_plane = None
+                nbytes = _image_nbytes(grad_resized)
+            else:
+                color_plane = grad_resized.convert("RGB")
+                mask_plane = grad_resized.getchannel("A")
+                nbytes = _image_nbytes(color_plane) + _image_nbytes(mask_plane)
+
+            entry = (color_plane, mask_plane)
+            self._gradient_cache.put(cache_key, entry, nbytes)
+
+        color_plane, mask_plane = entry
         if self.mode == "RGBA":
-            self._image.alpha_composite(grad_resized, (left, top))
+            self._image.alpha_composite(color_plane, (left, top))
         else:
-            bg_crop = self._image.crop((left, top, left + w, top + h)).convert("RGBA")
-            bg_crop.alpha_composite(grad_resized)
-            self._image.paste(bg_crop.convert("RGB"), (left, top))
+            self._image.paste(color_plane, (left, top), mask_plane)
 
     def draw_text(
         self,
