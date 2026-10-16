@@ -120,20 +120,15 @@ class StoryVM:
         return default
 
     def _translate_beat(
-        self, content_key: str | None, alt_key: str | None, default: str
+        self, key: str | None, default: str
     ) -> tuple[str, str | None]:
-        """Translate by content-addressed ID first, falling back to positional ID."""
+        """Translate by content-addressed ID."""
         clean_default = strip_explicit_id(default)
-        if self._translation_manager is not None:
-            if content_key is not None:
-                val = self._translation_manager.translate(content_key, clean_default)
-                if val != clean_default:
-                    return val, content_key
-            if alt_key is not None:
-                val = self._translation_manager.translate(alt_key, clean_default)
-                if val != clean_default:
-                    return val, alt_key
-        return clean_default, alt_key or content_key
+        if self._translation_manager is not None and key is not None:
+            val = self._translation_manager.translate(key, clean_default)
+            if val != clean_default:
+                return val, key
+        return clean_default, key
 
     def _translate_speaker(self, speaker: str) -> str:
         """Translate speaker name if catalog present, else default."""
@@ -315,11 +310,6 @@ class StoryVM:
         """Construct ChoicePromptEvent from ParsedChoiceSet node, evaluating conditions."""
         options: list[ChoiceOption] = []
         b_idx = beat_index if beat_index is not None else self._beat_index
-        prompt_beat_id = (
-            f"{self._current_scene_id}.{b_idx}"
-            if self._current_scene_id is not None
-            else None
-        )
         cid = None
         if self._current_scene_id is not None and self._graph is not None:
             node = self._graph.nodes.get(self._current_scene_id)
@@ -347,9 +337,8 @@ class StoryVM:
                         exc,
                     )
                     enabled = False
-            opt_pos_id = f"{prompt_beat_id}.choice_{i}" if prompt_beat_id else None
             opt_cid = f"{cid}.choice_{i}" if cid else None
-            raw_text, used_opt_id = self._translate_beat(opt_cid, opt_pos_id, opt.text)
+            raw_text, used_opt_id = self._translate_beat(opt_cid, opt.text)
             options.append(
                 ChoiceOption(
                     index=i,
@@ -358,13 +347,13 @@ class StoryVM:
                     line_number=opt.line_number,
                     condition=opt.condition,
                     enabled=enabled,
-                    beat_id=opt_pos_id or used_opt_id,
+                    beat_id=used_opt_id,
                 )
             )
         return ChoicePromptEvent(
             options=tuple(options),
             line_number=item.line_number,
-            beat_id=prompt_beat_id,
+            beat_id=cid,
         )
 
     def save(self) -> StorySnapshot:
@@ -627,21 +616,13 @@ class StoryVM:
             self._history.push(self.save())
             current_beat_idx = self._beat_index
             self._beat_index += 1
-            pos_beat_id = (
-                f"{self._current_scene_id}.{current_beat_idx}"
-                if self._current_scene_id is not None
-                else None
-            )
             cid = None
             if self._current_scene_id is not None and self._graph is not None:
                 node = self._graph.nodes.get(self._current_scene_id)
                 occ = get_beat_occurrence(node.body, current_beat_idx) if node else 1
                 cid = compute_beat_id(self._current_scene_id, item, occurrence=occ)
 
-            explicit = getattr(item, "id", None) or getattr(item, "beat_id", None)
-            if not explicit and getattr(item, "text", None) and "{id=" in item.text:
-                explicit = True
-            beat_id = cid if explicit else (pos_beat_id or cid)
+            beat_id = cid
 
             if isinstance(item, ParsedDialogue):
                 raw_speaker = self._translate_speaker(item.speaker)
@@ -649,7 +630,7 @@ class StoryVM:
                 # If speaker matches a character ID, we could map name if needed, but interpolate handles [var]
                 if hasattr(self._graph, "characters") and interp_speaker in self._graph.characters:
                     interp_speaker = self._graph.characters[interp_speaker].get("name", interp_speaker)
-                raw_text, _ = self._translate_beat(cid, pos_beat_id, item.text)
+                raw_text, _ = self._translate_beat(cid, item.text)
                 return DialogueEvent(
                     speaker=interp_speaker,
                     text=self._interpolate(raw_text),
@@ -660,7 +641,7 @@ class StoryVM:
                 )
 
             if isinstance(item, ParsedNarration):
-                raw_text, _ = self._translate_beat(cid, pos_beat_id, item.text)
+                raw_text, _ = self._translate_beat(cid, item.text)
                 return NarrationEvent(
                     text=self._interpolate(raw_text),
                     line_number=item.line_number,
@@ -668,7 +649,7 @@ class StoryVM:
                 )
 
             if isinstance(item, ParsedAppend):
-                raw_text, _ = self._translate_beat(cid, pos_beat_id, item.text)
+                raw_text, _ = self._translate_beat(cid, item.text)
                 return AppendEvent(
                     text=self._interpolate(raw_text),
                     line_number=item.line_number,
@@ -676,7 +657,7 @@ class StoryVM:
                 )
 
             if isinstance(item, ParsedFreshBox):
-                raw_text, _ = self._translate_beat(cid, pos_beat_id, item.text)
+                raw_text, _ = self._translate_beat(cid, item.text)
                 return FreshBoxEvent(
                     text=self._interpolate(raw_text),
                     line_number=item.line_number,
@@ -693,14 +674,13 @@ class StoryVM:
                     subparts = args.split(None, 1)
                     var_name = subparts[0] if subparts else "player_input"
                     prompt_text = subparts[1].strip().strip("\"'") if len(subparts) > 1 else "Enter input:"
-                    input_pos_id = f"{pos_beat_id}.input" if pos_beat_id else None
                     input_cid = f"{cid}.input" if cid else None
-                    raw_prompt, _ = self._translate_beat(input_cid, input_pos_id, prompt_text)
+                    raw_prompt, _ = self._translate_beat(input_cid, prompt_text)
                     input_prompt = InputPromptEvent(
                         var_name=var_name,
                         prompt=self._interpolate(raw_prompt),
                         line_number=item.line_number,
-                        beat_id=input_pos_id or input_cid,
+                        beat_id=input_cid,
                     )
                     self._pending_input = input_prompt
                     return input_prompt

@@ -81,8 +81,8 @@ def extract_catalog(
 ) -> TranslationCatalog:
     """Extract all translatable beats from a SceneGraph into a TranslationCatalog.
 
-    Generates both stable content-addressed MD5/explicit keys and positional aliases
-    so inserting lines does not break translations, while remaining backward-compatible.
+    Generates stable content-addressed MD5/explicit keys so inserting lines
+    does not break translations.
     """
     strings: dict[str, str] = {}
     speakers: dict[str, str] = {}
@@ -90,8 +90,7 @@ def extract_catalog(
 
     for scene_id, node in graph.nodes.items():
         content_counts: dict[str, int] = {}
-        for idx, item in enumerate(node.body):
-            pos_beat_id = f"{scene_id}.{idx}"
+        for item in node.body:
             c_key = _get_item_content_key(item)
             cnt = content_counts.get(c_key, 0) + 1
             content_counts[c_key] = cnt
@@ -103,20 +102,17 @@ def extract_catalog(
                     speakers[spk] = spk
                 clean_text = strip_explicit_id(item.text)
                 strings[cid] = clean_text
-                strings[pos_beat_id] = clean_text
                 total_beats += 1
 
             elif isinstance(item, (ParsedNarration, ParsedAppend, ParsedFreshBox)):
                 clean_text = strip_explicit_id(item.text)
                 strings[cid] = clean_text
-                strings[pos_beat_id] = clean_text
                 total_beats += 1
 
             elif isinstance(item, ParsedChoiceSet):
                 for opt_idx, opt in enumerate(item.options):
                     clean_opt = strip_explicit_id(opt.text)
                     strings[f"{cid}.choice_{opt_idx}"] = clean_opt
-                    strings[f"{pos_beat_id}.choice_{opt_idx}"] = clean_opt
                     total_beats += 1
 
             elif isinstance(item, ParsedHook):
@@ -126,7 +122,6 @@ def extract_catalog(
                     prompt = parts[2].strip().strip("\"'") if len(parts) > 2 else "Enter input:"
                     clean_prompt = strip_explicit_id(prompt)
                     strings[f"{cid}.input"] = clean_prompt
-                    strings[f"{pos_beat_id}.input"] = clean_prompt
                     total_beats += 1
 
     return TranslationCatalog(
@@ -214,8 +209,7 @@ def validate_catalog(
 
     for scene_id, node in graph.nodes.items():
         content_counts: dict[str, int] = {}
-        for idx, item in enumerate(node.body):
-            pos_id = f"{scene_id}.{idx}"
+        for item in node.body:
             c_key = _get_item_content_key(item)
             cnt = content_counts.get(c_key, 0) + 1
             content_counts[c_key] = cnt
@@ -223,47 +217,34 @@ def validate_catalog(
 
             if isinstance(item, (ParsedDialogue, ParsedNarration, ParsedAppend, ParsedFreshBox)):
                 known_keys.add(cid)
-                known_keys.add(pos_id)
-
                 val = catalog.strings.get(cid)
-                if val is None or not val.strip():
-                    val = catalog.strings.get(pos_id)
-
                 if val is not None and val.strip():
                     translated_keys.append(cid)
                 else:
-                    untranslated_keys.append(pos_id)
+                    untranslated_keys.append(cid)
 
             elif isinstance(item, ParsedChoiceSet):
                 for opt_idx, _ in enumerate(item.options):
                     c_opt = f"{cid}.choice_{opt_idx}"
-                    p_opt = f"{pos_id}.choice_{opt_idx}"
                     known_keys.add(c_opt)
-                    known_keys.add(p_opt)
                     val = catalog.strings.get(c_opt)
-                    if val is None or not val.strip():
-                        val = catalog.strings.get(p_opt)
                     if val is not None and val.strip():
                         translated_keys.append(c_opt)
                     else:
-                        untranslated_keys.append(p_opt)
+                        untranslated_keys.append(c_opt)
 
             elif isinstance(item, ParsedHook):
                 hook_str = item.hook_name.strip()
                 if hook_str.startswith("input"):
                     c_inp = f"{cid}.input"
-                    p_inp = f"{pos_id}.input"
                     known_keys.add(c_inp)
-                    known_keys.add(p_inp)
                     val = catalog.strings.get(c_inp)
-                    if val is None or not val.strip():
-                        val = catalog.strings.get(p_inp)
                     if val is not None and val.strip():
                         translated_keys.append(c_inp)
                     else:
-                        untranslated_keys.append(p_inp)
+                        untranslated_keys.append(c_inp)
 
-    # Obsolete keys in catalog: keys that match neither content-addressed nor positional IDs of any beat
+    # Obsolete keys in catalog: keys that do not match content-addressed IDs of any beat
     obsolete_keys = [k for k in catalog.strings if k not in known_keys]
 
     coverage = (len(translated_keys) / total_strings * 100.0) if total_strings > 0 else 100.0

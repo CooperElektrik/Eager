@@ -25,14 +25,22 @@ Merchant: Welcome to the bazaar, [player_name]!
 ? Leave the market (town)
 """
     graph = eager_script.parse_graph(text)
+    cat_tpl = extract_catalog(graph, locale="template")
+    keys = list(cat_tpl.strings.keys())
+    # keys: market dialogue, market append, market choice 0, market choice 1
+    d_key = keys[0]
+    a_key = keys[1]
+    c0_key = keys[2]
+    c1_key = keys[3]
+
     tm = TranslationManager()
     cat_es = TranslationCatalog(
         locale="es",
         strings={
-            "market.0": "Bienvenido al bazar, [player_name]!",
-            "market.1": "Tienes [coins] monedas de oro.",
-            "market.2.choice_0": "Comprar una espada",
-            "market.2.choice_1": "Salir del mercado",
+            d_key: "Bienvenido al bazar, [player_name]!",
+            a_key: "Tienes [coins] monedas de oro.",
+            c0_key: "Comprar una espada",
+            c1_key: "Salir del mercado",
         },
         speakers={"Merchant": "Comerciante"},
     )
@@ -51,23 +59,24 @@ Merchant: Welcome to the bazaar, [player_name]!
     assert isinstance(ev1, DialogueEvent)
     assert ev1.speaker == "Comerciante"
     assert ev1.text == "Bienvenido al bazar, Robin!"
-    assert ev1.beat_id == "market.0"
+    assert ev1.beat_id == d_key
 
     # 2. Append beat
     ev2 = vm.step()
     assert isinstance(ev2, AppendEvent)
     assert ev2.text == "Tienes 42 monedas de oro."
-    assert ev2.beat_id == "market.1"
+    assert ev2.beat_id == a_key
 
     # 3. Choice beat
     ev3 = vm.step()
     assert isinstance(ev3, ChoicePromptEvent)
-    assert ev3.beat_id == "market.2"
+    choice_cid = c0_key.rsplit(".choice_", 1)[0]
+    assert ev3.beat_id == choice_cid
     assert len(ev3.options) == 2
     assert ev3.options[0].text == "Comprar una espada"
-    assert ev3.options[0].beat_id == "market.2.choice_0"
+    assert ev3.options[0].beat_id == c0_key
     assert ev3.options[1].text == "Salir del mercado"
-    assert ev3.options[1].beat_id == "market.2.choice_1"
+    assert ev3.options[1].beat_id == c1_key
 
 
 def test_story_vm_fallback_to_source_text() -> None:
@@ -77,11 +86,14 @@ Alice: Hello!
 Just a walk.
 """
     graph = eager_script.parse_graph(text)
+    cat_tpl = extract_catalog(graph, locale="template")
+    intro_d_key = next(k for k, v in cat_tpl.strings.items() if v == "Hello!")
+
     tm = TranslationManager()
-    # Missing intro.1 translation
+    # Missing narration translation
     cat_es = TranslationCatalog(
         locale="es",
-        strings={"intro.0": "Hola!"},
+        strings={intro_d_key: "Hola!"},
     )
     tm.register_catalog(cat_es)
     tm.set_locale("es")
@@ -111,31 +123,30 @@ Hero: Ready for adventure!
     cat = extract_catalog(graph, locale="template")
 
     assert cat.locale == "template"
-    assert "s1.0" in cat.strings
-    assert cat.strings["s1.0"] == "A gentle breeze."
-    assert "s1.1" in cat.strings
-    assert cat.strings["s1.1"] == "Ready for adventure!"
-    assert "s1.2.choice_0" in cat.strings
-    assert cat.strings["s1.2.choice_0"] == "Go north"
-    assert "s1.2.choice_1" in cat.strings
-    assert cat.strings["s1.2.choice_1"] == "Go south"
+    vals = list(cat.strings.values())
+    assert "A gentle breeze." in vals
+    assert "Ready for adventure!" in vals
+    assert "Go north" in vals
+    assert "Go south" in vals
     assert "Hero" in cat.speakers
+    assert all(k.startswith("s1.") for k in cat.strings)
+    assert not any(k.endswith((".0", ".1", ".2")) for k in cat.strings)
 
 
 def test_merge_catalog_preserves_existing() -> None:
     template = TranslationCatalog(
         locale="template",
         strings={
-            "s1.0": "First line",
-            "s1.1": "Second line (new)",
+            "s1.k1": "First line",
+            "s1.k2": "Second line (new)",
         },
         speakers={"Hero": "Hero"},
     )
     existing = TranslationCatalog(
         locale="es",
         strings={
-            "s1.0": "Primera linea",
-            "s_old.0": "Old obsolete line",
+            "s1.k1": "Primera linea",
+            "s_old.k_old": "Old obsolete line",
         },
         speakers={"Hero": "Héroe"},
     )
@@ -143,8 +154,8 @@ def test_merge_catalog_preserves_existing() -> None:
     merged, stats = merge_catalog(template, existing)
 
     assert merged.locale == "es"
-    assert merged.strings["s1.0"] == "Primera linea"
-    assert merged.strings["s1.1"] == ""  # New empty slot
+    assert merged.strings["s1.k1"] == "Primera linea"
+    assert merged.strings["s1.k2"] == ""  # New empty slot
     assert stats["translated"] == 1
     assert stats["new"] == 1
     assert stats["obsolete"] == 1
@@ -159,12 +170,15 @@ Alice: Line 2
 Alice: Line 3
 """
     graph = eager_script.parse_graph(text)
+    cat_tpl = extract_catalog(graph, locale="template")
+    keys = list(cat_tpl.strings.keys())
+
     cat_partial = TranslationCatalog(
         locale="es",
         strings={
-            "s1.0": "Línea 1",
-            "s1.1": "Línea 2",
-            "s_obsolete.0": "Old",
+            keys[0]: "Línea 1",
+            keys[1]: "Línea 2",
+            "s_obsolete.old": "Old",
         },
     )
 
@@ -175,7 +189,7 @@ Alice: Line 3
     assert result["obsolete"] == 1
     assert result["coverage_percent"] == 66.7
     assert not result["is_complete"]
-    assert "s1.2" in result["missing_keys"]
+    assert keys[2] in result["missing_keys"]
 
 
 def test_cli_i18n_extract_and_check(tmp_path: Path) -> None:
@@ -201,8 +215,8 @@ Guide: Welcome!
     assert out_json.is_file()
 
     cat = TranslationCatalog.load_json(out_json)
-    assert "start.0" in cat.strings
-    assert "start.1" in cat.strings
+    assert len(cat.strings) == 2
+    assert all(k.startswith("start.") for k in cat.strings)
 
     args_chk = argparse.Namespace(
         catalog=str(out_json),
@@ -222,11 +236,15 @@ Guide: Welcome!
 """,
         encoding="utf-8",
     )
+    graph = eager_script.parse_graph(script_file.read_text(encoding="utf-8"))
+    cat_tpl = extract_catalog(graph, locale="template")
+    start_key = next(iter(cat_tpl.strings))
+
     loc_dir = tmp_path / "locales"
     loc_dir.mkdir()
     vi_cat = TranslationCatalog(
         locale="vi",
-        strings={"start.0": "Chao mung!"},
+        strings={start_key: "Chao mung!"},
         speakers={"Guide": "Huong dan vien"},
     )
     vi_cat.save_json(loc_dir / "vi.json")
