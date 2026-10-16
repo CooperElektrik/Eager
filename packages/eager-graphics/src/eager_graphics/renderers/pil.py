@@ -532,6 +532,13 @@ class PILRenderer(RenderBackend):
             self._stage_cache = None
             self._ui_dirty_bbox = None
 
+    def _snapshot(self, target: Image.Image | None) -> Image.Image:
+        """Snapshot current self._image into a pooled/reused target buffer without reallocating."""
+        if target is not None and target.size == (self.width, self.height) and target.mode == self.mode:
+            target.paste(self._image, (0, 0))
+            return target
+        return self._image.copy()
+
     def _mark_ui_dirty(self, left: int, top: int, right: int, bottom: int) -> None:
         """Record modified region bounds from immediate-mode UI operations."""
         l, t = max(0, min(self.width, left)), max(0, min(self.height, top))
@@ -1267,7 +1274,7 @@ class PILRenderer(RenderBackend):
                 self.draw_item(item)
 
             if overlay_items:
-                self._base_cache = self._image.copy()
+                self._base_cache = self._snapshot(self._base_cache)
                 self._last_base_items = list(base_items)
                 self._last_base_transform = self._current_transform
             else:
@@ -1380,7 +1387,7 @@ class PILRenderer(RenderBackend):
 
             # Snapshot Tier 2 base scene cache if overlay items are present
             if overlay_items:
-                self._base_cache = self._image.copy()
+                self._base_cache = self._snapshot(self._base_cache)
                 self._last_base_items = list(base_items)
                 self._last_base_transform = self._current_transform
             else:
@@ -1399,7 +1406,7 @@ class PILRenderer(RenderBackend):
             and len(self._last_stage_items) == len(items)
             and self._last_stage_items == items
         ) or self._stage_cache is None:
-            self._stage_cache = self._image.copy()
+            self._stage_cache = self._snapshot(self._stage_cache)
         else:
             self._stage_cache = None
         self._last_stage_items = items
