@@ -354,16 +354,16 @@ class AudioMixer:
         volume: float | None = None,
         loop_start: float | None = None,
         loop_end: float | None = None,
-        auto_channels: bool = False,
+        auto_channels: bool | None = None,
         max_polyphony: int | None = None,
     ) -> str:
         """Play an audio asset on the specified channel.
 
-        With ``auto_channels=True`` overlapping sounds no longer cut each
-        other off: playback is allocated onto a dynamic pool slot named
-        ``<channel>_N`` (``sound_0``, ``sound_1``, …) and the actual channel
-        name is returned. Explicit pool names (``sound_0``) always play
-        exactly on that channel even when *auto_channels* is set.
+        When *auto_channels* is True (or None on the ``sound`` channel),
+        playback is dynamically allocated onto a pool slot named
+        ``<channel>_N`` (``sound_0``, ``sound_1``, …) so overlapping sounds
+        layer rather than cutting each other off. Explicit pool names
+        (``sound_0``) always play directly on that slot.
 
         When *volume* is omitted (``None``), a pool slot — whether
         auto-allocated or explicitly addressed (``sound_0``) — inherits the
@@ -371,7 +371,8 @@ class AudioMixer:
         applies to later SFX); every other channel defaults to ``1.0``.
         """
         inherit_base: str | None = None
-        if auto_channels and not self._is_pool_member(channel):
+        use_auto = auto_channels if auto_channels is not None else (channel == "sound")
+        if use_auto and not self._is_pool_member(channel):
             inherit_base = channel
             channel = self._allocate_pool_channel(channel, max_polyphony)
 

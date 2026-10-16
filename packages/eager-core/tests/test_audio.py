@@ -144,8 +144,8 @@ class TestAudioMixer(unittest.TestCase):
         backend = NullAudioBackend()
         mixer = AudioMixer(backend=backend)
 
-        first = mixer.play("sound", "thunder.ogg", auto_channels=True)
-        second = mixer.play("sound", "click.ogg", auto_channels=True)
+        first = mixer.play("sound", "thunder.ogg")
+        second = mixer.play("sound", "click.ogg")
         self.assertEqual(first, "sound_0")
         self.assertEqual(second, "sound_1")
         # Both overlap instead of the second cutting off the first
@@ -154,7 +154,7 @@ class TestAudioMixer(unittest.TestCase):
         self.assertEqual(mixer.channels["sound_0"].current_asset, "thunder.ogg")
         self.assertTrue(mixer.is_playing("sound"))
 
-        # Legacy single-voice path still cuts off
+        # Single-voice channels like music still cut off previous track
         mixer.play("music", "a.ogg")
         mixer.play("music", "b.ogg")
         self.assertEqual(mixer.channels["music"].current_asset, "b.ogg")
