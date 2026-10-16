@@ -53,6 +53,14 @@ hardware = [
 software = [
     "Pillow>=10.0.0",
 ]
+# Opt-in SIMD build of the software backend.  Unlike ``software`` this installs
+# the source-only ``pillow-simd`` fork, which compiles on the local machine and
+# provides the same ``PIL`` import.  It is mutually exclusive with the regular
+# ``Pillow`` distribution (uninstall one before installing the other); see
+# ``scripts/install_pillow_simd.py`` for the supported swap-in workflow.
+software-simd = [
+    "pillow-simd>=10.0.0",
+]
 all = [
     "pyglet>=2.0.0",
     "Pillow>=10.0.0",

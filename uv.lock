@@ -203,6 +203,9 @@ hardware = [
 software = [
     { name = "pillow" },
 ]
+software-simd = [
+    { name = "pillow-simd" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -214,12 +217,13 @@ requires-dist = [
     { name = "miniaudio", marker = "extra == 'dev'", specifier = ">=0.12.4" },
     { name = "pillow", marker = "extra == 'all'", specifier = ">=10.0.0" },
     { name = "pillow", marker = "extra == 'software'", specifier = ">=10.0.0" },
+    { name = "pillow-simd", marker = "extra == 'software-simd'", specifier = ">=10.0.0" },
     { name = "pyglet", marker = "extra == 'all'", specifier = ">=2.0.0" },
     { name = "pyglet", marker = "extra == 'hardware'", specifier = ">=2.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4.0" },
 ]
-provides-extras = ["dev", "hardware", "software", "all", "audio"]
+provides-extras = ["dev", "hardware", "software", "software-simd", "all", "audio"]
 
 [[package]]
 name = "eager-runtime"
@@ -408,6 +412,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/08/14/f6ba68107680ffa74b39985f3f30884e41318fbc4250caa423c79b4788bb/pillow-12.3.0-pp311-pypy311_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:e7e480451b9fa137494bccd3a7d69adbe8ac65a87d97be61e11f1b1050a5bac3", size = 5860358, upload-time = "2026-07-01T11:56:32.68Z" },
     { url = "https://files.pythonhosted.org/packages/36/54/0169bc772ec491108b62f644f8ecf1fe5d8ae5ebafde2ee2142210166903/pillow-12.3.0-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:04f01d28a6aaff387bf842a13be313df23ba0597a44f1a976c9feb3c6ff4711a", size = 7231786, upload-time = "2026-07-01T11:56:35.046Z" },
 ]
+
+[[package]]
+name = "pillow-simd"
+version = "12.1.1.post0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b4/c6/21b1536f2f4b7cdea88ac4ddccfc779062774dea8169b5aeae9cfc25fb2d/pillow_simd-12.1.1.post0.tar.gz", hash = "sha256:8e9694ec94c59d12f16753cbf48a3080266bdd704b0c51a630318c7a325625b1", size = 1165344, upload-time = "2026-09-15T09:39:19.905Z" }
 
 [[package]]
 name = "pluggy"

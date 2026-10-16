@@ -479,6 +479,7 @@ def _cmd_play(args: argparse.Namespace) -> int:
             sys.stderr.write(
                 "Error: Pillow is required for --backend pil.\n"
                 "Install it with: pip install eager-graphics[software]\n"
+                "(or the SIMD build: pip install eager-graphics[software-simd])\n"
             )
             return 1
 

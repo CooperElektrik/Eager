@@ -10,7 +10,7 @@ Eager-Graphics is the **presentation layer** of the Eager visual novel engine. I
 
 - **Three Pluggable Backends**:
   - `NullRenderer`: Zero-dependency, headless frame recording for automated CI and tests.
-  - `PILRenderer`: High-performance software rendering with LRU texture caching and direct-blit optimizations.
+  - `PILRenderer`: High-performance software rendering with LRU texture caching and direct-blit optimizations (`pip install eager-graphics[software]`; opt into source-built SIMD acceleration with `eager-graphics[software-simd]`).
   - `PygletRenderer`: Hardware-accelerated OpenGL 2D backend for high-framerate visual novel gaming.
 - **Stage Compositor & Transitions**: Backgrounds, character sprites, z-ordering, viewport letterboxing/scaling, fades, and camera shake.
 - **Renderer-Agnostic UI Chrome**: Bottom-docked dialogue boxes, speaker nameplates, side images, branch selection menus, and full-screen NVL novel mode.

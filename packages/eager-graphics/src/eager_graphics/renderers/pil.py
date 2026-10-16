@@ -389,8 +389,9 @@ def _split_rgba(img: Image.Image, *, shared: bool) -> tuple[Image.Image, Image.I
 def _check_pil_available() -> None:
     if not PIL_AVAILABLE:
         msg = (
-            "Pillow is not installed. Install with 'pip install eager-graphics[pil]' "
-            "or 'pip install pillow'."
+            "Pillow is not installed. Install with 'pip install eager-graphics[software]' "
+            "(or 'pip install pillow'). For SIMD-accelerated software rendering use "
+            "'pip install eager-graphics[software-simd]'."
         )
         raise ImportError(msg) from _pil_import_error
 
@@ -2362,5 +2363,8 @@ else:
         """Stub for PILPlayer when Pillow is not installed."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
-            msg = "Pillow is not installed. Install with 'pip install eager-graphics[software]' or 'pip install Pillow'."
+            msg = (
+                "Pillow is not installed. Install with 'pip install eager-graphics[software]' "
+                "or 'pip install Pillow' (SIMD build: 'eager-graphics[software-simd]')."
+            )
             raise ImportError(msg)

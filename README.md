@@ -31,6 +31,16 @@ eager-script check examples/demo_story.es
 eager-script graph examples/demo_story.es --format mermaid
 ```
 
+The Pillow software backend can opt into a locally compiled SIMD build (SSE4/AVX2) instead of the prebuilt `Pillow` wheel. This compiles from source (x86 only), so install the JPEG/zlib/FreeType headers first (Debian/Ubuntu: `sudo apt-get install build-essential pkg-config libjpeg-dev zlib1g-dev libfreetype-dev libwebp-dev`; FreeType is required for text rendering):
+
+```bash
+pip install 'eager-graphics[software-simd]'   # source build, x86 only
+# or, inside the workspace venv, check deps + handle the Pillow -> pillow-simd swap with AVX2:
+python scripts/install_pillow_simd.py --avx2
+```
+
+Re-run the helper after `uv sync`, which reinstalls the regular Pillow dev dependency.
+
 ## Layout
 
 ```
