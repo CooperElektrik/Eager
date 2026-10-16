@@ -6,6 +6,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from eager_core.audio import AudioMixer
+from eager_core.events import (
+    AppendEvent,
+    ChoicePromptEvent,
+    DialogueEvent,
+    FreshBoxEvent,
+    NarrationEvent,
+    SceneEnterEvent,
+    SceneExitEvent,
+    StoryEndEvent,
+)
 from eager_core.types import BLACK, WHITE, Color
 from eager_script import HookArgs, parse_hook_args
 
@@ -165,11 +175,15 @@ class StageDirector:
         dispatcher.on_hook("nvl_clear")(_wrap_hook(self.handle_nvl_clear))
 
 
-        # 2. Wildcard Event Listener — dispatch on event.type string.
-        #    This keeps eager_graphics free of any eager_runtime dependency
-        #    (the director works with any dispatcher that supports
-        #    on_any_event, including mock dispatchers in tests).
-        dispatcher.on_any_event(self.handle_generic_event)
+        # 2. Narrative Event Listeners
+        dispatcher.on_event(DialogueEvent)(self.handle_dialogue_event)
+        dispatcher.on_event(AppendEvent)(self.handle_append_event)
+        dispatcher.on_event(FreshBoxEvent)(self.handle_fresh_box_event)
+        dispatcher.on_event(NarrationEvent)(self.handle_narration_event)
+        dispatcher.on_event(SceneEnterEvent)(self.handle_scene_enter_event)
+        dispatcher.on_event(SceneExitEvent)(self.handle_scene_exit_event)
+        dispatcher.on_event(ChoicePromptEvent)(self.handle_choice_prompt_event)
+        dispatcher.on_event(StoryEndEvent)(self.handle_story_end_event)
 
     # =========================================================================
     # Hook Handlers
@@ -560,23 +574,3 @@ class StageDirector:
         self.ui_state.is_finished = True
         if self.audio is not None:
             self.audio.stop("voice")
-
-    def handle_generic_event(self, event: Any) -> None:
-        """Fallback handler if Eager classes were not directly importable at bind time."""
-        event_type = getattr(event, "type", None)
-        if event_type == "dialogue":
-            self.handle_dialogue_event(event)
-        elif event_type == "append":
-            self.handle_append_event(event)
-        elif event_type == "fresh_box":
-            self.handle_fresh_box_event(event)
-        elif event_type == "narration":
-            self.handle_narration_event(event)
-        elif event_type == "scene_enter":
-            self.handle_scene_enter_event(event)
-        elif event_type == "scene_exit":
-            self.handle_scene_exit_event(event)
-        elif event_type == "choice_prompt":
-            self.handle_choice_prompt_event(event)
-        elif event_type == "story_end":
-            self.handle_story_end_event(event)
