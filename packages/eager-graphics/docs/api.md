@@ -246,6 +246,17 @@ PygletPlayer(
 - **`show_fps`** *(constructor parameter)*: When `True` (default), renders an on-screen FPS counter in the top-left corner, sourced from `PygletRenderer.fps` / `PygletRenderer.fps_avg`. The counter can be toggled at runtime via `player.show_fps = not player.show_fps` or the `F3` key.
 - Runs with `player.run()` (or `pyglet.app.run()`).
 
+### `PILRenderer` & `PILPlayer`
+Software rendering backend and interactive player (`tkinter` window shell) using Pillow:
+```python
+from eager_graphics import DebugOverlayMode
+from eager_graphics.renderers.pil import PILPlayer, PILRenderer
+```
+- **`PILRenderer.debug_info() -> dict[str, Any]`**: Diagnostic snapshot of performance (FPS, dt, frame count), multi-tier stage caching (Tier 0-3, dirty rect coordinates and screen %), adaptive resampling filter (NEAREST vs BILINEAR), LRU and LUT cache statistics (hit/miss counts and memory usage), and Pillow/SIMD runtime build info.
+- **`PILRenderer.debug_repr() -> str`**: Multi-line formatted developer report of `debug_info()`.
+- **`PILPlayer(show_fps=True, ...)`**: Accepts boolean or `DebugOverlayMode` (`OFF`, `FPS`, `DETAILED`).
+- **<kbd>F3</kbd> Developer Overlay**: Cycles through `FPS` $\rightarrow$ `DETAILED` $\rightarrow$ `OFF` $\rightarrow$ `FPS` at runtime.
+
 ---
 
 ## 6. Headless Backend (`eager_graphics.renderers.null`)

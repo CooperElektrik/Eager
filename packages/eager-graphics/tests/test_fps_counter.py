@@ -220,6 +220,7 @@ class TestPILRendererFPS:
 
             from eager_script import parse_graph
 
+            from eager_graphics import DebugOverlayMode
             from eager_graphics.renderers.pil import PILPlayer
         except ImportError:
             pytest.skip("Pillow is not installed")
@@ -238,18 +239,37 @@ class TestPILRendererFPS:
         )
         try:
             assert player.show_fps is True
+            assert player.debug_mode == DebugOverlayMode.FPS
             # Advance tick: step compositor so FPS clock ticks
             player.tick(0.016)
             assert session.compositor.clock.frame_count == 1
             # Render frame with FPS overlay
             player.on_draw()
             assert player.renderer.frame_count == 1
+            assert "FPS:" in player.get_debug_overlay_text()
 
-            # Toggle with F3
+            # Cycle F3: FPS -> DETAILED
             player._on_key(SimpleNamespace(keysym="F3"))
-            assert player.show_fps is False
+            assert player.debug_mode == DebugOverlayMode.DETAILED
+            assert player.show_fps is True
+            detailed_text = player.get_debug_overlay_text()
+            assert "Eager Debug: PIL Backend" in detailed_text
+            assert "Cache Diagnostics" in detailed_text
             player.on_draw()
             assert player.renderer.frame_count == 2
+
+            # Cycle F3: DETAILED -> OFF
+            player._on_key(SimpleNamespace(keysym="F3"))
+            assert player.debug_mode == DebugOverlayMode.OFF
+            assert player.show_fps is False
+            assert player.get_debug_overlay_text() == ""
+            player.on_draw()
+            assert player.renderer.frame_count == 3
+
+            # Cycle F3: OFF -> FPS
+            player._on_key(SimpleNamespace(keysym="F3"))
+            assert player.debug_mode == DebugOverlayMode.FPS
+            assert player.show_fps is True
         finally:
             player.close()
 

@@ -138,12 +138,14 @@ class UIDrawBackend(Protocol):
         italic: bool = False,
         anchor_x: str = "left",
         anchor_y: str = "top",
+        cache: bool = True,
     ) -> None:
         """Draw a single line of text.
 
         ``anchor_x`` is one of ``"left"``, ``"center"``, ``"right"`` and
         ``anchor_y`` one of ``"top"``, ``"middle"``, ``"bottom"``.  Multi-line
         layout (wrapping, line spacing) is the caller's responsibility.
+        When ``cache`` is False, intermediate text masks should not be retained in LRU caches.
         """
         ...
 
@@ -169,6 +171,7 @@ class UIDrawBackend(Protocol):
         font_size: int = 14,
         bold: bool = False,
         italic: bool = False,
+        cache: bool = True,
     ) -> tuple[float, float]:
         """Return the ``(width, height)`` the given text would occupy."""
         ...

@@ -5,11 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from eager_runtime import GameSession
 from eager_script import parse_graph
 
 from eager_graphics import (
     Anchor,
     Color,
+    DebugOverlayMode,
     LayoutResolver,
     RenderItem,
     ScaleMode,
@@ -753,6 +755,99 @@ def test_pil_player_typewriter_reveal_progression() -> None:
 
     assert len(rendered_chars) == count_after_complete
     player.close()
+
+
+def test_pil_renderer_debug_info_and_repr() -> None:
+    """PILRenderer.debug_info and debug_repr should snapshot optimization & cache state."""
+    renderer = PILRenderer(width=640, height=360)
+    info = renderer.debug_info()
+
+    assert "performance" in info
+    assert "stage_caching" in info
+    assert "motion_resampling" in info
+    assert "caches" in info
+    assert "backend" in info
+
+    assert info["backend"]["dimensions"] == (640, 360)
+    assert info["stage_caching"]["last_render_path"] == "None"
+    assert info["caches"]["sprite_lru"]["max_items"] == renderer.max_cached_sprites
+
+    repr_str = renderer.debug_repr()
+    assert "── Eager Debug: PIL Backend ──────────────────────────" in repr_str
+    assert "FPS:" in repr_str
+    assert "Render Path: None" in repr_str
+    assert "Cache Diagnostics" in repr_str
+
+    # Render with compositor and check updated debug info
+    comp = StageCompositor(640, 360)
+    comp.set_background("bg/room", transition="cut")
+    renderer.render_compositor(comp, 640, 360)
+
+    info_after = renderer.debug_info()
+    assert info_after["stage_caching"]["last_render_path"] == "Full Repaint"
+    assert info_after["stage_caching"]["bg_cached"] is True
+    assert renderer.debug_repr().count("Render Path: Full Repaint") == 1
+
+
+def test_pil_player_debug_overlay_modes_and_details() -> None:
+    """PILPlayer debug overlay should support OFF, FPS, and DETAILED modes."""
+    graph = parse_graph(
+        "## Start --- start\n"
+        "Alice: Welcome to the test!\n"
+    )
+    session = GameSession(graph)
+
+    # Start in detailed mode
+    player = PILPlayer(
+        session=session,
+        width=800,
+        height=600,
+        visible=False,
+        show_fps=DebugOverlayMode.DETAILED,
+    )
+    try:
+        assert player.debug_mode == DebugOverlayMode.DETAILED
+        assert player.show_fps is True
+
+        player.tick(0.016)
+        player.on_draw()
+
+        text = player.get_debug_overlay_text()
+        assert "Eager Debug: PIL Backend" in text
+        assert "Render Path: Full Repaint" in text
+        assert "Sprite LRU:" in text
+        assert "UI: speaker: Alice" in text
+
+        # Complete typewriter text reveal so the frame becomes idle
+        if session.text_reveal is not None:
+            session.text_reveal.update(10.0)
+        player._sync_overlay()
+        player._ui_dirty = False
+        # Fake photo cache present so idle skip path is eligible
+        player._photo = object()
+
+        player.tick(0.016)
+        player.on_draw()
+        assert "Tier 0 (Idle Skip)" in player.get_debug_overlay_text()
+
+        # Setter tests
+        player.show_fps = False
+        assert player.debug_mode == DebugOverlayMode.OFF
+        assert player.show_fps is False
+        assert player.get_debug_overlay_text() == ""
+
+        player.show_fps = True
+        assert player.debug_mode == DebugOverlayMode.FPS
+        assert player.show_fps is True
+        assert "FPS:" in player.get_debug_overlay_text()
+        assert "Cache Diagnostics" not in player.get_debug_overlay_text()
+
+        player.show_fps = "detailed"
+        assert player.debug_mode == DebugOverlayMode.DETAILED
+        assert "Cache Diagnostics" in player.get_debug_overlay_text()
+    finally:
+        player.close()
+
 
 
 

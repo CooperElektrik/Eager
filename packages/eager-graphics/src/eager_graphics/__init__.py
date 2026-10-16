@@ -54,7 +54,7 @@ from eager_graphics.layout import LayoutResolver, ViewportTransform
 from eager_graphics.protocol import RenderBackend, RenderItem, UIDrawBackend
 from eager_graphics.stage import ElementState, Layer, Stage, StageElement
 from eager_graphics.timeline import Timeline, Tween
-from eager_graphics.types import Anchor, ScaleMode, TransitionKind
+from eager_graphics.types import Anchor, DebugOverlayMode, ScaleMode, TransitionKind
 from eager_graphics.ui_components import (
     ChoiceMenu,
     ChoiceMenuStyle,
@@ -82,6 +82,7 @@ __all__ = [
     "ChoiceMenuStyle",
     "ChoiceOption",
     "Color",
+    "DebugOverlayMode",
     "DialogueBox",
     "DialogueBoxLayout",
     "EasingFunc",

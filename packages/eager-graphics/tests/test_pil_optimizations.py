@@ -745,5 +745,102 @@ def test_in_motion_sprites_do_not_poison_sprite_cache() -> None:
     assert len(alice_keys) == 0
 
 
+def test_text_mask_and_measure_cache_bypass_flag() -> None:
+    """draw_text and measure_text with cache=False must not populate text mask or measure caches."""
+    renderer = PILRenderer(800, 600)
+    renderer._text_mask_cache.clear()
+    renderer._measure_cache.clear()
+
+    # Measure with cache=False
+    w1, h1 = renderer.measure_text("Transitory text", font_size=16, cache=False)
+    assert w1 > 0 and h1 > 0
+    assert len(renderer._measure_cache) == 0
+
+    # Draw with cache=False
+    renderer.draw_text(10, 10, "Transitory text", font_size=16, cache=False)
+    assert len(renderer._text_mask_cache) == 0
+
+    # With cache=True (default), both should be cached
+    _w, _h = renderer.measure_text("Cached text", font_size=16)
+    assert len(renderer._measure_cache) == 1
+
+    renderer.draw_text(10, 30, "Cached text", font_size=16)
+    assert len(renderer._text_mask_cache) == 1
+
+
+def test_dialogue_box_typewriter_reveal_does_not_pollute_text_caches() -> None:
+    """Typewriter text reveal character-by-character must not populate text_mask_cache with partial substrings."""
+    from eager_graphics.ui_components import DialogueBox
+
+    renderer = PILRenderer(1280, 720)
+    box = DialogueBox(width=1280, height=720)
+
+    # Long dialogue that would otherwise produce dozens of intermediate cache entries
+    sentence = "This is a long sentence revealing character by character during animated typewriter presentation."
+
+    # Simulate 50 frames of typewriter progress
+    for char_count in range(1, 50):
+        box.set_content("Alice", sentence, visible_chars=char_count)
+        renderer._text_mask_cache.clear()
+        renderer._measure_cache.clear()
+        box.draw(renderer)
+
+        # None of the intermediate substrings of the dialogue body should be cached in _text_mask_cache
+        # Only the speaker name ("Alice") is static and allowed to be cached
+        dialogue_masks = [k for k in renderer._text_mask_cache if k[0] != "Alice"]
+        assert len(dialogue_masks) == 0, f"Found cached partial text masks: {dialogue_masks}"
+
+    # Once fully revealed (visible_chars=None or visible_chars >= total), text IS cached
+    box.set_content("Alice", sentence, visible_chars=None)
+    renderer._text_mask_cache.clear()
+    box.draw(renderer)
+
+    dialogue_masks = [k for k in renderer._text_mask_cache if k[0] != "Alice"]
+    assert len(dialogue_masks) >= 1, "Completed dialogue should be cached"
+
+
+def test_pil_player_typewriter_reveal_cache_behavior() -> None:
+    """Stepping PILPlayer through typewriter character reveals must not grow _text_mask_cache with partial prefixes."""
+    from eager_runtime.session import GameSession
+    from eager_script import parse_graph
+
+    from eager_graphics.renderers.pil import PILPlayer
+
+    script = """
+    ## Start --- start
+    Alice: This is an extended dialogue line revealing over many frames to verify cache bounds.
+    """
+    graph = parse_graph(script)
+    session = GameSession(graph)
+    player = PILPlayer(session=session, visible=False)
+    player._photo = "dummy"
+
+    # Step through 30 frames while text is actively revealing
+    for _ in range(30):
+        player.tick(1.0 / 60.0)
+        player.on_draw()
+
+    # While revealing, dialogue body prefixes must not be in _text_mask_cache
+    cached_strings = {k[0] for k in player.renderer._text_mask_cache}
+    # Only static UI elements like speaker "Alice" or quick menu labels may be cached
+    partial_reveals = [s for s in cached_strings if s.startswith("This is an") and s != "This is an extended dialogue line revealing over many frames to verify cache bounds."]
+    assert len(partial_reveals) == 0, f"Found leaked partial dialogue masks: {partial_reveals}"
+
+    # Advance until text reveal finishes
+    for _ in range(120):
+        player.tick(1.0 / 60.0)
+        player.on_draw()
+
+    assert session.text_reveal is not None and session.text_reveal.is_complete
+
+    # Now that reveal is complete, the final settled line should be in the cache
+    final_cached = {k[0] for k in player.renderer._text_mask_cache}
+    full_sentence = "This is an extended dialogue line revealing over many frames to verify cache bounds."
+    assert any(full_sentence.startswith(s) or s in full_sentence for s in final_cached if s not in ("Alice",))
+    player.close()
+
+
+
+
 
 

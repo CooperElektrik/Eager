@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 try:
+    import PIL
     from PIL import Image, ImageChops, ImageDraw, ImageFont
 
     PIL_AVAILABLE = True
@@ -31,7 +32,7 @@ from eager_core.types import BLACK, WHITE, Color
 
 from eager_graphics.layout import ViewportTransform
 from eager_graphics.protocol import RenderBackend, RenderItem
-from eager_graphics.types import ScaleMode
+from eager_graphics.types import DebugOverlayMode, ScaleMode
 from eager_graphics.ui_components import UIOverlay
 
 if TYPE_CHECKING:
@@ -407,6 +408,37 @@ def _split_rgba(img: Image.Image, *, shared: bool) -> tuple[Image.Image, Image.I
     return color, alpha
 
 
+def _detect_pillow_simd() -> str:
+    """Detect whether Pillow is the standard build or the SIMD-accelerated fork."""
+    if not PIL_AVAILABLE:
+        return "None"
+    try:
+        from PIL import features
+
+        if hasattr(features, "check_feature"):
+            try:
+                if features.check_feature("simd"):
+                    return "SIMD"
+            except (ValueError, TypeError):
+                pass
+    except Exception:  # noqa: BLE001, S110
+        pass
+
+    try:
+        import importlib.metadata
+
+        dist = importlib.metadata.distribution("pillow-simd")
+        return f"SIMD {dist.version}"
+    except Exception:  # noqa: BLE001, S110
+        pass
+
+    version = getattr(PIL, "__version__", "")
+    if ".post" in version or "simd" in version.lower():
+        return f"SIMD ({version})"
+
+    return "Standard"
+
+
 def _check_pil_available() -> None:
     if not PIL_AVAILABLE:
         msg = (
@@ -632,7 +664,9 @@ class PILRenderer(RenderBackend):
             max_bytes=32 * 1024 * 1024,
         )
         self._font_cache: dict[int, ImageFont.ImageFont] = {}
-        self._measure_cache: dict[tuple[str, int], tuple[float, float]] = {}
+        self._measure_cache: dict[
+            tuple[str, int] | tuple[str, int, bool, bool], tuple[float, float]
+        ] = {}
         self._alpha_lut_cache: dict[int, list[int]] = {}
         self._rgba_lut_cache: dict[tuple[int, int, int, int], list[int]] = {}
         self._fade_lut_cache: dict[tuple[Any, ...], list[int]] = {}
@@ -668,6 +702,7 @@ class PILRenderer(RenderBackend):
         self._curr_item_bboxes: dict[tuple[str, str, int], tuple[int, int, int, int]] = {}
         self._last_had_overlay: bool = False
         self._last_dirty_bbox: tuple[int, int, int, int] | None = None
+        self._last_render_path: str = "None"
 
     def set_window(self, window: Any) -> None:
         """Associate renderer with a player window (any object with .width/.height)."""
@@ -754,6 +789,7 @@ class PILRenderer(RenderBackend):
         self._curr_item_bboxes.clear()
         self._last_had_overlay = False
         self._last_dirty_bbox = None
+        self._last_render_path = "None"
 
     def cache_info(self) -> dict[str, Any]:
         """Return diagnostic metrics about cache hits, misses, and current size."""
@@ -766,6 +802,146 @@ class PILRenderer(RenderBackend):
             "maxsize": self.max_cached_sprites,
             "hit_ratio": hit_ratio,
         }
+
+    def debug_info(self) -> dict[str, Any]:
+        """Return a structured diagnostic snapshot of the PIL renderer's optimization and cache state."""
+        total_hits_misses = self._cache_hits + self._cache_misses
+        hit_ratio = (self._cache_hits / total_hits_misses) if total_hits_misses > 0 else 0.0
+
+        screen_area = self.width * self.height
+        dirty_pct = 0.0
+        if self._last_dirty_bbox is not None and screen_area > 0:
+            x0, y0, x1, y1 = self._last_dirty_bbox
+            dirty_area = max(0, x1 - x0) * max(0, y1 - y0)
+            dirty_pct = (dirty_area / screen_area) * 100.0
+
+        total_lru_bytes = sum(
+            c.nbytes
+            for c in (
+                self._sprite_cache,
+                self._scaled_cache,
+                self._geom_cache,
+                self._ui_image_cache,
+                self._text_mask_cache,
+                self._gradient_cache,
+            )
+        )
+        total_lru_items = sum(
+            len(c)
+            for c in (
+                self._sprite_cache,
+                self._scaled_cache,
+                self._geom_cache,
+                self._ui_image_cache,
+                self._text_mask_cache,
+                self._gradient_cache,
+            )
+        )
+
+        in_motion = sorted(self._in_motion_assets)
+        filter_mode = "NEAREST" if (self.adaptive_resampling and in_motion) else "BILINEAR"
+
+        return {
+            "performance": {
+                "fps": round(self.fps, 1),
+                "fps_avg": round(self.fps_avg, 1),
+                "fps_overall": round(self.fps_overall, 1),
+                "frame_count": self.frame_count,
+                "dt_ms": round(self.clock.dt * 1000.0, 2),
+            },
+            "stage_caching": {
+                "last_render_path": self._last_render_path,
+                "bg_cached": self._bg_cache is not None,
+                "base_cached": self._base_cache is not None,
+                "stage_cached": self._stage_cache is not None,
+                "last_dirty_bbox": self._last_dirty_bbox,
+                "dirty_area_pct": round(dirty_pct, 1),
+            },
+            "motion_resampling": {
+                "in_motion_assets": in_motion,
+                "in_motion_count": len(in_motion),
+                "adaptive_resampling": self.adaptive_resampling,
+                "active_filter": filter_mode,
+            },
+            "caches": {
+                "sprite_lru": {
+                    "items": len(self._sprite_cache),
+                    "max_items": self.max_cached_sprites,
+                    "bytes": self._sprite_cache.nbytes,
+                    "hits": self._cache_hits,
+                    "misses": self._cache_misses,
+                    "hit_ratio": round(hit_ratio, 3),
+                },
+                "scaled_lru": {"items": len(self._scaled_cache), "bytes": self._scaled_cache.nbytes},
+                "geom_lru": {"items": len(self._geom_cache), "bytes": self._geom_cache.nbytes},
+                "ui_image_lru": {"items": len(self._ui_image_cache), "bytes": self._ui_image_cache.nbytes},
+                "text_mask_lru": {"items": len(self._text_mask_cache), "bytes": self._text_mask_cache.nbytes},
+                "gradient_lru": {"items": len(self._gradient_cache), "bytes": self._gradient_cache.nbytes},
+                "total_lru_items": total_lru_items,
+                "total_lru_bytes": total_lru_bytes,
+                "luts": {
+                    "alpha": len(self._alpha_lut_cache),
+                    "rgba": len(self._rgba_lut_cache),
+                    "fade": len(self._fade_lut_cache),
+                },
+                "fonts": len(self._font_cache),
+                "measurements": len(self._measure_cache),
+                "loaded_assets": len(self.asset_resolver._image_cache),
+            },
+            "backend": {
+                "mode": self.mode,
+                "scale_mode": self.scale_mode.name,
+                "dimensions": (self.width, self.height),
+                "simd": _detect_pillow_simd(),
+                "pillow_version": getattr(PIL, "__version__", "unknown") if PIL_AVAILABLE else "unknown",
+            },
+        }
+
+    def debug_repr(self) -> str:
+        """Render debug_info() as a multi-line human-readable string report."""
+        info = self.debug_info()
+        perf = info["performance"]
+        stage = info["stage_caching"]
+        motion = info["motion_resampling"]
+        caches = info["caches"]
+        backend = info["backend"]
+
+        simd_str = backend["simd"]
+        p_ver = backend["pillow_version"]
+        fps = perf["fps"]
+        fps_avg = perf["fps_avg"]
+        frames = perf["frame_count"]
+        dt = perf["dt_ms"]
+
+        lines = [
+            "── Eager Debug: PIL Backend ──────────────────────────",
+            f"FPS: {fps:.1f} (avg: {fps_avg:.1f}) | Frames: {frames} | dt: {dt:.1f}ms",
+            f"Pillow: {p_ver} ({simd_str}) | Mode: {backend['mode']} ({backend['dimensions'][0]}x{backend['dimensions'][1]})",
+            "── Stage & Repaint ───────────────────────────────────",
+            f"Render Path: {stage['last_render_path']}",
+        ]
+
+        if stage["last_dirty_bbox"] is not None:
+            bb = stage["last_dirty_bbox"]
+            lines.append(f"Dirty Rect: [{bb[0]},{bb[1]} -> {bb[2]},{bb[3]}] ({stage['dirty_area_pct']:.1f}% screen)")
+        else:
+            lines.append("Dirty Rect: None (full or cached)")
+
+        m_count = motion["in_motion_count"]
+        m_str = f"{m_count} asset(s)" if m_count > 0 else "None"
+        lines.append(f"In-Motion: {m_str} | Filter: {motion['active_filter']}")
+
+        sp = caches["sprite_lru"]
+        sp_bytes_mb = sp["bytes"] / (1024 * 1024)
+        sp_hr = sp["hit_ratio"] * 100.0
+        lines.extend([
+            "── Cache Diagnostics ─────────────────────────────────",
+            f"Sprite LRU: {sp['items']}/{sp['max_items']} ({sp_bytes_mb:.1f} MB) | Hits: {sp_hr:.1f}% ({sp['hits']}H/{sp['misses']}M)",
+            f"Total LRU: {caches['total_lru_items']} items ({caches['total_lru_bytes'] / (1024 * 1024):.1f} MB)",
+            f"Sub-caches: text: {caches['text_mask_lru']['items']}, scaled: {caches['scaled_lru']['items']}, ui: {caches['ui_image_lru']['items']}",
+            f"LUTs: α:{caches['luts']['alpha']} rgba:{caches['luts']['rgba']} fade:{caches['luts']['fade']} | Fonts: {caches['fonts']} | Textures: {caches['loaded_assets']}",
+        ])
+        return "\n".join(lines)
 
     def preload_assets(self, compositor: StageCompositor) -> int:
         """Pre-load all stage assets into the image cache to avoid first-frame spikes.
@@ -1544,6 +1720,7 @@ class PILRenderer(RenderBackend):
 
         self.begin_frame()
         if can_use_base_cache:
+            self._last_render_path = "Tier 2 (Base Scene Cache)"
             self._image.paste(self._base_cache, (0, 0))
             self._needs_clear = False
             self._frame_buffer.extend(base_items)
@@ -1603,6 +1780,7 @@ class PILRenderer(RenderBackend):
                         use_dirty_rect = True
 
             if use_dirty_rect and dirty_bbox is not None:
+                self._last_render_path = "Tier 1 (Dirty Rect Repaint)"
                 crop = self._bg_cache.crop(dirty_bbox)
                 self._image.paste(crop, (dirty_bbox[0], dirty_bbox[1]))
                 self._needs_clear = False
@@ -1619,6 +1797,7 @@ class PILRenderer(RenderBackend):
                 self._ui_dirty_bbox = None
                 self._last_dirty_bbox = dirty_bbox
             else:
+                self._last_render_path = "Tier 1 (Full BG Blit)"
                 self._image.paste(self._bg_cache, (0, 0))
                 self._needs_clear = False
                 self._frame_buffer.extend(bg_items)
@@ -1639,6 +1818,7 @@ class PILRenderer(RenderBackend):
             for item in overlay_items:
                 self.draw_item(item)
         else:
+            self._last_render_path = "Full Repaint"
             self._last_dirty_bbox = None
             self.clear(BLACK)
 
@@ -1947,6 +2127,7 @@ class PILRenderer(RenderBackend):
         italic: bool = False,
         anchor_x: str = "left",
         anchor_y: str = "top",
+        cache: bool = True,
     ) -> None:
         """Draw a single line of text, honouring the requested anchor point."""
         if not text:
@@ -1986,11 +2167,12 @@ class PILRenderer(RenderBackend):
                         cached = (None, 0, 0)
                 except (AttributeError, ValueError, TypeError):
                     cached = (None, 0, 0)
-            self._text_mask_cache.put(
-                cache_key,
-                cached,
-                _image_nbytes(cached[0]) if cached[0] is not None else 0,
-            )
+            if cache:
+                self._text_mask_cache.put(
+                    cache_key,
+                    cached,
+                    _image_nbytes(cached[0]) if cached[0] is not None else 0,
+                )
 
         color_rgba = (
             _WHITE_RGBA
@@ -2005,7 +2187,7 @@ class PILRenderer(RenderBackend):
             self._mark_ui_dirty(dest_x, dest_y, dest_x + mask.width, dest_y + mask.height)
             self._image.paste(color_bytes, (dest_x, dest_y), mask)
         else:
-            w_est, h_est = self.measure_text(text, font_size=font_size)
+            w_est, h_est = self.measure_text(text, font_size=font_size, cache=cache)
             self._mark_ui_dirty(round(x), round(y), round(x + w_est), round(y + h_est))
             draw = ImageDraw.Draw(self._image)
             draw.text(
@@ -2089,6 +2271,7 @@ class PILRenderer(RenderBackend):
         font_size: int = 14,
         bold: bool = False,
         italic: bool = False,
+        cache: bool = True,
     ) -> tuple[float, float]:
         """Measure the pixel extents *text* would occupy at *font_size*."""
         cache_key = (
@@ -2113,7 +2296,7 @@ class PILRenderer(RenderBackend):
             except (AttributeError, ValueError, TypeError):
                 result = (float(font_size) * 0.5 * len(text), float(font_size) * 1.2)
 
-        if len(self._measure_cache) < 2048:
+        if cache and len(self._measure_cache) < 2048:
             self._measure_cache[cache_key] = result
         return result
 
@@ -2153,7 +2336,7 @@ if PIL_AVAILABLE:
             scale_mode: ScaleMode = ScaleMode.LETTERBOX,
             vsync: bool = True,
             visible: bool = True,
-            show_fps: bool = True,
+            show_fps: bool | str | DebugOverlayMode = True,
             uncapped: bool = False,
         ) -> None:
             if uncapped:
@@ -2181,9 +2364,22 @@ if PIL_AVAILABLE:
                 scale_mode=scale_mode,
             )
 
-            # On-screen FPS debug overlay (a tkinter label managed in run()).
-            self.show_fps: bool = show_fps
+            # On-screen developer debug overlay (FPS counter or detailed diagnostic HUD)
+            if isinstance(show_fps, DebugOverlayMode):
+                self.debug_mode: DebugOverlayMode = show_fps
+            elif isinstance(show_fps, str):
+                try:
+                    self.debug_mode = DebugOverlayMode(show_fps.lower())
+                except ValueError:
+                    self.debug_mode = DebugOverlayMode.FPS if show_fps else DebugOverlayMode.OFF
+            elif show_fps:
+                self.debug_mode = DebugOverlayMode.FPS
+            else:
+                self.debug_mode = DebugOverlayMode.OFF
+
             self._fps_widget: Any = None
+            self._last_debug_update: float = 0.0
+            self._last_render_path: str = "None"
 
             self._photo: Any = None
             self._ui_dirty: bool = True
@@ -2218,6 +2414,37 @@ if PIL_AVAILABLE:
             self.renderer.warm_sprite_cache(
                 self.compositor, self.width, self.height
             )
+
+        @property
+        def show_fps(self) -> bool:
+            """True if the debug overlay is active in either FPS or DETAILED mode."""
+            return self.debug_mode != DebugOverlayMode.OFF
+
+        @show_fps.setter
+        def show_fps(self, value: bool | str | DebugOverlayMode) -> None:
+            if isinstance(value, DebugOverlayMode):
+                self.debug_mode = value
+            elif isinstance(value, str):
+                try:
+                    self.debug_mode = DebugOverlayMode(value.lower())
+                except ValueError:
+                    self.debug_mode = DebugOverlayMode.FPS if value else DebugOverlayMode.OFF
+            elif value:
+                self.debug_mode = DebugOverlayMode.FPS
+            else:
+                self.debug_mode = DebugOverlayMode.OFF
+
+        def cycle_debug_overlay(self) -> DebugOverlayMode:
+            """Cycle debug overlay mode: FPS -> DETAILED -> OFF -> FPS."""
+            match self.debug_mode:
+                case DebugOverlayMode.OFF:
+                    self.debug_mode = DebugOverlayMode.FPS
+                case DebugOverlayMode.FPS:
+                    self.debug_mode = DebugOverlayMode.DETAILED
+                case DebugOverlayMode.DETAILED:
+                    self.debug_mode = DebugOverlayMode.OFF
+            self._draw_debug_overlay(force=True)
+            return self.debug_mode
 
         def _sync_overlay(self) -> None:
             """Mirror current narrative state onto the UI components.
@@ -2305,19 +2532,21 @@ if PIL_AVAILABLE:
                 and not is_screen_active
                 and self._photo is not None
             ):
+                self._last_render_path = "Tier 0 (Idle Skip)"
                 self.renderer.frame_count += 1
                 self.renderer.clock.tick()
                 self._present_cached()
-                self._draw_fps()
+                self._draw_debug_overlay()
                 return
 
             self.session.draw(self.renderer, self.width, self.height)
+            self._last_render_path = self.renderer._last_render_path
             self._ui_dirty = False
 
             # Present the composited PIL frame to the tkinter window
             # (no-op when running headless).
             self._present()
-            self._draw_fps()
+            self._draw_debug_overlay()
 
         def _present(self) -> None:
             """Push the current PIL frame to the tkinter label (no-op headless)."""
@@ -2343,7 +2572,11 @@ if PIL_AVAILABLE:
             self._label.configure(image=self._photo)
 
         def _draw_fps(self) -> None:
-            """Update the on-screen FPS counter overlay (no-op headless)."""
+            """Update the on-screen debug overlay (no-op headless)."""
+            self._draw_debug_overlay()
+
+        def _draw_debug_overlay(self, force: bool = False) -> None:
+            """Update the on-screen developer debug overlay (no-op headless)."""
             if self._root is None:
                 return
             if self._fps_widget is None:
@@ -2352,17 +2585,122 @@ if PIL_AVAILABLE:
                     font=("TkDefaultFont", 9),
                     fg="#e6e6e6",
                     bg="#000000",
+                    justify="left",
+                    anchor="nw",
+                    padx=6,
+                    pady=4,
                 )
-            if self.show_fps:
+            if self.debug_mode == DebugOverlayMode.OFF:
+                self._fps_widget.place_forget()
+                return
+
+            now = time.monotonic()
+            if not force and self._fps_widget.cget("text") and (now - self._last_debug_update) < 0.1:
+                return
+            self._last_debug_update = now
+
+            if self.debug_mode == DebugOverlayMode.FPS:
                 fps = self.renderer.fps
                 fps_avg = self.renderer.fps_avg
                 frames = self.renderer.frame_count
                 self._fps_widget.configure(
-                    text=f"FPS: {fps:.1f}  (avg: {fps_avg:.1f}, frames: {frames})"
+                    font=("TkDefaultFont", 9),
+                    text=f"FPS: {fps:.1f}  (avg: {fps_avg:.1f}, frames: {frames})",
                 )
                 self._fps_widget.place(x=10, y=10)
+            elif self.debug_mode == DebugOverlayMode.DETAILED:
+                text = self.get_debug_overlay_text()
+                try:
+                    self._fps_widget.configure(
+                        font=("TkFixedFont", 9),
+                        text=text,
+                    )
+                except Exception:  # noqa: BLE001
+                    self._fps_widget.configure(
+                        font=("monospace", 9),
+                        text=text,
+                    )
+                self._fps_widget.place(x=10, y=10)
+
+        def get_debug_overlay_text(self) -> str:
+            """Return the formatted debug overlay text for the current debug mode."""
+            if self.debug_mode == DebugOverlayMode.OFF:
+                return ""
+            if self.debug_mode == DebugOverlayMode.FPS:
+                fps = self.renderer.fps
+                fps_avg = self.renderer.fps_avg
+                frames = self.renderer.frame_count
+                return f"FPS: {fps:.1f}  (avg: {fps_avg:.1f}, frames: {frames})"
+            return self._format_detailed_debug()
+
+        def _format_detailed_debug(self) -> str:
+            """Format a rich multi-line diagnostic snapshot for PIL player & renderer."""
+            info = self.renderer.debug_info()
+            perf = info["performance"]
+            stage = info["stage_caching"]
+            motion = info["motion_resampling"]
+            caches = info["caches"]
+            backend = info["backend"]
+
+            render_path = self._last_render_path or stage["last_render_path"]
+            simd_str = backend["simd"]
+            p_ver = backend["pillow_version"]
+            fps = perf["fps"]
+            fps_avg = perf["fps_avg"]
+            frames = perf["frame_count"]
+            dt = perf["dt_ms"]
+
+            lines = [
+                "── Eager Debug: PIL Backend ──────────────────────────",
+                f"FPS: {fps:.1f} (avg: {fps_avg:.1f}) | Frame: {frames} | dt: {dt:.1f}ms",
+                f"Pillow: {p_ver} ({simd_str}) | Mode: {backend['mode']} ({backend['dimensions'][0]}x{backend['dimensions'][1]}, {backend['scale_mode']})",
+                "── Stage & Repaint ───────────────────────────────────",
+                f"Render Path: {render_path}",
+            ]
+
+            if stage["last_dirty_bbox"] is not None:
+                bb = stage["last_dirty_bbox"]
+                lines.append(f"Dirty Rect: [{bb[0]},{bb[1]} -> {bb[2]},{bb[3]}] ({stage['dirty_area_pct']:.1f}% screen)")
             else:
-                self._fps_widget.place_forget()
+                lines.append("Dirty Rect: None (full or cached)")
+
+            m_count = motion["in_motion_count"]
+            m_str = f"{m_count} asset(s)" if m_count > 0 else "None"
+            lines.append(f"In-Motion: {m_str} | Resampling: {motion['active_filter']}")
+
+            compositor = getattr(self.session, "compositor", None)
+            if compositor is not None:
+                stage_items = compositor.render_list()
+                bg_c = sum(1 for it in stage_items if it.layer == "background")
+                act_c = sum(1 for it in stage_items if it.layer not in ("background", "overlay"))
+                ov_c = sum(1 for it in stage_items if it.layer == "overlay")
+                active_tw = len(getattr(getattr(compositor, "timeline", None), "active_tweens", list)())
+                lines.append(f"Stage Items: {len(stage_items)} (bg: {bg_c}, actors: {act_c}, overlay: {ov_c}) | Tweens: {active_tw}")
+
+            sp = caches["sprite_lru"]
+            sp_mb = sp["bytes"] / (1024 * 1024)
+            sp_hr = sp["hit_ratio"] * 100.0
+            tot_mb = caches["total_lru_bytes"] / (1024 * 1024)
+            lines.extend([
+                "── Cache Diagnostics ─────────────────────────────────",
+                f"Sprite LRU: {sp['items']}/{sp['max_items']} ({sp_mb:.1f} MB) | Hit Rate: {sp_hr:.1f}% ({sp['hits']}H/{sp['misses']}M)",
+                f"Total LRU: {caches['total_lru_items']} items ({tot_mb:.1f} MB)",
+                f"Sub-caches: text: {caches['text_mask_lru']['items']}, scaled: {caches['scaled_lru']['items']}, ui: {caches['ui_image_lru']['items']}, geom: {caches['geom_lru']['items']}",
+                f"LUTs: α:{caches['luts']['alpha']} rgba:{caches['luts']['rgba']} fade:{caches['luts']['fade']} | Fonts: {caches['fonts']} | Textures: {caches['loaded_assets']}",
+            ])
+
+            director = getattr(self.session, "director", None)
+            if director is not None and hasattr(director, "ui_state"):
+                speaker = director.ui_state.speaker or "None"
+                rev = (
+                    f"{self.session.text_reveal.visible_chars}/{self.session.text_reveal.total_chars}"
+                    if (getattr(self.session, "text_reveal", None) and not self.session.text_reveal.is_complete)
+                    else "complete"
+                )
+                choices_str = f"{len(self.active_choice_prompt.options)} choices" if self.active_choice_prompt else "None"
+                lines.append(f"UI: speaker: {speaker} | reveal: {rev} | prompt: {choices_str}")
+
+            return "\n".join(lines)
 
         def run(self) -> None:
             """Create the tkinter window and run the event loop (blocking).
@@ -2536,7 +2874,7 @@ if PIL_AVAILABLE:
             if action == InputAction.QUIT:
                 self.close()
             elif action == InputAction.DEBUG_OVERLAY:
-                self.show_fps = not self.show_fps
+                _ = self.cycle_debug_overlay()
             elif action:
                 self._ui_dirty = True
                 self.session.handle_input(action)

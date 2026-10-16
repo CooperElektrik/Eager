@@ -879,6 +879,7 @@ class PygletRenderer(RenderBackend):
         italic: bool = False,
         anchor_x: str = "left",
         anchor_y: str = "top",
+        cache: bool = True,
     ) -> None:
         """Draw a single line of text at the requested anchor point."""
         pyglet_anchor_x = {"left": "left", "center": "center", "right": "right"}.get(
@@ -1019,6 +1020,7 @@ class PygletRenderer(RenderBackend):
         font_size: int = 14,
         bold: bool = False,
         italic: bool = False,
+        cache: bool = True,
     ) -> tuple[float, float]:
         """Measure the pixel extents *text* would occupy at *font_size*."""
         return _cached_measure_text(

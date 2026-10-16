@@ -234,6 +234,7 @@ class NullRenderer(RenderBackend):
         italic: bool = False,
         anchor_x: str = "left",
         anchor_y: str = "top",
+        cache: bool = True,
     ) -> None:
         """Record a text primitive."""
         self.ui_calls.append(
@@ -248,6 +249,7 @@ class NullRenderer(RenderBackend):
                 "italic": italic,
                 "anchor_x": anchor_x,
                 "anchor_y": anchor_y,
+                "cache": cache,
             }
         )
 
@@ -285,6 +287,7 @@ class NullRenderer(RenderBackend):
         font_size: int = 14,
         bold: bool = False,
         italic: bool = False,
+        cache: bool = True,
     ) -> tuple[float, float]:
         """Return a deterministic monospace-ish estimate of the text extents.
 

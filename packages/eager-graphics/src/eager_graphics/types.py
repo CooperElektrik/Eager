@@ -11,9 +11,19 @@ from enum import Enum
 
 __all__ = [
     "Anchor",
+    "DebugOverlayMode",
     "ScaleMode",
     "TransitionKind",
 ]
+
+
+class DebugOverlayMode(str, Enum):
+    """Display modes for the on-screen developer debug overlay."""
+
+    OFF = "off"
+    FPS = "fps"
+    DETAILED = "detailed"
+
 
 
 class Anchor(str, Enum):

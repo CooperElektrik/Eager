@@ -478,6 +478,9 @@ class DialogueBox:
             if self.visible_chars is not None
             else len(formatted.plain_text)
         )
+        is_fully_revealed = (
+            self.visible_chars is None or int(self.visible_chars) >= len(formatted.plain_text)
+        )
 
         # Precompute segment spans (start, end, segment) in plain_text
         seg_spans: list[tuple[int, int, Any]] = []
@@ -519,32 +522,49 @@ class DialogueBox:
                             color=seg_color,
                             bold=seg.bold,
                             italic=seg.italic,
+                            cache=is_fully_revealed,
                         )
                     except TypeError:
-                        backend.draw_text(
-                            x_cursor,
-                            line_y,
-                            piece_text,
-                            font_size=seg_font_size,
-                            color=seg_color,
-                        )
+                        try:
+                            backend.draw_text(
+                                x_cursor,
+                                line_y,
+                                piece_text,
+                                font_size=seg_font_size,
+                                color=seg_color,
+                                bold=seg.bold,
+                                italic=seg.italic,
+                            )
+                        except TypeError:
+                            backend.draw_text(
+                                x_cursor,
+                                line_y,
+                                piece_text,
+                                font_size=seg_font_size,
+                                color=seg_color,
+                            )
                     try:
                         piece_w, _ = backend.measure_text(
                             piece_text,
                             font_size=seg_font_size,
                             bold=seg.bold,
                             italic=seg.italic,
+                            cache=is_fully_revealed,
                         )
                     except TypeError:
-                        piece_w, _ = backend.measure_text(
-                            piece_text,
-                            font_size=seg_font_size,
-                        )
+                        try:
+                            piece_w, _ = backend.measure_text(
+                                piece_text,
+                                font_size=seg_font_size,
+                                bold=seg.bold,
+                                italic=seg.italic,
+                            )
+                        except TypeError:
+                            piece_w, _ = backend.measure_text(
+                                piece_text,
+                                font_size=seg_font_size,
+                            )
                     x_cursor += piece_w
-
-        is_fully_revealed = (
-            self.visible_chars is None or int(self.visible_chars) >= len(formatted.plain_text)
-        )
         if layout.show_arrow and is_fully_revealed:
             arrow_sym = getattr(style, "arrow_symbol", "▼")
             arrow_x = (
