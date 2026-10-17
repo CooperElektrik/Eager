@@ -445,3 +445,65 @@ Alice: Welcome, [hero_name]!
     session.handle_input(InputAction.CONFIRM)
     assert session.active_input_prompt is None
     assert session.director.ui_state.text == "Welcome, Hero!"
+
+
+def test_session_seen_beats_tracking_and_skip_unseen_protection(tmp_path) -> None:
+    test_script = """
+## Start --- start
+Alice: Line 1
+Alice: Line 2
+Alice: Line 3
+"""
+    script_file = tmp_path / "game.es"
+    script_file.write_text(test_script, encoding="utf-8")
+    save_dir = tmp_path / "saves"
+    session = GameSession(script_file, save_dir=save_dir)
+
+    # 1. Initially seen_beats should be empty
+    assert session.persistent.get("seen_beats") is None
+
+    # Advance through Line 1
+    ev1 = session.advance()
+    assert ev1 is not None and getattr(ev1, "beat_id", None) is not None
+    seen1 = session.persistent.get("seen_beats")
+    assert isinstance(seen1, list)
+    assert ev1.beat_id in seen1
+    assert session.is_current_beat_read() is True
+
+    # 2. Advance through Line 2
+    ev2 = session.advance()
+    assert ev2 is not None and getattr(ev2, "beat_id", None) is not None
+    assert ev2.beat_id in session.persistent["seen_beats"]
+
+    # 3. Create a fresh session with same persistent data (playthrough 2)
+    # Line 1 and 2 are seen, but Line 3 has not been seen yet
+    session2 = GameSession(script_file, save_dir=save_dir)
+    # By default, preferences.skip_unseen is False
+    assert session2.preferences.skip_unseen is False
+
+    # Start at line 1
+    session2.advance()
+    assert session2.director.ui_state.text == "Line 1"
+    assert session2.is_current_beat_read() is True
+
+    # Enable skip mode
+    session2.skip_mode = True
+    session2.update(0.1)
+
+    # Line 2 was seen, so skip should advance through Line 2.
+    # But Line 3 was NOT seen previously in session.persistent!
+    # Therefore skip_mode must automatically drop out at Line 3!
+    assert session2.director.ui_state.text == "Line 3"
+    assert session2.skip_mode is False
+
+    # 4. Now Line 3 has been recorded into seen_beats
+    ev3_beat_id = getattr(session2._last_event, "beat_id", None)
+    assert ev3_beat_id in session2.persistent["seen_beats"]
+
+    # 5. Playthrough 3: with all lines now seen, skip mode should skip through to the end
+    session3 = GameSession(script_file, save_dir=save_dir)
+    session3.advance()
+    session3.skip_mode = True
+    session3.update(0.1)
+    assert session3.is_finished is True
+

@@ -118,10 +118,12 @@ class GameSession:
         config: Any = None,
         auto_reload: bool = False,
         watch: bool = False,
+        save_dir: str | Path | None = None,
     ) -> None:
         self.script_path = Path(project_or_script) if isinstance(project_or_script, (str, Path)) else None
         self.backend = backend
         self.asset_dir = Path(asset_dir) if asset_dir is not None else None
+        self._custom_save_dir = Path(save_dir) if save_dir is not None else None
         self.virtual_width = virtual_width
         self.virtual_height = virtual_height
         self.auto_reload = auto_reload or watch
@@ -174,7 +176,11 @@ class GameSession:
         self.overlay = UIOverlay(width=1280, height=720)
 
         # Persistent state, preferences, and saves
-        save_dir = get_default_save_dir(self.script_path.stem if self.script_path else "default")
+        save_dir = (
+            self._custom_save_dir
+            if self._custom_save_dir is not None
+            else get_default_save_dir(self.script_path.stem if self.script_path else "default")
+        )
         self.persistent = PersistentData(save_dir / "persistent.json")
         self.preferences = Preferences.load(save_dir / "preferences.json")
         self.apply_preferences()
@@ -217,6 +223,7 @@ class GameSession:
         self.text_reveal: Any | None = None
 
         self._last_event: StoryEvent | None = None
+        self._current_beat_previously_seen: bool = False
         if self.script_path is not None:
             from eager_runtime.watcher import FileWatcher
 
@@ -350,6 +357,20 @@ class GameSession:
             self.dispatcher.dispatch(event)
             self._last_event = event
 
+            # Record beat_id into persistent seen_beats
+            beat_id = getattr(event, "beat_id", None)
+            if beat_id:
+                seen_beats = self.persistent.get("seen_beats")
+                if not isinstance(seen_beats, list):
+                    seen_beats = []
+                    self.persistent["seen_beats"] = seen_beats
+                self._current_beat_previously_seen = (beat_id in seen_beats)
+                if not self._current_beat_previously_seen:
+                    seen_beats.append(beat_id)
+                    self.persistent.save()
+            else:
+                self._current_beat_previously_seen = False
+
             # Record into backlog
             if isinstance(event, DialogueEvent):
                 self.backlog.add(event.speaker, event.text, voice=event.voice, emotion=event.emotion)
@@ -458,6 +479,18 @@ class GameSession:
         self.director.ui_state.visible_chars = None
         return True
 
+    def is_current_beat_read(self) -> bool:
+        """Return True if the current beat was already seen in a previous playthrough."""
+        if self._last_event is None:
+            return False
+        beat_id = getattr(self._last_event, "beat_id", None)
+        if not beat_id:
+            return False
+        seen_beats = self.persistent.get("seen_beats")
+        if isinstance(seen_beats, (list, set, tuple)):
+            return beat_id in seen_beats
+        return False
+
     def update(self, dt: float) -> None:
         """Update animation timelines, compositor, audio, typewriter reveal, and timers."""
         self.compositor.step(dt)
@@ -479,13 +512,26 @@ class GameSession:
         if self.active_input_prompt is not None and hasattr(self, "overlay") and hasattr(self.overlay, "input_box"):
             self.overlay.input_box.update(dt)
 
-        # Skip mode advances immediately until player choices or story ends
+        # Skip mode advances immediately until player choices, input prompt, or story ends
         if self.skip_mode and not self.is_finished:
             if self.text_reveal is not None:
                 self.text_reveal.complete_immediately()
                 self.director.ui_state.visible_chars = None
-            while self.skip_mode and not self.is_finished and self.active_choice_prompt is None and self.active_input_prompt is None:
+            while (
+                self.skip_mode
+                and not self.is_finished
+                and self.active_choice_prompt is None
+                and self.active_input_prompt is None
+            ):
+                # If skip_unseen is False, check whether the current line was seen before advancing further
+                if not getattr(self.preferences, "skip_unseen", False) and not self._current_beat_previously_seen:
+                    self.skip_mode = False
+                    break
+
                 self.advance()
+                if not getattr(self.preferences, "skip_unseen", False) and not self._current_beat_previously_seen:
+                    self.skip_mode = False
+                    break
         elif self.auto_mode and not self.is_finished and self.active_choice_prompt is None and self.active_input_prompt is None:
             self.auto_timer += dt
             threshold = getattr(self.preferences, "auto_forward_time", 3.0)
@@ -508,6 +554,7 @@ class GameSession:
             status_badge = "AUTO >"
 
         if not self.ui_hidden:
+            is_read = self.is_current_beat_read()
             self.overlay.set_viewport(width, height)
             self.overlay.draw(
                 ui_backend,
@@ -518,6 +565,7 @@ class GameSession:
                 is_finished=self.is_finished,
                 show_quick_menu=True,
                 status_badge=status_badge,
+                is_read=is_read,
             )
 
         # Draw active screen on top
@@ -799,6 +847,7 @@ class GameSession:
                 self.active_choice_prompt,
                 self.active_input_prompt,
                 input_text=self.input_text,
+                is_read=self.is_current_beat_read(),
             )
 
         return True

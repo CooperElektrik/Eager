@@ -79,6 +79,7 @@ class TestTextPresentation(unittest.TestCase):
             self.assertGreater(session.vm.beat_index, 1)
 
             # Test skip mode
+            session.preferences.skip_unseen = True
             session.skip_mode = True
             session.update(0.01)
             self.assertTrue(session.is_finished)

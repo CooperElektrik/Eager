@@ -251,6 +251,7 @@ class DialogueBox:
         self.emotion: str | None = None
         self.side_image: str | None = None
         self.show_advance_arrow: bool = True
+        self.is_read: bool = False
         self.visible_chars: int | None = None
 
     # ── state ──────────────────────────────────────────────────────────
@@ -571,12 +572,16 @@ class DialogueBox:
             arrow_x = (
                 box_x + box_w - (style.text_padding if style.layout_mode == "cinematic" else 30.0)
             )
+            # When previously read, use a subtle golden tint (_CINEMATIC_SPEAKER_COLOR)
+            arrow_col = (
+                _CINEMATIC_SPEAKER_COLOR if self.is_read else style.arrow_color
+            )
             backend.draw_text(
                 arrow_x,
                 box_y + box_h - 25.0,
                 arrow_sym,
                 font_size=style.arrow_font_size,
-                color=style.arrow_color,
+                color=arrow_col,
                 anchor_x=TextAnchor.RIGHT if style.layout_mode == "cinematic" else TextAnchor.LEFT,
             )
 
@@ -946,6 +951,7 @@ class QuickMenu:
         self.viewport_width = viewport_width
         self.viewport_height = viewport_height
         self.hovered_action: str | None = None
+        self.is_read: bool = False
 
     def set_viewport(self, width: int, height: int) -> None:
         self.viewport_width = width
@@ -980,12 +986,15 @@ class QuickMenu:
         text_col = Color(0.68, 0.72, 0.78, 0.65)
         hover_col = Color(0.95, 0.96, 0.98, 1.0)
         hover_pill = Color(1.0, 1.0, 1.0, 0.08)
+        read_skip_col = Color(0.95, 0.86, 0.62, 0.85)
 
         for act_id, label, bx, by, bw, bh in self.layout():
             is_hovered = getattr(self, "hovered_action", None) == act_id
             if is_hovered:
                 backend.draw_rect(bx, by, bw, bh, hover_pill)
                 col = hover_col
+            elif act_id == "skip" and self.is_read:
+                col = read_skip_col
             else:
                 col = text_col
 
@@ -1054,6 +1063,8 @@ class UIOverlay:
         choice_prompt: Any | None = None,
         input_prompt: Any | None = None,
         input_text: str | None = None,
+        *,
+        is_read: bool = False,
     ) -> None:
         """Mirror narrative state onto the child components."""
         self.dialogue_box.set_content(
@@ -1063,6 +1074,8 @@ class UIOverlay:
             side_image=ui_state.side_image,
             visible_chars=ui_state.visible_chars,
         )
+        self.dialogue_box.is_read = is_read
+        self.quick_menu.is_read = is_read
         plain_len = len(parse_text_tags(ui_state.text).plain_text) if ui_state.text else 0
         is_revealed = (
             ui_state.visible_chars is None or int(ui_state.visible_chars) >= plain_len
@@ -1155,9 +1168,16 @@ class UIOverlay:
         is_finished: bool | None = None,
         show_quick_menu: bool = False,
         status_badge: str | None = None,
+        is_read: bool = False,
     ) -> None:
         """Draw the dialogue box or NVL display, choice menu, input box, quick menu, status badge, and end notice."""
-        self.sync(ui_state, choice_prompt, active_input_prompt, input_text=input_text)
+        self.sync(
+            ui_state,
+            choice_prompt,
+            active_input_prompt,
+            input_text=input_text,
+            is_read=is_read,
+        )
         finished = ui_state.is_finished if is_finished is None else is_finished
 
         if not finished:

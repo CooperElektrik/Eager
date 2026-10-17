@@ -2458,11 +2458,17 @@ if PIL_AVAILABLE:
             self.current_text = self.director.ui_state.text
             self.current_emotion = self.director.ui_state.emotion
             input_text = getattr(self.session, "input_text", None)
+            is_read = (
+                self.session.is_current_beat_read()
+                if hasattr(self.session, "is_current_beat_read")
+                else False
+            )
             self.overlay.sync(
                 self.director.ui_state,
                 self.active_choice_prompt,
                 self.active_input_prompt,
                 input_text=input_text,
+                is_read=is_read,
             )
 
         def advance_story(self) -> None:
