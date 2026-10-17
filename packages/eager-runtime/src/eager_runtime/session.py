@@ -213,6 +213,7 @@ class GameSession:
         self.is_finished: bool = False
         self.active_choice_prompt: ChoicePromptEvent | None = None
         self.active_input_prompt: Any | None = None
+        self.input_text: str = ""
         self.text_reveal: Any | None = None
 
         self._last_event: StoryEvent | None = None
@@ -289,6 +290,11 @@ class GameSession:
                 self.active_input_prompt = inp
         else:
             self.active_input_prompt = None
+
+        if self.active_input_prompt is not None:
+            self.input_text = getattr(self.active_input_prompt, "default", "")
+        else:
+            self.input_text = ""
 
         self.is_finished = self.vm.is_ended
         self.mode = "ended" if self.is_finished else "game"
@@ -370,6 +376,7 @@ class GameSession:
                     self.active_choice_prompt = event
                 elif event.type == "input_prompt":
                     self.active_input_prompt = event
+                    self.input_text = getattr(event, "default", "")
                 elif event.type == "story_end":
                     self.is_finished = True
                     self.mode = "ended"
@@ -392,6 +399,7 @@ class GameSession:
         var_name = getattr(self.active_input_prompt, "var_name", "player_input")
         self.vm.set_variable(var_name, value)
         self.active_input_prompt = None
+        self.input_text = ""
         return self.advance()
 
     def choose(self, choice: int | str) -> StoryEvent | None:
@@ -467,14 +475,18 @@ class GameSession:
             else:
                 self.director.ui_state.visible_chars = int(self.text_reveal.visible_chars)
 
+        # Update input box cursor if input prompt is active
+        if self.active_input_prompt is not None and hasattr(self, "overlay") and hasattr(self.overlay, "input_box"):
+            self.overlay.input_box.update(dt)
+
         # Skip mode advances immediately until player choices or story ends
         if self.skip_mode and not self.is_finished:
             if self.text_reveal is not None:
                 self.text_reveal.complete_immediately()
                 self.director.ui_state.visible_chars = None
-            while self.skip_mode and not self.is_finished and self.active_choice_prompt is None:
+            while self.skip_mode and not self.is_finished and self.active_choice_prompt is None and self.active_input_prompt is None:
                 self.advance()
-        elif self.auto_mode and not self.is_finished and self.active_choice_prompt is None:
+        elif self.auto_mode and not self.is_finished and self.active_choice_prompt is None and self.active_input_prompt is None:
             self.auto_timer += dt
             threshold = getattr(self.preferences, "auto_forward_time", 3.0)
             if self.auto_timer >= threshold:
@@ -501,6 +513,8 @@ class GameSession:
                 ui_backend,
                 self.director.ui_state,
                 self.active_choice_prompt,
+                self.active_input_prompt,
+                input_text=self.input_text,
                 is_finished=self.is_finished,
                 show_quick_menu=True,
                 status_badge=status_badge,
@@ -584,6 +598,30 @@ class GameSession:
                     idx = self.overlay.choice_menu.selected_index
                     self.overlay.choice_menu.selected_index = None
                     return self.choose(idx)
+
+        # Active input prompt modal handling
+        if self.active_input_prompt is not None:
+            if action == InputAction.TEXT_CHAR:
+                ch = payload.get("char", "")
+                if ch:
+                    self.input_text += ch
+                    if hasattr(self, "overlay") and hasattr(self.overlay, "input_box"):
+                        self.overlay.input_box.text_buffer = self.input_text
+                    self._ui_dirty = True
+                    return True
+            elif action == InputAction.TEXT_BACKSPACE:
+                if self.input_text:
+                    self.input_text = self.input_text[:-1]
+                    if hasattr(self, "overlay") and hasattr(self.overlay, "input_box"):
+                        self.overlay.input_box.text_buffer = self.input_text
+                    self._ui_dirty = True
+                    return True
+            elif action == InputAction.CONFIRM:
+                val = self.input_text
+                return self.submit_input(val)
+            # If an input prompt is active, intercept other inputs so we don't accidentally advance or rollback
+            if action in (InputAction.ADVANCE, InputAction.ROLLBACK):
+                return None
 
         # Advance / Typewriter completion
         if action in (InputAction.ADVANCE, InputAction.CONFIRM):
@@ -756,6 +794,11 @@ class GameSession:
         # 5. Force a redraw
         self._ui_dirty = True
         if hasattr(self, "overlay") and self.overlay is not None and hasattr(self.overlay, "sync"):
-            self.overlay.sync(self.director.ui_state, self.active_choice_prompt)
+            self.overlay.sync(
+                self.director.ui_state,
+                self.active_choice_prompt,
+                self.active_input_prompt,
+                input_text=self.input_text,
+            )
 
         return True

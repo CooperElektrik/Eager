@@ -413,4 +413,35 @@ Alice: {voice:alice_02.ogg} Second line with voice.
     assert any(c[0] == "voice" and "direct_call.ogg" in c[1] for c in mock_backend.calls)
 
 
+def test_session_input_prompt_handle_input_wiring() -> None:
+    input_script = """
+## Start --- start
+Alice: What is your name?
+~ input hero_name "Enter name:" "Traveler"
+Alice: Welcome, [hero_name]!
+"""
+    graph = eager_script.parse_graph(input_script)
+    session = GameSession(graph)
 
+    session.advance()  # Alice: What is your name?
+    ev = session.advance()  # input_prompt
+    assert ev is not None
+    assert ev.type == "input_prompt"
+    assert session.active_input_prompt is not None
+
+    # Test TEXT_CHAR
+    for ch in "Hero":
+        session.handle_input(InputAction.TEXT_CHAR, char=ch)
+    assert session.input_text == "Hero"
+
+    # Test TEXT_BACKSPACE
+    session.handle_input(InputAction.TEXT_BACKSPACE)
+    assert session.input_text == "Her"
+
+    session.handle_input(InputAction.TEXT_CHAR, char="o")
+    assert session.input_text == "Hero"
+
+    # Test CONFIRM (Enter)
+    session.handle_input(InputAction.CONFIRM)
+    assert session.active_input_prompt is None
+    assert session.director.ui_state.text == "Welcome, Hero!"

@@ -44,6 +44,7 @@ __all__ = [
     "DialogueBox",
     "DialogueBoxLayout",
     "EndNotice",
+    "InputBox",
     "QuickMenu",
     "TextAnchor",
     "TextboxStyle",
@@ -728,6 +729,146 @@ class ChoiceMenu:
             )
 
 
+class InputBox:
+    """Centered modal prompt for textual input with text buffer and blinking cursor."""
+
+    def __init__(
+        self,
+        width: int = 1280,
+        height: int = 720,
+        *,
+        box_width: float = 600.0,
+        box_height: float = 180.0,
+    ) -> None:
+        self.viewport_width = width
+        self.viewport_height = height
+        self.box_width = box_width
+        self.box_height = box_height
+        self.prompt: str = ""
+        self.text_buffer: str = ""
+        self.cursor_visible: bool = True
+        self.cursor_timer: float = 0.0
+
+    def set_viewport(self, width: int, height: int) -> None:
+        """Update viewport dimensions."""
+        self.viewport_width = width
+        self.viewport_height = height
+
+    def set_prompt(self, prompt: str, default: str = "") -> None:
+        """Set active prompt string and initialize text buffer if empty."""
+        self.prompt = prompt
+        self.text_buffer = default
+
+    def clear(self) -> None:
+        """Clear prompt and buffer."""
+        self.prompt = ""
+        self.text_buffer = ""
+        self.cursor_visible = True
+        self.cursor_timer = 0.0
+
+    def update(self, dt: float) -> None:
+        """Update blinking cursor timer."""
+        self.cursor_timer += dt
+        if self.cursor_timer >= 0.53:
+            self.cursor_timer = 0.0
+            self.cursor_visible = not self.cursor_visible
+
+    def layout(self) -> tuple[float, float, float, float]:
+        """Compute the modal dialog (x, y, w, h) centered on screen."""
+        bw = min(self.box_width, float(self.viewport_width) - 40.0)
+        bh = min(self.box_height, float(self.viewport_height) - 40.0)
+        bx = (float(self.viewport_width) - bw) / 2.0
+        by = (float(self.viewport_height) - bh) / 2.0
+        return (bx, by, bw, bh)
+
+    def draw(self, backend: UIDrawBackend) -> None:
+        """Render modal backdrop, dialog box, prompt label, input field, and blinking cursor."""
+        vw = float(self.viewport_width)
+        vh = float(self.viewport_height)
+
+        # 1. Semi-transparent full-screen backdrop overlay
+        backend.draw_rect(0.0, 0.0, vw, vh, Color(0.0, 0.0, 0.0, 0.65))
+
+        # 2. Centered dialog box
+        bx, by, bw, bh = self.layout()
+        bg_col = Color(0.08, 0.10, 0.14, 0.95)
+        border_col = Color(0.40, 0.45, 0.55, 0.85)
+        backend.draw_rect(bx, by, bw, bh, bg_col, border_color=border_col, border_width=1.5)
+
+        # 3. Prompt label
+        prompt_x = bx + 28.0
+        prompt_y = by + 26.0
+        prompt_col = Color(0.95, 0.86, 0.62, 1.0)
+        backend.draw_text(
+            prompt_x,
+            prompt_y,
+            self.prompt or "Enter input:",
+            font_size=15,
+            color=prompt_col,
+            bold=True,
+        )
+
+        # 4. Text input field
+        field_x = bx + 28.0
+        field_y = by + 68.0
+        field_w = bw - 56.0
+        field_h = 42.0
+        field_bg = Color(0.03, 0.04, 0.06, 0.90)
+        field_border = Color(0.30, 0.36, 0.45, 0.90)
+        backend.draw_rect(
+            field_x,
+            field_y,
+            field_w,
+            field_h,
+            field_bg,
+            border_color=field_border,
+            border_width=1.0,
+        )
+
+        # 5. Text buffer content
+        text_x = field_x + 14.0
+        text_y = field_y + (field_h / 2.0)
+        text_col = Color(0.95, 0.96, 0.98, 1.0)
+        backend.draw_text(
+            text_x,
+            text_y,
+            self.text_buffer,
+            font_size=15,
+            color=text_col,
+            anchor_y=TextAnchor.MIDDLE,
+        )
+
+        # 6. Blinking cursor
+        if self.cursor_visible:
+            # Measure width of current buffer to place cursor
+            measure_fn = getattr(backend, "measure_text", None)
+            if callable(measure_fn):
+                try:
+                    text_w, _ = measure_fn(self.text_buffer, font_size=15)
+                except TypeError:
+                    text_w, _ = measure_fn(self.text_buffer)
+            else:
+                text_w = float(len(self.text_buffer) * 9)
+            cursor_x = text_x + text_w + 2.0
+            cursor_h = 20.0
+            cursor_y = text_y - (cursor_h / 2.0)
+            cursor_col = Color(0.95, 0.86, 0.62, 0.95)
+            backend.draw_rect(cursor_x, cursor_y, 2.0, cursor_h, cursor_col)
+
+        # 7. Help cue (Enter to submit)
+        hint_y = by + bh - 24.0
+        hint_col = Color(0.55, 0.60, 0.68, 0.70)
+        backend.draw_text(
+            bx + bw - 28.0,
+            hint_y,
+            "Press Enter to confirm",
+            font_size=11,
+            color=hint_col,
+            anchor_x=TextAnchor.RIGHT,
+            anchor_y=TextAnchor.MIDDLE,
+        )
+
+
 class EndNotice:
     """Bottom banner announcing that the story has concluded."""
 
@@ -884,12 +1025,14 @@ class UIOverlay:
     error_overlay: str | None = None
     dialogue_box: DialogueBox = field(init=False)
     choice_menu: ChoiceMenu = field(init=False)
+    input_box: InputBox = field(init=False)
     end_notice: EndNotice = field(init=False)
     quick_menu: QuickMenu = field(init=False)
 
     def __post_init__(self) -> None:
         self.dialogue_box = DialogueBox(self.width, self.height, style=self.dialogue_style)
         self.choice_menu = ChoiceMenu(self.width, self.height, style=self.choice_style)
+        self.input_box = InputBox(self.width, self.height)
         self.end_notice = EndNotice(self.width, self.height)
         self.quick_menu = QuickMenu(self.width, self.height)
 
@@ -901,10 +1044,17 @@ class UIOverlay:
         self.height = height
         self.dialogue_box.set_viewport(width, height)
         self.choice_menu.set_viewport(width, height)
+        self.input_box.set_viewport(width, height)
         self.end_notice.set_viewport(width, height)
         self.quick_menu.set_viewport(width, height)
 
-    def sync(self, ui_state: UIState, choice_prompt: Any | None = None) -> None:
+    def sync(
+        self,
+        ui_state: UIState,
+        choice_prompt: Any | None = None,
+        input_prompt: Any | None = None,
+        input_text: str | None = None,
+    ) -> None:
         """Mirror narrative state onto the child components."""
         self.dialogue_box.set_content(
             ui_state.speaker,
@@ -917,12 +1067,25 @@ class UIOverlay:
         is_revealed = (
             ui_state.visible_chars is None or int(ui_state.visible_chars) >= plain_len
         )
-        self.dialogue_box.show_advance_arrow = (choice_prompt is None and is_revealed)
+        self.dialogue_box.show_advance_arrow = (
+            choice_prompt is None and input_prompt is None and is_revealed
+        )
 
         if choice_prompt is None:
             self.choice_menu.clear()
         else:
             self.choice_menu.set_options(choice_prompt.options)
+
+        if input_prompt is None:
+            self.input_box.clear()
+        else:
+            prompt_str = getattr(input_prompt, "prompt", "Enter input:")
+            default_val = (
+                input_text
+                if input_text is not None
+                else getattr(input_prompt, "default", "")
+            )
+            self.input_box.set_prompt(prompt_str, default=default_val)
 
     # ── drawing ────────────────────────────────────────────────────────
 
@@ -986,13 +1149,15 @@ class UIOverlay:
         backend: UIDrawBackend,
         ui_state: UIState,
         choice_prompt: Any | None = None,
+        active_input_prompt: Any | None = None,
+        input_text: str | None = None,
         *,
         is_finished: bool | None = None,
         show_quick_menu: bool = False,
         status_badge: str | None = None,
     ) -> None:
-        """Draw the dialogue box or NVL display, choice menu, quick menu, status badge, and end notice."""
-        self.sync(ui_state, choice_prompt)
+        """Draw the dialogue box or NVL display, choice menu, input box, quick menu, status badge, and end notice."""
+        self.sync(ui_state, choice_prompt, active_input_prompt, input_text=input_text)
         finished = ui_state.is_finished if is_finished is None else is_finished
 
         if not finished:
@@ -1000,11 +1165,14 @@ class UIOverlay:
                 self.draw_nvl(backend, ui_state, choice_prompt)
             elif self.dialogue_box.text:
                 self.dialogue_box.draw(backend)
-                if show_quick_menu and not self.choice_menu.options:
+                if show_quick_menu and not self.choice_menu.options and not self.input_box.prompt:
                     self.quick_menu.draw(backend)
 
         if self.choice_menu.options:
             self.choice_menu.draw(backend)
+
+        if self.input_box.prompt:
+            self.input_box.draw(backend)
 
         if status_badge and not finished:
             badge_w, badge_h = 84.0, 26.0

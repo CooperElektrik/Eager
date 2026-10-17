@@ -768,4 +768,23 @@ def test_ui_overlay_error_overlay() -> None:
     assert "Scene Not Found" not in texts_cleared
 
 
+def test_input_box_modal_rendering() -> None:
+    from eager_core.events import InputPromptEvent
 
+    backend = NullRenderer()
+    overlay = UIOverlay(1280, 720)
+    state = UIState(speaker="Narrator", text="What is your name?")
+    prompt = InputPromptEvent(var_name="player_name", prompt="What is your name?", default="Hero")
+
+    overlay.draw(backend, state, active_input_prompt=prompt, input_text="Valiant")
+
+    texts = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
+    assert "What is your name?" in texts
+    assert "Valiant" in texts
+    assert "Press Enter to confirm" in texts
+
+    # Overlay cursor update
+    overlay.input_box.update(0.6)
+    assert overlay.input_box.cursor_visible is False
+    overlay.input_box.update(0.6)
+    assert overlay.input_box.cursor_visible is True

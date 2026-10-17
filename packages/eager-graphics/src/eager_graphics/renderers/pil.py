@@ -2389,8 +2389,10 @@ if PIL_AVAILABLE:
             self.current_text: str = ""
             self.current_emotion: str | None = None
             self.active_choice_prompt: ChoicePromptEvent | None = None
+            self.active_input_prompt: Any | None = None
             self.is_finished: bool = False
             self._last_visible_chars: int | None = None
+            self._last_input_cursor: bool | None = None
 
             # tkinter window objects — created lazily by run() so that
             # construction and story logic stay headless-safe.
@@ -2449,19 +2451,26 @@ if PIL_AVAILABLE:
         def _sync_overlay(self) -> None:
             """Mirror current narrative state onto the UI components.
 
-            Called whenever the active choice prompt or dialogue changes so that
+            Called whenever the active choice prompt, input prompt, or dialogue changes so that
             input handling sees up-to-date layout even before the next draw.
             """
             self.current_speaker = self.director.ui_state.speaker
             self.current_text = self.director.ui_state.text
             self.current_emotion = self.director.ui_state.emotion
-            self.overlay.sync(self.director.ui_state, self.active_choice_prompt)
+            input_text = getattr(self.session, "input_text", None)
+            self.overlay.sync(
+                self.director.ui_state,
+                self.active_choice_prompt,
+                self.active_input_prompt,
+                input_text=input_text,
+            )
 
         def advance_story(self) -> None:
             """Advance the story by forwarding to the owning :class:`GameSession`."""
             self._ui_dirty = True
             self.session.advance()
             self.active_choice_prompt = self.session.active_choice_prompt
+            self.active_input_prompt = self.session.active_input_prompt
             self.is_finished = self.session.is_finished
             self._sync_overlay()
 
@@ -2470,6 +2479,7 @@ if PIL_AVAILABLE:
             self._ui_dirty = True
             self.session.choose(choice_index)
             self.active_choice_prompt = self.session.active_choice_prompt
+            self.active_input_prompt = self.session.active_input_prompt
             self.is_finished = self.session.is_finished
             self._sync_overlay()
 
@@ -2478,6 +2488,7 @@ if PIL_AVAILABLE:
             self._ui_dirty = True
             success = self.session.rollback()
             self.active_choice_prompt = self.session.active_choice_prompt
+            self.active_input_prompt = self.session.active_input_prompt
             self.is_finished = self.session.is_finished
             self._sync_overlay()
             return success
@@ -2489,6 +2500,7 @@ if PIL_AVAILABLE:
                 self._ui_dirty = True
                 self.session._ui_dirty = False
             self.active_choice_prompt = self.session.active_choice_prompt
+            self.active_input_prompt = self.session.active_input_prompt
             self.is_finished = self.session.is_finished
             if self.session.text_reveal is not None and not self.session.text_reveal.is_complete:
                 self._ui_dirty = True
@@ -2496,11 +2508,17 @@ if PIL_AVAILABLE:
             if cur_vc != self._last_visible_chars:
                 self._last_visible_chars = cur_vc
                 self._ui_dirty = True
+            if self.active_input_prompt is not None:
+                cur_cursor = getattr(self.overlay.input_box, "cursor_visible", True)
+                if cur_cursor != self._last_input_cursor:
+                    self._last_input_cursor = cur_cursor
+                    self._ui_dirty = True
 
         def hot_reload(self) -> bool:
             """Hot-reload screenplay from disk, hot-swap VM, reconcile state, and force a redraw."""
             result = self.session.hot_reload()
             self.active_choice_prompt = self.session.active_choice_prompt
+            self.active_input_prompt = self.session.active_input_prompt
             self.is_finished = self.session.is_finished
             self._sync_overlay()
             self._ui_dirty = True
@@ -2524,12 +2542,14 @@ if PIL_AVAILABLE:
             is_screen_active = bool(
                 getattr(getattr(self.session, "screens", None), "is_active", False)
             )
+            is_input_active = self.active_input_prompt is not None
 
             if (
                 is_stage_static
                 and not self._ui_dirty
                 and not is_text_revealing
                 and not is_screen_active
+                and not is_input_active
                 and self._photo is not None
             ):
                 self._last_render_path = "Tier 0 (Idle Skip)"
@@ -2859,6 +2879,27 @@ if PIL_AVAILABLE:
             is_shift = bool(getattr(event, "state", 0) & 0x0001) or getattr(event, "keysym", "").isupper()
             combo = f"shift+{keysym}" if is_shift else keysym
 
+            # Active input prompt handling
+            if self.active_input_prompt is not None:
+                if keysym == "enter":
+                    self._ui_dirty = True
+                    self.session.handle_input(InputAction.CONFIRM)
+                    self.active_choice_prompt = self.session.active_choice_prompt
+                    self.active_input_prompt = self.session.active_input_prompt
+                    self.is_finished = self.session.is_finished
+                    self._sync_overlay()
+                    return
+                elif keysym == "backspace":
+                    self._ui_dirty = True
+                    self.session.handle_input(InputAction.TEXT_BACKSPACE)
+                    self._sync_overlay()
+                    return
+                elif getattr(event, "char", "") and event.char.isprintable():
+                    self._ui_dirty = True
+                    self.session.handle_input(InputAction.TEXT_CHAR, char=event.char)
+                    self._sync_overlay()
+                    return
+
             # 1-9 choice keys
             if self.active_choice_prompt is not None and keysym in "123456789":
                 idx = int(keysym) - 1
@@ -2866,6 +2907,7 @@ if PIL_AVAILABLE:
                     self._ui_dirty = True
                     self.session.handle_input(InputAction.CHOOSE, index=idx)
                     self.active_choice_prompt = self.session.active_choice_prompt
+                    self.active_input_prompt = self.session.active_input_prompt
                     self.is_finished = self.session.is_finished
                     self._sync_overlay()
                     return
@@ -2879,6 +2921,7 @@ if PIL_AVAILABLE:
                 self._ui_dirty = True
                 self.session.handle_input(action)
                 self.active_choice_prompt = self.session.active_choice_prompt
+                self.active_input_prompt = self.session.active_input_prompt
                 self.is_finished = self.session.is_finished
                 self._sync_overlay()
 

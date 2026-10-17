@@ -1240,6 +1240,7 @@ class PygletPlayer(pyglet.window.Window):
         self.current_text: str = ""
         self.current_emotion: str | None = None
         self.active_choice_prompt: ChoicePromptEvent | None = None
+        self.active_input_prompt: Any | None = None
         self.is_finished: bool = False
 
         # On-screen FPS debug overlay
@@ -1280,18 +1281,25 @@ class PygletPlayer(pyglet.window.Window):
     def _sync_overlay(self) -> None:
         """Mirror current narrative state onto the UI components.
 
-        Called whenever the active choice prompt or dialogue changes so that
+        Called whenever the active choice prompt, input prompt, or dialogue changes so that
         input handling sees up-to-date layout even before the next draw.
         """
         self.current_speaker = self.director.ui_state.speaker
         self.current_text = self.director.ui_state.text
         self.current_emotion = self.director.ui_state.emotion
-        self.overlay.sync(self.director.ui_state, self.active_choice_prompt)
+        input_text = getattr(self.session, "input_text", None)
+        self.overlay.sync(
+            self.director.ui_state,
+            self.active_choice_prompt,
+            self.active_input_prompt,
+            input_text=input_text,
+        )
 
     def advance_story(self) -> None:
         """Advance the story by forwarding to the owning :class:`GameSession`."""
         self.session.advance()
         self.active_choice_prompt = self.session.active_choice_prompt
+        self.active_input_prompt = self.session.active_input_prompt
         self.is_finished = self.session.is_finished
         self._sync_overlay()
 
@@ -1299,6 +1307,7 @@ class PygletPlayer(pyglet.window.Window):
         """Select a branching choice option and continue execution."""
         self.session.choose(choice_index)
         self.active_choice_prompt = self.session.active_choice_prompt
+        self.active_input_prompt = self.session.active_input_prompt
         self.is_finished = self.session.is_finished
         self._sync_overlay()
 
@@ -1306,6 +1315,7 @@ class PygletPlayer(pyglet.window.Window):
         """Rollback narrative and stage state by one beat."""
         success = self.session.rollback()
         self.active_choice_prompt = self.session.active_choice_prompt
+        self.active_input_prompt = self.session.active_input_prompt
         self.is_finished = self.session.is_finished
         self._sync_overlay()
         return success
@@ -1317,12 +1327,14 @@ class PygletPlayer(pyglet.window.Window):
             self.session._ui_dirty = False
             self._sync_overlay()
         self.active_choice_prompt = self.session.active_choice_prompt
+        self.active_input_prompt = self.session.active_input_prompt
         self.is_finished = self.session.is_finished
 
     def hot_reload(self) -> bool:
         """Hot-reload screenplay from disk, hot-swap VM, reconcile state, and force a redraw."""
         result = self.session.hot_reload()
         self.active_choice_prompt = self.session.active_choice_prompt
+        self.active_input_prompt = self.session.active_input_prompt
         self.is_finished = self.session.is_finished
         self._sync_overlay()
         return result
@@ -1404,12 +1416,27 @@ class PygletPlayer(pyglet.window.Window):
         elif sym_str == "num_enter":
             sym_str = "enter"
 
+        # Active input prompt handling
+        if self.active_input_prompt is not None:
+            if sym_str == "enter":
+                self.session.handle_input(InputAction.CONFIRM)
+                self.active_choice_prompt = self.session.active_choice_prompt
+                self.active_input_prompt = self.session.active_input_prompt
+                self.is_finished = self.session.is_finished
+                self._sync_overlay()
+                return
+            elif sym_str == "backspace":
+                self.session.handle_input(InputAction.TEXT_BACKSPACE)
+                self._sync_overlay()
+                return
+
         # 1-9 choice keys
         if self.active_choice_prompt is not None and sym_str in "123456789":
             idx = int(sym_str) - 1
             if idx < len(self.active_choice_prompt.options):
                 self.session.handle_input(InputAction.CHOOSE, index=idx)
                 self.active_choice_prompt = self.session.active_choice_prompt
+                self.active_input_prompt = self.session.active_input_prompt
                 self.is_finished = self.session.is_finished
                 self._sync_overlay()
                 return
@@ -1424,7 +1451,15 @@ class PygletPlayer(pyglet.window.Window):
         elif action:
             self.session.handle_input(action)
             self.active_choice_prompt = self.session.active_choice_prompt
+            self.active_input_prompt = self.session.active_input_prompt
             self.is_finished = self.session.is_finished
+            self._sync_overlay()
+
+    def on_text(self, text: str) -> None:
+        """Handle typed text input when an input prompt is active."""
+        if self.active_input_prompt is not None and text and text.isprintable():
+            for char in text:
+                self.session.handle_input(InputAction.TEXT_CHAR, char=char)
             self._sync_overlay()
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
