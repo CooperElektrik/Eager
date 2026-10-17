@@ -16,7 +16,7 @@ from eager_core.events import (
     SceneExitEvent,
     StoryEndEvent,
 )
-from eager_core.types import BLACK, WHITE, Color
+from eager_core.types import BLACK, WHITE, Color, Vec2
 from eager_script import HookArgs, parse_hook_args
 
 from eager_graphics.compositor import StageCompositor
@@ -60,14 +60,25 @@ class StageDirector:
         *,
         audio: AudioMixer | None = None,
         skip_mode_cb: Any = None,
+        auto_highlight_speaker: bool = False,
+        dim_color: Color | None = None,
+        highlight_duration: float = 0.25,
+        pop_scale: float | None = None,
+        pop_hop: float | None = None,
     ) -> None:
         self.compositor = compositor
         self.audio = audio
         self.skip_mode_cb = skip_mode_cb
+        self.auto_highlight_speaker = auto_highlight_speaker
+        self.dim_color = dim_color if dim_color is not None else Color(0.65, 0.65, 0.70, 1.0)
+        self.highlight_duration = highlight_duration
+        self.pop_scale = pop_scale
+        self.pop_hop = pop_hop
         self.characters: dict[str, CharacterConfig] = {}
         self.scene_backgrounds: dict[str, tuple[str, str, float]] = {}
         self.ui_state: UIState = UIState()
         self._visual_history: VisualHistoryManager | None = None
+        self._sprite_base_y: dict[str, float] = {}
 
     def enable_visual_history(self, max_history: int = 500) -> None:
         """Enable visual state rollback tracking with the specified history capacity."""
@@ -501,12 +512,141 @@ class StageDirector:
             char_id = speaker.strip().lower()
             self.compositor.set_expression(char_id, emotion.strip().lower())
 
+        if self.auto_highlight_speaker:
+            self._apply_speaker_highlight(speaker)
+
         # Voice audio management
         if self.audio is not None:
             if voice and not self._is_skip_active():
                 self.audio.play("voice", str(voice), loop=False)
             else:
                 self.audio.stop("voice")
+
+    def _resolve_speaker_element_id(self, speaker: str | None) -> str | None:
+        """Resolve a speaker name/id to an element_id on the characters layer."""
+        if not speaker:
+            return None
+        char_layer = self.compositor.stage.get_layer("characters")
+        if char_layer is None:
+            return None
+
+        # Check direct lowercase
+        candidate = speaker.strip().lower()
+        if candidate in char_layer.elements:
+            return candidate
+
+        # Check registered character aliases/keys
+        for cid, cfg in self.characters.items():
+            if (
+                cid == candidate
+                or (cfg.asset_prefix and cfg.asset_prefix.lower() == candidate)
+            ) and cid in char_layer.elements:
+                return cid
+
+        # Fallback to direct key if match
+        for key in char_layer.elements:
+            if key.lower() == candidate:
+                return key
+
+        return None
+
+    def _apply_speaker_highlight(self, speaker: str | None) -> None:
+        """Auto-highlight active speaker sprite and dim non-speaking sprites on characters layer."""
+        char_layer = self.compositor.stage.get_layer("characters")
+        if char_layer is None or not char_layer.elements:
+            return
+
+        speaker_elem_id = self._resolve_speaker_element_id(speaker)
+        dur = self.highlight_duration
+
+        for elem_id, elem in char_layer.elements.items():
+            if speaker_elem_id is not None and elem_id == speaker_elem_id:
+                # Active speaker: tint -> WHITE
+                if elem.state.tint != WHITE:
+                    if dur > 0.0:
+                        self.compositor.timeline.add_tween(
+                            target=elem.state,
+                            property_name="tint",
+                            end_value=WHITE,
+                            duration=dur,
+                        )
+                    else:
+                        elem.state.tint = WHITE
+
+                # Optional scale pop
+                if self.pop_scale is not None:
+                    target_scale = Vec2(self.pop_scale, self.pop_scale)
+                    if elem.state.scale != target_scale:
+                        if dur > 0.0:
+                            self.compositor.timeline.add_tween(
+                                target=elem.state,
+                                property_name="scale",
+                                end_value=target_scale,
+                                duration=dur,
+                            )
+                        else:
+                            elem.state.scale = target_scale
+
+                # Optional hop (tiny y hop)
+                if self.pop_hop is not None:
+                    base_y = self._sprite_base_y.get(elem_id)
+                    if base_y is None:
+                        base_y = elem.state.position.y
+                        self._sprite_base_y[elem_id] = base_y
+                    target_pos = Vec2(elem.state.position.x, base_y - self.pop_hop)
+                    if elem.state.position != target_pos:
+                        if dur > 0.0:
+                            self.compositor.timeline.add_tween(
+                                target=elem.state,
+                                property_name="position",
+                                end_value=target_pos,
+                                duration=dur,
+                            )
+                        else:
+                            elem.state.position = target_pos
+            else:
+                # Non-speaking character or restore when speaker not on layer:
+                # When speaker_elem_id is not None, this character is dimmed.
+                # When speaker_elem_id is None, restore to WHITE.
+                target_tint = self.dim_color if speaker_elem_id is not None else WHITE
+                if elem.state.tint != target_tint:
+                    if dur > 0.0:
+                        self.compositor.timeline.add_tween(
+                            target=elem.state,
+                            property_name="tint",
+                            end_value=target_tint,
+                            duration=dur,
+                        )
+                    else:
+                        elem.state.tint = target_tint
+
+                if self.pop_scale is not None:
+                    target_scale = Vec2(1.0, 1.0)
+                    if elem.state.scale != target_scale:
+                        if dur > 0.0:
+                            self.compositor.timeline.add_tween(
+                                target=elem.state,
+                                property_name="scale",
+                                end_value=target_scale,
+                                duration=dur,
+                            )
+                        else:
+                            elem.state.scale = target_scale
+
+                if self.pop_hop is not None:
+                    base_y = self._sprite_base_y.get(elem_id)
+                    if base_y is not None:
+                        target_pos = Vec2(elem.state.position.x, base_y)
+                        if elem.state.position != target_pos:
+                            if dur > 0.0:
+                                self.compositor.timeline.add_tween(
+                                    target=elem.state,
+                                    property_name="position",
+                                    end_value=target_pos,
+                                    duration=dur,
+                                )
+                            else:
+                                elem.state.position = target_pos
 
     def handle_append_event(self, event: Any) -> None:
         """Append text to current UI dialogue buffer."""
@@ -537,6 +677,9 @@ class StageDirector:
 
         if self.ui_state.nvl_mode:
             self.ui_state.nvl_entries.append(NVLEntry(speaker=None, text=self.ui_state.text))
+
+        if self.auto_highlight_speaker:
+            self._apply_speaker_highlight(None)
 
         if self.audio is not None:
             self.audio.stop("voice")

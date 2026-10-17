@@ -262,3 +262,90 @@ def test_director_ui_state_append_and_fresh_box() -> None:
     assert director.ui_state.text == "three"
 
 
+def test_director_auto_highlight_speaker_and_dimming() -> None:
+    from eager_core.types import WHITE, Color, Vec2
+
+    comp = StageCompositor(1920, 1080)
+    director = StageDirector(
+        comp,
+        auto_highlight_speaker=True,
+        dim_color=Color(0.65, 0.65, 0.70, 1.0),
+        highlight_duration=0.2,
+        pop_scale=1.05,
+    )
+    disp = MockEventDispatcher()
+    director.bind(disp)
+    director.register_character("alice")
+    director.register_character("bob")
+
+    # Put alice and bob on stage
+    comp.show_character("alice", position="left", duration=0.0)
+    comp.show_character("bob", position="right", duration=0.0)
+
+    char_layer = comp.stage.get_layer("characters")
+    assert char_layer is not None
+    alice_elem = char_layer.get_element("alice")
+    bob_elem = char_layer.get_element("bob")
+    assert alice_elem is not None and bob_elem is not None
+    assert alice_elem.state.tint == WHITE
+    assert bob_elem.state.tint == WHITE
+
+    # Alice speaks: Alice should be WHITE (and pop_scale), Bob should dim
+    disp.emit_event(DialogueEvent(speaker="alice", text="Hi Bob!", voice=None, emotion=None, line_number=1))
+    # Run timeline to finish tweens
+    comp.update(0.25)
+    assert alice_elem.state.tint == WHITE
+    assert alice_elem.state.scale == Vec2(1.05, 1.05)
+    assert bob_elem.state.tint == Color(0.65, 0.65, 0.70, 1.0)
+    assert bob_elem.state.scale == Vec2(1.0, 1.0)
+
+    # Bob speaks: Bob should tween to WHITE and pop_scale, Alice dims to dim_color and restores scale
+    disp.emit_event(DialogueEvent(speaker="bob", text="Hi Alice!", voice=None, emotion=None, line_number=2))
+    comp.update(0.25)
+    assert bob_elem.state.tint == WHITE
+    assert bob_elem.state.scale == Vec2(1.05, 1.05)
+    assert alice_elem.state.tint == Color(0.65, 0.65, 0.70, 1.0)
+    assert alice_elem.state.scale == Vec2(1.0, 1.0)
+
+    # NarrationEvent fires: All sprites restore to WHITE and scale 1.0
+    disp.emit_event(NarrationEvent(text="A quiet wind blows.", line_number=3))
+    comp.update(0.25)
+    assert alice_elem.state.tint == WHITE
+    assert alice_elem.state.scale == Vec2(1.0, 1.0)
+    assert bob_elem.state.tint == WHITE
+    assert bob_elem.state.scale == Vec2(1.0, 1.0)
+
+
+def test_director_auto_highlight_speaker_hop() -> None:
+    from eager_core.types import WHITE, Vec2
+
+    comp = StageCompositor(1920, 1080)
+    director = StageDirector(
+        comp,
+        auto_highlight_speaker=True,
+        highlight_duration=0.1,
+        pop_hop=15.0,
+    )
+    disp = MockEventDispatcher()
+    director.bind(disp)
+
+    comp.show_character("alice", position="center", duration=0.0)
+    char_layer = comp.stage.get_layer("characters")
+    assert char_layer is not None
+    alice_elem = char_layer.get_element("alice")
+    assert alice_elem is not None
+    initial_y = alice_elem.position.y
+
+    # Alice speaks: hops up by 15px
+    disp.emit_event(DialogueEvent(speaker="alice", text="Hop!", voice=None, emotion=None, line_number=1))
+    comp.update(0.15)
+    assert alice_elem.position == Vec2(alice_elem.position.x, initial_y - 15.0)
+
+    # NarrationEvent: returns to original initial_y
+    disp.emit_event(NarrationEvent(text="Landing.", line_number=2))
+    comp.update(0.15)
+    assert alice_elem.position == Vec2(alice_elem.position.x, initial_y)
+    assert alice_elem.state.tint == WHITE
+
+
+
