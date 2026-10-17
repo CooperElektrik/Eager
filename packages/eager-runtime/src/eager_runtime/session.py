@@ -55,24 +55,42 @@ class Checkpoint:
 
 
 class CheckpointHistory:
-    """Bounded history stack for interactive story checkpoints."""
+    """Bounded history stack for interactive story checkpoints with redo support."""
 
     def __init__(self, max_history: int = 100) -> None:
+        self.max_history = max_history
         self._history: collections.deque[Checkpoint] = collections.deque(maxlen=max_history)
+        self._redo_stack: list[Checkpoint] = []
 
     def push(self, checkpoint: Checkpoint) -> None:
-        """Add a checkpoint to the history."""
+        """Add a checkpoint to the history and clear redo stack."""
         self._history.append(checkpoint)
+        self._redo_stack.clear()
 
     def pop(self) -> Checkpoint | None:
-        """Remove and return the most recent checkpoint."""
+        """Remove and return the most recent checkpoint, preserving it on redo stack."""
         if not self._history:
             return None
-        return self._history.pop()
+        cp = self._history.pop()
+        self._redo_stack.append(cp)
+        return cp
+
+    def roll_forward(self) -> Checkpoint | None:
+        """Pop a checkpoint from redo stack and push it back to history."""
+        if not self._redo_stack:
+            return None
+        cp = self._redo_stack.pop()
+        self._history.append(cp)
+        return cp
 
     def clear(self) -> None:
-        """Clear all stored checkpoints."""
+        """Clear all stored checkpoints and redo stack."""
         self._history.clear()
+        self._redo_stack.clear()
+
+    def clear_redo(self) -> None:
+        """Clear only the redo stack."""
+        self._redo_stack.clear()
 
     @property
     def can_rollback(self) -> bool:
@@ -80,8 +98,13 @@ class CheckpointHistory:
         return len(self._history) > 1
 
     @property
+    def can_roll_forward(self) -> bool:
+        """True if there is at least one popped checkpoint that can be restored forward."""
+        return len(self._redo_stack) > 0
+
+    @property
     def depth(self) -> int:
-        """Number of checkpoints stored."""
+        """Number of checkpoints stored in history."""
         return len(self._history)
 
     def get_latest(self) -> Checkpoint | None:
@@ -345,6 +368,8 @@ class GameSession:
             # Cannot advance while awaiting text input
             return self.active_input_prompt
 
+        self.auto_timer = 0.0
+
         while not self.vm.is_ended:
             event = self.vm.step()
             if event is None:
@@ -395,6 +420,8 @@ class GameSession:
 
                 if event.type == "choice_prompt":
                     self.active_choice_prompt = event
+                    if hasattr(self, "overlay") and hasattr(self.overlay, "choice_menu"):
+                        self.overlay.choice_menu.set_options(event.options)
                 elif event.type == "input_prompt":
                     self.active_input_prompt = event
                     self.input_text = getattr(event, "default", "")
@@ -427,6 +454,17 @@ class GameSession:
         """Make a branching choice and advance to the next interactive point."""
         if self.active_choice_prompt is None:
             return None
+
+        # Verify choice is enabled before advancing
+        if isinstance(choice, int):
+            if 0 <= choice < len(self.active_choice_prompt.options) and not getattr(
+                self.active_choice_prompt.options[choice], "enabled", True
+            ):
+                return None
+        else:
+            for opt in self.active_choice_prompt.options:
+                if (opt.target == choice or opt.text == choice) and not getattr(opt, "enabled", True):
+                    return None
 
         self.vm.choose(choice)
         self.active_choice_prompt = None
@@ -475,6 +513,20 @@ class GameSession:
             return False
 
         self._restore_checkpoint(prev)
+        self.text_reveal = None
+        self.director.ui_state.visible_chars = None
+        return True
+
+    def roll_forward(self) -> bool:
+        """Step forward through the redo stack to restore previously rolled-back checkpoints."""
+        if not self.checkpoints.can_roll_forward:
+            return False
+
+        next_cp = self.checkpoints.roll_forward()
+        if next_cp is None:
+            return False
+
+        self._restore_checkpoint(next_cp)
         self.text_reveal = None
         self.director.ui_state.visible_chars = None
         return True
@@ -533,14 +585,22 @@ class GameSession:
                     self.skip_mode = False
                     break
         elif self.auto_mode and not self.is_finished and self.active_choice_prompt is None and self.active_input_prompt is None:
-            self.auto_timer += dt
-            threshold = getattr(self.preferences, "auto_forward_time", 3.0)
-            if self.auto_timer >= threshold:
-                self.auto_timer = 0.0
-                if self.text_reveal is not None:
-                    self.text_reveal.complete_immediately()
-                    self.director.ui_state.visible_chars = None
-                self.advance()
+            reveal_done = (self.text_reveal is None or self.text_reveal.is_complete)
+            voice_playing = hasattr(self, "audio") and self.audio is not None and self.audio.is_playing("voice")
+            if reveal_done and not voice_playing:
+                self.auto_timer += dt
+                base_time = float(getattr(self.preferences, "auto_forward_time", 3.0))
+                # Scale wait time slightly by character count (0.02s per char capped at 2.0s)
+                # so long unvoiced paragraphs have sufficient reading time
+                cur_text = getattr(self.director.ui_state, "text", "") or ""
+                extra_pause = min(2.0, len(cur_text) * 0.02)
+                threshold = base_time + extra_pause
+                if self.auto_timer >= threshold:
+                    self.auto_timer = 0.0
+                    if self.text_reveal is not None:
+                        self.text_reveal.complete_immediately()
+                        self.director.ui_state.visible_chars = None
+                    self.advance()
 
     def draw(self, ui_backend: Any, width: int, height: int) -> None:
         """Draw the stage compositor and UI chrome through the given renderer / backend."""
@@ -628,24 +688,32 @@ class GameSession:
         # 2. In-game interactions:
         # Choice menu keyboard navigation
         if self.active_choice_prompt is not None and self.active_choice_prompt.options:
-            opts_count = len(self.active_choice_prompt.options)
-            if action == InputAction.NAV_UP:
+            opts = self.active_choice_prompt.options
+            opts_count = len(opts)
+            enabled_indices = [i for i, opt in enumerate(opts) if getattr(opt, "enabled", True)]
+            if action == InputAction.NAV_UP and enabled_indices:
                 cur = self.overlay.choice_menu.selected_index
-                self.overlay.choice_menu.selected_index = (
-                    opts_count - 1 if cur is None else (cur - 1) % opts_count
-                )
+                if cur in enabled_indices:
+                    pos = enabled_indices.index(cur)
+                    self.overlay.choice_menu.selected_index = enabled_indices[(pos - 1) % len(enabled_indices)]
+                else:
+                    self.overlay.choice_menu.selected_index = enabled_indices[-1]
                 return True
-            elif action == InputAction.NAV_DOWN:
+            elif action == InputAction.NAV_DOWN and enabled_indices:
                 cur = self.overlay.choice_menu.selected_index
-                self.overlay.choice_menu.selected_index = (
-                    0 if cur is None else (cur + 1) % opts_count
-                )
+                if cur in enabled_indices:
+                    pos = enabled_indices.index(cur)
+                    self.overlay.choice_menu.selected_index = enabled_indices[(pos + 1) % len(enabled_indices)]
+                else:
+                    self.overlay.choice_menu.selected_index = enabled_indices[0]
                 return True
             elif action in (InputAction.ADVANCE, InputAction.CONFIRM):
                 if self.overlay.choice_menu.selected_index is not None:
                     idx = self.overlay.choice_menu.selected_index
                     self.overlay.choice_menu.selected_index = None
-                    return self.choose(idx)
+                    if 0 <= idx < opts_count and getattr(opts[idx], "enabled", True):
+                        return self.choose(idx)
+                    return False
 
         # Active input prompt modal handling
         if self.active_input_prompt is not None:
@@ -668,7 +736,7 @@ class GameSession:
                 val = self.input_text
                 return self.submit_input(val)
             # If an input prompt is active, intercept other inputs so we don't accidentally advance or rollback
-            if action in (InputAction.ADVANCE, InputAction.ROLLBACK):
+            if action in (InputAction.ADVANCE, InputAction.ROLLBACK, InputAction.ROLL_FORWARD):
                 return None
 
         # Advance / Typewriter completion
@@ -683,6 +751,8 @@ class GameSession:
                 return self.advance()
         elif action == InputAction.ROLLBACK:
             return self.rollback()
+        elif action == InputAction.ROLL_FORWARD:
+            return self.roll_forward()
         elif action == InputAction.CHOOSE:
             idx = payload.get("index")
             if idx is not None:

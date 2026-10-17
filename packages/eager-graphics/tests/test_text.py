@@ -73,9 +73,11 @@ class TestTextPresentation(unittest.TestCase):
 
             # Test auto mode
             session.auto_mode = True
-            session.update(0.3)  # Not enough
+            # First updates allow typewriter reveal to complete
+            session.update(0.4)
             self.assertEqual(session.vm.beat_index, 1)
-            session.update(0.3)  # Passes 0.5s threshold
+            # Post-reveal auto forward timer advances after auto_forward_time + char scaling
+            session.update(0.7)
             self.assertGreater(session.vm.beat_index, 1)
 
             # Test skip mode

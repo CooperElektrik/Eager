@@ -507,3 +507,225 @@ Alice: Line 3
     session3.update(0.1)
     assert session3.is_finished is True
 
+
+def test_session_roll_forward_redo_stack() -> None:
+    test_script = """
+## Start --- start
+Alice: Line 1
+Alice: Line 2
+Alice: Line 3
+? Option A (scene_a)
+? Option B (scene_b)
+
+## Scene A --- scene_a
+Alice: Reached Scene A!
+
+## Scene B --- scene_b
+Alice: Reached Scene B!
+"""
+    graph = eager_script.parse_graph(test_script)
+    session = GameSession(graph)
+
+    # Initially cannot roll forward
+    assert session.checkpoints.can_roll_forward is False
+    assert session.roll_forward() is False
+
+    # Advance through lines 1, 2, 3
+    session.advance()
+    assert session.director.ui_state.text == "Line 1"
+
+    session.advance()
+    assert session.director.ui_state.text == "Line 2"
+
+    session.advance()
+    assert session.director.ui_state.text == "Line 3"
+
+    # Advance to choice prompt
+    ev_choice = session.advance()
+    assert ev_choice is not None and ev_choice.type == "choice_prompt"
+    assert session.active_choice_prompt is not None
+
+    # Roll back from choice prompt to Line 3
+    assert session.handle_input(InputAction.ROLLBACK) is True
+    assert session.director.ui_state.text == "Line 3"
+    assert session.active_choice_prompt is None
+    assert session.checkpoints.can_roll_forward is True
+
+    # Roll back from Line 3 to Line 2
+    assert session.handle_input(InputAction.ROLLBACK) is True
+    assert session.director.ui_state.text == "Line 2"
+
+    # Roll back from Line 2 to Line 1
+    assert session.handle_input(InputAction.ROLLBACK) is True
+    assert session.director.ui_state.text == "Line 1"
+
+    # Now roll forward using InputAction.ROLL_FORWARD back to Line 2
+    assert session.handle_input(InputAction.ROLL_FORWARD) is True
+    assert session.director.ui_state.text == "Line 2"
+
+    # Roll forward to Line 3
+    assert session.handle_input(InputAction.ROLL_FORWARD) is True
+    assert session.director.ui_state.text == "Line 3"
+
+    # Roll forward to Choice Prompt (restores choice menu without re-triggering choices)
+    assert session.handle_input(InputAction.ROLL_FORWARD) is True
+    assert session.active_choice_prompt is not None
+    assert session.checkpoints.can_roll_forward is False
+
+    # Cannot roll forward any further
+    assert session.handle_input(InputAction.ROLL_FORWARD) is False
+
+    # Rollback 1 step to Line 3
+    session.rollback()
+    assert session.director.ui_state.text == "Line 3"
+    assert session.checkpoints.can_roll_forward is True
+
+    # If the player advances past the head or makes a new interaction, redo stack is cleared
+    session.advance()
+    assert session.active_choice_prompt is not None
+    # Now redo stack is cleared because a new checkpoint was pushed
+    assert session.checkpoints.can_roll_forward is False
+    assert session.roll_forward() is False
+
+    # Test choice clears redo stack as well
+    session.rollback()
+    assert session.director.ui_state.text == "Line 3"
+    assert session.checkpoints.can_roll_forward is True
+
+    # Roll forward to choice prompt
+    session.roll_forward()
+    assert session.active_choice_prompt is not None
+    # Make a choice
+    session.choose(0)
+    assert session.director.ui_state.text == "Reached Scene A!"
+    assert session.checkpoints.can_roll_forward is False
+
+
+def test_session_voice_aware_auto_forward() -> None:
+    test_script = """
+## Start --- start
+Alice: Hello traveler!
+Alice: Another day, another adventure.
+"""
+    graph = eager_script.parse_graph(test_script)
+    session = GameSession(graph)
+    session.preferences.auto_forward_time = 0.5
+
+    # 1. Start dialogue with typewriter reveal active
+    session.preferences.text_speed = 10.0  # 10 chars/sec; ~1.5s for 15 chars
+    session.advance()
+    assert session.director.ui_state.text == "Hello traveler!"
+    assert session.text_reveal is not None
+    assert not session.text_reveal.is_complete
+
+    # In auto_mode, while reveal is incomplete, auto_timer does not tick
+    session.auto_mode = True
+    session.update(0.5)
+    assert not session.text_reveal.is_complete
+    assert session.auto_timer == 0.0
+    assert session.vm.beat_index == 1
+
+    # 2. Complete reveal manually / naturally
+    session.text_reveal.complete_immediately()
+    assert session.text_reveal.is_complete
+
+    # 3. Simulate voice clip playing
+    class MockVoiceBackend:
+        def __init__(self):
+            self.voice_playing = True
+
+        def is_playing(self, channel: str) -> bool:
+            return self.voice_playing if channel == "voice" else False
+
+        def play(self, *args, **kwargs): pass
+        def stop(self, *args, **kwargs): pass
+        def set_volume(self, *args, **kwargs): pass
+        def pause(self, *args, **kwargs): pass
+        def resume(self, *args, **kwargs): pass
+        def update(self, *args, **kwargs): pass
+        def shutdown(self): pass
+
+    mock_backend = MockVoiceBackend()
+    session.audio.backend = mock_backend
+    session.audio.channels["voice"].is_playing = True
+
+    # While voice clip is playing, auto_timer does NOT tick
+    session.update(0.5)
+    assert session.audio.is_playing("voice") is True
+    assert session.auto_timer == 0.0
+    assert session.vm.beat_index == 1
+
+    # 4. Once voice clip finishes, auto_timer ticks and scales by character count
+    mock_backend.voice_playing = False
+    session.audio.channels["voice"].is_playing = False
+    assert session.audio.is_playing("voice") is False
+
+    # Threshold = 0.5 (base) + 15 * 0.02 = 0.8s
+    session.update(0.5)
+    assert session.auto_timer == 0.5
+    assert session.vm.beat_index == 1
+
+    # Now step past remaining threshold
+    session.update(0.35)
+    assert session.vm.beat_index == 2
+    assert session.director.ui_state.text == "Another day, another adventure."
+
+
+def test_session_disabled_choices_ignore_clicks_and_keyboard() -> None:
+    test_script = """
+## Start --- start
+Alice: Choose your path.
+? Available Option (scene_a)
+? Locked Option (scene_b) if has_key
+? Another Valid Option (scene_c)
+
+## Scene A --- scene_a
+Alice: Path A taken.
+
+## Scene B --- scene_b
+Alice: Path B taken.
+
+## Scene C --- scene_c
+Alice: Path C taken.
+"""
+    graph = eager_script.parse_graph(test_script)
+    session = GameSession(graph)
+
+    # Initially has_key is not set, so second option is disabled (enabled=False)
+    ev = session.advance()
+    assert ev is not None and ev.type == "dialogue"
+    ev_choice = session.advance()
+    assert ev_choice is not None and ev_choice.type == "choice_prompt"
+    assert len(ev_choice.options) == 3
+    assert ev_choice.options[0].enabled is True
+    assert ev_choice.options[1].enabled is False
+    assert ev_choice.options[2].enabled is True
+
+    # 1. Overlay choice menu hit test on disabled option returns None
+    menu = session.overlay.choice_menu
+    r1 = menu.layout()[1]
+    # Click on disabled option via POINTER_CLICK is ignored (does not crash or select)
+    assert session.handle_input(InputAction.POINTER_CLICK, x=r1[0] + r1[2] / 2, y=r1[1] + r1[3] / 2) is None
+    assert session.active_choice_prompt is not None
+
+    # 2. Calling session.choose on disabled option index returns None without raising StoryRuntimeError
+    assert session.choose(1) is None
+    assert session.active_choice_prompt is not None
+
+    # 3. Keyboard navigation skips disabled option
+    # First NAV_DOWN moves to first enabled option (index 0)
+    session.handle_input(InputAction.NAV_DOWN)
+    assert menu.selected_index == 0
+    # Next NAV_DOWN skips index 1 and goes directly to index 2!
+    session.handle_input(InputAction.NAV_DOWN)
+    assert menu.selected_index == 2
+    # NAV_UP goes back to index 0 (skipping 1)
+    session.handle_input(InputAction.NAV_UP)
+    assert menu.selected_index == 0
+
+    # 4. Confirming enabled option branches properly
+    res = session.handle_input(InputAction.CONFIRM)
+    assert res is not None
+    assert session.director.ui_state.text == "Path A taken."
+
+

@@ -68,6 +68,9 @@ _CINEMATIC_CHOICE_TEXT = Color(0.94, 0.95, 0.97, 1.0)
 _CINEMATIC_CHOICE_HOVER_FILL = Color(0.15, 0.18, 0.25, 0.94)
 _CINEMATIC_CHOICE_HOVER_BORDER = Color(0.95, 0.86, 0.62, 0.50)
 _CINEMATIC_CHOICE_ACCENT = Color(0.95, 0.86, 0.62, 0.95)
+_CINEMATIC_MUTED_TEXT_COLOR = Color(0.65, 0.68, 0.72, 0.60)
+_CINEMATIC_CHOICE_DISABLED_FILL = Color(0.04, 0.05, 0.07, 0.60)
+_CINEMATIC_CHOICE_DISABLED_BORDER = Color(1.0, 1.0, 1.0, 0.05)
 
 
 
@@ -607,6 +610,10 @@ class ChoiceMenuStyle:
     button_height: float = 44.0
     spacing: float = 12.0
     text_color: Color = _CINEMATIC_CHOICE_TEXT
+    disabled_text_color: Color = _CINEMATIC_MUTED_TEXT_COLOR
+    disabled_button_fill: Color = _CINEMATIC_CHOICE_DISABLED_FILL
+    disabled_button_border: Color = _CINEMATIC_CHOICE_DISABLED_BORDER
+    lock_symbol: str = "[Locked] "
     text_font_size: int = 14
     text_padding: float = 24.0
     show_numbering: bool = False
@@ -657,7 +664,7 @@ class ChoiceMenu:
         return (
             self.viewport_width,
             self.viewport_height,
-            tuple((opt.index, opt.text) for opt in self.options),
+            tuple((opt.index, opt.text, getattr(opt, "enabled", True)) for opt in self.options),
             self.selected_index,
         )
 
@@ -683,13 +690,17 @@ class ChoiceMenu:
         )
 
     def hit_test(self, x: float, y: float) -> int | None:
-        """Return the index of the option under the point, or *None*.
+        """Return the index of the enabled option under the point, or *None*.
 
         Uses the exact same rectangles produced by :meth:`layout`, so hit
         testing stays correct across resolutions and option counts.
+        Disabled options are non-selectable and return *None*.
         """
         for index, (bx, by, bw, bh) in enumerate(self.layout()):
             if bx <= x <= bx + bw and by <= y <= by + bh:
+                opt = self.options[index]
+                if not getattr(opt, "enabled", True):
+                    return None
                 return index
         return None
 
@@ -700,9 +711,20 @@ class ChoiceMenu:
 
         style = self.style
         for index, (bx, by, bw, bh) in enumerate(self.layout()):
-            is_selected = (self.selected_index == index)
-            fill_col = style.button_hover_fill if is_selected else style.button_fill
-            border_col = style.button_hover_border if is_selected else style.button_border
+            opt = self.options[index]
+            is_enabled = getattr(opt, "enabled", True)
+            is_selected = (self.selected_index == index) and is_enabled
+
+            if not is_enabled:
+                fill_col = style.disabled_button_fill
+                border_col = style.disabled_button_border
+            elif is_selected:
+                fill_col = style.button_hover_fill
+                border_col = style.button_hover_border
+            else:
+                fill_col = style.button_fill
+                border_col = style.button_border
+
             backend.draw_rect(
                 bx,
                 by,
@@ -717,19 +739,20 @@ class ChoiceMenu:
             if is_selected and style.layout_mode == "cinematic":
                 backend.draw_rect(bx, by, 3.0, bh, style.accent_bar_color)
 
-            opt = self.options[index]
+            lock_prefix = style.lock_symbol if not is_enabled else ""
             if style.show_numbering:
                 prefix = "> " if (is_selected and style.layout_mode == "classic") else ""
-                label_text = f"{prefix}[{index + 1}]  {opt.text}"
+                label_text = f"{prefix}[{index + 1}]  {lock_prefix}{opt.text}"
             else:
-                label_text = opt.text
+                label_text = f"{lock_prefix}{opt.text}"
 
+            text_col = style.text_color if is_enabled else style.disabled_text_color
             backend.draw_text(
                 bx + style.text_padding,
                 by + (bh / 2.0),
                 label_text,
                 font_size=style.text_font_size,
-                color=style.text_color,
+                color=text_col,
                 anchor_y=TextAnchor.MIDDLE,
             )
 

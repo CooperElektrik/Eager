@@ -330,6 +330,35 @@ def test_choice_menu_option_text_is_vertically_centred() -> None:
     assert label["y"] == pytest.approx(by + bh / 2)
 
 
+def test_choice_menu_disabled_options_rendering_and_hit_test() -> None:
+    backend = NullRenderer()
+    menu = ChoiceMenu(1280, 720)
+    opts = (
+        ChoiceOption(0, "Normal Option", "scene_a", enabled=True),
+        ChoiceOption(1, "Locked Option", "scene_b", enabled=False),
+    )
+    menu.set_options(opts)
+
+    # 1. Hit test on enabled option succeeds
+    r0 = menu.layout()[0]
+    assert menu.hit_test(r0[0] + r0[2] / 2, r0[1] + r0[3] / 2) == 0
+
+    # 2. Hit test on disabled option returns None (click ignored)
+    r1 = menu.layout()[1]
+    assert menu.hit_test(r1[0] + r1[2] / 2, r1[1] + r1[3] / 2) is None
+
+    # 3. Draw produces muted text color with lock prefix on disabled option
+    menu.draw(backend)
+    texts = [c for c in backend.ui_calls if c["kind"] == "text"]
+    assert len(texts) == 2
+    assert texts[0]["text"] == "Normal Option"
+    assert texts[0]["color"] == menu.style.text_color.to_hex()
+
+    assert texts[1]["text"].startswith(menu.style.lock_symbol)
+    assert "Locked Option" in texts[1]["text"]
+    assert texts[1]["color"] == menu.style.disabled_text_color.to_hex()
+
+
 # ── EndNotice ──────────────────────────────────────────────────────────────
 
 
