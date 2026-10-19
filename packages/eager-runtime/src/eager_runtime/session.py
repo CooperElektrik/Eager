@@ -268,8 +268,7 @@ class GameSession:
         """Switch active language locale, updating VM and persisting preferences."""
         self.preferences.language = locale
         self.apply_preferences()
-        save_dir = get_default_save_dir(self.script_path.stem if self.script_path else "default")
-        self.preferences.save(save_dir / "preferences.json")
+        self.preferences.save(self.save_manager.save_dir / "preferences.json")
 
     def play_voice(self, voice_path: str) -> None:
         """Replay a voice clip on the voice channel."""

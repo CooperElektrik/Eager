@@ -1399,6 +1399,7 @@ class PygletPlayer(pyglet.window.Window):
         if button == mouse.RIGHT:
             self.session.handle_input(InputAction.GAME_MENU)
             self.active_choice_prompt = self.session.active_choice_prompt
+            self.active_input_prompt = self.session.active_input_prompt
             self.is_finished = self.session.is_finished
             self._sync_overlay()
             return
@@ -1409,6 +1410,7 @@ class PygletPlayer(pyglet.window.Window):
         flipped_y = self.height - y
         self.session.handle_input(InputAction.POINTER_CLICK, x=x, y=flipped_y)
         self.active_choice_prompt = self.session.active_choice_prompt
+        self.active_input_prompt = self.session.active_input_prompt
         self.is_finished = self.session.is_finished
         self._sync_overlay()
 
@@ -1481,5 +1483,6 @@ class PygletPlayer(pyglet.window.Window):
         elif scroll_y < 0:
             self.session.handle_input(InputAction.ROLL_FORWARD)
         self.active_choice_prompt = self.session.active_choice_prompt
+        self.active_input_prompt = self.session.active_input_prompt
         self.is_finished = self.session.is_finished
         self._sync_overlay()

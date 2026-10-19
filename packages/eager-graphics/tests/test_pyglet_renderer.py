@@ -601,3 +601,50 @@ def test_pyglet_asset_resolver_preindexing(tmp_path: Path) -> None:
     assert resolver._asset_index["bg/forest"] == sample_file
 
 
+def test_pyglet_player_mouse_handlers_sync_active_input_prompt() -> None:
+    """Verify on_mouse_press and on_mouse_scroll sync active_input_prompt."""
+    screenplay = """
+    ## Start --- start
+    Alice: Hi!
+    ~ input hero_name Enter your name:
+    Alice: Welcome [hero_name]
+    Alice: Another line
+    """
+    from eager_runtime import GameSession
+
+    graph = parse_graph(screenplay)
+    session = GameSession(graph)
+
+    player = PygletPlayer(
+        session=session,
+        width=800,
+        height=600,
+        visible=False,
+    )
+    try:
+        assert player.active_input_prompt is None
+        # Complete typewriter text reveal so next click advances to input prompt
+        if session.text_reveal is not None:
+            session.text_reveal.complete_immediately()
+        # Left click should advance to the input prompt
+        player.on_mouse_press(100, 100, 1, 0)
+        assert player.active_input_prompt is not None
+        assert player.active_input_prompt.var_name == "hero_name"
+
+        # Submit input and advance to Another line
+        session.submit_input("Champion")
+        player.advance_story()
+        assert player.active_input_prompt is None
+
+        # Scroll up 1: rollback to 'Welcome Champion'
+        player.on_mouse_scroll(100, 100, 0, 1.0)
+        assert player.active_input_prompt is None
+
+        # Scroll up 2: rollback onto input prompt
+        player.on_mouse_scroll(100, 100, 0, 1.0)
+        assert player.active_input_prompt is not None
+        assert player.active_input_prompt.var_name == "hero_name"
+    finally:
+        player.close()
+
+

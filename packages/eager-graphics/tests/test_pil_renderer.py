@@ -849,6 +849,55 @@ def test_pil_player_debug_overlay_modes_and_details() -> None:
         player.close()
 
 
+def test_pil_player_mouse_handlers_sync_active_input_prompt() -> None:
+    """Verify _on_click, _on_scroll_up, and _on_scroll_down sync active_input_prompt."""
+    screenplay = """
+    ## Start --- start
+    Alice: Hi!
+    ~ input hero_name Enter your name:
+    Alice: Welcome [hero_name]
+    Alice: Another line
+    """
+    class DummyEvent:
+        x = 100
+        y = 100
+
+    graph = parse_graph(screenplay)
+    session = GameSession(graph)
+
+    player = PILPlayer(
+        session=session,
+        width=800,
+        height=600,
+        visible=False,
+    )
+    try:
+        assert player.active_input_prompt is None
+        # Complete typewriter text reveal so next click advances to input prompt
+        if session.text_reveal is not None:
+            session.text_reveal.complete_immediately()
+        # Click should advance into input prompt
+        player._on_click(DummyEvent())
+        assert player.active_input_prompt is not None
+        assert player.active_input_prompt.var_name == "hero_name"
+
+        # Submit input and advance to Another line
+        session.submit_input("Champion")
+        player.advance_story()
+        assert player.active_input_prompt is None
+
+        # Scroll up 1: rollback to 'Welcome Champion'
+        player._on_scroll_up(DummyEvent())
+        assert player.active_input_prompt is None
+
+        # Scroll up 2: rollback onto input prompt
+        player._on_scroll_up(DummyEvent())
+        assert player.active_input_prompt is not None
+        assert player.active_input_prompt.var_name == "hero_name"
+    finally:
+        player.close()
+
+
 
 
 

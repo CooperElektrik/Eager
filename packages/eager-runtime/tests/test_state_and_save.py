@@ -192,4 +192,50 @@ Narrator: Picked A
         actual_next = [vm2._rng.random() for _ in range(10)]
         self.assertEqual(expected_next, actual_next)
 
+    def test_load_pending_choice_and_input_beat_id(self) -> None:
+        src = """
+## Start --- start
+Alice: Before choices
+? Option A (a)
+? Option B (b)
+
+## Scene A --- a
+Alice: Picked A
+~ input hero_name What is your name?
+Alice: Hero is [hero_name]
+"""
+        graph = eager_script.parse_graph(src)
+        vm = StoryVM(graph)
+        vm.step()  # SceneEnter
+        vm.step()  # Alice: Before choices
+        choice_evt = vm.step()  # ChoicePromptEvent
+        from eager_runtime import ChoicePromptEvent, InputPromptEvent
+        self.assertIsInstance(choice_evt, ChoicePromptEvent)
+        orig_choice_beat_id = choice_evt.beat_id
+
+        # Save while choice is pending and restore into new VM
+        snap = vm.save()
+        vm2 = StoryVM(graph)
+        vm2.load(snap)
+        self.assertIsNotNone(vm2.pending_choice)
+        self.assertEqual(vm2.pending_choice.beat_id, orig_choice_beat_id)
+
+        # Proceed with choice
+        vm.choose(0)
+        vm.step()  # SceneEnter Scene A
+        vm.step()  # Alice: Picked A
+        input_evt = vm.step()  # InputPromptEvent
+        self.assertIsInstance(input_evt, InputPromptEvent)
+        orig_input_beat_id = input_evt.beat_id
+        self.assertIsNotNone(orig_input_beat_id)
+
+        # Save while input is pending and restore into new VM
+        snap_input = vm.save()
+        vm3 = StoryVM(graph)
+        vm3.load(snap_input)
+        self.assertIsNotNone(vm3.pending_input)
+        self.assertEqual(vm3.pending_input.beat_id, orig_input_beat_id)
+        self.assertEqual(vm3.pending_input.prompt, input_evt.prompt)
+        self.assertEqual(vm3.pending_input.var_name, input_evt.var_name)
+
 

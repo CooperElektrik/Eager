@@ -416,7 +416,7 @@ class StoryVM:
             if scene and 0 <= snapshot.pending_choice_beat < len(scene.body):
                 item = scene.body[snapshot.pending_choice_beat]
                 if isinstance(item, ParsedChoiceSet):
-                    self._pending_choice = self._build_choice_prompt(item)
+                    self._pending_choice = self._build_choice_prompt(item, snapshot.pending_choice_beat)
 
         # If saved while waiting on an input prompt, re-materialize the InputPromptEvent
         if snapshot.pending_input_beat is not None and self._current_scene_id is not None:
@@ -432,10 +432,15 @@ class StoryVM:
                         subparts = args.split(None, 1)
                         var_name = subparts[0] if subparts else "player_input"
                         prompt_text = subparts[1].strip().strip("\"'") if len(subparts) > 1 else "Enter input:"
+                        occ = get_beat_occurrence(scene.body, snapshot.pending_input_beat)
+                        cid = compute_beat_id(self._current_scene_id, item, occurrence=occ)
+                        input_cid = f"{cid}.input" if cid else None
+                        raw_prompt, _ = self._translate_beat(input_cid, prompt_text)
                         self._pending_input = InputPromptEvent(
                             var_name=var_name,
-                            prompt=prompt_text,
+                            prompt=self._interpolate(raw_prompt),
                             line_number=item.line_number,
+                            beat_id=input_cid,
                         )
 
     def rollback(self) -> bool:

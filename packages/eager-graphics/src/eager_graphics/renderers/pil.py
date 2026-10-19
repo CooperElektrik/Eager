@@ -2822,6 +2822,7 @@ if PIL_AVAILABLE:
             self._ui_dirty = True
             self.session.handle_input(InputAction.ROLLBACK)
             self.active_choice_prompt = self.session.active_choice_prompt
+            self.active_input_prompt = self.session.active_input_prompt
             self.is_finished = self.session.is_finished
             self._sync_overlay()
 
@@ -2829,6 +2830,7 @@ if PIL_AVAILABLE:
             self._ui_dirty = True
             self.session.handle_input(InputAction.ROLL_FORWARD)
             self.active_choice_prompt = self.session.active_choice_prompt
+            self.active_input_prompt = self.session.active_input_prompt
             self.is_finished = self.session.is_finished
             self._sync_overlay()
 
@@ -2851,6 +2853,7 @@ if PIL_AVAILABLE:
             self._ui_dirty = True
             self.session.handle_input(InputAction.POINTER_CLICK, x=float(event.x), y=float(event.y))
             self.active_choice_prompt = self.session.active_choice_prompt
+            self.active_input_prompt = self.session.active_input_prompt
             self.is_finished = self.session.is_finished
             self._sync_overlay()
 

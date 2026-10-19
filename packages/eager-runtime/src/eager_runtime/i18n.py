@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from eager_core.i18n import TranslationCatalog
@@ -40,7 +41,7 @@ def _get_item_content_key(item: Any) -> str:
     return strip_explicit_id(str(getattr(item, "text", type(item).__name__)))
 
 
-def get_beat_occurrence(body: list[Any], index: int) -> int:
+def get_beat_occurrence(body: Sequence[Any], index: int) -> int:
     """Calculate the 1-based occurrence count of the item at index within the scene body."""
     if index < 0 or index >= len(body):
         return 1

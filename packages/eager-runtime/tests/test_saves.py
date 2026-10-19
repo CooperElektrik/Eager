@@ -235,6 +235,23 @@ class TestSaveSystem(unittest.TestCase):
         finally:
             script_path.unlink(missing_ok=True)
 
+    def test_game_session_set_language_custom_save_dir(self):
+        with tempfile.NamedTemporaryFile("w+", suffix=".es", delete=False) as f:
+            f.write(SAMPLE_SCRIPT)
+            script_path = Path(f.name)
+
+        try:
+            custom_dir = self.save_dir / "custom_pref_save"
+            custom_dir.mkdir(parents=True, exist_ok=True)
+            session = GameSession(script_path, save_dir=custom_dir)
+            session.set_language("ja")
+            pref_file = custom_dir / "preferences.json"
+            self.assertTrue(pref_file.exists())
+            saved_pref = Preferences.load(pref_file)
+            self.assertEqual(saved_pref.language, "ja")
+        finally:
+            script_path.unlink(missing_ok=True)
+
 
 if __name__ == "__main__":
     unittest.main()
