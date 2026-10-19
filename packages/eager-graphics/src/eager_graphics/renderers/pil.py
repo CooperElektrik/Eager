@@ -1631,6 +1631,7 @@ class PILRenderer(RenderBackend):
             and self._last_transform == self._current_transform
             and self._stage_cache.size == (window_width, window_height)
         ):
+            self._last_render_path = "Tier 3 (Stage Cache / UI Only)"
             self.last_frame = items
             self.frame_count += 1
             self.clock.tick()
@@ -1936,19 +1937,10 @@ class PILRenderer(RenderBackend):
         self.end_frame()
 
         # Snapshot clean stage buffer for static scene caching (Tier 3).
-        # Only snapshot when no assets are in motion to ensure the cache
-        # contains settled high-quality renderings.
-        if (
-            not self._in_motion_assets
-            and (
-                (
-                    self._last_stage_items is not None
-                    and len(self._last_stage_items) == len(items)
-                    and self._last_stage_items == items
-                )
-                or self._stage_cache is None
-            )
-        ):
+        # Always snapshot the clean stage buffer when settled (no assets in motion)
+        # after all stage layers finish (BG + Actors + Overlays) so UI redraws
+        # can restore the stage without a full re-render.
+        if not self._in_motion_assets:
             self._stage_cache = self._snapshot(self._stage_cache)
         else:
             self._stage_cache = None
@@ -2845,8 +2837,11 @@ if PIL_AVAILABLE:
 
         def _on_motion(self, event: Any) -> None:
             """Handle mouse movement for screen and button hover states."""
-            self.session.handle_input(InputAction.POINTER_MOVE, x=float(event.x), y=float(event.y))
-            self._ui_dirty = True
+            changed = self.session.handle_input(
+                InputAction.POINTER_MOVE, x=float(event.x), y=float(event.y)
+            )
+            if changed:
+                self._ui_dirty = True
 
         def _on_click(self, event: Any) -> None:
             """Handle mouse clicks for advancement or choice selection."""

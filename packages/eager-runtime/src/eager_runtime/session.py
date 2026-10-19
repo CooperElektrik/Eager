@@ -680,8 +680,8 @@ class GameSession:
             if action == InputAction.POINTER_MOVE:
                 x = payload.get("x", 0.0)
                 y = payload.get("y", 0.0)
-                self.screens.handle_mouse_move(x, y)
-                return True
+                changed = self.screens.handle_mouse_move(x, y)
+                return bool(changed)
             return None
 
         # 2. In-game interactions:
@@ -808,7 +808,23 @@ class GameSession:
             if self.active_choice_prompt is None and self.active_input_prompt is None:
                 return self.advance()
         elif action == InputAction.POINTER_MOVE:
-            return None
+            x = payload.get("x", 0.0)
+            y = payload.get("y", 0.0)
+            hover_changed = False
+            if hasattr(self, "overlay") and self.overlay is not None:
+                # Choice menu hover update
+                if self.active_choice_prompt is not None and hasattr(self.overlay, "choice_menu"):
+                    idx = self.overlay.hit_test_choice(x, y)
+                    if self.overlay.choice_menu.selected_index != idx:
+                        self.overlay.choice_menu.selected_index = idx
+                        hover_changed = True
+                # Quick menu hover update
+                if not self.ui_hidden and hasattr(self.overlay, "quick_menu"):
+                    qa = self.overlay.hit_test_quick_action(x, y)
+                    if getattr(self.overlay.quick_menu, "hovered_action", None) != qa:
+                        self.overlay.quick_menu.hovered_action = qa
+                        hover_changed = True
+            return hover_changed
         return None
 
     def _set_error_overlay(self, msg: str) -> None:

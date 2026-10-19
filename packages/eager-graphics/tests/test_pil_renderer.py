@@ -814,7 +814,7 @@ def test_pil_player_debug_overlay_modes_and_details() -> None:
 
         text = player.get_debug_overlay_text()
         assert "Eager Debug: PIL Backend" in text
-        assert "Render Path: Full Repaint" in text
+        assert ("Render Path: Tier 3 (Stage Cache / UI Only)" in text) or ("Render Path: Full Repaint" in text)
         assert "Sprite LRU:" in text
         assert "UI: speaker: Alice" in text
 

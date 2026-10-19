@@ -28,10 +28,15 @@ class Screen:
         """Called when screen is hidden."""
         self.visible = False
 
-    def handle_mouse_move(self, x: float, y: float) -> None:
-        """Update hover state on buttons."""
+    def handle_mouse_move(self, x: float, y: float) -> bool:
+        """Update hover state on buttons. Returns True if any hover state changed."""
+        changed = False
         for b in self.buttons:
-            b.hovered = b.hit_test(x, y)
+            new_hover = b.hit_test(x, y)
+            if b.hovered != new_hover:
+                b.hovered = new_hover
+                changed = True
+        return changed
 
     def handle_mouse_click(self, x: float, y: float) -> bool:
         """Process click event, firing matching button action or adjusting slider."""
@@ -101,10 +106,11 @@ class ScreenManager:
             self.active_screen = None
         self._history_stack.clear()
 
-    def handle_mouse_move(self, x: float, y: float) -> None:
-        """Forward mouse movement to the active screen."""
+    def handle_mouse_move(self, x: float, y: float) -> bool:
+        """Forward mouse movement to the active screen. Returns True if any hover state changed."""
         if self.active_screen is not None and self.active_screen.visible:
-            self.active_screen.handle_mouse_move(x, y)
+            return bool(self.active_screen.handle_mouse_move(x, y))
+        return False
 
     def handle_mouse_click(self, x: float, y: float) -> bool:
         """Forward mouse clicks to the active screen. Returns True if handled."""

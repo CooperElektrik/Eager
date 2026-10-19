@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- `Screen.handle_mouse_move` and `ScreenManager.handle_mouse_move` return a boolean indicating whether a hover state actually changed.
+
+### Fixed
+
+- Telemetry now correctly reports `Tier 3 (Stage Cache / UI Only)` when `PILRenderer` restores the stage from `_stage_cache`.
+
+### Performance
+
+- Hit-test gating on mouse motion: `PILPlayer._on_motion` only marks `_ui_dirty` if pointer input changed hover states, keeping the engine in Tier 0 (Idle Skip) at 60+ Hz over empty space.
+- Guaranteed clean stage buffer snapshotting: `PILRenderer` caches the settled stage before drawing UI, allowing subsequent mouse moves to restore from `_stage_cache` without a full repaint.
+
 ## [0.2.0] - 2026-10-19
 
 ### Added
