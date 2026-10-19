@@ -32,7 +32,7 @@ from eager_runtime.player import TerminalPlayer
 from eager_runtime.runtime import StoryRuntimeError, StoryVM
 from eager_runtime.state import CallFrame, HistoryManager, StorySnapshot
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "AppendEvent",

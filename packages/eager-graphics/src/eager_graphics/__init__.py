@@ -68,7 +68,7 @@ from eager_graphics.ui_components import (
 )
 from eager_graphics.ui_state import ChoiceOption, UIState
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "BLACK",
