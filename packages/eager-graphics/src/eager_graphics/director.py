@@ -108,6 +108,18 @@ class StageDirector:
             self.ui_state = UIState.from_dict(snapshot["ui_state"])
         return True
 
+    def step(self, dt: float) -> None:
+        """Advance compositor timelines and animations by *dt* seconds."""
+        self.compositor.step(dt)
+
+    def save_ui_state(self) -> dict[str, Any]:
+        """Serialize current UI state."""
+        return self.ui_state.to_dict()
+
+    def restore_ui_state(self, state: dict[str, Any]) -> None:
+        """Restore UI state from serialized dictionary."""
+        self.ui_state = UIState.from_dict(state)
+
     def save_visual_state(self) -> dict[str, Any]:
         """Return a complete dictionary containing compositor, ui_state, and history stack."""
         return {

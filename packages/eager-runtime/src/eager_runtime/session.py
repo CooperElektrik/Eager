@@ -8,21 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from eager_script import parse_graph
-
-try:
-    from eager_graphics.compositor import StageCompositor
-    from eager_graphics.director import StageDirector
-    from eager_graphics.renderers.null import NullRenderer
-    from eager_graphics.ui_components import UIOverlay
-    from eager_graphics.ui_state import UIState
-except ImportError:
-    StageCompositor = None  # type: ignore[assignment, misc]
-    StageDirector = None  # type: ignore[assignment, misc]
-    NullRenderer = None  # type: ignore[assignment, misc]
-    UIOverlay = None  # type: ignore[assignment, misc]
-    UIState = None  # type: ignore[assignment, misc]
-
 from eager_core.events import (
     AppendEvent,
     ChoicePromptEvent,
@@ -32,9 +17,22 @@ from eager_core.events import (
     StoryEvent,
 )
 from eager_core.input import InputAction, Keymap
+from eager_core.protocols import (
+    ScreenManagerProtocol,
+    StageProtocol,
+    UIProtocol,
+)
 from eager_core.storage import get_default_save_dir
+from eager_script import parse_graph
 
 from eager_runtime.dispatcher import EventDispatcher
+from eager_runtime.headless import (
+    HeadlessUIState,
+    NullCompositor,
+    NullScreenManager,
+    NullStage,
+    NullUI,
+)
 from eager_runtime.persistent import PersistentData
 from eager_runtime.preferences import Preferences
 from eager_runtime.runtime import StoryVM
@@ -112,6 +110,55 @@ class CheckpointHistory:
         return self._history[-1] if self._history else None
 
 
+def _create_default_stage(
+    virtual_width: int,
+    virtual_height: int,
+    audio: Any,
+    skip_mode_cb: Any,
+) -> StageProtocol:
+    try:
+        from eager_graphics.compositor import StageCompositor
+        from eager_graphics.director import StageDirector
+
+        compositor = StageCompositor(
+            virtual_width=virtual_width,
+            virtual_height=virtual_height,
+        )
+        return StageDirector(compositor, audio=audio, skip_mode_cb=skip_mode_cb)
+    except ImportError:
+        return NullStage(virtual_width=virtual_width, virtual_height=virtual_height)
+
+
+def _create_default_ui(width: int = 1280, height: int = 720) -> UIProtocol:
+    try:
+        from eager_graphics.ui_components import UIOverlay
+
+        return UIOverlay(width=width, height=height)
+    except ImportError:
+        return NullUI(width=width, height=height)
+
+
+def _create_default_screens(config: Any, session: Any) -> ScreenManagerProtocol:
+    try:
+        from eager_graphics.screens import (
+            HistoryScreen,
+            PreferencesScreen,
+            SaveLoadScreen,
+            ScreenManager,
+            TitleScreen,
+        )
+
+        mgr = ScreenManager()
+        mgr.register(TitleScreen(title=getattr(config, "title", "Eager Visual Novel")))
+        mgr.register(SaveLoadScreen("save"))
+        mgr.register(SaveLoadScreen("load"))
+        mgr.register(PreferencesScreen())
+        mgr.register(HistoryScreen())
+        return mgr
+    except ImportError:
+        return NullScreenManager()
+
+
 class GameSession:
     """Backend-agnostic controller that coordinates narrative execution, compositor,
     director, audio, input handling, and checkpoints.
@@ -127,7 +174,6 @@ class GameSession:
         "input_prompt",
     })
 
-
     def __init__(
         self,
         project_or_script: str | Path | Any,
@@ -142,6 +188,9 @@ class GameSession:
         auto_reload: bool = False,
         watch: bool = False,
         save_dir: str | Path | None = None,
+        stage: StageProtocol | None = None,
+        ui: UIProtocol | None = None,
+        screens: ScreenManagerProtocol | None = None,
     ) -> None:
         self.script_path = Path(project_or_script) if isinstance(project_or_script, (str, Path)) else None
         self.backend = backend
@@ -162,13 +211,6 @@ class GameSession:
             self.graph = project_or_script
 
         from eager_core.audio import AudioMixer
-
-        if StageCompositor is None or StageDirector is None:
-            raise ImportError(
-                "eager_graphics is required for GameSession. "
-                "Install eager-runtime[graphics] or eager-graphics."
-            )
-
         from eager_core.i18n import TranslationManager
 
         self.translation_manager = TranslationManager()
@@ -182,21 +224,28 @@ class GameSession:
 
         self.vm = StoryVM(self.graph, translation_manager=self.translation_manager)
         self.dispatcher = EventDispatcher()
-        self.compositor = StageCompositor(
-            virtual_width=virtual_width,
-            virtual_height=virtual_height,
-        )
         self.audio = AudioMixer(backend=audio_backend, asset_dir=self.asset_dir)
-        self.director = StageDirector(
-            self.compositor,
-            audio=self.audio,
-            skip_mode_cb=lambda: self.skip_mode,
-        )
-        self.director.bind(self.dispatcher)
+
+        if stage is not None:
+            self.stage: StageProtocol = stage
+        else:
+            self.stage = _create_default_stage(
+                virtual_width=virtual_width,
+                virtual_height=virtual_height,
+                audio=self.audio,
+                skip_mode_cb=lambda: self.skip_mode,
+            )
+        self.director: Any = self.stage
+        self.compositor: Any = getattr(self.stage, "compositor", None)
+        if self.compositor is None:
+            self.compositor = NullCompositor(virtual_width=virtual_width, virtual_height=virtual_height)
+        if hasattr(self.stage, "bind"):
+            self.stage.bind(self.dispatcher)
 
         self.checkpoints = CheckpointHistory(max_history=rollback_limit)
         self.keymap = Keymap()
-        self.overlay = UIOverlay(width=1280, height=720)
+        self.ui: UIProtocol = ui if ui is not None else _create_default_ui(width=1280, height=720)
+        self.overlay: Any = self.ui
 
         # Persistent state, preferences, and saves
         save_dir = (
@@ -213,20 +262,9 @@ class GameSession:
         self.vm.set_variable("persistent", self.persistent)
 
         # Screens and Theme
-        from eager_graphics.screens import (
-            HistoryScreen,
-            PreferencesScreen,
-            SaveLoadScreen,
-            ScreenManager,
-            TitleScreen,
+        self.screens: ScreenManagerProtocol = (
+            screens if screens is not None else _create_default_screens(config, self)
         )
-
-        self.screens = ScreenManager()
-        self.screens.register(TitleScreen(title=getattr(config, "title", "Eager Visual Novel")))
-        self.screens.register(SaveLoadScreen("save"))
-        self.screens.register(SaveLoadScreen("load"))
-        self.screens.register(PreferencesScreen())
-        self.screens.register(HistoryScreen())
 
         from eager_runtime.backlog import Backlog
 
@@ -282,12 +320,24 @@ class GameSession:
             if self.active_input_prompt is not None and hasattr(self.active_input_prompt, "to_dict")
             else (copy.deepcopy(self.active_input_prompt) if self.active_input_prompt is not None else None)
         )
+        visual_state = (
+            self.director.save_visual_state()
+            if hasattr(self.director, "save_visual_state")
+            else {}
+        )
+        if hasattr(self.director, "save_ui_state"):
+            ui_state_dict = self.director.save_ui_state()
+        elif hasattr(self.director, "ui_state") and hasattr(self.director.ui_state, "to_dict"):
+            ui_state_dict = self.director.ui_state.to_dict()
+        else:
+            ui_state_dict = {}
+
         return Checkpoint(
             story=self.vm.save().to_dict(),
-            visual=self.director.save_visual_state(),
+            visual=visual_state,
             audio=self.audio.save_state(),
             backlog_len=len(self.backlog),
-            ui=self.director.ui_state.to_dict(),
+            ui=ui_state_dict,
             active_input_prompt=input_data,
         )
 
@@ -295,10 +345,24 @@ class GameSession:
         """Restore full session state from a checkpoint."""
         snap = StorySnapshot.from_dict(checkpoint.story)
         self.vm.load(snap)
-        self.director.load_visual_state(checkpoint.visual)
+        if hasattr(self.director, "load_visual_state"):
+            self.director.load_visual_state(checkpoint.visual)
         self.audio.load_state(checkpoint.audio)
-        self.director.ui_state = UIState.from_dict(checkpoint.ui)
-        self.director.ui_state.visible_chars = None
+
+        if hasattr(self.director, "restore_ui_state"):
+            self.director.restore_ui_state(checkpoint.ui)
+        elif hasattr(self.director, "ui_state") and hasattr(self.director.ui_state, "from_dict"):
+            self.director.ui_state = self.director.ui_state.from_dict(checkpoint.ui)
+        else:
+            try:
+                from eager_graphics.ui_state import UIState
+
+                self.director.ui_state = UIState.from_dict(checkpoint.ui)
+            except ImportError:
+                self.director.ui_state = HeadlessUIState.from_dict(checkpoint.ui)
+
+        if hasattr(self.director, "ui_state"):
+            self.director.ui_state.visible_chars = None
         self.text_reveal = None
         if len(self.backlog.entries) > checkpoint.backlog_len:
             self.backlog.entries = self.backlog.entries[: checkpoint.backlog_len]
@@ -419,7 +483,7 @@ class GameSession:
 
                 if event.type == "choice_prompt":
                     self.active_choice_prompt = event
-                    if hasattr(self, "overlay") and hasattr(self.overlay, "choice_menu"):
+                    if hasattr(self, "overlay") and getattr(self.overlay, "choice_menu", None) is not None:
                         self.overlay.choice_menu.set_options(event.options)
                 elif event.type == "input_prompt":
                     self.active_input_prompt = event
@@ -500,6 +564,16 @@ class GameSession:
         self.checkpoints.push(cp)
         return True
 
+    @property
+    def can_rollback(self) -> bool:
+        """True if there is at least one previous checkpoint to restore."""
+        return self.checkpoints.can_rollback
+
+    @property
+    def can_roll_forward(self) -> bool:
+        """True if there is at least one popped checkpoint that can be restored forward."""
+        return self.checkpoints.can_roll_forward
+
     def rollback(self) -> bool:
         """Roll back to the previous interactive checkpoint."""
         if not self.checkpoints.can_rollback:
@@ -544,7 +618,10 @@ class GameSession:
 
     def update(self, dt: float) -> None:
         """Update animation timelines, compositor, audio, typewriter reveal, and timers."""
-        self.compositor.step(dt)
+        if hasattr(self.director, "step"):
+            self.director.step(dt)
+        elif self.compositor is not None and hasattr(self.compositor, "step"):
+            self.compositor.step(dt)
         self.audio.update(dt)
 
         # Automatic hot-reload via file-watcher
@@ -555,19 +632,22 @@ class GameSession:
         if self.text_reveal is not None and not self.text_reveal.is_complete:
             self.text_reveal.update(dt)
             if self.text_reveal.is_complete:
-                self.director.ui_state.visible_chars = None
+                if hasattr(self.director, "ui_state"):
+                    self.director.ui_state.visible_chars = None
             else:
-                self.director.ui_state.visible_chars = int(self.text_reveal.visible_chars)
+                if hasattr(self.director, "ui_state"):
+                    self.director.ui_state.visible_chars = int(self.text_reveal.visible_chars)
 
         # Update input box cursor if input prompt is active
-        if self.active_input_prompt is not None and hasattr(self, "overlay") and hasattr(self.overlay, "input_box"):
+        if self.active_input_prompt is not None and hasattr(self, "overlay") and hasattr(self.overlay, "input_box") and self.overlay.input_box is not None:
             self.overlay.input_box.update(dt)
 
         # Skip mode advances immediately until player choices, input prompt, or story ends
         if self.skip_mode and not self.is_finished:
             if self.text_reveal is not None:
                 self.text_reveal.complete_immediately()
-                self.director.ui_state.visible_chars = None
+                if hasattr(self.director, "ui_state"):
+                    self.director.ui_state.visible_chars = None
             while (
                 self.skip_mode
                 and not self.is_finished
@@ -591,19 +671,20 @@ class GameSession:
                 base_time = float(getattr(self.preferences, "auto_forward_time", 3.0))
                 # Scale wait time slightly by character count (0.02s per char capped at 2.0s)
                 # so long unvoiced paragraphs have sufficient reading time
-                cur_text = getattr(self.director.ui_state, "text", "") or ""
+                cur_text = getattr(getattr(self.director, "ui_state", None), "text", "") or ""
                 extra_pause = min(2.0, len(cur_text) * 0.02)
                 threshold = base_time + extra_pause
                 if self.auto_timer >= threshold:
                     self.auto_timer = 0.0
                     if self.text_reveal is not None:
                         self.text_reveal.complete_immediately()
-                        self.director.ui_state.visible_chars = None
+                        if hasattr(self.director, "ui_state"):
+                            self.director.ui_state.visible_chars = None
                     self.advance()
 
     def draw(self, ui_backend: Any, width: int, height: int) -> None:
         """Draw the stage compositor and UI chrome through the given renderer / backend."""
-        if hasattr(ui_backend, "render_compositor"):
+        if self.compositor is not None and hasattr(ui_backend, "render_compositor"):
             ui_backend.render_compositor(self.compositor, width, height)
 
         status_badge: str | None = None
@@ -612,20 +693,22 @@ class GameSession:
         elif self.auto_mode:
             status_badge = "AUTO >"
 
-        if not self.ui_hidden:
+        if not self.ui_hidden and hasattr(self, "overlay") and self.overlay is not None:
             is_read = self.is_current_beat_read()
-            self.overlay.set_viewport(width, height)
-            self.overlay.draw(
-                ui_backend,
-                self.director.ui_state,
-                self.active_choice_prompt,
-                self.active_input_prompt,
-                input_text=self.input_text,
-                is_finished=self.is_finished,
-                show_quick_menu=True,
-                status_badge=status_badge,
-                is_read=is_read,
-            )
+            if hasattr(self.overlay, "set_viewport"):
+                self.overlay.set_viewport(width, height)
+            if hasattr(self.overlay, "draw"):
+                self.overlay.draw(
+                    ui_backend,
+                    getattr(self.director, "ui_state", None),
+                    self.active_choice_prompt,
+                    self.active_input_prompt,
+                    input_text=self.input_text,
+                    is_finished=self.is_finished,
+                    show_quick_menu=True,
+                    status_badge=status_badge,
+                    is_read=is_read,
+                )
 
         # Draw active screen on top
         if hasattr(self, "screens") and self.screens.active_screen:
@@ -686,7 +769,11 @@ class GameSession:
 
         # 2. In-game interactions:
         # Choice menu keyboard navigation
-        if self.active_choice_prompt is not None and self.active_choice_prompt.options:
+        if (
+            self.active_choice_prompt is not None
+            and self.active_choice_prompt.options
+            and getattr(self.overlay, "choice_menu", None) is not None
+        ):
             opts = self.active_choice_prompt.options
             opts_count = len(opts)
             enabled_indices = [i for i, opt in enumerate(opts) if getattr(opt, "enabled", True)]
@@ -720,14 +807,14 @@ class GameSession:
                 ch = payload.get("char", "")
                 if ch:
                     self.input_text += ch
-                    if hasattr(self, "overlay") and hasattr(self.overlay, "input_box"):
+                    if getattr(self.overlay, "input_box", None) is not None:
                         self.overlay.input_box.text_buffer = self.input_text
                     self._ui_dirty = True
                     return True
             elif action == InputAction.TEXT_BACKSPACE:
                 if self.input_text:
                     self.input_text = self.input_text[:-1]
-                    if hasattr(self, "overlay") and hasattr(self.overlay, "input_box"):
+                    if getattr(self.overlay, "input_box", None) is not None:
                         self.overlay.input_box.text_buffer = self.input_text
                     self._ui_dirty = True
                     return True
@@ -742,9 +829,11 @@ class GameSession:
         if action in (InputAction.ADVANCE, InputAction.CONFIRM):
             if self.text_reveal is not None and not self.text_reveal.is_complete:
                 self.text_reveal.complete_immediately()
-                self.director.ui_state.visible_chars = None
-                self.overlay.dialogue_box.visible_chars = None
-                self.overlay.dialogue_box.show_advance_arrow = (self.active_choice_prompt is None)
+                if hasattr(self.director, "ui_state"):
+                    self.director.ui_state.visible_chars = None
+                if getattr(self.overlay, "dialogue_box", None) is not None:
+                    self.overlay.dialogue_box.visible_chars = None
+                    self.overlay.dialogue_box.show_advance_arrow = (self.active_choice_prompt is None)
                 return True
             if self.active_choice_prompt is None and self.active_input_prompt is None:
                 return self.advance()
@@ -787,12 +876,12 @@ class GameSession:
             x = payload.get("x", 0.0)
             y = payload.get("y", 0.0)
             # Check quick action bar in UIOverlay
-            if not self.ui_hidden:
+            if not self.ui_hidden and hasattr(self.overlay, "hit_test_quick_action"):
                 qa = self.overlay.hit_test_quick_action(x, y)
                 if qa:
                     return self._handle_quick_action(qa)
             # Check choices
-            if self.active_choice_prompt is not None:
+            if self.active_choice_prompt is not None and hasattr(self.overlay, "hit_test_choice"):
                 idx = self.overlay.hit_test_choice(x, y)
                 if idx is not None:
                     return self.choose(idx)
@@ -800,9 +889,11 @@ class GameSession:
             # Check typewriter reveal completion
             if self.text_reveal is not None and not self.text_reveal.is_complete:
                 self.text_reveal.complete_immediately()
-                self.director.ui_state.visible_chars = None
-                self.overlay.dialogue_box.visible_chars = None
-                self.overlay.dialogue_box.show_advance_arrow = (self.active_choice_prompt is None)
+                if hasattr(self.director, "ui_state"):
+                    self.director.ui_state.visible_chars = None
+                if getattr(self.overlay, "dialogue_box", None) is not None:
+                    self.overlay.dialogue_box.visible_chars = None
+                    self.overlay.dialogue_box.show_advance_arrow = (self.active_choice_prompt is None)
                 return True
             # Otherwise advance
             if self.active_choice_prompt is None and self.active_input_prompt is None:
@@ -813,13 +904,13 @@ class GameSession:
             hover_changed = False
             if hasattr(self, "overlay") and self.overlay is not None:
                 # Choice menu hover update
-                if self.active_choice_prompt is not None and hasattr(self.overlay, "choice_menu"):
+                if self.active_choice_prompt is not None and getattr(self.overlay, "choice_menu", None) is not None:
                     idx = self.overlay.hit_test_choice(x, y)
                     if self.overlay.choice_menu.selected_index != idx:
                         self.overlay.choice_menu.selected_index = idx
                         hover_changed = True
                 # Quick menu hover update
-                if not self.ui_hidden and hasattr(self.overlay, "quick_menu"):
+                if not self.ui_hidden and getattr(self.overlay, "quick_menu", None) is not None:
                     qa = self.overlay.hit_test_quick_action(x, y)
                     if getattr(self.overlay.quick_menu, "hovered_action", None) != qa:
                         self.overlay.quick_menu.hovered_action = qa
@@ -831,10 +922,11 @@ class GameSession:
         """Set error overlay and clear active choices/prompts."""
         if hasattr(self, "overlay") and self.overlay is not None:
             self.overlay.error_overlay = msg
-        if hasattr(self, "director") and self.director is not None:
+        if hasattr(self, "director") and self.director is not None and hasattr(self.director, "ui_state"):
             self.director.ui_state.speaker = "Error"
             self.director.ui_state.text = msg
-            self.director.ui_state.clear_choices()
+            if hasattr(self.director.ui_state, "clear_choices"):
+                self.director.ui_state.clear_choices()
         self.active_choice_prompt = None
 
     def _clear_error_overlay(self) -> None:

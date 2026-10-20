@@ -37,6 +37,12 @@ from eager_core.input import (
     InputAction,
     Keymap,
 )
+from eager_core.protocols import (
+    ScreenManagerProtocol,
+    StageProtocol,
+    UIProtocol,
+    UIStateProtocol,
+)
 from eager_core.storage import (
     atomic_write_json,
     get_default_save_dir,
@@ -104,12 +110,16 @@ __all__ = [
     "Rect",
     "SceneEnterEvent",
     "SceneExitEvent",
+    "ScreenManagerProtocol",
+    "StageProtocol",
     "StoryEndEvent",
     "StoryEvent",
     "TextReveal",
     "TextSegment",
     "TranslationCatalog",
     "TranslationManager",
+    "UIProtocol",
+    "UIStateProtocol",
     "Vec2",
     # Storage
     "atomic_write_json",

@@ -28,7 +28,7 @@ from eager_graphics.types import Anchor, ScaleMode
 from eager_graphics.ui_components import UIOverlay
 
 if TYPE_CHECKING:
-    from eager_runtime import ChoicePromptEvent
+    from eager_core.events import ChoicePromptEvent
 
     from eager_graphics.compositor import StageCompositor
 
