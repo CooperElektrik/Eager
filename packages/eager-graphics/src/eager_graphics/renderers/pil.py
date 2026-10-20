@@ -2004,6 +2004,37 @@ class PILRenderer(RenderBackend):
         self._font_cache[font_size] = font
         return font
 
+    def _blend_rect(
+        self,
+        x0: int,
+        y0: int,
+        x1: int,
+        y1: int,
+        color: Color,
+    ) -> None:
+        """Fill region (x0, y0, x1, y1) with *color*, alpha-blending if translucent."""
+        w = x1 - x0
+        h = y1 - y0
+        if w <= 0 or h <= 0:
+            return
+        c_rgba = (
+            _WHITE_RGBA
+            if (color is WHITE or color == WHITE)
+            else color.to_rgba_bytes()
+        )
+        alpha = c_rgba[3]
+        if alpha <= 0:
+            return
+        if alpha == 255:
+            c_bytes = c_rgba[:3] if self.mode == "RGB" else c_rgba
+            self._image.paste(c_bytes, (x0, y0, x1, y1))
+        elif self.mode == "RGBA":
+            overlay = Image.new("RGBA", (w, h), c_rgba)
+            self._image.alpha_composite(overlay, dest=(x0, y0))
+        else:
+            mask = Image.new("L", (w, h), alpha)
+            self._image.paste(c_rgba[:3], (x0, y0, x1, y1), mask)
+
     def draw_rect(
         self,
         x: float,
@@ -2020,33 +2051,52 @@ class PILRenderer(RenderBackend):
             self._execute_clear()
         left, top = float(x), float(y)
         right, bottom = left + float(width), top + float(height)
-        self._mark_ui_dirty(round(left), round(top), round(right + 1), round(bottom + 1))
-        c_rgba = color.to_rgba_bytes()
-        c_bytes = c_rgba[:3] if self.mode == "RGB" else c_rgba
-        if border_color is None or border_width <= 0.0:
-            self._image.paste(c_bytes, (round(left), round(top), round(right), round(bottom)))
+        r_left, r_top = round(left), round(top)
+        r_right, r_bottom = round(right), round(bottom)
+        if r_right <= r_left or r_bottom <= r_top:
+            return
+
+        self._mark_ui_dirty(r_left, r_top, r_right + 1, r_bottom + 1)
+        self._blend_rect(r_left, r_top, r_right, r_bottom, color)
+
+        if border_color is not None and border_width > 0.0:
+            self.draw_rect_outline(
+                x, y, width, height, border_color, line_width=border_width
+            )
+
+    def draw_rect_outline(
+        self,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        color: Color,
+        *,
+        line_width: float = 1.0,
+    ) -> None:
+        """Draw an unfilled rectangle outline with thickness *line_width*."""
+        if self._needs_clear:
+            self._execute_clear()
+        if line_width <= 0.0:
+            return
+        bw = max(1, round(line_width))
+        left, top = float(x), float(y)
+        right, bottom = left + float(width), top + float(height)
+        r_left, r_top = round(left), round(top)
+        r_right, r_bottom = round(right), round(bottom)
+        rw = r_right - r_left
+        rh = r_bottom - r_top
+        if rw <= 0 or rh <= 0:
+            return
+
+        self._mark_ui_dirty(r_left, r_top, r_right + 1, r_bottom + 1)
+        if rw <= 2 * bw or rh <= 2 * bw:
+            self._blend_rect(r_left, r_top, r_right, r_bottom, color)
         else:
-            bw = round(border_width)
-            r_left, r_top = round(left), round(top)
-            r_right, r_bottom = round(right), round(bottom)
-            if bw > 0 and (r_right - r_left) > 2 * bw and (r_bottom - r_top) > 2 * bw:
-                b_rgba = (
-                    _WHITE_RGBA
-                    if (border_color is WHITE or border_color == WHITE)
-                    else border_color.to_rgba_bytes()
-                )
-                b_bytes = b_rgba[:3] if self.mode == "RGB" else b_rgba
-                self._image.paste(b_bytes, (r_left, r_top, r_right + 1, r_bottom + 1))
-                self._image.paste(c_bytes, (r_left + bw, r_top + bw, r_right - bw + 1, r_bottom - bw + 1))
-            else:
-                draw = ImageDraw.Draw(self._image)
-                draw.rectangle((left, top, right, bottom), fill=c_bytes)
-                b_rgba = border_color.to_rgba_bytes()
-                draw.rectangle(
-                    (left, top, right, bottom),
-                    outline=b_rgba[:3] if self.mode == "RGB" else b_rgba,
-                    width=bw,
-                )
+            self._blend_rect(r_left, r_top, r_right, r_top + bw, color)
+            self._blend_rect(r_left, r_bottom - bw, r_right, r_bottom, color)
+            self._blend_rect(r_left, r_top + bw, r_left + bw, r_bottom - bw, color)
+            self._blend_rect(r_right - bw, r_top + bw, r_right, r_bottom - bw, color)
 
     def draw_gradient_rect(
         self,
@@ -2177,7 +2227,16 @@ class PILRenderer(RenderBackend):
             dest_x = round(x + rel_x)
             dest_y = round(y + rel_y)
             self._mark_ui_dirty(dest_x, dest_y, dest_x + mask.width, dest_y + mask.height)
-            self._image.paste(color_bytes, (dest_x, dest_y), mask)
+            alpha = color_rgba[3]
+            if alpha <= 0:
+                return
+            if alpha < 255:
+                lut = _ALPHA_LUTS[alpha]
+                eff_mask = mask.point(lut)
+                dest_color = color_rgba[:3] if self.mode == "RGB" else color_rgba[:3] + (255,)
+                self._image.paste(dest_color, (dest_x, dest_y), eff_mask)
+            else:
+                self._image.paste(color_bytes, (dest_x, dest_y), mask)
         else:
             w_est, h_est = self.measure_text(text, font_size=font_size, cache=cache)
             self._mark_ui_dirty(round(x), round(y), round(x + w_est), round(y + h_est))

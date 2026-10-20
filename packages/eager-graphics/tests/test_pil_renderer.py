@@ -898,6 +898,66 @@ def test_pil_player_mouse_handlers_sync_active_input_prompt() -> None:
         player.close()
 
 
+def test_pil_renderer_draw_rect_alpha_blending() -> None:
+    """Verify PILRenderer.draw_rect properly alpha-blends semi-transparent colors."""
+    renderer = PILRenderer(200, 200, mode="RGB")
+    # Base background (51, 51, 51)
+    renderer.draw_rect(0, 0, 200, 200, Color(0.2, 0.2, 0.2, 1.0))
+
+    # Draw subtle white hover pill (alpha 0.08)
+    hover_pill = Color(1.0, 1.0, 1.0, 0.08)
+    renderer.draw_rect(10, 10, 80, 40, hover_pill)
+
+    img = renderer.get_image()
+    pixel = img.getpixel((20, 20))
+    # Must NOT be solid white (255, 255, 255)
+    assert pixel != (255, 255, 255)
+    # Expected alpha blend: 51 + (255 - 51) * (20 / 255) = 67
+    assert 60 <= pixel[0] <= 75
+    assert pixel[0] == pixel[1] == pixel[2]
+
+
+def test_pil_renderer_draw_rect_outline() -> None:
+    """Verify PILRenderer.draw_rect_outline draws stroked borders with alpha."""
+    renderer = PILRenderer(200, 200, mode="RGB")
+    renderer.draw_rect(0, 0, 200, 200, Color(0.2, 0.2, 0.2, 1.0))
+
+    border_color = Color(1.0, 1.0, 1.0, 0.50)
+    renderer.draw_rect_outline(10, 10, 100, 50, border_color, line_width=2.0)
+
+    img = renderer.get_image()
+    # Border pixel at (10, 10) should be blended with 50% white: ~153
+    border_px = img.getpixel((10, 10))
+    assert 140 <= border_px[0] <= 165
+
+    # Center pixel at (50, 35) must be untouched (51, 51, 51)
+    center_px = img.getpixel((50, 35))
+    assert center_px == (51, 51, 51)
+
+
+def test_pil_quick_menu_hover_highlight() -> None:
+    """Verify hovering over QuickMenu buttons produces subtle highlights without solid white rectangles."""
+    from eager_graphics.ui_components import QuickMenu
+
+    renderer = PILRenderer(1280, 720, mode="RGB")
+    renderer.draw_rect(0, 0, 1280, 720, Color(0.2, 0.2, 0.2, 1.0))
+
+    qm = QuickMenu(1280, 720)
+    qm.hovered_action = "skip"
+    qm.draw(renderer)
+
+    layout = qm.layout()
+    skip_box = next(item for item in layout if item[0] == "skip")
+    bx, by = skip_box[2], skip_box[3]
+
+    img = renderer.get_image()
+    sample = img.getpixel((int(bx + 2), int(by + 2)))
+    # Before the fix, sample was (255, 255, 255), completely covering content underneath
+    assert sample != (255, 255, 255)
+    assert 60 <= sample[0] <= 75
+
+
+
 
 
 
