@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-21
+
+### Added
+
+- `InputHookArgs`, `is_input_hook()`, `parse_input_args()`, and `parse_input_hook()` in `eager_script.hooks`, re-exported from `eager_script`, for structured parsing of `~ input` hooks.
+
+### Changed
+
+- `~ input` argument parsing now consistently supports `prompt=`/`default=` keywords in any order alongside quoted or unquoted positional prompt text.
+- `parse_hook_args()` now treats only `identifier=value` tokens as keyword arguments, preserving `=` inside unquoted prompts and defaults.
+- Removed redundant guards in expression evaluation, relying on AST validation to restrict attribute access to `persistent`.
+
 ## [0.3.0] - 2026-10-21
 
 - No changes since 0.2.0.
@@ -26,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/CooperElektrik/Eager/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/CooperElektrik/Eager/compare/97609c1...v0.2.0
 [0.1.0]: https://github.com/CooperElektrik/Eager/commit/97609c1

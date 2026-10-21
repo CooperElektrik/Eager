@@ -7,17 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-21
+
+### Added
+
+- **Plugins:** Provider registry and `eager.providers` entry-point discovery in `eager-core`, letting `eager-graphics` register stage, UI, screen-manager, player, audio, and renderer factories without `eager-runtime` importing it.
+- **Script:** Unified input-hook parsing (`InputHookArgs`, `is_input_hook`, `parse_input_args`, `parse_input_hook`) shared by `StoryVM` and localization extraction.
+- **UI:** Unified `Theme` styling for overlays, menus, and built-in screens, with viewport-relative font scaling for all HUD and screen text.
+
 ### Changed
 
-- **Rollback:** Fully unified state rollback around atomic `Checkpoint` and `CheckpointHistory`, capturing snapshots exclusively at narrative interaction boundaries (`DialogueEvent`, `NarrationEvent`, `ChoicePromptEvent`, `InputPromptEvent`).
+- **Rollback:** Fully unified state rollback around atomic `Checkpoint` and `CheckpointHistory`, capturing snapshots at narrative interaction boundaries (`DialogueEvent`, `NarrationEvent`, `AppendEvent`, `FreshBoxEvent`, `ChoicePromptEvent`, `InputPromptEvent`, and `StoryEndEvent`).
 - **Save & Checkpoint schema:** Eliminated redundant duplicate `ui_state` serialization inside stage visual states (`save_visual_state`), cleanly isolating compositor stage state in `visual` and dialogue/UI state in `ui`.
 - **Runtime:** `TerminalPlayer` now uses `CheckpointHistory` to capture interaction points and rewind state on `:undo` / `:rollback`.
 - **Graphics:** Added `roll_forward()` to `BasePlayer` for redo traversal across rolled-back checkpoints.
+- **Graphics:** Split the monolithic Pillow backend (`renderers/pil.py`) into the `renderers/pil` subpackage (`_compat`, `_constants`, `_imaging`, `_cache`, `assets`, `renderer`, `player`) while preserving the public re-exports.
+- **Graphics:** Moved `Theme` from `eager_graphics.screens.theme` to `eager_graphics.theme` and applied it consistently to `UIOverlay`, dialogue/choice/quick-menu components, and built-in screens.
+- **Runtime & graphics:** `GameSession` now mutates UI overlays through `UIProtocol` mutation methods, with matching implementations in the headless `NullUI`.
+- **Graphics:** Stage timelines now expose `finish_animations()` / `finish_all()` and flush active tweens before snapshots and narrative advances.
+- **Maintenance:** Removed redundant defensive `hasattr` checks across the workspace in favor of declared protocol contracts.
+- **Tooling:** Added `import-linter` contracts enforcing package boundaries (headless runtime, dependency-free core/script, renderer independence, and screen/director separation).
+
+### Fixed
+
+- **Graphics & runtime:** Prevented saves and rollbacks from capturing mid-transition or 0-opacity stage states by completing active tweens before serialization and advancement.
+- **Localization:** Input-hook beats with explicit `{id=...}` markers now reuse that ID when computing translation keys.
 
 ### Removed
 
 - **Legacy rollback:** Removed `HistoryManager` and beat-level history recording (`_history`, `history_enabled`, `enable_history()`, `disable_history()`, `can_rollback`, `rollback()`) from `StoryVM`.
 - **Visual history:** Removed `VisualHistoryManager` (`eager_graphics/history.py`) and legacy director rollback methods (`enable_visual_history()`, `snapshot_visual_state()`, `rollback_visual_state()`, `on_beat_step()`).
+- **Graphics:** Removed the `eager_graphics.screens.theme` module; import `Theme` from `eager_graphics.theme` (or the package root) instead.
 
 ## [0.3.0] - 2026-10-21
 
@@ -77,7 +97,8 @@ Consolidates all changes after the v0.1.0 release (initial commit `97609c1`, 202
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/CooperElektrik/Eager/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/CooperElektrik/Eager/compare/97609c1...v0.2.0
 [0.1.0]: https://github.com/CooperElektrik/Eager/commit/97609c1

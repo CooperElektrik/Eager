@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-21
+
+### Added
+
+- Provider registry and `eager.providers` entry-point discovery in `eager_core.protocols`: stage/UI/screen-manager factory registration, player/audio/renderer registries (`register_player`, `get_player`, `list_players`, etc.), `load_providers()`, and `reset_providers()`.
+- `StageProtocol.finish_animations()` for immediately completing active stage animations.
+- `UIProtocol` overlay mutation methods (`get_selected_choice`, `set_selected_choice`, `set_choice_options`, `set_input_text`, `update_input`, `set_dialogue_visible_chars`, `complete_dialogue_reveal`, `get_hovered_quick_action`, `set_hovered_quick_action`).
+
+### Changed
+
+- `AudioMixer` now calls `AudioBackend.update()` and `shutdown()` directly instead of guarding them with `hasattr`, enforcing the protocol contract for custom backends.
+
 ## [0.3.0] - 2026-10-21
 
 ### Added
@@ -29,7 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/CooperElektrik/Eager/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/CooperElektrik/Eager/compare/97609c1...v0.2.0
 [0.1.0]: https://github.com/CooperElektrik/Eager/commit/97609c1

@@ -7,18 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-21
+
 ### Added
 
 - `roll_forward()` method on `BasePlayer` for stepping forward along `GameSession`'s redo stack.
+- `finish_animations()` on `StageCompositor` and `StageDirector`, plus `Tween.finish()` and `Timeline.finish_all()` / `flush()`, to snap active tweens to their end values.
+- `Theme` at the package root (`eager_graphics.theme`) with `TextboxStyle.from_theme()`, `ChoiceMenuStyle.from_theme()`, `UIOverlay(theme=...)`, and theme propagation across `DialogueBox`, `ChoiceMenu`, `QuickMenu`, `Screen`, and `ScreenManager`.
+- `UIOverlay` protocol-mutation helpers (`get_selected_choice`, `set_selected_choice`, `set_choice_options`, `set_input_text`, `update_input`, `set_dialogue_visible_chars`, `complete_dialogue_reveal`, `get_hovered_quick_action`, `set_hovered_quick_action`).
+- Provider registration through the `eager.providers` entry point for stage, UI, screen-manager, player, audio, and renderer factories.
 
 ### Changed
 
 - `StageDirector.save_visual_state()` now exclusively serializes stage compositor state, delegating UI state persistence to `save_ui_state()` and eliminating state duplication in checkpoints.
+- Split the monolithic `renderers/pil.py` into the `eager_graphics.renderers.pil` subpackage (`_compat`, `_constants`, `_imaging`, `_cache`, `assets`, `renderer`, `player`), with the package `__init__` re-exporting the previous public and private names.
+- Moved `Theme` from `eager_graphics.screens.theme` to `eager_graphics.theme`; screens and overlay components now share one theme definition.
+- Font sizes in `DialogueBox`, `ChoiceMenu`, `InputBox`, `EndNotice`, `QuickMenu`, `UIOverlay`, and built-in screens now scale with viewport height (720p reference).
+- `StageDirector` event handlers, `BasePlayer`, and screen widgets now consume concrete protocol attributes instead of defensive `getattr`/`hasattr` fallbacks.
+- `StageCompositor.save_state()` flushes active tweens before serialization to avoid persisting intermediate opacity values.
+
+### Fixed
+
+- Prevented 0-opacity and mid-transition sprite states after save and rollback by completing active tweens before snapshots and narrative advancement.
+- Removed duplicate field resets in `DialogueBox.clear()`.
 
 ### Removed
 
 - `VisualHistoryManager` and `eager_graphics.history` module.
 - `enable_visual_history()`, `snapshot_visual_state()`, `rollback_visual_state()`, and `on_beat_step()` on `StageDirector`.
+- `eager_graphics.screens.theme` module (moved to `eager_graphics.theme`).
 
 ## [0.3.0] - 2026-10-21
 
@@ -97,7 +114,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/CooperElektrik/Eager/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/CooperElektrik/Eager/compare/97609c1...v0.2.0
 [0.1.0]: https://github.com/CooperElektrik/Eager/commit/97609c1

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eager-core"
-version = "0.3.0"
+version = "0.4.0"
 description = "Shared, dependency-free core subsystems for the Eager engine (audio mixing)."
 readme = "README.md"
 requires-python = ">=3.11"

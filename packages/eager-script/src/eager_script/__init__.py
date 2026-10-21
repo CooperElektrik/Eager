@@ -8,7 +8,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, TypeAlias
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 CHOICE_PATTERN = re.compile(r"^\?\s+(.+?)\s*\(([^()]+)\)(?:\s+if\s+(.+))?\s*$")
 CHOICE_INLINE_PATTERN = re.compile(r"^\?\s+(.+?)(?:\s+if\s+(.+))?\s*$")

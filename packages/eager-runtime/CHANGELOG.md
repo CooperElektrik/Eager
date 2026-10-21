@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-21
+
 ### Added
 
 - Reusable `Checkpoint` and `CheckpointHistory` models in `eager_runtime.state`, providing bounded checkpoint stacks with redo/roll-forward support at narrative interaction points.
@@ -15,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `TerminalPlayer` captures interaction checkpoints (`DialogueEvent`, `NarrationEvent`, `ChoicePromptEvent`) using `CheckpointHistory` and rewinds via checkpoint restoration.
 - `NullStage.save_visual_state()` only serializes stage compositor state, avoiding duplicate UI state persistence.
+- `StoryVM` now builds every `~ input` prompt through a shared `_build_input_prompt()` helper backed by `eager_script.hooks.parse_input_hook`, removing duplicated parsing between normal playback and save/load restoration.
+- `eager` CLI and `GameSession` now resolve stage, UI, screen-manager, player, audio, and renderer providers through `eager_core.protocols` entry points instead of importing `eager-graphics` directly.
+- `GameSession` mutates choice menus, input boxes, dialogue reveal state, and quick-menu hover state through `UIProtocol` methods, with compatibility fallbacks for custom overlay implementations.
+- `GameSession.advance()` completes active stage animations before stepping, and `NullStage`/`NullCompositor` implement `finish_animations()`.
+- Tightened `GameSession` to rely on declared stage, director, and audio contracts instead of redundant `hasattr` guards.
+- `i18n.compute_beat_id()` honors explicit `{id=...}` markers on hook beats, and catalog extraction and validation share `parse_input_hook`.
+
+### Fixed
+
+- Input prompts are translated and interpolated consistently in both normal playback and save/load restoration paths, including prompts with `default=` values and unquoted multi-word text.
 
 ### Removed
 
@@ -66,7 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/CooperElektrik/Eager/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/CooperElektrik/Eager/compare/97609c1...v0.2.0
 [0.1.0]: https://github.com/CooperElektrik/Eager/commit/97609c1
