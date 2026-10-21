@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import eager_script
+from eager_core.types import Color
 
 from eager_runtime import ChoicePromptEvent, GameSession, InputAction, InputPromptEvent
 
@@ -749,6 +750,29 @@ def test_session_disables_vm_beat_history() -> None:
     assert vm_standalone.history_enabled is True
     session2 = GameSession(vm_standalone)
     assert session2.vm.history_enabled is False
+
+
+def test_character_metadata_registration_and_speaker_styling() -> None:
+    script = """
+@character alice "Alice" asset_prefix=alice_uniform color="#ff0000" default_expression=smile side_image="alice_side.png"
+## Start --- start
+alice: Hello there!
+"""
+    graph = eager_script.parse_graph(script)
+    session = GameSession(graph)
+
+    # Check character was registered on director
+    assert "alice" in session.director.characters
+    cfg = session.director.characters["alice"]
+    assert (cfg.get("asset_prefix") if isinstance(cfg, dict) else cfg.asset_prefix) == "alice_uniform"
+    assert (cfg.get("side_image") if isinstance(cfg, dict) else cfg.side_image) == "alice_side.png"
+
+    # Advance dialogue
+    ev = session.advance()
+    assert ev is not None
+    assert session.director.ui_state.speaker == "Alice"
+    assert session.director.ui_state.side_image == "alice_side.png"
+    assert session.director.ui_state.speaker_color == Color.from_hex("#ff0000")
 
 
 

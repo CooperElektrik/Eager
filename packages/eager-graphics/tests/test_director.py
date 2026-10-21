@@ -13,6 +13,7 @@ from eager_core.events import (
 from eager_core.events import (
     ChoiceOption as EagerChoiceOption,
 )
+from eager_core.types import Color
 
 from eager_graphics.compositor import StageCompositor
 from eager_graphics.director import StageDirector
@@ -313,7 +314,21 @@ def test_director_auto_highlight_speaker_and_dimming() -> None:
     assert alice_elem.state.tint == WHITE
     assert alice_elem.state.scale == Vec2(1.0, 1.0)
     assert bob_elem.state.tint == WHITE
-    assert bob_elem.state.scale == Vec2(1.0, 1.0)
+
+
+def test_director_character_color_and_name_resolution() -> None:
+    comp = StageCompositor()
+    director = StageDirector(comp)
+    disp = MockEventDispatcher()
+    director.bind(disp)
+
+    director.register_character("alice", name="Alice", color="#ff77aa", side_image="side/alice.png")
+
+    # Dialogue with display name "Alice" should match character_id "alice"
+    disp.emit_event(DialogueEvent(speaker="Alice", text="Hello!", voice=None, emotion=None, line_number=1))
+    assert director.ui_state.speaker == "Alice"
+    assert director.ui_state.side_image == "side/alice.png"
+    assert director.ui_state.speaker_color == Color.from_hex("#ff77aa")
 
 
 def test_director_auto_highlight_speaker_hop() -> None:

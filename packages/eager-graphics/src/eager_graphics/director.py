@@ -45,10 +45,12 @@ class CharacterConfig:
     """Registration metadata for a story character."""
 
     character_id: str
+    name: str | None = None
     asset_prefix: str | None = None
     default_expression: str = "default"
     default_position: str = "center"
     side_image: str | None = None
+    color: Color | None = None
 
 
 class StageDirector:
@@ -141,20 +143,45 @@ class StageDirector:
         self,
         character_id: str,
         *,
+        name: str | None = None,
         asset_prefix: str | None = None,
         default_expression: str = "default",
         default_position: str = "center",
         side_image: str | None = None,
+        color: str | Color | None = None,
     ) -> None:
         """Register default configuration for a character."""
         cid = character_id.strip().lower()
+        parsed_color: Color | None = None
+        if isinstance(color, str):
+            try:
+                parsed_color = Color.from_hex(color)
+            except Exception:  # noqa: BLE001
+                parsed_color = None
+        elif isinstance(color, Color):
+            parsed_color = color
+
         self.characters[cid] = CharacterConfig(
             character_id=cid,
+            name=name,
             asset_prefix=asset_prefix,
             default_expression=default_expression,
             default_position=default_position,
             side_image=side_image,
+            color=parsed_color,
         )
+
+    def _find_character_config(self, speaker: str | None) -> CharacterConfig | None:
+        """Find CharacterConfig matching character_id or display name."""
+        if not speaker:
+            return None
+        sid = speaker.strip().lower()
+        if sid in self.characters:
+            return self.characters[sid]
+        for cfg in self.characters.values():
+            if cfg.name and cfg.name.strip().lower() == sid:
+                return cfg
+        return None
 
     def register_scene_bg(
         self,
@@ -277,8 +304,8 @@ class StageDirector:
             return
 
         raw_id = parsed.positional[0]
-        char_id = raw_id.strip().lower()
-        cfg = self.characters.get(char_id)
+        cfg = self._find_character_config(raw_id)
+        char_id = cfg.character_id if cfg is not None else raw_id.strip().lower()
 
         # Expression
         if len(parsed.positional) > 1:
@@ -495,8 +522,7 @@ class StageDirector:
     def _resolve_side_image(self, speaker: str | None, emotion: str | None) -> str | None:
         if not speaker:
             return None
-        char_id = speaker.strip().lower()
-        cfg = self.characters.get(char_id)
+        cfg = self._find_character_config(speaker)
         if cfg and cfg.side_image:
             return cfg.side_image
         if cfg and cfg.asset_prefix:
@@ -511,10 +537,12 @@ class StageDirector:
         emotion = getattr(event, "emotion", None)
         voice = getattr(event, "voice", None)
 
+        char_cfg = self._find_character_config(speaker)
         self.ui_state.speaker = speaker
         self.ui_state.text = text
         self.ui_state.emotion = emotion
         self.ui_state.side_image = self._resolve_side_image(speaker, emotion)
+        self.ui_state.speaker_color = char_cfg.color if char_cfg else None
         self.ui_state.clear_choices()
 
         if self.ui_state.nvl_mode:
@@ -551,6 +579,7 @@ class StageDirector:
         for cid, cfg in self.characters.items():
             if (
                 cid == candidate
+                or (cfg.name and cfg.name.lower() == candidate)
                 or (cfg.asset_prefix and cfg.asset_prefix.lower() == candidate)
             ) and cid in char_layer.elements:
                 return cid

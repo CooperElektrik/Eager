@@ -31,6 +31,7 @@ class HeadlessUIState:
     is_finished: bool = False
     side_image: str | None = None
     visible_chars: int | None = None
+    speaker_color: Any = None
 
     def clear_dialogue(self) -> None:
         self.speaker = None
@@ -38,6 +39,7 @@ class HeadlessUIState:
         self.emotion = None
         self.side_image = None
         self.visible_chars = None
+        self.speaker_color = None
 
     def clear_choices(self) -> None:
         self.choices.clear()
@@ -54,6 +56,7 @@ class HeadlessUIState:
             "is_finished": self.is_finished,
             "side_image": self.side_image,
             "visible_chars": self.visible_chars,
+            "speaker_color": self.speaker_color,
         }
 
     @classmethod
@@ -71,6 +74,7 @@ class HeadlessUIState:
             is_finished=bool(data.get("is_finished", False)),
             side_image=data.get("side_image"),
             visible_chars=data.get("visible_chars"),
+            speaker_color=data.get("speaker_color"),
         )
 
 
@@ -100,6 +104,28 @@ class NullStage:
     def __init__(self, virtual_width: int = 1920, virtual_height: int = 1080) -> None:
         self.ui_state = HeadlessUIState()
         self.compositor = NullCompositor(virtual_width, virtual_height)
+        self.characters: dict[str, dict[str, Any]] = {}
+
+    def register_character(
+        self,
+        character_id: str,
+        *,
+        name: str | None = None,
+        asset_prefix: str | None = None,
+        default_expression: str = "default",
+        default_position: str = "center",
+        side_image: str | None = None,
+        color: Any = None,
+    ) -> None:
+        cid = character_id.strip().lower()
+        self.characters[cid] = {
+            "name": name,
+            "asset_prefix": asset_prefix,
+            "default_expression": default_expression,
+            "default_position": default_position,
+            "side_image": side_image,
+            "color": color,
+        }
 
     def bind(self, dispatcher: Any) -> None:
         dispatcher.on_event(DialogueEvent)(self._on_dialogue)
@@ -110,10 +136,23 @@ class NullStage:
         dispatcher.on_event(StoryEndEvent)(self._on_story_end)
 
     def _on_dialogue(self, event: DialogueEvent) -> None:
+        char_info: dict[str, Any] | None = None
+        if event.speaker:
+            sid = event.speaker.strip().lower()
+            if sid in self.characters:
+                char_info = self.characters[sid]
+            else:
+                for cinfo in self.characters.values():
+                    if cinfo.get("name") and str(cinfo["name"]).strip().lower() == sid:
+                        char_info = cinfo
+                        break
+
         self.ui_state.speaker = event.speaker
         self.ui_state.text = event.text
         self.ui_state.emotion = event.emotion
         self.ui_state.visible_chars = None
+        self.ui_state.speaker_color = char_info.get("color") if char_info else None
+        self.ui_state.side_image = char_info.get("side_image") if char_info else None
         self.ui_state.clear_choices()
 
     def _on_narration(self, event: NarrationEvent) -> None:

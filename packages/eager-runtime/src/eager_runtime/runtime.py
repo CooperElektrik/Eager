@@ -667,8 +667,10 @@ class StoryVM:
                 raw_speaker = self._translate_speaker(item.speaker)
                 interp_speaker = self._interpolate(raw_speaker)
                 # If speaker matches a character ID, we could map name if needed, but interpolate handles [var]
-                if hasattr(self._graph, "characters") and interp_speaker in self._graph.characters:
-                    interp_speaker = self._graph.characters[interp_speaker].get("name", interp_speaker)
+                if hasattr(self._graph, "characters") and isinstance(self._graph.characters, dict):
+                    cid_match = interp_speaker if interp_speaker in self._graph.characters else interp_speaker.lower()
+                    if cid_match in self._graph.characters:
+                        interp_speaker = self._graph.characters[cid_match].get("name", interp_speaker)
                 raw_text, _ = self._translate_beat(cid, item.text)
                 return DialogueEvent(
                     speaker=interp_speaker,

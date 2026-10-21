@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from eager_core.events import ChoiceOption
+from eager_core.types import Color
 
 
 @dataclass
@@ -45,6 +46,7 @@ class UIState:
     nvl_mode: bool = False
     nvl_entries: list[NVLEntry] = field(default_factory=list)
     visible_chars: int | None = None
+    speaker_color: Color | None = None
 
     def clear_dialogue(self) -> None:
         """Clear active dialogue and speaker information."""
@@ -53,6 +55,7 @@ class UIState:
         self.emotion = None
         self.side_image = None
         self.visible_chars = None
+        self.speaker_color = None
 
     def clear_nvl(self) -> None:
         """Clear NVL mode accumulated text lines."""
@@ -74,6 +77,7 @@ class UIState:
             "nvl_mode": self.nvl_mode,
             "nvl_entries": [e.to_dict() for e in self.nvl_entries],
             "visible_chars": self.visible_chars,
+            "speaker_color": self.speaker_color.to_hex() if self.speaker_color is not None else None,
         }
 
     @classmethod
@@ -89,6 +93,12 @@ class UIState:
             NVLEntry.from_dict(e) if isinstance(e, dict) else e
             for e in nvl_raw
         ]
+        speaker_color_raw = data.get("speaker_color")
+        speaker_color = (
+            Color.from_hex(speaker_color_raw)
+            if isinstance(speaker_color_raw, str)
+            else (speaker_color_raw if isinstance(speaker_color_raw, Color) else None)
+        )
         return cls(
             speaker=data.get("speaker"),
             text=data.get("text", ""),
@@ -99,5 +109,6 @@ class UIState:
             nvl_mode=bool(data.get("nvl_mode", False)),
             nvl_entries=nvl_entries,
             visible_chars=data.get("visible_chars"),
+            speaker_color=speaker_color,
         )
 

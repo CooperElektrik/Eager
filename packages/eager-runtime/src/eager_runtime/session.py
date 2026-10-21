@@ -252,6 +252,25 @@ class GameSession:
         if hasattr(self.stage, "bind"):
             self.stage.bind(self.dispatcher)
 
+        if (
+            hasattr(self.graph, "characters")
+            and isinstance(self.graph.characters, dict)
+            and hasattr(self.director, "register_character")
+            and callable(self.director.register_character)
+        ):
+            for cid, cinfo in self.graph.characters.items():
+                attrs = cinfo.get("attrs", {}) if isinstance(cinfo, dict) else {}
+                name = cinfo.get("name") if isinstance(cinfo, dict) else None
+                self.director.register_character(
+                    cid,
+                    name=name,
+                    asset_prefix=attrs.get("asset_prefix"),
+                    default_expression=attrs.get("default_expression", "default"),
+                    default_position=attrs.get("default_position", "center"),
+                    side_image=attrs.get("side_image"),
+                    color=attrs.get("color"),
+                )
+
         self.checkpoints = CheckpointHistory(max_history=rollback_limit)
         self.keymap = Keymap()
         self.ui: UIProtocol = ui if ui is not None else _create_default_ui(width=1280, height=720)

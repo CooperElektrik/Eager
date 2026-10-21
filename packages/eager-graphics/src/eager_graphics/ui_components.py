@@ -325,6 +325,7 @@ class DialogueBox:
         self.show_advance_arrow: bool = True
         self.is_read: bool = False
         self.visible_chars: int | None = None
+        self.speaker_color: Color | None = None
 
     # ── state ──────────────────────────────────────────────────────────
 
@@ -341,17 +342,24 @@ class DialogueBox:
         side_image: str | None = None,
         *,
         visible_chars: int | None = None,
+        speaker_color: Color | None = None,
     ) -> None:
-        """Set the speaker name, dialogue text, emotion tag, and optional side image."""
+        """Set the speaker name, dialogue text, emotion tag, optional side image and speaker color."""
         self.speaker = speaker
         self.text = text
         self.emotion = emotion
         self.side_image = side_image
         self.visible_chars = visible_chars
+        self.speaker_color = speaker_color
 
     def clear(self) -> None:
         """Reset to an empty, undrawn state."""
         self.speaker = None
+        self.text = ""
+        self.emotion = None
+        self.side_image = None
+        self.visible_chars = None
+        self.speaker_color = None
         self.text = ""
         self.emotion = None
         self.side_image = None
@@ -503,7 +511,7 @@ class DialogueBox:
                 ny + (nh / 2.0),
                 self.speaker,
                 font_size=style.nameplate_font_size,
-                color=style.nameplate_text,
+                color=self.speaker_color if self.speaker_color is not None else style.nameplate_text,
                 anchor_y=TextAnchor.MIDDLE,
             )
 
@@ -528,7 +536,7 @@ class DialogueBox:
                     content_y,
                     self.speaker,
                     font_size=style.nameplate_font_size,
-                    color=style.nameplate_text,
+                    color=self.speaker_color if self.speaker_color is not None else style.nameplate_text,
                 )
                 speaker_offset_y = float(style.nameplate_font_size) + 12.0
             dialogue_start_y = content_y + speaker_offset_y
@@ -1157,6 +1165,7 @@ class UIOverlay:
             ui_state.emotion,
             side_image=ui_state.side_image,
             visible_chars=ui_state.visible_chars,
+            speaker_color=getattr(ui_state, "speaker_color", None),
         )
         self.dialogue_box.is_read = is_read
         self.quick_menu.is_read = is_read
