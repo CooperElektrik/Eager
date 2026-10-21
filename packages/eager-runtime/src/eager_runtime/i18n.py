@@ -16,6 +16,7 @@ from eager_script import (
     ParsedHook,
     ParsedNarration,
 )
+from eager_script.hooks import is_input_hook, parse_input_hook
 
 if TYPE_CHECKING:
     from eager_script.graph import SceneGraph
@@ -70,6 +71,12 @@ def compute_beat_id(scene_id: str, item: Any, occurrence: int = 1) -> str:
         if m:
             return f"{scene_id}.{m.group(1)}"
 
+    hook_str = getattr(item, "hook_name", None)
+    if hook_str and "{id=" in hook_str:
+        m = re.search(r"\{id=([a-zA-Z0-9_-]+)\}", hook_str)
+        if m:
+            return f"{scene_id}.{m.group(1)}"
+
     content = _get_item_content_key(item)
     digest = hashlib.md5(content.encode("utf-8")).hexdigest()[:8]
     suffix = f"_{occurrence}" if occurrence > 1 else ""
@@ -117,11 +124,9 @@ def extract_catalog(
                     total_beats += 1
 
             elif isinstance(item, ParsedHook):
-                hook_str = item.hook_name.strip()
-                if hook_str.startswith("input"):
-                    parts = hook_str.split(None, 2)
-                    prompt = parts[2].strip().strip("\"'") if len(parts) > 2 else "Enter input:"
-                    clean_prompt = strip_explicit_id(prompt)
+                input_args = parse_input_hook(item.hook_name)
+                if input_args is not None:
+                    clean_prompt = strip_explicit_id(input_args.prompt)
                     strings[f"{cid}.input"] = clean_prompt
                     total_beats += 1
 
@@ -235,8 +240,7 @@ def validate_catalog(
                         untranslated_keys.append(c_opt)
 
             elif isinstance(item, ParsedHook):
-                hook_str = item.hook_name.strip()
-                if hook_str.startswith("input"):
+                if is_input_hook(item.hook_name):
                     c_inp = f"{cid}.input"
                     known_keys.add(c_inp)
                     val = catalog.strings.get(c_inp)

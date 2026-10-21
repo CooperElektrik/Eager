@@ -1,6 +1,13 @@
 """Tests for the screenplay hook argument parser."""
 
-from eager_script import HookArgs, parse_hook_args
+from eager_script import (
+    HookArgs,
+    InputHookArgs,
+    is_input_hook,
+    parse_hook_args,
+    parse_input_args,
+    parse_input_hook,
+)
 
 
 def test_parse_empty_hooks() -> None:
@@ -48,3 +55,56 @@ def test_hook_args_serialization() -> None:
     assert d["positional"] == ["alice"]
     assert d["at"] == "right"
     assert d["kwargs"]["duration"] == "0.5"
+
+
+def test_is_input_hook() -> None:
+    assert is_input_hook("input") is True
+    assert is_input_hook("input hero_name") is True
+    assert is_input_hook("  input   player_name 'Prompt'  ") is True
+    assert is_input_hook("input_mode") is False
+    assert is_input_hook("inputting") is False
+    assert is_input_hook("scene bg_room") is False
+    assert is_input_hook("") is False
+
+
+def test_parse_input_args_variants() -> None:
+    # 1. Empty / fallback
+    res = parse_input_args("")
+    assert res == InputHookArgs(var_name="player_input", prompt="Enter input:", default="")
+
+    # 2. Variable only
+    res = parse_input_args("player_name")
+    assert res == InputHookArgs(var_name="player_name", prompt="Enter input:", default="")
+
+    # 3. Variable + Quoted prompt
+    res = parse_input_args('hero_name "What is your name?"')
+    assert res == InputHookArgs(var_name="hero_name", prompt="What is your name?", default="")
+
+    # 4. Variable + Quoted prompt + Quoted default
+    res = parse_input_args('hero_name "Enter name:" "Traveler"')
+    assert res == InputHookArgs(var_name="hero_name", prompt="Enter name:", default="Traveler")
+
+    # 5. Variable + Unquoted multi-word prompt
+    res = parse_input_args("hero_name Enter your name:")
+    assert res == InputHookArgs(var_name="hero_name", prompt="Enter your name:", default="")
+
+    # 6. Keyword prompt & default
+    res = parse_input_args('player_name prompt="Who are you?" default="Explorer"')
+    assert res == InputHookArgs(var_name="player_name", prompt="Who are you?", default="Explorer")
+
+    # 7. Keyword default + Positional quoted prompt
+    res = parse_input_args('player_name default="Valiant" "Enter your title:"')
+    assert res == InputHookArgs(var_name="player_name", prompt="Enter your title:", default="Valiant")
+
+    # 8. Keyword default + Positional unquoted multi-word prompt
+    res = parse_input_args("player_name default=Valiant What is your title?")
+    assert res == InputHookArgs(var_name="player_name", prompt="What is your title?", default="Valiant")
+
+
+def test_parse_input_hook() -> None:
+    assert parse_input_hook("scene bg_room") is None
+    assert parse_input_hook("input_mode off") is None
+
+    res = parse_input_hook('input hero_name "Enter name:" "Traveler"')
+    assert res == InputHookArgs(var_name="hero_name", prompt="Enter name:", default="Traveler")
+

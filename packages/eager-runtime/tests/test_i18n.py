@@ -6,7 +6,13 @@ import argparse
 from pathlib import Path
 
 import eager_script
-from eager_core.events import AppendEvent, ChoicePromptEvent, DialogueEvent, NarrationEvent
+from eager_core.events import (
+    AppendEvent,
+    ChoicePromptEvent,
+    DialogueEvent,
+    InputPromptEvent,
+    NarrationEvent,
+)
 from eager_core.i18n import TranslationCatalog, TranslationManager
 
 from eager_runtime.cli import _cmd_i18n_check, _cmd_i18n_extract
@@ -355,4 +361,116 @@ Alice: Welcome to the tavern! {id=tavern_welcome}
     assert isinstance(ev, DialogueEvent)
     assert ev.text == "¡Bienvenido a la taberna!"
     assert ev.beat_id == "intro.tavern_welcome"
+
+
+def test_input_hook_catalog_extraction_variants() -> None:
+    """Verify that ~ input hooks across all syntax variants extract clean prompt strings."""
+    script = """
+## Intro --- intro
+~ input hero_name "Enter your name:" "Traveler"
+~ input player_title default="Valiant" "What is your title?"
+~ input persona prompt="Who are you?" default="Explorer"
+~ input unquoted_name What is your full name?
+~ input fallback_name
+~ input explicit_id "{id=hero_prompt} Type your name:"
+~ input_mode off
+~ scene bg_room
+"""
+    graph = eager_script.parse_graph(script)
+    cat = extract_catalog(graph, locale="template")
+
+    # Check extracted prompt strings
+    prompt_values = list(cat.strings.values())
+    assert "Enter your name:" in prompt_values
+    assert "What is your title?" in prompt_values
+    assert "Who are you?" in prompt_values
+    assert "What is your full name?" in prompt_values
+    assert "Enter input:" in prompt_values
+    assert "Type your name:" in prompt_values
+
+    # Check explicit beat id was honored
+    assert "intro.hero_prompt.input" in cat.strings
+    assert cat.strings["intro.hero_prompt.input"] == "Type your name:"
+
+    # Confirm non-input hooks (~ input_mode, ~ scene) did not register as input beats
+    assert not any(k.endswith(".input_mode") for k in cat.strings)
+    assert len([k for k in cat.strings if k.endswith(".input")]) == 6
+
+
+def test_validate_catalog_input_hooks() -> None:
+    """Verify validate_catalog properly tracks .input keys and ignores non-input hooks."""
+    script = """
+## Intro --- intro
+~ input hero_name "Enter your name:" "Traveler"
+~ input_mode off
+"""
+    graph = eager_script.parse_graph(script)
+    cat = extract_catalog(graph, locale="es")
+    inp_key = next(k for k in cat.strings if k.endswith(".input"))
+
+    # When untranslated:
+    cat.strings[inp_key] = ""
+    audit = validate_catalog(cat, graph)
+    assert audit["total"] == 1
+    assert audit["untranslated"] == 1
+    assert inp_key in audit["missing_keys"]
+
+    # When translated:
+    cat.strings[inp_key] = "Ingrese su nombre:"
+    audit2 = validate_catalog(cat, graph)
+    assert audit2["total"] == 1
+    assert audit2["translated"] == 1
+    assert audit2["untranslated"] == 0
+
+
+def test_story_vm_input_hook_translation_and_save_load() -> None:
+    """Verify that StoryVM translates input prompt and preserves translation across save/load."""
+    script = """
+## Intro --- intro
+~ input hero_name "Enter your name:" "Traveler"
+Hero: My name is [hero_name].
+"""
+    graph = eager_script.parse_graph(script)
+    cat = extract_catalog(graph, locale="template")
+    inp_key = next(k for k in cat.strings if k.endswith(".input"))
+
+    tm = TranslationManager()
+    tm.register_catalog(
+        TranslationCatalog(
+            locale="es",
+            strings={inp_key: "Ingrese su nombre:"},
+        )
+    )
+    tm.set_locale("es")
+
+    vm = StoryVM(graph, translation_manager=tm)
+    vm.step()  # SceneEnterEvent
+
+    # Step onto input hook
+    ev = vm.step()
+    assert isinstance(ev, InputPromptEvent)
+    assert ev.prompt == "Ingrese su nombre:"
+    assert ev.default == "Traveler"
+    assert ev.var_name == "hero_name"
+    assert ev.beat_id == inp_key
+
+    # Save state while waiting on input prompt
+    snapshot = vm.save()
+    assert snapshot.pending_input_beat is not None
+
+    # Restore in new VM with translation manager
+    vm2 = StoryVM(graph, translation_manager=tm)
+    vm2.load(snapshot)
+    assert vm2.pending_input is not None
+    assert vm2.pending_input.prompt == "Ingrese su nombre:"
+    assert vm2.pending_input.default == "Traveler"
+    assert vm2.pending_input.var_name == "hero_name"
+    assert vm2.pending_input.beat_id == inp_key
+
+    # Submitting input resumes story
+    vm2.submit_input("Carlos")
+    diag_ev = vm2.step()
+    assert isinstance(diag_ev, DialogueEvent)
+    assert diag_ev.text == "My name is Carlos."
+
 

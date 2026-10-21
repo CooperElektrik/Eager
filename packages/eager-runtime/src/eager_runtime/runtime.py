@@ -48,7 +48,7 @@ from eager_script import (
     ParsedSet,
 )
 from eager_script.expr import ExprError, compile_expr
-from eager_script.hooks import parse_hook_args
+from eager_script.hooks import parse_input_hook
 
 from eager_runtime.i18n import compute_beat_id, get_beat_occurrence, strip_explicit_id
 from eager_runtime.state import CallFrame, StorySnapshot
@@ -351,6 +351,35 @@ class StoryVM:
             beat_id=cid,
         )
 
+    def _build_input_prompt(
+        self,
+        item: ParsedHook,
+        beat_index: int | None = None,
+    ) -> InputPromptEvent | None:
+        """Construct InputPromptEvent if item is an input hook, handling interpolation and translation."""
+        interp_hook = self._interpolate(item.hook_name)
+        input_args = parse_input_hook(interp_hook)
+        if input_args is None:
+            return None
+
+        b_idx = beat_index if beat_index is not None else self._beat_index
+        cid = None
+        if self._current_scene_id is not None and self._graph is not None:
+            node = self._graph.nodes.get(self._current_scene_id)
+            if node and 0 <= b_idx < len(node.body):
+                occ = get_beat_occurrence(node.body, b_idx)
+                cid = compute_beat_id(self._current_scene_id, item, occurrence=occ)
+
+        input_cid = f"{cid}.input" if cid else None
+        raw_prompt, _ = self._translate_beat(input_cid, input_args.prompt)
+        return InputPromptEvent(
+            var_name=input_args.var_name,
+            prompt=self._interpolate(raw_prompt),
+            default=self._interpolate(input_args.default),
+            line_number=item.line_number,
+            beat_id=input_cid,
+        )
+
     def save(self) -> StorySnapshot:
         """Create an immutable, serializable snapshot of the current VM state."""
         pending_beat: int | None = None
@@ -419,37 +448,9 @@ class StoryVM:
             if scene and 0 <= snapshot.pending_input_beat < len(scene.body):
                 item = scene.body[snapshot.pending_input_beat]
                 if isinstance(item, ParsedHook):
-                    interp_hook = self._interpolate(item.hook_name)
-                    parts = interp_hook.split(None, 1)
-                    hook_name = parts[0] if parts else ""
-                    args = parts[1] if len(parts) > 1 else ""
-                    if hook_name == "input":
-                        parsed_hook = parse_hook_args(args)
-                        pos = parsed_hook.positional
-                        var_name = pos[0] if pos else "player_input"
-                        default_text = parsed_hook.kwargs.get("default", "")
-                        if "prompt" in parsed_hook.kwargs:
-                            prompt_text = parsed_hook.kwargs["prompt"]
-                        elif len(pos) == 3 and not default_text:
-                            prompt_text = pos[1]
-                            default_text = pos[2]
-                        elif len(pos) == 2:
-                            prompt_text = pos[1]
-                        elif len(pos) > 3 and not default_text:
-                            prompt_text = " ".join(pos[1:])
-                        else:
-                            prompt_text = "Enter input:"
-                        occ = get_beat_occurrence(scene.body, snapshot.pending_input_beat)
-                        cid = compute_beat_id(self._current_scene_id, item, occurrence=occ)
-                        input_cid = f"{cid}.input" if cid else None
-                        raw_prompt, _ = self._translate_beat(input_cid, prompt_text)
-                        self._pending_input = InputPromptEvent(
-                            var_name=var_name,
-                            prompt=self._interpolate(raw_prompt),
-                            default=self._interpolate(default_text),
-                            line_number=item.line_number,
-                            beat_id=input_cid,
-                        )
+                    self._pending_input = self._build_input_prompt(
+                        item, snapshot.pending_input_beat
+                    )
 
     def jump(self, scene_id: str) -> None:
         """Jump execution immediately to a target scene."""
@@ -665,38 +666,15 @@ class StoryVM:
                 )
 
             if isinstance(item, ParsedHook):
+                input_prompt = self._build_input_prompt(item, current_beat_idx)
+                if input_prompt is not None:
+                    self._pending_input = input_prompt
+                    return input_prompt
+
                 interp_hook = self._interpolate(item.hook_name)
                 parts = interp_hook.split(None, 1)
                 hook_name = parts[0] if parts else ""
                 args = parts[1] if len(parts) > 1 else ""
-                if hook_name == "input":
-                    # ~ input var_name [default=val] Prompt text
-                    parsed_hook = parse_hook_args(args)
-                    pos = parsed_hook.positional
-                    var_name = pos[0] if pos else "player_input"
-                    default_text = parsed_hook.kwargs.get("default", "")
-                    if "prompt" in parsed_hook.kwargs:
-                        prompt_text = parsed_hook.kwargs["prompt"]
-                    elif len(pos) == 3 and not default_text:
-                        prompt_text = pos[1]
-                        default_text = pos[2]
-                    elif len(pos) == 2:
-                        prompt_text = pos[1]
-                    elif len(pos) > 3 and not default_text:
-                        prompt_text = " ".join(pos[1:])
-                    else:
-                        prompt_text = "Enter input:"
-                    input_cid = f"{cid}.input" if cid else None
-                    raw_prompt, _ = self._translate_beat(input_cid, prompt_text)
-                    input_prompt = InputPromptEvent(
-                        var_name=var_name,
-                        prompt=self._interpolate(raw_prompt),
-                        default=self._interpolate(default_text),
-                        line_number=item.line_number,
-                        beat_id=input_cid,
-                    )
-                    self._pending_input = input_prompt
-                    return input_prompt
                 return HookEvent(
                     hook_name=hook_name,
                     args=args,

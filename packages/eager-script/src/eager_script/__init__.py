@@ -960,11 +960,19 @@ from eager_script.graph import (
     parse_graph,
     to_graph,
 )
-from eager_script.hooks import HookArgs, parse_hook_args
+from eager_script.hooks import (
+    HookArgs,
+    InputHookArgs,
+    is_input_hook,
+    parse_hook_args,
+    parse_input_args,
+    parse_input_hook,
+)
 from eager_script.validator import ValidationError, ValidationResult, validate
 
 __all__ = [
     "HookArgs",
+    "InputHookArgs",
     "ParseError",
     "ParsedAppend",
     "ParsedCall",
@@ -994,9 +1002,12 @@ __all__ = [
     "ValidationError",
     "ValidationResult",
     "__version__",
+    "is_input_hook",
     "parse",
     "parse_graph",
     "parse_hook_args",
+    "parse_input_args",
+    "parse_input_hook",
     "parse_iter",
     "slugify",
     "to_dict",
