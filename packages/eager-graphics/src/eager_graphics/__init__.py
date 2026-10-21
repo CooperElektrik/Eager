@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from eager_core.easing import (
     EasingFunc,
     ease_in_back,
@@ -146,6 +148,26 @@ from eager_core.timing import FrameClock  # noqa: F401
 
 from eager_graphics.player import BasePlayer  # noqa: F401
 from eager_graphics.renderers.null import NullRenderer  # noqa: F401
+
+if TYPE_CHECKING:
+    from eager_graphics.renderers import (
+        PILAssetResolver as PILAssetResolver,
+    )
+    from eager_graphics.renderers import (
+        PILPlayer as PILPlayer,
+    )
+    from eager_graphics.renderers import (
+        PILRenderer as PILRenderer,
+    )
+    from eager_graphics.renderers import (
+        PygletAssetResolver as PygletAssetResolver,
+    )
+    from eager_graphics.renderers import (
+        PygletPlayer as PygletPlayer,
+    )
+    from eager_graphics.renderers import (
+        PygletRenderer as PygletRenderer,
+    )
 
 __all__.append("NullRenderer")
 __all__.append("FrameClock")

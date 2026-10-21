@@ -440,8 +440,9 @@ class DialogueBox:
             style.layout_mode == "cinematic"
             and hasattr(backend, "draw_gradient_rect")
             and style.gradient_top is not None
-            and getattr(style, "gradient_mid", None) is not None
+            and style.gradient_mid is not None
         ):
+            mid_col = style.gradient_mid
             fade_h = min(getattr(style, "fade_height", 55.0), box_h * 0.45)
             body_h = box_h - fade_h
             # 1. Top transition fade
@@ -451,20 +452,20 @@ class DialogueBox:
                 box_w,
                 fade_h,
                 style.gradient_top,
-                style.gradient_mid,
+                mid_col,
             )
             # 2. Rich dark reading plate
             bot_col = (
                 style.gradient_bottom
                 if style.gradient_bottom is not None
-                else style.gradient_mid
+                else mid_col
             )
             backend.draw_gradient_rect(
                 box_x,
                 box_y + fade_h,
                 box_w,
                 body_h,
-                style.gradient_mid,
+                mid_col,
                 bot_col,
             )
         elif (
@@ -938,12 +939,11 @@ class InputBox:
         # 6. Blinking cursor
         if self.cursor_visible:
             # Measure width of current buffer to place cursor
-            measure_fn = getattr(backend, "measure_text", None)
-            if callable(measure_fn):
+            if hasattr(backend, "measure_text"):
                 try:
-                    text_w, _ = measure_fn(self.text_buffer, font_size=15)
+                    text_w, _ = backend.measure_text(self.text_buffer, font_size=15)
                 except TypeError:
-                    text_w, _ = measure_fn(self.text_buffer)
+                    text_w, _ = backend.measure_text(self.text_buffer)
             else:
                 text_w = float(len(self.text_buffer) * 9)
             cursor_x = text_x + text_w + 2.0

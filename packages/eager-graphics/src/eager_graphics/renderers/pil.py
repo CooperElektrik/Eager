@@ -9,22 +9,35 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-try:
+if TYPE_CHECKING:
+    import tkinter as tk
+
     import PIL
     from PIL import Image, ImageChops, ImageDraw, ImageFont
 
     PIL_AVAILABLE = True
-except ImportError as err:
-    PIL_AVAILABLE = False
-    _pil_import_error = err
-
-try:
-    import tkinter as tk
-
     TKINTER_AVAILABLE = True
-except ImportError:
-    tk = None  # type: ignore[assignment]
-    TKINTER_AVAILABLE = False
+    _pil_import_error: Exception | None = None
+    _TclError: type[BaseException] = Exception
+else:
+    try:
+        import PIL
+        from PIL import Image, ImageChops, ImageDraw, ImageFont
+
+        PIL_AVAILABLE = True
+    except ImportError as err:
+        PIL_AVAILABLE = False
+        _pil_import_error = err
+
+    try:
+        import tkinter as tk
+
+        TKINTER_AVAILABLE = True
+        _TclError = tk.TclError
+    except (ImportError, AttributeError):
+        tk = None
+        TKINTER_AVAILABLE = False
+        _TclError = Exception
 
 from eager_core.timing import FrameClock
 from eager_core.types import BLACK, WHITE, Color
@@ -661,7 +674,7 @@ class PILRenderer(RenderBackend):
             max_items=_MAX_TEXT_CACHE,
             max_bytes=32 * 1024 * 1024,
         )
-        self._font_cache: dict[int, ImageFont.ImageFont] = {}
+        self._font_cache: dict[int, Any] = {}
         self._measure_cache: dict[
             tuple[str, int] | tuple[str, int, bool, bool], tuple[float, float]
         ] = {}
@@ -1184,6 +1197,8 @@ class PILRenderer(RenderBackend):
             dest_x = round(anchor_s_x - draw_w * fx)
             dest_y = round(anchor_s_y - draw_h * fy)
             px = base_tex.getpixel((0, 0))
+            if not isinstance(px, (tuple, list)):
+                px = (int(px or 0), int(px or 0), int(px or 0))
             r = round(px[0] * (tint_rgba[0] / 255.0))
             g = round(px[1] * (tint_rgba[1] / 255.0))
             b = round(px[2] * (tint_rgba[2] / 255.0))
@@ -1345,6 +1360,8 @@ class PILRenderer(RenderBackend):
         # Fast-path for 1x1 solid color texture (e.g. __builtin_color_rect__ for flash/fades)
         if base_tex.size == (1, 1) and rot_norm == 0.0:
             px = base_tex.getpixel((0, 0))
+            if not isinstance(px, (tuple, list)):
+                px = (int(px or 0), int(px or 0), int(px or 0))
             final_alpha_f = max(0.0, min(1.0, op_quant * (tint_rgba[3] / 255.0)))
             final_alpha_byte = round(final_alpha_f * 255)
             r = round(px[0] * (tint_rgba[0] / 255.0))
@@ -1718,7 +1735,7 @@ class PILRenderer(RenderBackend):
         )
 
         self.begin_frame()
-        if can_use_base_cache:
+        if can_use_base_cache and self._base_cache is not None:
             self._last_render_path = "Tier 2 (Base Scene Cache)"
             self._image.paste(self._base_cache, (0, 0))
             self._needs_clear = False
@@ -1726,7 +1743,7 @@ class PILRenderer(RenderBackend):
             for item in overlay_items:
                 self.draw_item(item)
             self._last_dirty_bbox = None
-        elif can_use_bg_cache:
+        elif can_use_bg_cache and self._bg_cache is not None:
             use_dirty_rect = False
             dirty_bbox: tuple[int, int, int, int] | None = None
             if (
@@ -1990,7 +2007,7 @@ class PILRenderer(RenderBackend):
     # with a top-left origin, which is already PIL's native convention.
     # ------------------------------------------------------------------ #
 
-    def _ui_font(self, font_size: int) -> ImageFont.ImageFont:
+    def _ui_font(self, font_size: int) -> Any:
         """Return a bitmap font at *font_size*, cached and tolerating older Pillow."""
         font = self._font_cache.get(font_size)
         if font is not None:
@@ -2298,14 +2315,15 @@ class PILRenderer(RenderBackend):
         dest_x = round(left)
         dest_y = round(top)
         self._mark_ui_dirty(dest_x, dest_y, dest_x + target_w, dest_y + target_h)
-        if sprite.is_opaque:
-            self._image.paste(sprite.color, (dest_x, dest_y))
-        elif sprite.mask is not None:
-            self._image.paste(sprite.color, (dest_x, dest_y), sprite.mask)
-        elif self.mode == "RGBA":
-            self._image.alpha_composite(sprite.image, dest=(dest_x, dest_y))
-        else:
-            self._image.paste(sprite.color, (dest_x, dest_y))
+        if sprite.color is not None:
+            if sprite.is_opaque:
+                self._image.paste(sprite.color, (dest_x, dest_y))
+            elif sprite.mask is not None:
+                self._image.paste(sprite.color, (dest_x, dest_y), sprite.mask)
+            elif self.mode == "RGBA":
+                self._image.alpha_composite(sprite.image, dest=(dest_x, dest_y))
+            else:
+                self._image.paste(sprite.color, (dest_x, dest_y))
 
     def _apply_tint_to_image(self, image: Image.Image, tint: Color) -> Image.Image:
         """Return *image* with *tint* multiplied into its colour channels."""
@@ -2360,7 +2378,7 @@ class PILRenderer(RenderBackend):
         )
 
 
-if PIL_AVAILABLE:
+if TYPE_CHECKING or PIL_AVAILABLE:
 
     class PILPlayer(BasePlayer):
         """Thin interactive window shell driving a :class:`GameSession` with Pillow frames.
@@ -2538,7 +2556,7 @@ if PIL_AVAILABLE:
 
         def _draw_debug_overlay(self, force: bool = False) -> None:
             """Update the on-screen developer debug overlay (no-op headless)."""
-            if self._root is None:
+            if self._root is None or tk is None:
                 return
             if self._fps_widget is None:
                 self._fps_widget = tk.Label(
@@ -2729,7 +2747,7 @@ if PIL_AVAILABLE:
                 self.on_draw()
                 try:
                     root.update()  # process pending input/window events
-                except tk.TclError:  # window torn down from a callback
+                except _TclError:  # window torn down from a callback
                     break
                 if period:
                     remaining = period - (time.perf_counter() - started)

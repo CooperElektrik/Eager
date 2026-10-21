@@ -158,7 +158,7 @@ class MiniaudioAudioBackend(BaseAudioBackend):
                                 needed_samples = req * t_channels
                                 while len(track.buffer) < needed_samples:
                                     if track.loop_end_frame is not None and track.frame_pos >= track.loop_end_frame:
-                                        if track.loop and track.path_str:
+                                        if track.loop and track.path_str and miniaudio is not None:
                                             seek = track.loop_start_frame or 0
                                             track.frame_pos = seek
                                             try:
@@ -183,7 +183,7 @@ class MiniaudioAudioBackend(BaseAudioBackend):
                                         track.buffer.extend(chunk)
                                         track.frame_pos += len(chunk) // t_channels
                                     except StopIteration:
-                                        if track.loop and track.path_str:
+                                        if track.loop and track.path_str and miniaudio is not None:
                                             seek = track.loop_start_frame or 0
                                             track.frame_pos = seek
                                             try:

@@ -250,7 +250,7 @@ class StageDirector:
         if "/" not in asset_id:
             asset_id = f"bg/{asset_id}"
 
-        transition = parsed.with_ or parsed.get_str("transition", "cut")
+        transition = parsed.with_ or parsed.get_str("transition", "cut") or "cut"
         duration = parsed.get_float("duration", 0.5 if transition != "cut" else 0.0)
 
         self.compositor.set_background(
@@ -262,7 +262,7 @@ class StageDirector:
     def handle_bg_clear(self, args: str) -> None:
         """Handle '~ bg_clear [with transition] [duration=X]'."""
         parsed = parse_hook_args(args)
-        transition = parsed.with_ or parsed.get_str("transition", "cut")
+        transition = parsed.with_ or parsed.get_str("transition", "cut") or "cut"
         duration = parsed.get_float("duration", 0.5 if transition != "cut" else 0.0)
         self.compositor.clear_background(transition=transition, duration=duration)
 
@@ -319,7 +319,7 @@ class StageDirector:
         pos = parsed.at or (cfg.default_position if cfg else "center")
 
         # Transition
-        transition = parsed.with_ or parsed.get_str("transition", "fade")
+        transition = parsed.with_ or parsed.get_str("transition", "fade") or "fade"
         duration = parsed.get_float("duration", 0.3)
         flip_h = parsed.get_bool("flip_h", False)
         z_index = parsed.get_int("z", 0)
@@ -341,7 +341,7 @@ class StageDirector:
             return
 
         char_id = parsed.positional[0].strip().lower()
-        transition = parsed.with_ or parsed.get_str("transition", "fade")
+        transition = parsed.with_ or parsed.get_str("transition", "fade") or "fade"
         duration = parsed.get_float("duration", 0.3)
 
         self.compositor.hide_character(
@@ -440,9 +440,9 @@ class StageDirector:
             volume = float(vol_raw) if vol_raw is not None else None
         except ValueError:
             volume = None
-        loop_arg = parsed.get_bool("loop", None)
-        loop_start = parsed.get_float("loop_start", None)
-        loop_end = parsed.get_float("loop_end", None)
+        loop_arg = parsed.get_bool("loop") if "loop" in parsed.kwargs else None
+        loop_start = parsed.get_float("loop_start") if "loop_start" in parsed.kwargs else None
+        loop_end = parsed.get_float("loop_end") if "loop_end" in parsed.kwargs else None
         # Sound effects are polyphonic by default so overlapping SFX spawn
         # pool slots (sound_0, sound_1, …) instead of cutting each other off.
         # Other channels stay single-voice unless opted in. Explicit pool

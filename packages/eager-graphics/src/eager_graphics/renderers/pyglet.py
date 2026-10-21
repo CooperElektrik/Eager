@@ -6,14 +6,15 @@ import functools
 import hashlib
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 try:
     import pyglet
     from pyglet.graphics import Batch, Group
+    from pyglet.image.codecs import ImageDecodeException
     from pyglet.shapes import Box, Rectangle
     from pyglet.text import Label
-    from pyglet.window import key, mouse
+    from pyglet.window import Window, key, mouse
 except ImportError as err:
     msg = "Pyglet is not installed. Install with 'pip install eager-graphics[pyglet]' or 'pip install pyglet'."
     raise ImportError(msg) from err
@@ -96,7 +97,7 @@ class PygletAssetResolver:
                             tex = pyglet.image.load(str(file_path)).get_texture()
                             self._cache[asset_id] = tex
                             return tex
-                        except (OSError, pyglet.image.ImageDecodeException):
+                        except (OSError, ImageDecodeException):
                             pass
                     for ext in extensions:
                         target = f"{cid}{ext}"
@@ -106,7 +107,7 @@ class PygletAssetResolver:
                                 tex = pyglet.image.load(str(file_path)).get_texture()
                                 self._cache[asset_id] = tex
                                 return tex
-                            except (OSError, pyglet.image.ImageDecodeException):
+                            except (OSError, ImageDecodeException):
                                 pass
                 else:
                     for ext in extensions:
@@ -116,7 +117,7 @@ class PygletAssetResolver:
                                 tex = pyglet.image.load(str(file_path)).get_texture()
                                 self._cache[asset_id] = tex
                                 return tex
-                            except (OSError, pyglet.image.ImageDecodeException):
+                            except (OSError, ImageDecodeException):
                                 pass
 
         # 2. Generate placeholder texture
@@ -248,7 +249,7 @@ class PygletRenderer(RenderBackend):
         *,
         asset_dir: str | Path | None = None,
         scale_mode: ScaleMode = ScaleMode.LETTERBOX,
-        window: pyglet.window.Window | None = None,
+        window: Window | None = None,
         ui_batch: Batch | None = None,
     ) -> None:
         self.asset_resolver = PygletAssetResolver(asset_dir)
@@ -310,7 +311,7 @@ class PygletRenderer(RenderBackend):
         # Initial viewport & letterbox setup
         self._update_viewport_and_letterbox()
 
-    def set_window(self, window: pyglet.window.Window) -> None:
+    def set_window(self, window: Window) -> None:
         """Associate renderer with an active Pyglet Window."""
         self.window = window
         self.width = window.width
@@ -329,7 +330,7 @@ class PygletRenderer(RenderBackend):
         self._region_cache.clear()
         self._stage_groups.clear()
         self._ui_groups.clear()
-        self._cached_measure_text.cache_clear()
+        _cached_measure_text.cache_clear()
 
     def _get_stage_group(self, z_order: int) -> Group:
         group = self._stage_groups.get(z_order)
@@ -510,8 +511,8 @@ class PygletRenderer(RenderBackend):
         if region is None:
             tex = texture.get_texture()
             region = tex.get_region(0, 0, tex.width, tex.height)
-            region.anchor_x = texture.width * fx
-            region.anchor_y = texture.height * (1.0 - fy)
+            region.anchor_x = round(texture.width * fx)
+            region.anchor_y = round(texture.height * (1.0 - fy))
             self._region_cache[region_key] = region
 
         scale_x_dir = -1.0 if item.flip_h else 1.0
@@ -863,7 +864,8 @@ class PygletRenderer(RenderBackend):
         if last_colors != grad_colors:
             bot = list(bot_rgba)
             top = list(top_rgba)
-            rect._vertex_list.colors[:] = bot + bot + top + bot + top + top
+            vlist: Any = rect._vertex_list
+            vlist.colors[:] = bot + bot + top + bot + top + top
             self._grad_pool[idx] = (rect, grad_colors)
 
     def draw_text(
@@ -881,14 +883,17 @@ class PygletRenderer(RenderBackend):
         cache: bool = True,
     ) -> None:
         """Draw a single line of text at the requested anchor point."""
-        pyglet_anchor_x = {"left": "left", "center": "center", "right": "right"}.get(
-            anchor_x, "left"
-        )
-        pyglet_anchor_y = {
-            "top": "top",
-            "middle": "center",
-            "bottom": "bottom",
-        }.get(anchor_y, "top")
+        pyglet_anchor_x: Literal["left", "center", "right"] = "left"
+        if anchor_x == "center":
+            pyglet_anchor_x = "center"
+        elif anchor_x == "right":
+            pyglet_anchor_x = "right"
+
+        pyglet_anchor_y: Literal["top", "bottom", "center", "baseline"] = "top"
+        if anchor_y == "middle":
+            pyglet_anchor_y = "center"
+        elif anchor_y == "bottom":
+            pyglet_anchor_y = "bottom"
 
         fx = float(x)
         fy = self._flip_y(y)
@@ -1182,6 +1187,11 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):
     :class:`~eager_runtime.session.GameSession`.  Window events are forwarded to
     ``session.handle_input(...)`` and frames are produced by ``session.draw(...)``.
     """
+
+    width: Any
+    height: Any
+    visible: Any
+    vsync: Any
 
     def __init__(
         self,
