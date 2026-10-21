@@ -398,6 +398,99 @@ height = 720
         btn_voices2 = [b.voice for b in history_screen2.buttons if b.voice]
         self.assertEqual(btn_voices2, ["voice_8.ogg", "voice_10.ogg", "voice_12.ogg"])
 
+    def test_proportional_layout_800x600_no_clipping(self):
+        """Screens rendered at 800x600 must keep all widgets within bounds without clipping."""
+        from eager_graphics.screens import (
+            HistoryScreen,
+            PreferencesScreen,
+            SaveLoadScreen,
+            TitleScreen,
+        )
+
+        # 1. HistoryScreen at 800x600: Up/Down buttons must not be at x=1100, Back button not at y=620
+        history = HistoryScreen(viewport_width=800, viewport_height=600)
+        up_btn = history.buttons[0]
+        down_btn = history.buttons[1]
+        back_btn = history.buttons[2]
+
+        # In 800x600, all buttons must fit completely inside [0, 800] x [0, 600]
+        self.assertLess(up_btn.rect.x + up_btn.rect.width, 800.0)
+        self.assertLess(down_btn.rect.x + down_btn.rect.width, 800.0)
+        self.assertLess(back_btn.rect.y + back_btn.rect.height, 600.0)
+        self.assertGreater(up_btn.rect.x, 0.0)
+        self.assertGreater(back_btn.rect.y, 0.0)
+
+        # 2. SaveLoadScreen at 800x600: Grid and Back button must be within bounds
+        save_screen = SaveLoadScreen("save", viewport_width=800, viewport_height=600)
+        save_back = save_screen.buttons[-1]
+        self.assertLess(save_back.rect.y + save_back.rect.height, 600.0)
+        for b in save_screen.buttons:
+            self.assertLess(b.rect.x + b.rect.width, 800.0)
+            self.assertLess(b.rect.y + b.rect.height, 600.0)
+
+        # 3. PreferencesScreen at 800x600: Sliders, labels, and buttons within bounds
+        pref_screen = PreferencesScreen(viewport_width=800, viewport_height=600)
+        pref_back = pref_screen.buttons[0]
+        self.assertLess(pref_back.rect.y + pref_back.rect.height, 600.0)
+        for s in pref_screen.sliders:
+            self.assertLess(s.rect.x + s.rect.width, 800.0)
+            self.assertLess(s.rect.y + s.rect.height, 600.0)
+
+        # 4. TitleScreen at 800x600: Buttons within bounds
+        title_screen = TitleScreen("Test Game", viewport_width=800, viewport_height=600)
+        for b in title_screen.buttons:
+            self.assertLess(b.rect.x + b.rect.width, 800.0)
+            self.assertLess(b.rect.y + b.rect.height, 600.0)
+
+    def test_proportional_layout_1920x1080_scales_beyond_1280x720(self):
+        """Screens rendered at 1920x1080 must expand beyond the 1280x720 bounding area."""
+        from eager_graphics.screens import (
+            HistoryScreen,
+            PreferencesScreen,
+            SaveLoadScreen,
+            TitleScreen,
+        )
+
+        # HistoryScreen: Up/Down buttons should be placed proportionally near right margin (x > 1280)
+        history = HistoryScreen(viewport_width=1920, viewport_height=1080)
+        up_btn = history.buttons[0]
+        back_btn = history.buttons[2]
+        self.assertGreater(up_btn.rect.x, 1280.0)
+        self.assertGreater(back_btn.rect.y, 720.0)
+
+        # SaveLoadScreen: Grid slot buttons and back button should scale into 1080p space
+        save_screen = SaveLoadScreen("save", viewport_width=1920, viewport_height=1080)
+        save_back = save_screen.buttons[-1]
+        self.assertGreater(save_back.rect.y, 720.0)
+
+        # PreferencesScreen: language buttons should extend past 1280 or sliders scale
+        pref_screen = PreferencesScreen(viewport_width=1920, viewport_height=1080)
+        self.assertGreater(pref_screen.sliders[0].rect.width, 300.0)
+
+        # TitleScreen: Buttons are wider and positioned lower than in 720p
+        title_screen = TitleScreen("Test Game", viewport_width=1920, viewport_height=1080)
+        self.assertGreater(title_screen.buttons[0].rect.y, 300.0)
+        self.assertGreater(title_screen.buttons[0].rect.width, 240.0)
+
+    def test_dynamic_viewport_resize(self):
+        """ScreenManager and Screens should recompute layouts dynamically on resize."""
+        screen = TitleScreen("Dynamic Game", viewport_width=1280, viewport_height=720)
+        orig_btn_rect = screen.buttons[0].rect
+
+        # Resize to 800x600 via set_viewport
+        screen.set_viewport(800, 600)
+        resized_rect = screen.buttons[0].rect
+        self.assertNotEqual(orig_btn_rect, resized_rect)
+        self.assertLess(resized_rect.width, orig_btn_rect.width)
+        self.assertLess(resized_rect.y, orig_btn_rect.y)
+
+        # Resize to 1920x1080 via draw
+        backend = MockUIDrawBackend()
+        screen.draw(backend, 1920, 1080)
+        fhd_rect = screen.buttons[0].rect
+        self.assertGreater(fhd_rect.width, orig_btn_rect.width)
+        self.assertGreater(fhd_rect.y, orig_btn_rect.y)
+
 
 if __name__ == "__main__":
     unittest.main()

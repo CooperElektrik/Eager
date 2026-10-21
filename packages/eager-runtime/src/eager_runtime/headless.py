@@ -221,6 +221,9 @@ class NullScreenManager:
     def handle_mouse_move(self, x: float, y: float) -> bool:
         return False
 
+    def set_viewport(self, width: int, height: int) -> None:
+        pass
+
     def handle_mouse_click(self, x: float, y: float) -> bool:
         return False
 

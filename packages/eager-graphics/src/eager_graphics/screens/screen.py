@@ -12,13 +12,31 @@ from eager_graphics.screens.widgets import Button, Label, Slider
 class Screen:
     """Base class for visual novel modal/full-screen UI menus."""
 
-    def __init__(self, name: str, theme: Theme | None = None) -> None:
-        self.name = name
+    def __init__(
+        self,
+        name: str,
+        theme: Theme | None = None,
+        viewport_width: int = 1280,
+        viewport_height: int = 720,
+    ) -> None:
+        self.name: str = name
         self.theme: Theme = theme if theme is not None else Theme()
+        self.viewport_width: int = viewport_width
+        self.viewport_height: int = viewport_height
         self.buttons: list[Button] = []
         self.sliders: list[Slider] = []
         self.labels: list[Label] = []
         self.visible: bool = False
+
+    def set_viewport(self, width: int, height: int) -> None:
+        """Update viewport dimensions and recompute layout."""
+        if self.viewport_width != width or self.viewport_height != height:
+            self.viewport_width = width
+            self.viewport_height = height
+            self.rebuild_layout()
+
+    def rebuild_layout(self) -> None:
+        """Recompute layout/geometry of widgets based on current viewport dimensions."""
 
     def on_enter(self, session: Any) -> None:
         """Called when screen is displayed."""
@@ -57,18 +75,32 @@ class Screen:
 
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
         """Render screen contents."""
+        if self.viewport_width != width or self.viewport_height != height:
+            self.set_viewport(width, height)
 
 
 class ScreenManager:
     """Stack and registry of screens."""
 
-    def __init__(self) -> None:
+    def __init__(self, viewport_width: int = 1280, viewport_height: int = 720) -> None:
         self.screens: dict[str, Screen] = {}
         self.active_screen: Screen | None = None
         self._history_stack: list[str] = []
+        self.viewport_width: int = viewport_width
+        self.viewport_height: int = viewport_height
+
+    def set_viewport(self, width: int, height: int) -> None:
+        """Update viewport dimensions for all registered screens."""
+        self.viewport_width = width
+        self.viewport_height = height
+        for screen in self.screens.values():
+            if hasattr(screen, "set_viewport"):
+                screen.set_viewport(width, height)
 
     def register(self, screen: Screen) -> None:
         self.screens[screen.name] = screen
+        if hasattr(screen, "set_viewport"):
+            screen.set_viewport(self.viewport_width, self.viewport_height)
 
     @property
     def is_active(self) -> bool:
@@ -83,6 +115,8 @@ class ScreenManager:
                 self._history_stack.append(self.active_screen.name)
             self.active_screen.on_exit(session)
         self.active_screen = self.screens[name]
+        if hasattr(self.active_screen, "set_viewport"):
+            self.active_screen.set_viewport(self.viewport_width, self.viewport_height)
         self.active_screen.on_enter(session)
         return True
 
@@ -95,6 +129,8 @@ class ScreenManager:
                 prev_screen = self.screens.get(prev_name)
                 if prev_screen is not None:
                     self.active_screen = prev_screen
+                    if hasattr(self.active_screen, "set_viewport"):
+                        self.active_screen.set_viewport(self.viewport_width, self.viewport_height)
                     self.active_screen.on_enter(session)
                     return
             self.active_screen = None
@@ -128,5 +164,7 @@ class ScreenManager:
         return False
 
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
+        if self.viewport_width != width or self.viewport_height != height:
+            self.set_viewport(width, height)
         if self.active_screen and self.active_screen.visible:
             self.active_screen.draw(backend, width, height)

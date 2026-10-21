@@ -148,12 +148,14 @@ def _create_default_screens(config: Any, session: Any) -> ScreenManagerProtocol:
             TitleScreen,
         )
 
-        mgr = ScreenManager()
-        mgr.register(TitleScreen(title=getattr(config, "title", "Eager Visual Novel")))
-        mgr.register(SaveLoadScreen("save"))
-        mgr.register(SaveLoadScreen("load"))
-        mgr.register(PreferencesScreen())
-        mgr.register(HistoryScreen())
+        w = getattr(getattr(session, "overlay", None), "width", 1280) or 1280
+        h = getattr(getattr(session, "overlay", None), "height", 720) or 720
+        mgr = ScreenManager(viewport_width=w, viewport_height=h)
+        mgr.register(TitleScreen(title=getattr(config, "title", "Eager Visual Novel"), viewport_width=w, viewport_height=h))
+        mgr.register(SaveLoadScreen("save", viewport_width=w, viewport_height=h))
+        mgr.register(SaveLoadScreen("load", viewport_width=w, viewport_height=h))
+        mgr.register(PreferencesScreen(viewport_width=w, viewport_height=h))
+        mgr.register(HistoryScreen(viewport_width=w, viewport_height=h))
         return mgr
     except ImportError:
         return NullScreenManager()
@@ -712,6 +714,8 @@ class GameSession:
 
         # Draw active screen on top
         if hasattr(self, "screens") and self.screens.active_screen:
+            if hasattr(self.screens, "set_viewport"):
+                self.screens.set_viewport(width, height)
             self.screens.draw(ui_backend, width, height)
 
     def _handle_quick_action(self, action_name: str) -> Any:
