@@ -21,6 +21,7 @@ dev-dependencies = [
     "pyglet>=2.0",
     "pillow>=10.0",
     "miniaudio>=0.12.4",
+    "import-linter>=2.0",
 ]
 
 [tool.uv.sources]
@@ -43,3 +44,235 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = []
+
+[tool.importlinter]
+root_packages = [
+    "eager_core",
+    "eager_graphics",
+    "eager_runtime",
+    "eager_script",
+]
+
+# ---------------------------------------------------------------------------
+# Cross-package architectural boundaries
+# ---------------------------------------------------------------------------
+
+[[tool.importlinter.contracts]]
+name = "eager-core is dependency-free"
+type = "forbidden"
+source_modules = ["eager_core"]
+forbidden_modules = [
+    "eager_script",
+    "eager_runtime",
+    "eager_graphics",
+]
+
+[[tool.importlinter.contracts]]
+name = "eager-script is dependency-free"
+type = "forbidden"
+source_modules = ["eager_script"]
+forbidden_modules = [
+    "eager_core",
+    "eager_runtime",
+    "eager_graphics",
+]
+
+[[tool.importlinter.contracts]]
+name = "eager-graphics does not import eager-runtime"
+type = "forbidden"
+source_modules = ["eager_graphics"]
+forbidden_modules = ["eager_runtime"]
+
+[[tool.importlinter.contracts]]
+name = "eager-runtime story VM and headless primitives strictly forbid eager-graphics"
+type = "forbidden"
+source_modules = [
+    "eager_runtime.runtime",
+    "eager_runtime.headless",
+]
+forbidden_modules = ["eager_graphics"]
+
+[[tool.importlinter.contracts]]
+name = "eager-runtime core modules do not directly import eager-graphics"
+type = "forbidden"
+source_modules = [
+    "eager_runtime.runtime",
+    "eager_runtime.headless",
+    "eager_runtime.dispatcher",
+    "eager_runtime.state",
+    "eager_runtime.persistent",
+    "eager_runtime.saves",
+    "eager_runtime.preferences",
+    "eager_runtime.backlog",
+    "eager_runtime.i18n",
+    "eager_runtime.assets",
+    "eager_runtime.player",
+    "eager_runtime.project",
+    "eager_runtime.watcher",
+]
+forbidden_modules = ["eager_graphics"]
+allow_indirect_imports = true
+
+# ---------------------------------------------------------------------------
+# eager-graphics internal boundaries
+# ---------------------------------------------------------------------------
+
+[[tool.importlinter.contracts]]
+name = "eager-graphics renderer backends are mutually independent"
+type = "independence"
+modules = [
+    "eager_graphics.renderers.pil",
+    "eager_graphics.renderers.pyglet",
+    "eager_graphics.renderers.null",
+    "eager_graphics.renderers.miniaudio",
+]
+
+[[tool.importlinter.contracts]]
+name = "eager-graphics core presentation does not depend on renderer backends"
+type = "forbidden"
+source_modules = [
+    "eager_graphics.stage",
+    "eager_graphics.layout",
+    "eager_graphics.compositor",
+    "eager_graphics.director",
+    "eager_graphics.protocol",
+    "eager_graphics.types",
+    "eager_graphics.timeline",
+    "eager_graphics.ui_components",
+    "eager_graphics.ui_state",
+    "eager_graphics.screens",
+]
+forbidden_modules = ["eager_graphics.renderers"]
+
+[[tool.importlinter.contracts]]
+name = "eager-graphics renderers do not depend on director or screens"
+type = "forbidden"
+source_modules = ["eager_graphics.renderers"]
+forbidden_modules = [
+    "eager_graphics.director",
+    "eager_graphics.screens",
+]
+
+[[tool.importlinter.contracts]]
+name = "eager-graphics screens do not depend on compositor or director"
+type = "forbidden"
+source_modules = ["eager_graphics.screens"]
+forbidden_modules = [
+    "eager_graphics.compositor",
+    "eager_graphics.director",
+]
+
+# ---------------------------------------------------------------------------
+# eager-runtime internal boundaries
+# ---------------------------------------------------------------------------
+
+[[tool.importlinter.contracts]]
+name = "eager-runtime StoryVM does not depend on outer session or cli"
+type = "forbidden"
+source_modules = [
+    "eager_runtime.runtime",
+    "eager_runtime.state",
+    "eager_runtime.headless",
+    "eager_runtime.dispatcher",
+]
+forbidden_modules = [
+    "eager_runtime.session",
+    "eager_runtime.cli",
+]
+
+[[tool.importlinter.contracts]]
+name = "eager-runtime core modules do not depend on cli"
+type = "forbidden"
+source_modules = [
+    "eager_runtime.runtime",
+    "eager_runtime.headless",
+    "eager_runtime.session",
+    "eager_runtime.dispatcher",
+    "eager_runtime.state",
+    "eager_runtime.persistent",
+    "eager_runtime.preferences",
+    "eager_runtime.saves",
+    "eager_runtime.backlog",
+    "eager_runtime.i18n",
+    "eager_runtime.assets",
+    "eager_runtime.player",
+]
+forbidden_modules = [
+    "eager_runtime.cli",
+]
+
+# ---------------------------------------------------------------------------
+# eager-script internal boundaries
+# ---------------------------------------------------------------------------
+
+[[tool.importlinter.contracts]]
+name = "eager-script expr and hooks do not depend on graph, validator, or cli"
+type = "forbidden"
+source_modules = [
+    "eager_script.expr",
+    "eager_script.hooks",
+]
+forbidden_modules = [
+    "eager_script.graph",
+    "eager_script.validator",
+    "eager_script.cli",
+]
+
+[[tool.importlinter.contracts]]
+name = "eager-script expr and hooks are mutually independent"
+type = "independence"
+modules = [
+    "eager_script.expr",
+    "eager_script.hooks",
+]
+
+[[tool.importlinter.contracts]]
+name = "eager-script core modules do not depend on cli"
+type = "forbidden"
+source_modules = [
+    "eager_script.graph",
+    "eager_script.validator",
+    "eager_script.expr",
+    "eager_script.hooks",
+]
+forbidden_modules = [
+    "eager_script.cli",
+]
+
+# ---------------------------------------------------------------------------
+# eager-core internal boundaries
+# ---------------------------------------------------------------------------
+
+[[tool.importlinter.contracts]]
+name = "eager-core primitive modules are mutually independent"
+type = "independence"
+modules = [
+    "eager_core.audio",
+    "eager_core.easing",
+    "eager_core.events",
+    "eager_core.input",
+    "eager_core.protocols",
+    "eager_core.storage",
+    "eager_core.timing",
+    "eager_core.types",
+]
+
+[[tool.importlinter.contracts]]
+name = "eager-core leaf modules do not depend on sibling subsystems"
+type = "forbidden"
+source_modules = [
+    "eager_core.types",
+    "eager_core.storage",
+]
+forbidden_modules = [
+    "eager_core.audio",
+    "eager_core.easing",
+    "eager_core.events",
+    "eager_core.i18n",
+    "eager_core.input",
+    "eager_core.protocols",
+    "eager_core.text",
+    "eager_core.timing",
+]
+
+
