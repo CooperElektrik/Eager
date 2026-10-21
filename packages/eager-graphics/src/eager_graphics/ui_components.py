@@ -27,6 +27,7 @@ Typical use::
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -143,55 +144,96 @@ def wrap_text(
     measure: Any,
     *,
     font_size: int = 14,
-) -> list[str]:
+    font_family: str | None = None,
+) -> list[tuple[str, int, int]]:
     """Wrap text to fit within max_width using greedy word-wrapping.
 
     Respects explicit newlines and breaks overlong words that cannot fit on a single line.
+    Returns a list of (line_str, start_char_idx, end_char_idx) character spans.
     """
     if not text or max_width <= 0:
         return []
 
-    lines: list[str] = []
-    paragraphs = text.split("\n")
+    lines: list[tuple[str, int, int]] = []
+    pos = 0
+    paragraphs: list[tuple[str, int, int]] = []
+    for m in re.finditer(r"\r\n|\r|\n", text):
+        paragraphs.append((text[pos:m.start()], pos, m.start()))
+        pos = m.end()
+    paragraphs.append((text[pos:], pos, len(text)))
 
-    for para in paragraphs:
-        if not para:
-            lines.append("")
+    for para_text, para_start, para_end in paragraphs:
+        if not para_text:
+            lines.append(("", para_start, para_end))
             continue
 
-        words = para.split(" ")
-        current_line = ""
+        word_matches = list(re.finditer(r"\S+", para_text))
+        if not word_matches:
+            lines.append((para_text, para_start, para_end))
+            continue
 
-        for word in words:
-            candidate = f"{current_line} {word}" if current_line else word
-            w, _ = measure(candidate, font_size=font_size)
-            if w <= max_width:
-                current_line = candidate
-            else:
-                if current_line:
-                    lines.append(current_line)
-                    current_line = ""
+        cur_line_words: list[tuple[str, int, int]] = []
 
-                # Check if word alone fits
-                word_w, _ = measure(word, font_size=font_size)
-                if word_w <= max_width:
-                    current_line = word
+        for wm in word_matches:
+            w_text = wm.group()
+            w_start = para_start + wm.start()
+            w_end = para_start + wm.end()
+
+            if not cur_line_words:
+                w, _ = measure(w_text, font_size=font_size)
+                if w <= max_width:
+                    cur_line_words.append((w_text, w_start, w_end))
                 else:
-                    # Break overlong word character by character
-                    sub = ""
-                    for char in word:
-                        sub_candidate = sub + char
-                        cw, _ = measure(sub_candidate, font_size=font_size)
+                    # Break overlong single word
+                    sub_start = w_start
+                    sub_str = ""
+                    for ch in w_text:
+                        cand = sub_str + ch
+                        cw, _ = measure(cand, font_size=font_size)
                         if cw <= max_width:
-                            sub = sub_candidate
+                            sub_str = cand
                         else:
-                            if sub:
-                                lines.append(sub)
-                            sub = char
-                    current_line = sub
+                            if sub_str:
+                                lines.append((sub_str, sub_start, sub_start + len(sub_str)))
+                                sub_start = sub_start + len(sub_str)
+                            sub_str = ch
+                    if sub_str:
+                        cur_line_words.append((sub_str, sub_start, sub_start + len(sub_str)))
+            else:
+                line_start = cur_line_words[0][1]
+                candidate = text[line_start:w_end]
+                w, _ = measure(candidate, font_size=font_size)
+                if w <= max_width:
+                    cur_line_words.append((w_text, w_start, w_end))
+                else:
+                    l_start = cur_line_words[0][1]
+                    l_end = cur_line_words[-1][2]
+                    lines.append((text[l_start:l_end], l_start, l_end))
+                    cur_line_words = []
 
-        if current_line:
-            lines.append(current_line)
+                    ww, _ = measure(w_text, font_size=font_size)
+                    if ww <= max_width:
+                        cur_line_words.append((w_text, w_start, w_end))
+                    else:
+                        sub_start = w_start
+                        sub_str = ""
+                        for ch in w_text:
+                            cand = sub_str + ch
+                            cw, _ = measure(cand, font_size=font_size)
+                            if cw <= max_width:
+                                sub_str = cand
+                            else:
+                                if sub_str:
+                                    lines.append((sub_str, sub_start, sub_start + len(sub_str)))
+                                    sub_start = sub_start + len(sub_str)
+                                sub_str = ch
+                        if sub_str:
+                            cur_line_words.append((sub_str, sub_start, sub_start + len(sub_str)))
+
+        if cur_line_words:
+            l_start = cur_line_words[0][1]
+            l_end = cur_line_words[-1][2]
+            lines.append((text[l_start:l_end], l_start, l_end))
 
     return lines
 
@@ -220,8 +262,8 @@ def _get_font_family(measure: Any, font_family: str | None = None) -> str:
     return "default"
 
 
-# Cache for wrap_text results: (text, max_width, font_size, backend_type, font_family) -> list[str]
-_WRAP_CACHE: dict[tuple[str, float, int, str, str], list[str]] = {}
+# Cache for wrap_text results: (text, max_width, font_size, backend_type, font_family) -> list[tuple[str, int, int]]
+_WRAP_CACHE: dict[tuple[str, float, int, str, str], list[tuple[str, int, int]]] = {}
 
 
 def _get_wrapped_lines(
@@ -230,13 +272,13 @@ def _get_wrapped_lines(
     measure: Any,
     font_size: int = 14,
     font_family: str | None = None,
-) -> list[str]:
+) -> list[tuple[str, int, int]]:
     backend_key = _get_backend_key(measure)
     font_key = _get_font_family(measure, font_family)
     key = (text, max_width, font_size, backend_key, font_key)
     if key in _WRAP_CACHE:
         return _WRAP_CACHE[key]
-    res = wrap_text(text, max_width, measure, font_size=font_size)
+    res = wrap_text(text, max_width, measure, font_size=font_size, font_family=font_family)
     if len(_WRAP_CACHE) > 500:
         _WRAP_CACHE.clear()
     _WRAP_CACHE[key] = res
@@ -522,15 +564,7 @@ class DialogueBox:
             seg_spans.append((cur_pos, cur_pos + seg_len, seg))
             cur_pos += seg_len
 
-        search_cursor = 0
-        for i, line in enumerate(lines):
-            line_idx = formatted.plain_text.find(line, search_cursor)
-            if line_idx == -1:
-                line_idx = search_cursor
-            line_start = line_idx
-            line_end = line_idx + len(line)
-            search_cursor = line_end
-
+        for i, (line, line_start, line_end) in enumerate(lines):
             if line_start >= visible_limit:
                 break
 
@@ -1194,13 +1228,14 @@ class UIOverlay:
                 curr_y += line_height * 1.1
 
             lines = _get_wrapped_lines(entry.text, text_max_w, backend.measure_text, font_size=font_size)
-            for line in lines:
+            for line_item in lines:
+                line_str = line_item[0] if isinstance(line_item, tuple) else line_item
                 if curr_y + line_height > margin_y + box_h - 20.0:
                     break
                 backend.draw_text(
                     margin_x + 20.0,
                     curr_y,
-                    line,
+                    line_str,
                     font_size=font_size,
                     color=Color(0.95, 0.95, 0.95, 1.0),
                 )

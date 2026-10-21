@@ -179,10 +179,23 @@ def test_dialogue_box_draws_multiline_wrapped_text() -> None:
 
     # Directly verify wrap_text function
     wrapped = wrap_text("Short text", 200, backend.measure_text, font_size=14)
-    assert wrapped == ["Short text"]
+    assert wrapped == [("Short text", 0, 10)]
 
     wrapped_broken = wrap_text("Line 1\nLine 2", 200, backend.measure_text, font_size=14)
-    assert wrapped_broken == ["Line 1", "Line 2"]
+    assert wrapped_broken == [("Line 1", 0, 6), ("Line 2", 7, 13)]
+
+
+def test_formatted_text_wrapping_with_consecutive_spaces_and_long_words() -> None:
+    backend = NullRenderer()
+    box = DialogueBox(1280, 720)
+    # Consecutive spaces + inline style tags + overlong word
+    box.set_content("Alice", "Hello    {b}brave{/b} supercalifragilisticexpialidocious {color=#ff0000}world{/color}!")
+    box.draw(backend)
+
+    # All text pieces should be drawn without find() returning -1 misalignment
+    drawn_texts = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
+    assert "brave" in drawn_texts
+    assert "world" in drawn_texts
 
 
 def test_wrap_cache_distinguishes_backends_and_fonts() -> None:
