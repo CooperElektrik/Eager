@@ -26,17 +26,15 @@ except ImportError:
     tk = None  # type: ignore[assignment]
     TKINTER_AVAILABLE = False
 
-from eager_core.input import InputAction, Keymap
 from eager_core.timing import FrameClock
 from eager_core.types import BLACK, WHITE, Color
 
 from eager_graphics.layout import ViewportTransform
+from eager_graphics.player import BasePlayer
 from eager_graphics.protocol import RenderBackend, RenderItem
 from eager_graphics.types import DebugOverlayMode, ScaleMode
-from eager_graphics.ui_components import UIOverlay
 
 if TYPE_CHECKING:
-    from eager_core.events import ChoicePromptEvent
 
     from eager_graphics.compositor import StageCompositor
 
@@ -2364,7 +2362,7 @@ class PILRenderer(RenderBackend):
 
 if PIL_AVAILABLE:
 
-    class PILPlayer:
+    class PILPlayer(BasePlayer):
         """Thin interactive window shell driving a :class:`GameSession` with Pillow frames.
 
         The player owns no narrative state: all story advancement, branching,
@@ -2390,23 +2388,18 @@ if PIL_AVAILABLE:
             show_fps: bool | str | DebugOverlayMode = True,
             uncapped: bool = False,
         ) -> None:
-            if uncapped:
-                vsync = False
-            self.uncapped: bool = uncapped
-            self.vsync: bool = vsync
-            self.visible: bool = visible
-            self.title: str = title
-            self.width: int = width
-            self.height: int = height
-
-            self.session = session
-            self.vm = session.vm
-            self.compositor = session.compositor
-            self.director = session.director
-            self.dispatcher = session.dispatcher
-            self.audio = getattr(session, "audio", None)
-            self.keymap = getattr(session, "keymap", None) or Keymap()
-            self.overlay = getattr(session, "overlay", None) or UIOverlay(width=width, height=height)
+            super().__init__(
+                session=session,
+                width=width,
+                height=height,
+                title=title,
+                asset_dir=asset_dir,
+                scale_mode=scale_mode,
+                vsync=vsync,
+                visible=visible,
+                show_fps=show_fps,
+                uncapped=uncapped,
+            )
 
             self.renderer = PILRenderer(
                 width=width,
@@ -2415,33 +2408,11 @@ if PIL_AVAILABLE:
                 scale_mode=scale_mode,
             )
 
-            # On-screen developer debug overlay (FPS counter or detailed diagnostic HUD)
-            if isinstance(show_fps, DebugOverlayMode):
-                self.debug_mode: DebugOverlayMode = show_fps
-            elif isinstance(show_fps, str):
-                try:
-                    self.debug_mode = DebugOverlayMode(show_fps.lower())
-                except ValueError:
-                    self.debug_mode = DebugOverlayMode.FPS if show_fps else DebugOverlayMode.OFF
-            elif show_fps:
-                self.debug_mode = DebugOverlayMode.FPS
-            else:
-                self.debug_mode = DebugOverlayMode.OFF
-
             self._fps_widget: Any = None
             self._last_debug_update: float = 0.0
             self._last_render_path: str = "None"
 
             self._photo: Any = None
-            self._ui_dirty: bool = True
-
-            # Narrative UI State
-            self.current_speaker: str | None = None
-            self.current_text: str = ""
-            self.current_emotion: str | None = None
-            self.active_choice_prompt: ChoicePromptEvent | None = None
-            self.active_input_prompt: Any | None = None
-            self.is_finished: bool = False
             self._last_visible_chars: int | None = None
             self._last_input_cursor: bool | None = None
 
@@ -2453,9 +2424,7 @@ if PIL_AVAILABLE:
             self._last_tick: float = 0.0
 
             # Step first beat if not starting in active menu
-            has_active_screen = getattr(getattr(self.session, "screens", None), "is_active", False)
-            if not has_active_screen:
-                self.advance_story()
+            self.step_initial_beat()
 
             # Pre-load all assets and warm the sprite cache so the first
             # visible frame doesn't pay disk-I/O + resize costs (which would
@@ -2465,24 +2434,9 @@ if PIL_AVAILABLE:
                 self.compositor, self.width, self.height
             )
 
-        @property
-        def show_fps(self) -> bool:
-            """True if the debug overlay is active in either FPS or DETAILED mode."""
-            return self.debug_mode != DebugOverlayMode.OFF
-
-        @show_fps.setter
-        def show_fps(self, value: bool | str | DebugOverlayMode) -> None:
-            if isinstance(value, DebugOverlayMode):
-                self.debug_mode = value
-            elif isinstance(value, str):
-                try:
-                    self.debug_mode = DebugOverlayMode(value.lower())
-                except ValueError:
-                    self.debug_mode = DebugOverlayMode.FPS if value else DebugOverlayMode.OFF
-            elif value:
-                self.debug_mode = DebugOverlayMode.FPS
-            else:
-                self.debug_mode = DebugOverlayMode.OFF
+        def toggle_debug_overlay(self) -> None:
+            """Cycle debug overlay mode for developer diagnostics."""
+            _ = self.cycle_debug_overlay()
 
         def cycle_debug_overlay(self) -> DebugOverlayMode:
             """Cycle debug overlay mode: FPS -> DETAILED -> OFF -> FPS."""
@@ -2496,87 +2450,20 @@ if PIL_AVAILABLE:
             self._draw_debug_overlay(force=True)
             return self.debug_mode
 
-        def _sync_overlay(self) -> None:
-            """Mirror current narrative state onto the UI components.
-
-            Called whenever the active choice prompt, input prompt, or dialogue changes so that
-            input handling sees up-to-date layout even before the next draw.
-            """
-            self.current_speaker = self.director.ui_state.speaker
-            self.current_text = self.director.ui_state.text
-            self.current_emotion = self.director.ui_state.emotion
-            input_text = getattr(self.session, "input_text", None)
-            is_read = (
-                self.session.is_current_beat_read()
-                if hasattr(self.session, "is_current_beat_read")
-                else False
-            )
-            self.overlay.sync(
-                self.director.ui_state,
-                self.active_choice_prompt,
-                self.active_input_prompt,
-                input_text=input_text,
-                is_read=is_read,
-            )
-
-        def advance_story(self) -> None:
-            """Advance the story by forwarding to the owning :class:`GameSession`."""
-            self._ui_dirty = True
-            self.session.advance()
-            self.active_choice_prompt = self.session.active_choice_prompt
-            self.active_input_prompt = self.session.active_input_prompt
-            self.is_finished = self.session.is_finished
-            self._sync_overlay()
-
-        def make_choice(self, choice_index: int) -> None:
-            """Select a branching choice option and continue execution."""
-            self._ui_dirty = True
-            self.session.choose(choice_index)
-            self.active_choice_prompt = self.session.active_choice_prompt
-            self.active_input_prompt = self.session.active_input_prompt
-            self.is_finished = self.session.is_finished
-            self._sync_overlay()
-
-        def rollback(self) -> bool:
-            """Rollback narrative and stage state by one beat."""
-            self._ui_dirty = True
-            success = self.session.rollback()
-            self.active_choice_prompt = self.session.active_choice_prompt
-            self.active_input_prompt = self.session.active_input_prompt
-            self.is_finished = self.session.is_finished
-            self._sync_overlay()
-            return success
-
         def tick(self, dt: float) -> None:
             """Advance compositor animations, audio, and session logic by dt."""
-            self.session.update(dt)
-            if getattr(self.session, "_ui_dirty", False):
-                self._ui_dirty = True
-                self.session._ui_dirty = False
-            self.active_choice_prompt = self.session.active_choice_prompt
-            self.active_input_prompt = self.session.active_input_prompt
-            self.is_finished = self.session.is_finished
+            super().tick(dt)
             if self.session.text_reveal is not None and not self.session.text_reveal.is_complete:
                 self._ui_dirty = True
-            cur_vc = self.director.ui_state.visible_chars
+            cur_vc = getattr(getattr(self.director, "ui_state", None), "visible_chars", None)
             if cur_vc != self._last_visible_chars:
                 self._last_visible_chars = cur_vc
                 self._ui_dirty = True
             if self.active_input_prompt is not None:
-                cur_cursor = getattr(self.overlay.input_box, "cursor_visible", True)
+                cur_cursor = getattr(getattr(self.overlay, "input_box", None), "cursor_visible", True)
                 if cur_cursor != self._last_input_cursor:
                     self._last_input_cursor = cur_cursor
                     self._ui_dirty = True
-
-        def hot_reload(self) -> bool:
-            """Hot-reload screenplay from disk, hot-swap VM, reconcile state, and force a redraw."""
-            result = self.session.hot_reload()
-            self.active_choice_prompt = self.session.active_choice_prompt
-            self.active_input_prompt = self.session.active_input_prompt
-            self.is_finished = self.session.is_finished
-            self._sync_overlay()
-            self._ui_dirty = True
-            return result
 
         def on_draw(self) -> None:
             """Render frame: stage graphics followed by UI textbox and choices."""
@@ -2851,9 +2738,8 @@ if PIL_AVAILABLE:
 
         def close(self) -> None:
             """Close the player window (marks closed when running headless)."""
+            super().close()
             self._closed = True
-            if self.audio is not None:
-                self.audio.shutdown()
             root, self._root = self._root, None
             self._label = None
             if root is None:
@@ -2867,46 +2753,25 @@ if PIL_AVAILABLE:
                     pass
 
         def _on_scroll_up(self, event: Any) -> None:
-            self._ui_dirty = True
-            self.session.handle_input(InputAction.ROLLBACK)
-            self.active_choice_prompt = self.session.active_choice_prompt
-            self.active_input_prompt = self.session.active_input_prompt
-            self.is_finished = self.session.is_finished
-            self._sync_overlay()
+            self.handle_scroll(1.0)
 
         def _on_scroll_down(self, event: Any) -> None:
-            self._ui_dirty = True
-            self.session.handle_input(InputAction.ROLL_FORWARD)
-            self.active_choice_prompt = self.session.active_choice_prompt
-            self.active_input_prompt = self.session.active_input_prompt
-            self.is_finished = self.session.is_finished
-            self._sync_overlay()
+            self.handle_scroll(-1.0)
 
         def _on_mousewheel(self, event: Any) -> None:
-            if getattr(event, "delta", 0) > 0:
-                self._on_scroll_up(event)
-            else:
-                self._on_scroll_down(event)
+            delta = getattr(event, "delta", 0)
+            self.handle_scroll(1.0 if delta > 0 else -1.0)
 
         def _on_ctrl_release(self, event: Any) -> None:
-            self.session.handle_input(InputAction.SKIP_RELEASE)
+            self.handle_skip_release()
 
         def _on_motion(self, event: Any) -> None:
             """Handle mouse movement for screen and button hover states."""
-            changed = self.session.handle_input(
-                InputAction.POINTER_MOVE, x=float(event.x), y=float(event.y)
-            )
-            if changed:
-                self._ui_dirty = True
+            self.handle_pointer_move(float(event.x), float(event.y))
 
         def _on_click(self, event: Any) -> None:
             """Handle mouse clicks for advancement or choice selection."""
-            self._ui_dirty = True
-            self.session.handle_input(InputAction.POINTER_CLICK, x=float(event.x), y=float(event.y))
-            self.active_choice_prompt = self.session.active_choice_prompt
-            self.active_input_prompt = self.session.active_input_prompt
-            self.is_finished = self.session.is_finished
-            self._sync_overlay()
+            self.handle_pointer_click(float(event.x), float(event.y))
 
         def _on_configure(self, event: Any) -> None:
             """Keep the UI components laid out against the new window size."""
@@ -2917,73 +2782,17 @@ if PIL_AVAILABLE:
                 return
             if width == self.width and height == self.height:
                 return
-            self.width = width
-            self.height = height
-            self.overlay.set_viewport(width, height)
+            self.on_resize(width, height)
             self.renderer.set_window(self)
             self._photo = None
             self._ui_dirty = True
 
         def _on_key(self, event: Any) -> None:
             """Handle keyboard input for advancing, choices, rollback, and toggles."""
-            keysym = event.keysym.lower()
-            if keysym == "return":
-                keysym = "enter"
-            elif keysym == "prior":
-                keysym = "pageup"
-            elif keysym == "next":
-                keysym = "pagedown"
-            elif keysym in ("control_l", "control_r"):
-                keysym = "ctrl"
-
+            raw_key = event.keysym.lower()
             is_shift = bool(getattr(event, "state", 0) & 0x0001) or getattr(event, "keysym", "").isupper()
-            combo = f"shift+{keysym}" if is_shift else keysym
-
-            # Active input prompt handling
-            if self.active_input_prompt is not None:
-                if keysym == "enter":
-                    self._ui_dirty = True
-                    self.session.handle_input(InputAction.CONFIRM)
-                    self.active_choice_prompt = self.session.active_choice_prompt
-                    self.active_input_prompt = self.session.active_input_prompt
-                    self.is_finished = self.session.is_finished
-                    self._sync_overlay()
-                    return
-                elif keysym == "backspace":
-                    self._ui_dirty = True
-                    self.session.handle_input(InputAction.TEXT_BACKSPACE)
-                    self._sync_overlay()
-                    return
-                elif getattr(event, "char", "") and event.char.isprintable():
-                    self._ui_dirty = True
-                    self.session.handle_input(InputAction.TEXT_CHAR, char=event.char)
-                    self._sync_overlay()
-                    return
-
-            # 1-9 choice keys
-            if self.active_choice_prompt is not None and keysym in "123456789":
-                idx = int(keysym) - 1
-                if idx < len(self.active_choice_prompt.options):
-                    self._ui_dirty = True
-                    self.session.handle_input(InputAction.CHOOSE, index=idx)
-                    self.active_choice_prompt = self.session.active_choice_prompt
-                    self.active_input_prompt = self.session.active_input_prompt
-                    self.is_finished = self.session.is_finished
-                    self._sync_overlay()
-                    return
-
-            action = self.keymap.map_key(combo) or self.keymap.map_key(keysym)
-            if action == InputAction.QUIT:
-                self.close()
-            elif action == InputAction.DEBUG_OVERLAY:
-                _ = self.cycle_debug_overlay()
-            elif action:
-                self._ui_dirty = True
-                self.session.handle_input(action)
-                self.active_choice_prompt = self.session.active_choice_prompt
-                self.active_input_prompt = self.session.active_input_prompt
-                self.is_finished = self.session.is_finished
-                self._sync_overlay()
+            char = getattr(event, "char", "")
+            self.handle_key_press(raw_key, is_shift=is_shift, char=char)
 
 else:
 

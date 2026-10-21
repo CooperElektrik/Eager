@@ -17,9 +17,11 @@ from typing import TYPE_CHECKING
 
 # The NullRenderer is pure-Python and dependency-free, so it is always
 # available — even when no graphical backend (e.g. Pyglet) is installed.
+from eager_graphics.player import BasePlayer
 from eager_graphics.renderers.null import NullRenderer
 
 __all__ = [
+    "BasePlayer",
     "MiniaudioAudioBackend",
     "NullRenderer",
     "PILAssetResolver",

@@ -18,17 +18,16 @@ except ImportError as err:
     msg = "Pyglet is not installed. Install with 'pip install eager-graphics[pyglet]' or 'pip install pyglet'."
     raise ImportError(msg) from err
 
-from eager_core.input import InputAction, Keymap
+from eager_core.input import InputAction
 from eager_core.timing import FrameClock
 from eager_core.types import BLACK, WHITE, Color
 
 from eager_graphics.layout import LayoutResolver, ViewportTransform
+from eager_graphics.player import BasePlayer
 from eager_graphics.protocol import RenderBackend, RenderItem
 from eager_graphics.types import Anchor, ScaleMode
-from eager_graphics.ui_components import UIOverlay
 
 if TYPE_CHECKING:
-    from eager_core.events import ChoicePromptEvent
 
     from eager_graphics.compositor import StageCompositor
 
@@ -1175,7 +1174,7 @@ class PygletAudioBackend:
         self._static_sources.clear()
 
 
-class PygletPlayer(pyglet.window.Window):
+class PygletPlayer(BasePlayer, pyglet.window.Window):
     """Thin Pyglet window shell driving a :class:`GameSession`.
 
     The player owns no narrative state: story advancement, branching,
@@ -1200,8 +1199,8 @@ class PygletPlayer(pyglet.window.Window):
     ) -> None:
         if uncapped:
             vsync = False
-        self.uncapped: bool = uncapped
-        super().__init__(
+        pyglet.window.Window.__init__(
+            self,
             width=width,
             height=height,
             caption=title,
@@ -1209,19 +1208,19 @@ class PygletPlayer(pyglet.window.Window):
             vsync=vsync,
             visible=visible,
         )
-        self.width = width
-        self.height = height
-        self.session = session
-        self.vm = session.vm
-        self.compositor = session.compositor
-        self.director = session.director
-        self.dispatcher = session.dispatcher
-        self.audio = getattr(session, "audio", None)
-        self.keymap = getattr(session, "keymap", None) or Keymap()
-        self.overlay = getattr(session, "overlay", None) or UIOverlay(width=width, height=height)
-        self.overlay.set_viewport(width, height)
-        if hasattr(session, "overlay"):
-            session.overlay.set_viewport(width, height)
+        BasePlayer.__init__(
+            self,
+            session=session,
+            width=width,
+            height=height,
+            title=title,
+            asset_dir=asset_dir,
+            scale_mode=scale_mode,
+            vsync=vsync,
+            visible=visible,
+            show_fps=show_fps,
+            uncapped=uncapped,
+        )
 
         # UI elements batch shared with PygletRenderer
         self._ui_batch = Batch()
@@ -1235,16 +1234,7 @@ class PygletPlayer(pyglet.window.Window):
             ui_batch=self._ui_batch,
         )
 
-        # Narrative UI State
-        self.current_speaker: str | None = None
-        self.current_text: str = ""
-        self.current_emotion: str | None = None
-        self.active_choice_prompt: ChoicePromptEvent | None = None
-        self.active_input_prompt: Any | None = None
-        self.is_finished: bool = False
-
         # On-screen FPS debug overlay
-        self.show_fps: bool = show_fps
         self._last_fps_update: float = 0.0
         self._fps_label: Label = Label(
             "",
@@ -1258,9 +1248,7 @@ class PygletPlayer(pyglet.window.Window):
         )
 
         # Step first beat if not starting in active menu
-        has_active_screen = getattr(getattr(self.session, "screens", None), "is_active", False)
-        if not has_active_screen:
-            self.advance_story()
+        self.step_initial_beat()
 
         # Schedule animation tick at 60 FPS or uncapped
         if self.uncapped:
@@ -1270,84 +1258,14 @@ class PygletPlayer(pyglet.window.Window):
 
     def on_resize(self, width: int, height: int) -> None:
         """Keep the UI components laid out against the new window size."""
-        super().on_resize(width, height)
-        self.overlay.set_viewport(width, height)
-        if hasattr(self.session, "overlay"):
-            self.session.overlay.set_viewport(width, height)
+        pyglet.window.Window.on_resize(self, width, height)
+        BasePlayer.on_resize(self, width, height)
         self.renderer.on_resize(width, height)
-
-    def _sync_overlay(self) -> None:
-        """Mirror current narrative state onto the UI components.
-
-        Called whenever the active choice prompt, input prompt, or dialogue changes so that
-        input handling sees up-to-date layout even before the next draw.
-        """
-        self.current_speaker = self.director.ui_state.speaker
-        self.current_text = self.director.ui_state.text
-        self.current_emotion = self.director.ui_state.emotion
-        input_text = getattr(self.session, "input_text", None)
-        is_read = (
-            self.session.is_current_beat_read()
-            if hasattr(self.session, "is_current_beat_read")
-            else False
-        )
-        self.overlay.sync(
-            self.director.ui_state,
-            self.active_choice_prompt,
-            self.active_input_prompt,
-            input_text=input_text,
-            is_read=is_read,
-        )
-
-    def advance_story(self) -> None:
-        """Advance the story by forwarding to the owning :class:`GameSession`."""
-        self.session.advance()
-        self.active_choice_prompt = self.session.active_choice_prompt
-        self.active_input_prompt = self.session.active_input_prompt
-        self.is_finished = self.session.is_finished
-        self._sync_overlay()
-
-    def make_choice(self, choice_index: int) -> None:
-        """Select a branching choice option and continue execution."""
-        self.session.choose(choice_index)
-        self.active_choice_prompt = self.session.active_choice_prompt
-        self.active_input_prompt = self.session.active_input_prompt
-        self.is_finished = self.session.is_finished
-        self._sync_overlay()
-
-    def rollback(self) -> bool:
-        """Rollback narrative and stage state by one beat."""
-        success = self.session.rollback()
-        self.active_choice_prompt = self.session.active_choice_prompt
-        self.active_input_prompt = self.session.active_input_prompt
-        self.is_finished = self.session.is_finished
-        self._sync_overlay()
-        return success
-
-    def tick(self, dt: float) -> None:
-        """Advance animations and pump audio mixer / session logic."""
-        self.session.update(dt)
-        if getattr(self.session, "_ui_dirty", False):
-            self.session._ui_dirty = False
-            self._sync_overlay()
-        self.active_choice_prompt = self.session.active_choice_prompt
-        self.active_input_prompt = self.session.active_input_prompt
-        self.is_finished = self.session.is_finished
-
-    def hot_reload(self) -> bool:
-        """Hot-reload screenplay from disk, hot-swap VM, reconcile state, and force a redraw."""
-        result = self.session.hot_reload()
-        self.active_choice_prompt = self.session.active_choice_prompt
-        self.active_input_prompt = self.session.active_input_prompt
-        self.is_finished = self.session.is_finished
-        self._sync_overlay()
-        return result
 
     def close(self) -> None:
         """Close window and release audio mixer resources."""
-        if self.audio is not None:
-            self.audio.shutdown()
-        super().close()
+        BasePlayer.close(self)
+        pyglet.window.Window.close(self)
 
     def run(self) -> None:
         """Run the interactive visual-novel main loop (blocks until window closes)."""
@@ -1383,104 +1301,44 @@ class PygletPlayer(pyglet.window.Window):
     def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
         """Handle mouse movement for screen and button hover states."""
         flipped_y = self.height - y
-        self.session.handle_input(InputAction.POINTER_MOVE, x=x, y=flipped_y)
+        self.handle_pointer_move(float(x), float(flipped_y))
 
     def on_mouse_drag(
         self, x: int, y: int, dx: int, dy: int, buttons: int, modifiers: int
     ) -> None:
         """Handle mouse drag for sliders and interactive UI elements."""
         flipped_y = self.height - y
-        self.session.handle_input(InputAction.POINTER_MOVE, x=x, y=flipped_y)
+        self.handle_pointer_move(float(x), float(flipped_y))
 
     def on_mouse_press(self, x: int, y: int, button: int, modifiers: int) -> None:
         """Handle mouse clicks for advancement, screens, or choice selection."""
         if button == mouse.RIGHT:
             self.session.handle_input(InputAction.GAME_MENU)
-            self.active_choice_prompt = self.session.active_choice_prompt
-            self.active_input_prompt = self.session.active_input_prompt
-            self.is_finished = self.session.is_finished
-            self._sync_overlay()
+            self._sync_state()
             return
 
         if button != mouse.LEFT:
             return
 
         flipped_y = self.height - y
-        self.session.handle_input(InputAction.POINTER_CLICK, x=x, y=flipped_y)
-        self.active_choice_prompt = self.session.active_choice_prompt
-        self.active_input_prompt = self.session.active_input_prompt
-        self.is_finished = self.session.is_finished
-        self._sync_overlay()
+        self.handle_pointer_click(float(x), float(flipped_y))
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
         """Handle keyboard input for advancing, choices, rollback, save/load, and menus."""
-        sym_str = key.symbol_string(symbol).lower()
-        if sym_str.startswith("_") and len(sym_str) == 2 and sym_str[1].isdigit():
-            sym_str = sym_str[1]
-        elif sym_str.startswith("num_") and len(sym_str) == 5 and sym_str[4].isdigit():
-            sym_str = sym_str[4]
-        elif sym_str == "num_enter":
-            sym_str = "enter"
-
-        # Active input prompt handling
-        if self.active_input_prompt is not None:
-            if sym_str == "enter":
-                self.session.handle_input(InputAction.CONFIRM)
-                self.active_choice_prompt = self.session.active_choice_prompt
-                self.active_input_prompt = self.session.active_input_prompt
-                self.is_finished = self.session.is_finished
-                self._sync_overlay()
-                return
-            elif sym_str == "backspace":
-                self.session.handle_input(InputAction.TEXT_BACKSPACE)
-                self._sync_overlay()
-                return
-
-        # 1-9 choice keys
-        if self.active_choice_prompt is not None and sym_str in "123456789":
-            idx = int(sym_str) - 1
-            if idx < len(self.active_choice_prompt.options):
-                self.session.handle_input(InputAction.CHOOSE, index=idx)
-                self.active_choice_prompt = self.session.active_choice_prompt
-                self.active_input_prompt = self.session.active_input_prompt
-                self.is_finished = self.session.is_finished
-                self._sync_overlay()
-                return
-
+        sym_str = key.symbol_string(symbol)
         is_shift = bool(modifiers & key.MOD_SHIFT)
-        combo = f"shift+{sym_str}" if is_shift else sym_str
-        action = self.keymap.map_key(combo) or self.keymap.map_key(sym_str)
-        if action == InputAction.QUIT:
-            self.close()
-        elif action == InputAction.DEBUG_OVERLAY:
-            self.show_fps = not self.show_fps
-        elif action:
-            self.session.handle_input(action)
-            self.active_choice_prompt = self.session.active_choice_prompt
-            self.active_input_prompt = self.session.active_input_prompt
-            self.is_finished = self.session.is_finished
-            self._sync_overlay()
+        self.handle_key_press(sym_str, is_shift=is_shift)
 
     def on_text(self, text: str) -> None:
         """Handle typed text input when an input prompt is active."""
-        if self.active_input_prompt is not None and text and text.isprintable():
-            for char in text:
-                self.session.handle_input(InputAction.TEXT_CHAR, char=char)
-            self._sync_overlay()
+        self.handle_text_input(text)
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         """Handle key releases (e.g. releasing Ctrl stops fast-forward skip)."""
         sym_str = key.symbol_string(symbol).lower()
         if sym_str in ("ctrl", "lctrl", "rctrl"):
-            self.session.handle_input(InputAction.SKIP_RELEASE)
+            self.handle_skip_release()
 
     def on_mouse_scroll(self, x: int, y: int, scroll_x: float, scroll_y: float) -> None:
         """Handle mouse wheel scrolling for rollback, roll-forward, or screen scrolling."""
-        if scroll_y > 0:
-            self.session.handle_input(InputAction.ROLLBACK)
-        elif scroll_y < 0:
-            self.session.handle_input(InputAction.ROLL_FORWARD)
-        self.active_choice_prompt = self.session.active_choice_prompt
-        self.active_input_prompt = self.session.active_input_prompt
-        self.is_finished = self.session.is_finished
-        self._sync_overlay()
+        self.handle_scroll(scroll_y)

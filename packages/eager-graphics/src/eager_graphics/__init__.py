@@ -144,10 +144,12 @@ __all__ = [
 # NullRenderer is dependency-free and always available for headless rendering.
 from eager_core.timing import FrameClock  # noqa: F401
 
+from eager_graphics.player import BasePlayer  # noqa: F401
 from eager_graphics.renderers.null import NullRenderer  # noqa: F401
 
 __all__.append("NullRenderer")
 __all__.append("FrameClock")
+__all__.append("BasePlayer")
 
 # Optional backends (Pyglet, PIL) are NOT eagerly imported here to
 # avoid side effects — e.g. Pyglet initialises GTK/EGL on Wayland.
