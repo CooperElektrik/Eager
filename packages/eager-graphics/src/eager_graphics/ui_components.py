@@ -196,8 +196,32 @@ def wrap_text(
     return lines
 
 
-# Cache for wrap_text results: (text, max_width, font_size) -> list[str]
-_WRAP_CACHE: dict[tuple[str, float, int], list[str]] = {}
+def _get_backend_key(measure: Any) -> str:
+    backend = getattr(measure, "__self__", None)
+    if backend is not None:
+        return f"{backend.__class__.__module__}.{backend.__class__.__qualname__}"
+    return f"{getattr(measure, '__module__', '')}.{getattr(measure, '__qualname__', type(measure).__name__)}"
+
+
+def _get_font_family(measure: Any, font_family: str | None = None) -> str:
+    if font_family is not None:
+        return font_family
+    backend = getattr(measure, "__self__", None)
+    if backend is not None:
+        if hasattr(backend, "_ui_font_name") and callable(backend._ui_font_name):
+            try:
+                return str(backend._ui_font_name())
+            except Exception:  # noqa: BLE001, S110
+                pass
+        if hasattr(backend, "font_family"):
+            return str(backend.font_family)
+        if hasattr(backend, "font_name"):
+            return str(backend.font_name)
+    return "default"
+
+
+# Cache for wrap_text results: (text, max_width, font_size, backend_type, font_family) -> list[str]
+_WRAP_CACHE: dict[tuple[str, float, int, str, str], list[str]] = {}
 
 
 def _get_wrapped_lines(
@@ -205,8 +229,11 @@ def _get_wrapped_lines(
     max_width: float,
     measure: Any,
     font_size: int = 14,
+    font_family: str | None = None,
 ) -> list[str]:
-    key = (text, max_width, font_size)
+    backend_key = _get_backend_key(measure)
+    font_key = _get_font_family(measure, font_family)
+    key = (text, max_width, font_size, backend_key, font_key)
     if key in _WRAP_CACHE:
         return _WRAP_CACHE[key]
     res = wrap_text(text, max_width, measure, font_size=font_size)

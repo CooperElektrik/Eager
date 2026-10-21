@@ -185,6 +185,30 @@ def test_dialogue_box_draws_multiline_wrapped_text() -> None:
     assert wrapped_broken == ["Line 1", "Line 2"]
 
 
+def test_wrap_cache_distinguishes_backends_and_fonts() -> None:
+    from eager_graphics.ui_components import _WRAP_CACHE, _get_wrapped_lines
+
+    _WRAP_CACHE.clear()
+
+    class RendererA:
+        def measure_text(self, text: str, font_size: int = 14) -> tuple[float, float]:
+            return (len(text) * 10.0, 14.0)
+
+    class RendererB:
+        def measure_text(self, text: str, font_size: int = 14) -> tuple[float, float]:
+            return (len(text) * 20.0, 14.0)
+
+    r_a = RendererA()
+    r_b = RendererB()
+
+    text = "hello world from eager engine"
+    res_a = _get_wrapped_lines(text, 120.0, r_a.measure_text, font_size=14)
+    res_b = _get_wrapped_lines(text, 120.0, r_b.measure_text, font_size=14)
+
+    assert len(_WRAP_CACHE) == 2
+    assert res_a != res_b
+
+
 
 def test_dialogue_box_respects_viewport_changes() -> None:
     box = DialogueBox(1280, 720)
