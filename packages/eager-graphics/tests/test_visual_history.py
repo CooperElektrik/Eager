@@ -152,6 +152,10 @@ def test_interactive_player_rollback_updates_compositor_stage_pyglet() -> None:
     )
 
     try:
+        # Visual history should not be enabled on director when driven by GameSession
+        assert player.director._visual_history is None
+        assert session.vm.history_enabled is False
+
         # Initial beat: Alice on stage
         assert player.current_speaker == "Alice"
         assert player.current_text == "Welcome!"
@@ -204,6 +208,10 @@ def test_interactive_player_rollback_updates_compositor_stage_pil() -> None:
     )
 
     try:
+        # Visual history should not be enabled on director when driven by GameSession
+        assert player.director._visual_history is None
+        assert session.vm.history_enabled is False
+
         # Initial beat: Alice on stage
         assert player.current_speaker == "Alice"
         assert player.current_text == "Welcome!"

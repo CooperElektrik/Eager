@@ -224,7 +224,15 @@ class GameSession:
         if locales_dir is not None:
             self.translation_manager.load_directory(locales_dir)
 
-        self.vm = StoryVM(self.graph, translation_manager=self.translation_manager)
+        if isinstance(project_or_script, StoryVM):
+            self.vm = project_or_script
+            self.vm.disable_history()
+        else:
+            self.vm = StoryVM(
+                self.graph,
+                translation_manager=self.translation_manager,
+                enable_history=False,
+            )
         self.dispatcher = EventDispatcher()
         self.audio = AudioMixer(backend=audio_backend, asset_dir=self.asset_dir)
 

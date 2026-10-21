@@ -1256,8 +1256,6 @@ class PygletPlayer(pyglet.window.Window):
             anchor_y="bottom",
             color=(230, 230, 230, 200),
         )
-        # Enable visual history rollback on director
-        self.director.enable_visual_history()
 
         # Step first beat if not starting in active menu
         has_active_screen = getattr(getattr(self.session, "screens", None), "is_active", False)

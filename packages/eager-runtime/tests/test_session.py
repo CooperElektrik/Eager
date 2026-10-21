@@ -729,3 +729,17 @@ Alice: Path C taken.
     assert session.director.ui_state.text == "Path A taken."
 
 
+def test_session_disables_vm_beat_history() -> None:
+    from eager_runtime.runtime import StoryVM
+
+    graph = eager_script.parse_graph(SAMPLE_STORY)
+    session = GameSession(graph)
+    assert session.vm.history_enabled is False
+
+    vm_standalone = StoryVM(graph)
+    assert vm_standalone.history_enabled is True
+    session2 = GameSession(vm_standalone)
+    assert session2.vm.history_enabled is False
+
+
+

@@ -2452,9 +2452,6 @@ if PIL_AVAILABLE:
             self._closed: bool = False
             self._last_tick: float = 0.0
 
-            # Enable visual history rollback on director
-            self.director.enable_visual_history()
-
             # Step first beat if not starting in active menu
             has_active_screen = getattr(getattr(self.session, "screens", None), "is_active", False)
             if not has_active_screen:

@@ -73,9 +73,12 @@ class StoryVM:
         max_history: int = 500,
         rng_seed: int | None = None,
         translation_manager: TranslationManager | None = None,
+        enable_history: bool = True,
     ) -> None:
         self._graph = graph
-        self._history = HistoryManager(max_history=max_history)
+        self._history: HistoryManager | None = (
+            HistoryManager(max_history=max_history) if enable_history else None
+        )
         self._translation_manager: TranslationManager = translation_manager or TranslationManager()
 
         self._current_scene_id: str | None = None
@@ -281,9 +284,22 @@ class StoryVM:
         return set(self._visited_scenes)
 
     @property
+    def history_enabled(self) -> bool:
+        """True if internal beat-level history recording is enabled."""
+        return self._history is not None
+
+    def enable_history(self, max_history: int = 500) -> None:
+        """Enable internal beat-level history recording."""
+        self._history = HistoryManager(max_history=max_history)
+
+    def disable_history(self) -> None:
+        """Disable internal beat-level history recording."""
+        self._history = None
+
+    @property
     def can_rollback(self) -> bool:
         """True if there is at least one step in history available to rewind."""
-        return self._history.can_rollback
+        return self._history.can_rollback if self._history is not None else False
 
     def set_variable(self, name: str, value: Any) -> None:
         """Set a story variable value."""
@@ -448,6 +464,8 @@ class StoryVM:
 
         Returns True if rollback was successful, or False if no history exists.
         """
+        if self._history is None:
+            return False
         snapshot = self._history.pop()
         if snapshot is None:
             return False
@@ -574,7 +592,8 @@ class StoryVM:
         # 4. Handle scene entry event
         if self._just_entered_scene:
             self._just_entered_scene = False
-            self._history.push(self.save())
+            if self._history is not None:
+                self._history.push(self.save())
             return SceneEnterEvent(
                 scene_id=scene.id,
                 display_name=scene.display_name,
@@ -618,7 +637,8 @@ class StoryVM:
                 continue
 
             # Record state snapshot before consuming narrative beat
-            self._history.push(self.save())
+            if self._history is not None:
+                self._history.push(self.save())
             current_beat_idx = self._beat_index
             self._beat_index += 1
             cid = None

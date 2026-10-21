@@ -78,3 +78,26 @@ class TestRollback(unittest.TestCase):
         self.vm.choose(1)  # right_room
         _ = self.vm.step()
         self.assertEqual(self.vm.current_scene_id, "right_room")
+
+    def test_disabled_history(self) -> None:
+        vm = StoryVM(self.graph, enable_history=False)
+        self.assertFalse(vm.history_enabled)
+        self.assertFalse(vm.can_rollback)
+
+        vm.step()
+        self.assertFalse(vm.can_rollback)
+        self.assertFalse(vm.rollback())
+
+    def test_enable_disable_history_toggle(self) -> None:
+        vm = StoryVM(self.graph, enable_history=False)
+        self.assertFalse(vm.history_enabled)
+
+        vm.enable_history(max_history=50)
+        self.assertTrue(vm.history_enabled)
+        vm.step()
+        self.assertTrue(vm.can_rollback)
+
+        vm.disable_history()
+        self.assertFalse(vm.history_enabled)
+        self.assertFalse(vm.can_rollback)
+        self.assertFalse(vm.rollback())
