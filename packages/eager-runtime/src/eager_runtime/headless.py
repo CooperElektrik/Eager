@@ -214,6 +214,9 @@ class NullUI:
         self.dialogue_box: Any = None
         self.input_box: Any = None
         self.quick_menu: Any = None
+        self._selected_choice: int | None = None
+        self._hovered_quick_action: str | None = None
+        self._input_text: str = ""
 
     def set_viewport(self, width: int, height: int) -> None:
         self.width = width
@@ -230,6 +233,38 @@ class NullUI:
 
     def hit_test_quick_action(self, x: float, y: float) -> str | None:
         return None
+
+    def get_selected_choice(self) -> int | None:
+        return self._selected_choice
+
+    def set_selected_choice(self, index: int | None) -> None:
+        self._selected_choice = index
+
+    def set_choice_options(self, options: Any) -> None:
+        pass
+
+    def set_input_text(self, text: str) -> None:
+        self._input_text = text
+
+    def update_input(self, dt: float) -> None:
+        pass
+
+    def set_dialogue_visible_chars(
+        self,
+        visible_chars: int | None = None,
+        *,
+        show_arrow: bool = True,
+    ) -> None:
+        pass
+
+    def complete_dialogue_reveal(self, *, show_arrow: bool = True) -> None:
+        pass
+
+    def get_hovered_quick_action(self) -> str | None:
+        return self._hovered_quick_action
+
+    def set_hovered_quick_action(self, action: str | None) -> None:
+        self._hovered_quick_action = action
 
 
 class NullScreenManager:

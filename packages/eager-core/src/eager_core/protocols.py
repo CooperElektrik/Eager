@@ -87,6 +87,47 @@ class UIProtocol(Protocol):
         """Return the quick action name under cursor coords (x, y), or None."""
         ...
 
+    def get_selected_choice(self) -> int | None:
+        """Return the index of the currently selected choice option, or None."""
+        ...
+
+    def set_selected_choice(self, index: int | None) -> None:
+        """Update the selected choice option index."""
+        ...
+
+    def set_choice_options(self, options: object) -> None:
+        """Update the displayed choice menu options."""
+        ...
+
+    def set_input_text(self, text: str) -> None:
+        """Update the text buffer displayed by the input box."""
+        ...
+
+    def update_input(self, dt: float) -> None:
+        """Advance cursor animation or timers in the input box."""
+        ...
+
+    def set_dialogue_visible_chars(
+        self,
+        visible_chars: int | None = None,
+        *,
+        show_arrow: bool = True,
+    ) -> None:
+        """Update visible character limit and advance indicator on the dialogue box."""
+        ...
+
+    def complete_dialogue_reveal(self, *, show_arrow: bool = True) -> None:
+        """Snap dialogue box typewriter reveal to fully revealed."""
+        ...
+
+    def get_hovered_quick_action(self) -> str | None:
+        """Return the currently hovered quick action identifier."""
+        ...
+
+    def set_hovered_quick_action(self, action: str | None) -> None:
+        """Update the hovered quick action identifier."""
+        ...
+
 
 @runtime_checkable
 class ScreenManagerProtocol(Protocol):

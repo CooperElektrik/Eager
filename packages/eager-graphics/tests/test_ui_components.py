@@ -13,6 +13,8 @@ from eager_graphics.ui_components import (
     DialogueBox,
     DialogueBoxLayout,
     EndNotice,
+    InputBox,
+    QuickMenu,
     TextAnchor,
     TextboxStyle,
     UIOverlay,
@@ -934,3 +936,120 @@ def test_theme_and_styles_unification() -> None:
     assert qmenu.theme == custom_theme
     qmenu.set_theme(alt_theme)
     assert qmenu.theme == alt_theme
+
+
+def test_hud_components_scale_font_sizes_with_viewport_height() -> None:
+    backend_720 = NullRenderer()
+    backend_1440 = NullRenderer()
+
+    # 1. DialogueBox font scaling
+    dbox_720 = DialogueBox(1280, 720)
+    dbox_720.set_content("Alice", "Testing dialogue font scaling.")
+    dbox_720.draw(backend_720)
+
+    dbox_1440 = DialogueBox(2560, 1440)
+    dbox_1440.set_content("Alice", "Testing dialogue font scaling.")
+    dbox_1440.draw(backend_1440)
+
+    texts_720 = [c for c in backend_720.ui_calls if c["kind"] == "text"]
+    texts_1440 = [c for c in backend_1440.ui_calls if c["kind"] == "text"]
+
+    # At 720p: speaker name 15, text 15, arrow 14
+    assert texts_720[0]["font_size"] == 15
+    assert texts_720[1]["font_size"] == 15
+    assert texts_720[2]["font_size"] == 14
+
+    # At 1440p (2x height): speaker name 30, text 30, arrow 28
+    assert texts_1440[0]["font_size"] == 30
+    assert texts_1440[1]["font_size"] == 30
+    assert texts_1440[2]["font_size"] == 28
+
+    # 2. ChoiceMenu font scaling
+    cmenu_720 = ChoiceMenu(1280, 720)
+    cmenu_720.set_options([ChoiceOption(0, "Option A")])
+    backend_c720 = NullRenderer()
+    cmenu_720.draw(backend_c720)
+    ctext_720 = next(c for c in backend_c720.ui_calls if c["kind"] == "text")
+    assert ctext_720["font_size"] == 14
+
+    cmenu_1440 = ChoiceMenu(2560, 1440)
+    cmenu_1440.set_options([ChoiceOption(0, "Option A")])
+    backend_c1440 = NullRenderer()
+    cmenu_1440.draw(backend_c1440)
+    ctext_1440 = next(c for c in backend_c1440.ui_calls if c["kind"] == "text")
+    assert ctext_1440["font_size"] == 28
+
+    # 3. InputBox font scaling
+    ibox_720 = InputBox(1280, 720)
+    ibox_720.set_prompt("Name:", default="Hero")
+    backend_i720 = NullRenderer()
+    ibox_720.draw(backend_i720)
+    itexts_720 = [c for c in backend_i720.ui_calls if c["kind"] == "text"]
+    assert itexts_720[0]["font_size"] == 15  # prompt
+    assert itexts_720[1]["font_size"] == 15  # buffer
+    assert itexts_720[2]["font_size"] == 11  # hint
+
+    ibox_1440 = InputBox(2560, 1440)
+    ibox_1440.set_prompt("Name:", default="Hero")
+    backend_i1440 = NullRenderer()
+    ibox_1440.draw(backend_i1440)
+    itexts_1440 = [c for c in backend_i1440.ui_calls if c["kind"] == "text"]
+    assert itexts_1440[0]["font_size"] == 30  # prompt
+    assert itexts_1440[1]["font_size"] == 30  # buffer
+    assert itexts_1440[2]["font_size"] == 22  # hint
+
+    # 4. QuickMenu font scaling
+    qmenu_720 = QuickMenu(1280, 720)
+    backend_q720 = NullRenderer()
+    qmenu_720.draw(backend_q720)
+    qtexts_720 = [c for c in backend_q720.ui_calls if c["kind"] == "text"]
+    assert all(c["font_size"] == 11 for c in qtexts_720)
+
+    qmenu_1440 = QuickMenu(2560, 1440)
+    backend_q1440 = NullRenderer()
+    qmenu_1440.draw(backend_q1440)
+    qtexts_1440 = [c for c in backend_q1440.ui_calls if c["kind"] == "text"]
+    assert all(c["font_size"] == 22 for c in qtexts_1440)
+
+    # 5. EndNotice font scaling
+    enotice_720 = EndNotice(1280, 720)
+    backend_e720 = NullRenderer()
+    enotice_720.draw(backend_e720)
+    etext_720 = next(c for c in backend_e720.ui_calls if c["kind"] == "text")
+    assert etext_720["font_size"] == 16
+
+    enotice_1440 = EndNotice(2560, 1440)
+    backend_e1440 = NullRenderer()
+    enotice_1440.draw(backend_e1440)
+    etext_1440 = next(c for c in backend_e1440.ui_calls if c["kind"] == "text")
+    assert etext_1440["font_size"] == 32
+
+
+def test_ui_overlay_delegation_methods() -> None:
+    overlay = UIOverlay(1280, 720)
+
+    # Choice selection delegation
+    overlay.set_choice_options([ChoiceOption(0, "A"), ChoiceOption(1, "B")])
+    assert len(overlay.choice_menu.options) == 2
+    assert overlay.get_selected_choice() is None
+    overlay.set_selected_choice(1)
+    assert overlay.get_selected_choice() == 1
+    assert overlay.choice_menu.selected_index == 1
+
+    # Input text delegation
+    overlay.set_input_text("Hello")
+    assert overlay.input_box.text_buffer == "Hello"
+
+    # Dialogue reveal delegation
+    overlay.dialogue_box.set_content("Alice", "Test text")
+    overlay.dialogue_box.visible_chars = 3
+    overlay.complete_dialogue_reveal(show_arrow=True)
+    assert overlay.dialogue_box.visible_chars is None
+    assert overlay.dialogue_box.show_advance_arrow is True
+
+    # Quick menu hover delegation
+    assert overlay.get_hovered_quick_action() is None
+    overlay.set_hovered_quick_action("save")
+    assert overlay.get_hovered_quick_action() == "save"
+    assert overlay.quick_menu.hovered_action == "save"
+

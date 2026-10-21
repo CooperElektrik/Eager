@@ -409,7 +409,9 @@ class GameSession:
 
                 if isinstance(event, ChoicePromptEvent):
                     self.active_choice_prompt = event
-                    if self.overlay.choice_menu is not None:
+                    if hasattr(self.overlay, "set_choice_options"):
+                        self.overlay.set_choice_options(event.options)
+                    elif getattr(self.overlay, "choice_menu", None) is not None:
                         self.overlay.choice_menu.set_options(event.options)
                 elif isinstance(event, InputPromptEvent):
                     self.active_input_prompt = event
@@ -558,8 +560,11 @@ class GameSession:
                 self.director.ui_state.visible_chars = int(self.text_reveal.visible_chars)
 
         # Update input box cursor if input prompt is active
-        if self.active_input_prompt is not None and self.overlay.input_box is not None:
-            self.overlay.input_box.update(dt)
+        if self.active_input_prompt is not None:
+            if hasattr(self.overlay, "update_input"):
+                self.overlay.update_input(dt)
+            elif getattr(self.overlay, "input_box", None) is not None:
+                self.overlay.input_box.update(dt)
 
         # Skip mode advances immediately until player choices, input prompt, or story ends
         if self.skip_mode and not self.is_finished:
@@ -685,31 +690,42 @@ class GameSession:
         if (
             self.active_choice_prompt is not None
             and self.active_choice_prompt.options
-            and self.overlay.choice_menu is not None
+            and (hasattr(self.overlay, "get_selected_choice") or getattr(self.overlay, "choice_menu", None) is not None)
         ):
             opts = self.active_choice_prompt.options
             opts_count = len(opts)
             enabled_indices = [i for i, opt in enumerate(opts) if opt.enabled]
             if action == InputAction.NAV_UP and enabled_indices:
-                cur = self.overlay.choice_menu.selected_index
+                cur = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else self.overlay.choice_menu.selected_index
                 if cur in enabled_indices:
                     pos = enabled_indices.index(cur)
-                    self.overlay.choice_menu.selected_index = enabled_indices[(pos - 1) % len(enabled_indices)]
+                    new_idx = enabled_indices[(pos - 1) % len(enabled_indices)]
                 else:
-                    self.overlay.choice_menu.selected_index = enabled_indices[-1]
+                    new_idx = enabled_indices[-1]
+                if hasattr(self.overlay, "set_selected_choice"):
+                    self.overlay.set_selected_choice(new_idx)
+                else:
+                    self.overlay.choice_menu.selected_index = new_idx
                 return True
             elif action == InputAction.NAV_DOWN and enabled_indices:
-                cur = self.overlay.choice_menu.selected_index
+                cur = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else self.overlay.choice_menu.selected_index
                 if cur in enabled_indices:
                     pos = enabled_indices.index(cur)
-                    self.overlay.choice_menu.selected_index = enabled_indices[(pos + 1) % len(enabled_indices)]
+                    new_idx = enabled_indices[(pos + 1) % len(enabled_indices)]
                 else:
-                    self.overlay.choice_menu.selected_index = enabled_indices[0]
+                    new_idx = enabled_indices[0]
+                if hasattr(self.overlay, "set_selected_choice"):
+                    self.overlay.set_selected_choice(new_idx)
+                else:
+                    self.overlay.choice_menu.selected_index = new_idx
                 return True
             elif action in (InputAction.ADVANCE, InputAction.CONFIRM):
-                if self.overlay.choice_menu.selected_index is not None:
-                    idx = self.overlay.choice_menu.selected_index
-                    self.overlay.choice_menu.selected_index = None
+                idx = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else self.overlay.choice_menu.selected_index
+                if idx is not None:
+                    if hasattr(self.overlay, "set_selected_choice"):
+                        self.overlay.set_selected_choice(None)
+                    else:
+                        self.overlay.choice_menu.selected_index = None
                     if 0 <= idx < opts_count and opts[idx].enabled:
                         return self.choose(idx)
                     return False
@@ -720,14 +736,18 @@ class GameSession:
                 ch = payload.get("char", "")
                 if ch:
                     self.input_text += ch
-                    if self.overlay.input_box is not None:
+                    if hasattr(self.overlay, "set_input_text"):
+                        self.overlay.set_input_text(self.input_text)
+                    elif getattr(self.overlay, "input_box", None) is not None:
                         self.overlay.input_box.text_buffer = self.input_text
                     self._ui_dirty = True
                     return True
             elif action == InputAction.TEXT_BACKSPACE:
                 if self.input_text:
                     self.input_text = self.input_text[:-1]
-                    if self.overlay.input_box is not None:
+                    if hasattr(self.overlay, "set_input_text"):
+                        self.overlay.set_input_text(self.input_text)
+                    elif getattr(self.overlay, "input_box", None) is not None:
                         self.overlay.input_box.text_buffer = self.input_text
                     self._ui_dirty = True
                     return True
@@ -743,7 +763,9 @@ class GameSession:
             if self.text_reveal is not None and not self.text_reveal.is_complete:
                 self.text_reveal.complete_immediately()
                 self.director.ui_state.visible_chars = None
-                if self.overlay.dialogue_box is not None:
+                if hasattr(self.overlay, "complete_dialogue_reveal"):
+                    self.overlay.complete_dialogue_reveal(show_arrow=(self.active_choice_prompt is None))
+                elif getattr(self.overlay, "dialogue_box", None) is not None:
                     self.overlay.dialogue_box.visible_chars = None
                     self.overlay.dialogue_box.show_advance_arrow = (self.active_choice_prompt is None)
                 return True
@@ -800,7 +822,9 @@ class GameSession:
             if self.text_reveal is not None and not self.text_reveal.is_complete:
                 self.text_reveal.complete_immediately()
                 self.director.ui_state.visible_chars = None
-                if self.overlay.dialogue_box is not None:
+                if hasattr(self.overlay, "complete_dialogue_reveal"):
+                    self.overlay.complete_dialogue_reveal(show_arrow=(self.active_choice_prompt is None))
+                elif getattr(self.overlay, "dialogue_box", None) is not None:
                     self.overlay.dialogue_box.visible_chars = None
                     self.overlay.dialogue_box.show_advance_arrow = (self.active_choice_prompt is None)
                 return True
@@ -812,16 +836,24 @@ class GameSession:
             y = payload.get("y", 0.0)
             hover_changed = False
             # Choice menu hover update
-            if self.active_choice_prompt is not None and self.overlay.choice_menu is not None:
+            if self.active_choice_prompt is not None:
                 idx = self.overlay.hit_test_choice(x, y)
-                if self.overlay.choice_menu.selected_index != idx:
-                    self.overlay.choice_menu.selected_index = idx
+                cur_idx = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else getattr(self.overlay.choice_menu, "selected_index", None)
+                if cur_idx != idx:
+                    if hasattr(self.overlay, "set_selected_choice"):
+                        self.overlay.set_selected_choice(idx)
+                    else:
+                        self.overlay.choice_menu.selected_index = idx
                     hover_changed = True
             # Quick menu hover update
-            if not self.ui_hidden and self.overlay.quick_menu is not None:
+            if not self.ui_hidden:
                 qa = self.overlay.hit_test_quick_action(x, y)
-                if self.overlay.quick_menu.hovered_action != qa:
-                    self.overlay.quick_menu.hovered_action = qa
+                cur_qa = self.overlay.get_hovered_quick_action() if hasattr(self.overlay, "get_hovered_quick_action") else getattr(self.overlay.quick_menu, "hovered_action", None)
+                if cur_qa != qa:
+                    if hasattr(self.overlay, "set_hovered_quick_action"):
+                        self.overlay.set_hovered_quick_action(qa)
+                    else:
+                        self.overlay.quick_menu.hovered_action = qa
                     hover_changed = True
             return hover_changed
         return None

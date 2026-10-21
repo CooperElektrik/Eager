@@ -395,6 +395,11 @@ class DialogueBox:
             self.visible_chars,
         )
 
+    def scale_font_size(self, base_size: float) -> int:
+        """Scale a base font size proportionally with the viewport height (reference 720p)."""
+        scale = float(self.viewport_height) / 720.0
+        return max(1, round(float(base_size) * scale))
+
     # ── layout ─────────────────────────────────────────────────────────
 
     def nameplate_width(self) -> float:
@@ -521,11 +526,12 @@ class DialogueBox:
                 border_width=1.0,
             )
             assert self.speaker is not None
+            nameplate_fs = self.scale_font_size(style.nameplate_font_size)
             backend.draw_text(
                 nx + 12.0,
                 ny + (nh / 2.0),
                 self.speaker,
-                font_size=style.nameplate_font_size,
+                font_size=nameplate_fs,
                 color=self.speaker_color if self.speaker_color is not None else style.nameplate_text,
                 anchor_y=TextAnchor.MIDDLE,
             )
@@ -546,14 +552,15 @@ class DialogueBox:
             content_y = box_y + getattr(style, "fade_height", 55.0) + 6.0
             speaker_offset_y = 0.0
             if self.speaker:
+                nameplate_fs = self.scale_font_size(style.nameplate_font_size)
                 backend.draw_text(
                     text_start_x,
                     content_y,
                     self.speaker,
-                    font_size=style.nameplate_font_size,
+                    font_size=nameplate_fs,
                     color=self.speaker_color if self.speaker_color is not None else style.nameplate_text,
                 )
-                speaker_offset_y = float(style.nameplate_font_size) + 12.0
+                speaker_offset_y = float(nameplate_fs) + 12.0
             dialogue_start_y = content_y + speaker_offset_y
         else:
             dialogue_start_y = box_y + 24.0
@@ -562,12 +569,13 @@ class DialogueBox:
         if not formatted.plain_text:
             return
 
-        line_height = style.text_font_size * 1.35
+        text_fs = self.scale_font_size(style.text_font_size)
+        line_height = text_fs * 1.35
         lines = _get_wrapped_lines(
             formatted.plain_text,
             text_max_w,
             backend.measure_text,
-            font_size=style.text_font_size,
+            font_size=text_fs,
         )
 
         visible_limit = (
@@ -600,7 +608,7 @@ class DialogueBox:
                 overlap_end = min(visible_line_end, seg_end)
                 if overlap_start < overlap_end:
                     piece_text = seg.text[overlap_start - seg_start : overlap_end - seg_start]
-                    seg_font_size = max(1, round(style.text_font_size * seg.size_mult))
+                    seg_font_size = max(1, round(text_fs * seg.size_mult))
                     seg_color = seg.color if seg.color is not None else style.text_color
                     backend.draw_text(
                         x_cursor,
@@ -629,11 +637,12 @@ class DialogueBox:
             arrow_col = (
                 _CINEMATIC_SPEAKER_COLOR if self.is_read else style.arrow_color
             )
+            arrow_fs = self.scale_font_size(style.arrow_font_size)
             backend.draw_text(
                 arrow_x,
                 box_y + box_h - 25.0,
                 arrow_sym,
-                font_size=style.arrow_font_size,
+                font_size=arrow_fs,
                 color=arrow_col,
                 anchor_x=TextAnchor.RIGHT if style.layout_mode == "cinematic" else TextAnchor.LEFT,
             )
@@ -735,6 +744,11 @@ class ChoiceMenu:
             self.selected_index,
         )
 
+    def scale_font_size(self, base_size: float) -> int:
+        """Scale a base font size proportionally with the viewport height (reference 720p)."""
+        scale = float(self.viewport_height) / 720.0
+        return max(1, round(float(base_size) * scale))
+
     def layout(self) -> tuple[tuple[float, float, float, float], ...]:
         """Compute one ``(x, y, w, h)`` rectangle per option, top to bottom."""
         if not self.options:
@@ -818,7 +832,7 @@ class ChoiceMenu:
                 bx + style.text_padding,
                 by + (bh / 2.0),
                 label_text,
-                font_size=style.text_font_size,
+                font_size=self.scale_font_size(style.text_font_size),
                 color=text_col,
                 anchor_y=TextAnchor.MIDDLE,
             )
@@ -876,6 +890,11 @@ class InputBox:
         by = (float(self.viewport_height) - bh) / 2.0
         return (bx, by, bw, bh)
 
+    def scale_font_size(self, base_size: float) -> int:
+        """Scale a base font size proportionally with the viewport height (reference 720p)."""
+        scale = float(self.viewport_height) / 720.0
+        return max(1, round(float(base_size) * scale))
+
     def draw(self, backend: UIDrawBackend) -> None:
         """Render modal backdrop, dialog box, prompt label, input field, and blinking cursor."""
         vw = float(self.viewport_width)
@@ -894,11 +913,12 @@ class InputBox:
         prompt_x = bx + 28.0
         prompt_y = by + 26.0
         prompt_col = Color(0.95, 0.86, 0.62, 1.0)
+        prompt_fs = self.scale_font_size(15)
         backend.draw_text(
             prompt_x,
             prompt_y,
             self.prompt or "Enter input:",
-            font_size=15,
+            font_size=prompt_fs,
             color=prompt_col,
             bold=True,
         )
@@ -924,11 +944,12 @@ class InputBox:
         text_x = field_x + 14.0
         text_y = field_y + (field_h / 2.0)
         text_col = Color(0.95, 0.96, 0.98, 1.0)
+        input_fs = self.scale_font_size(15)
         backend.draw_text(
             text_x,
             text_y,
             self.text_buffer,
-            font_size=15,
+            font_size=input_fs,
             color=text_col,
             anchor_y=TextAnchor.MIDDLE,
         )
@@ -936,7 +957,7 @@ class InputBox:
         # 6. Blinking cursor
         if self.cursor_visible:
             # Measure width of current buffer to place cursor
-            text_w, _ = backend.measure_text(self.text_buffer, font_size=15)
+            text_w, _ = backend.measure_text(self.text_buffer, font_size=input_fs)
             cursor_x = text_x + text_w + 2.0
             cursor_h = 20.0
             cursor_y = text_y - (cursor_h / 2.0)
@@ -950,7 +971,7 @@ class InputBox:
             bx + bw - 28.0,
             hint_y,
             "Press Enter to confirm",
-            font_size=11,
+            font_size=self.scale_font_size(11),
             color=hint_col,
             anchor_x=TextAnchor.RIGHT,
             anchor_y=TextAnchor.MIDDLE,
@@ -1001,6 +1022,11 @@ class EndNotice:
             self.banner_height,
         )
 
+    def scale_font_size(self, base_size: float) -> int:
+        """Scale a base font size proportionally with the viewport height (reference 720p)."""
+        scale = float(self.viewport_height) / 720.0
+        return max(1, round(float(base_size) * scale))
+
     def draw(self, backend: UIDrawBackend) -> None:
         """Render the end-of-story banner through *backend*."""
         bx, by, bw, bh = self.layout()
@@ -1009,7 +1035,7 @@ class EndNotice:
             bx + (bw / 2.0),
             by + (bh / 2.0),
             self.message,
-            font_size=self.font_size,
+            font_size=self.scale_font_size(self.font_size),
             color=self.text_color,
             anchor_x=TextAnchor.CENTER,
             anchor_y=TextAnchor.MIDDLE,
@@ -1075,6 +1101,11 @@ class QuickMenu:
                 return act_id
         return None
 
+    def scale_font_size(self, base_size: float) -> int:
+        """Scale a base font size proportionally with the viewport height (reference 720p)."""
+        scale = float(self.viewport_height) / 720.0
+        return max(1, round(float(base_size) * scale))
+
     def draw(self, backend: UIDrawBackend) -> None:
         """Render quick action buttons cleanly without harsh boxes."""
         if self.theme is not None:
@@ -1102,7 +1133,7 @@ class QuickMenu:
                 bx + bw / 2.0,
                 by + bh / 2.0,
                 label,
-                font_size=11,
+                font_size=self.scale_font_size(11),
                 color=col,
                 anchor_x=TextAnchor.CENTER,
                 anchor_y=TextAnchor.MIDDLE,
@@ -1333,7 +1364,7 @@ class UIOverlay:
                 bx + badge_w / 2.0,
                 by + badge_h / 2.0,
                 status_badge,
-                font_size=12,
+                font_size=self.scale_font_size(12),
                 color=Color(0.92, 0.93, 0.95, 0.95),
                 anchor_x=TextAnchor.CENTER,
                 anchor_y=TextAnchor.MIDDLE,
@@ -1343,6 +1374,11 @@ class UIOverlay:
             self._draw_error_overlay(backend, self.error_overlay)
         elif finished:
             self.end_notice.draw(backend)
+
+    def scale_font_size(self, base_size: float) -> int:
+        """Scale a base font size proportionally with the viewport height (reference 720p)."""
+        scale = float(self.height) / 720.0
+        return max(1, round(float(base_size) * scale))
 
     def _draw_error_overlay(self, backend: UIDrawBackend, message: str) -> None:
         """Draw a safe error overlay box centered on screen."""
@@ -1359,7 +1395,7 @@ class UIOverlay:
             bx + 24.0,
             by + 24.0,
             "Scene Not Found",
-            font_size=18,
+            font_size=self.scale_font_size(18),
             color=Color(1.0, 0.4, 0.4, 1.0),
             bold=True,
         )
@@ -1367,14 +1403,14 @@ class UIOverlay:
             bx + 24.0,
             by + 64.0,
             message,
-            font_size=14,
+            font_size=self.scale_font_size(14),
             color=Color(0.95, 0.95, 0.95, 1.0),
         )
         backend.draw_text(
             bx + 24.0,
             by + 112.0,
             "Hot-Reload: Edit screenplay and press Shift+R to reload.",
-            font_size=12,
+            font_size=self.scale_font_size(12),
             color=Color(0.7, 0.7, 0.75, 0.8),
         )
 
@@ -1390,3 +1426,55 @@ class UIOverlay:
         if not self.dialogue_box.text:
             return None
         return self.quick_menu.hit_test(x, y)
+
+    def get_selected_choice(self) -> int | None:
+        """Return the index of the currently selected choice option, or None."""
+        if hasattr(self, "choice_menu") and self.choice_menu is not None:
+            return self.choice_menu.selected_index
+        return None
+
+    def set_selected_choice(self, index: int | None) -> None:
+        """Update the selected choice option index."""
+        if hasattr(self, "choice_menu") and self.choice_menu is not None:
+            self.choice_menu.selected_index = index
+
+    def set_choice_options(self, options: Any) -> None:
+        """Update the displayed choice menu options."""
+        if hasattr(self, "choice_menu") and self.choice_menu is not None:
+            self.choice_menu.set_options(options)
+
+    def set_input_text(self, text: str) -> None:
+        """Update the text buffer displayed by the input box."""
+        if hasattr(self, "input_box") and self.input_box is not None:
+            self.input_box.text_buffer = text
+
+    def update_input(self, dt: float) -> None:
+        """Advance cursor animation or timers in the input box."""
+        if hasattr(self, "input_box") and self.input_box is not None:
+            self.input_box.update(dt)
+
+    def set_dialogue_visible_chars(
+        self,
+        visible_chars: int | None = None,
+        *,
+        show_arrow: bool = True,
+    ) -> None:
+        """Update visible character limit and advance indicator on the dialogue box."""
+        if hasattr(self, "dialogue_box") and self.dialogue_box is not None:
+            self.dialogue_box.visible_chars = visible_chars
+            self.dialogue_box.show_advance_arrow = show_arrow
+
+    def complete_dialogue_reveal(self, *, show_arrow: bool = True) -> None:
+        """Snap dialogue box typewriter reveal to fully revealed."""
+        self.set_dialogue_visible_chars(None, show_arrow=show_arrow)
+
+    def get_hovered_quick_action(self) -> str | None:
+        """Return the currently hovered quick action identifier."""
+        if hasattr(self, "quick_menu") and self.quick_menu is not None:
+            return getattr(self.quick_menu, "hovered_action", None)
+        return None
+
+    def set_hovered_quick_action(self, action: str | None) -> None:
+        """Update the hovered quick action identifier."""
+        if hasattr(self, "quick_menu") and self.quick_menu is not None:
+            self.quick_menu.hovered_action = action

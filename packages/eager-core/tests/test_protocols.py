@@ -67,6 +67,38 @@ class DummyUI:
     def hit_test_quick_action(self, x: float, y: float) -> str | None:
         return None
 
+    def get_selected_choice(self) -> int | None:
+        return None
+
+    def set_selected_choice(self, index: int | None) -> None:
+        pass
+
+    def set_choice_options(self, options: Any) -> None:
+        pass
+
+    def set_input_text(self, text: str) -> None:
+        pass
+
+    def update_input(self, dt: float) -> None:
+        pass
+
+    def set_dialogue_visible_chars(
+        self,
+        visible_chars: int | None = None,
+        *,
+        show_arrow: bool = True,
+    ) -> None:
+        pass
+
+    def complete_dialogue_reveal(self, *, show_arrow: bool = True) -> None:
+        pass
+
+    def get_hovered_quick_action(self) -> str | None:
+        return None
+
+    def set_hovered_quick_action(self, action: str | None) -> None:
+        pass
+
 
 class DummyScreenManager:
     def __init__(self) -> None:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import eager_script
 from eager_core.types import Color
 
@@ -808,6 +810,100 @@ alice: Hello there!
     assert session.director.ui_state.speaker == "Alice"
     assert session.director.ui_state.side_image == "alice_side.png"
     assert session.director.ui_state.speaker_color == Color.from_hex("#ff0000")
+
+
+def test_session_handle_input_delegates_to_ui_protocol_methods() -> None:
+    """Verify handle_input interacts with UI purely via UIProtocol methods without widget reaching."""
+    from eager_core.protocols import UIProtocol
+
+    class PureProtocolUI:
+        def __init__(self) -> None:
+            self.error_overlay: str | None = None
+            self.selected_choice: int | None = None
+            self.input_text: str = ""
+            self.revealed: bool = False
+            self.input_updated_dt: float = 0.0
+
+        def set_viewport(self, width: int, height: int) -> None:
+            pass
+
+        def draw(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def sync(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def hit_test_choice(self, x: float, y: float) -> int | None:
+            return 1
+
+        def hit_test_quick_action(self, x: float, y: float) -> str | None:
+            return None
+
+        def get_selected_choice(self) -> int | None:
+            return self.selected_choice
+
+        def set_selected_choice(self, index: int | None) -> None:
+            self.selected_choice = index
+
+        def set_choice_options(self, options: Any) -> None:
+            pass
+
+        def set_input_text(self, text: str) -> None:
+            self.input_text = text
+
+        def update_input(self, dt: float) -> None:
+            self.input_updated_dt += dt
+
+        def set_dialogue_visible_chars(
+            self,
+            visible_chars: int | None = None,
+            *,
+            show_arrow: bool = True,
+        ) -> None:
+            pass
+
+        def complete_dialogue_reveal(self, *, show_arrow: bool = True) -> None:
+            self.revealed = True
+
+        def get_hovered_quick_action(self) -> str | None:
+            return None
+
+        def set_hovered_quick_action(self, action: str | None) -> None:
+            pass
+
+    ui = PureProtocolUI()
+    assert isinstance(ui, UIProtocol)
+
+    story = """
+## Start --- start
+? Opt 1 (opt1)
+? Opt 2 (opt2)
+
+## Opt 1 --- opt1
+Alice: Chosen 1.
+
+## Opt 2 --- opt2
+Alice: Chosen 2.
+"""
+    graph = eager_script.parse_graph(story)
+    session = GameSession(graph, ui=ui)
+    session.advance()
+
+    # 1. Choice navigation delegates to get_selected_choice and set_selected_choice
+    session.handle_input(InputAction.NAV_DOWN)
+    assert ui.selected_choice == 0
+
+    session.handle_input(InputAction.NAV_DOWN)
+    assert ui.selected_choice == 1
+
+    # Hover update
+    session.handle_input(InputAction.POINTER_MOVE, x=10.0, y=10.0)
+    assert ui.selected_choice == 1
+
+    # Confirm choice
+    session.handle_input(InputAction.CONFIRM)
+    assert session.director.ui_state.text == "Chosen 2."
+
 
 
 
