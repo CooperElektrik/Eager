@@ -9,8 +9,8 @@ from eager_core.types import Rect
 
 from eager_graphics.protocol import UIDrawBackend
 from eager_graphics.screens.screen import Screen
-from eager_graphics.screens.theme import Theme
 from eager_graphics.screens.widgets import Button, Grid, Label, Slider
+from eager_graphics.theme import Theme
 from eager_graphics.ui_components import TextAnchor
 
 
@@ -88,7 +88,7 @@ class TitleScreen(Screen):
             vh * (150.0 / 720.0),
             self.title,
             color=self.theme.accent_color,
-            font_size=self.theme.title_font_size,
+            font_size=self.scale_font_size(self.theme.title_font_size),
             anchor_x=TextAnchor.LEFT,
             anchor_y=TextAnchor.TOP,
         )
@@ -101,7 +101,7 @@ class TitleScreen(Screen):
                 hover_color=self.theme.button_hover,
                 border_color=self.theme.button_border,
                 text_color=self.theme.button_text,
-                font_size=self.theme.font_size,
+                font_size=self.scale_font_size(self.theme.font_size),
             )
 
 
@@ -227,7 +227,7 @@ class SaveLoadScreen(Screen):
             vh * (40.0 / 720.0),
             "Save Game" if self.mode == "save" else "Load Game",
             color=self.theme.text_color,
-            font_size=28,
+            font_size=self.scale_font_size(28),
             anchor_x=TextAnchor.LEFT,
             anchor_y=TextAnchor.TOP,
         )
@@ -238,7 +238,7 @@ class SaveLoadScreen(Screen):
                 hover_color=self.theme.button_hover,
                 border_color=self.theme.button_border,
                 text_color=self.theme.button_text,
-                font_size=self.theme.font_size,
+                font_size=self.scale_font_size(self.theme.font_size),
             )
 
 
@@ -292,7 +292,13 @@ class PreferencesScreen(Screen):
         for idx, (label_text, field, current_val) in enumerate(vol_settings):
             sy = base_y + idx * step_y
             self.labels.append(
-                Label(label_text, label_x, sy + label_offset_y, color=self.theme.text_color, font_size=16)
+                Label(
+                    label_text,
+                    label_x,
+                    sy + label_offset_y,
+                    color=self.theme.text_color,
+                    font_size=self.scale_font_size(16),
+                )
             )
             self.sliders.append(
                 Slider(
@@ -312,7 +318,13 @@ class PreferencesScreen(Screen):
 
         speed_y = base_y + 4 * step_y
         self.labels.append(
-            Label("Text Speed", label_x, speed_y + label_offset_y, color=self.theme.text_color, font_size=16)
+            Label(
+                "Text Speed",
+                label_x,
+                speed_y + label_offset_y,
+                color=self.theme.text_color,
+                font_size=self.scale_font_size(16),
+            )
         )
         self.sliders.append(
             Slider(
@@ -332,7 +344,13 @@ class PreferencesScreen(Screen):
 
         auto_y = base_y + 5 * step_y
         self.labels.append(
-            Label("Auto Forward", label_x, auto_y + label_offset_y, color=self.theme.text_color, font_size=16)
+            Label(
+                "Auto Forward",
+                label_x,
+                auto_y + label_offset_y,
+                color=self.theme.text_color,
+                font_size=self.scale_font_size(16),
+            )
         )
         self.sliders.append(
             Slider(
@@ -363,7 +381,13 @@ class PreferencesScreen(Screen):
         lang_x = vw * (680.0 / 1280.0)
         lang_y = base_y
         self.labels.append(
-            Label("Language", lang_x, lang_y + label_offset_y, color=self.theme.text_color, font_size=18)
+            Label(
+                "Language",
+                lang_x,
+                lang_y + label_offset_y,
+                color=self.theme.text_color,
+                font_size=self.scale_font_size(18),
+            )
         )
 
         lang_btn_w = vw * (140.0 / 1280.0)
@@ -414,7 +438,7 @@ class PreferencesScreen(Screen):
             vh * (40.0 / 720.0),
             "Preferences",
             color=self.theme.text_color,
-            font_size=28,
+            font_size=self.scale_font_size(28),
             anchor_x=TextAnchor.LEFT,
             anchor_y=TextAnchor.TOP,
         )
@@ -432,7 +456,7 @@ class PreferencesScreen(Screen):
                 hover_color=self.theme.button_hover,
                 border_color=self.theme.button_border,
                 text_color=self.theme.button_text,
-                font_size=self.theme.font_size,
+                font_size=self.scale_font_size(self.theme.font_size),
             )
 
 
@@ -596,12 +620,17 @@ class HistoryScreen(Screen):
         backend.draw_rect(0, 0, width, height, self.theme.bg_color)
         title_x = vw * (100.0 / 1280.0)
         title_y = vh * (40.0 / 720.0)
+        title_font_size = self.scale_font_size(28)
+        empty_font_size = self.scale_font_size(16)
+        entry_font_size = self.scale_font_size(14)
+        btn_font_size = self.scale_font_size(self.theme.font_size)
+
         backend.draw_text(
             title_x,
             title_y,
             "Dialogue History",
             color=self.theme.text_color,
-            font_size=28,
+            font_size=title_font_size,
             anchor_x=TextAnchor.LEFT,
             anchor_y=TextAnchor.TOP,
         )
@@ -612,7 +641,7 @@ class HistoryScreen(Screen):
                 vh * (120.0 / 720.0),
                 "No dialogue recorded yet.",
                 color=self.theme.muted_text_color,
-                font_size=16,
+                font_size=empty_font_size,
             )
         else:
             # Display up to 7 most recent entries with scroll offset
@@ -633,14 +662,14 @@ class HistoryScreen(Screen):
                         curr_y,
                         entry.speaker,
                         color=self.theme.accent_color,
-                        font_size=14,
+                        font_size=entry_font_size,
                     )
                     backend.draw_text(
                         entry_x + len(entry.speaker) * char_w,
                         curr_y,
                         f": {entry.text}",
                         color=self.theme.text_color,
-                        font_size=14,
+                        font_size=entry_font_size,
                     )
                 else:
                     backend.draw_text(
@@ -648,7 +677,7 @@ class HistoryScreen(Screen):
                         curr_y,
                         entry.text,
                         color=self.theme.muted_text_color,
-                        font_size=14,
+                        font_size=entry_font_size,
                     )
                 curr_y += step_y
 
@@ -659,7 +688,7 @@ class HistoryScreen(Screen):
                 hover_color=self.theme.button_hover,
                 border_color=self.theme.button_border,
                 text_color=self.theme.button_text,
-                font_size=self.theme.font_size,
+                font_size=btn_font_size,
             )
 
 

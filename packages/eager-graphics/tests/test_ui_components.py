@@ -854,3 +854,83 @@ def test_input_box_modal_rendering() -> None:
     assert overlay.input_box.cursor_visible is False
     overlay.input_box.update(0.6)
     assert overlay.input_box.cursor_visible is True
+
+
+def test_theme_and_styles_unification() -> None:
+    """Theme must bridge cleanly to TextboxStyle and ChoiceMenuStyle."""
+    from eager_core.types import Color
+
+    from eager_graphics.theme import Theme
+    from eager_graphics.ui_components import (
+        ChoiceMenu,
+        ChoiceMenuStyle,
+        DialogueBox,
+        QuickMenu,
+        TextboxStyle,
+        UIOverlay,
+    )
+
+    custom_theme = Theme(
+        name="crimson_gold",
+        bg_color=Color(0.1, 0.0, 0.0, 1.0),
+        primary_color=Color(0.8, 0.1, 0.1, 1.0),
+        accent_color=Color(1.0, 0.8, 0.2, 1.0),
+        text_color=Color(0.98, 0.98, 0.98, 1.0),
+        muted_text_color=Color(0.7, 0.6, 0.6, 1.0),
+        dialogue_box_fill=Color(0.15, 0.02, 0.02, 0.95),
+        dialogue_box_border=Color(1.0, 0.8, 0.2, 0.3),
+        nameplate_fill=Color(0.3, 0.05, 0.05, 0.9),
+        nameplate_text=Color(1.0, 0.85, 0.3, 1.0),
+        button_fill=Color(0.25, 0.04, 0.04, 0.85),
+        button_hover=Color(0.45, 0.08, 0.08, 0.95),
+        button_border=Color(1.0, 0.8, 0.2, 0.5),
+        button_text=Color(1.0, 1.0, 1.0, 1.0),
+        font_size=20,
+    )
+
+    # 1. to_textbox_style and TextboxStyle.from_theme
+    tb_style = custom_theme.to_textbox_style()
+    assert tb_style.box_fill == custom_theme.dialogue_box_fill
+    assert tb_style.nameplate_text == custom_theme.nameplate_text
+    assert tb_style.show_nameplate_box is True
+    assert tb_style.text_font_size == 19  # 20 - 1
+
+    from_tb = TextboxStyle.from_theme(custom_theme)
+    assert from_tb == tb_style
+
+    # 2. to_choice_menu_style and ChoiceMenuStyle.from_theme
+    choice_style = custom_theme.to_choice_menu_style()
+    assert choice_style.button_fill == custom_theme.button_fill
+    assert choice_style.button_hover_fill == custom_theme.button_hover
+    assert choice_style.accent_bar_color == custom_theme.accent_color
+    assert choice_style.text_font_size == 18  # 20 - 2
+
+    from_choice = ChoiceMenuStyle.from_theme(custom_theme)
+    assert from_choice == choice_style
+
+    # 3. UIOverlay configured with Theme
+    overlay = UIOverlay(1280, 720, theme=custom_theme)
+    assert overlay.dialogue_box.style.box_fill == custom_theme.dialogue_box_fill
+    assert overlay.choice_menu.style.button_fill == custom_theme.button_fill
+    assert overlay.quick_menu.theme == custom_theme
+
+    # 4. set_theme dynamic update
+    alt_theme = Theme(name="ice_blue", dialogue_box_fill=Color(0.0, 0.1, 0.3, 0.9))
+    overlay.set_theme(alt_theme)
+    assert overlay.dialogue_box.style.box_fill == alt_theme.dialogue_box_fill
+
+    # 5. Direct DialogueBox, ChoiceMenu, QuickMenu theme support
+    diag_box = DialogueBox(theme=custom_theme)
+    assert diag_box.style.box_fill == custom_theme.dialogue_box_fill
+    diag_box.set_theme(alt_theme)
+    assert diag_box.style.box_fill == alt_theme.dialogue_box_fill
+
+    cmenu = ChoiceMenu(theme=custom_theme)
+    assert cmenu.style.button_fill == custom_theme.button_fill
+    cmenu.set_theme(alt_theme)
+    assert cmenu.style.button_fill == alt_theme.button_fill
+
+    qmenu = QuickMenu(theme=custom_theme)
+    assert qmenu.theme == custom_theme
+    qmenu.set_theme(alt_theme)
+    assert qmenu.theme == alt_theme

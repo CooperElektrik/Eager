@@ -65,6 +65,7 @@ from eager_graphics.ui_components import (
     InputBox,
     TextAnchor,
     TextboxStyle,
+    Theme,
     UIOverlay,
 )
 from eager_graphics.ui_state import ChoiceOption, UIState
@@ -107,6 +108,7 @@ __all__ = [
     "TextReveal",
     "TextSegment",
     "TextboxStyle",
+    "Theme",
     "Timeline",
     "TransitionKind",
     "Tween",
@@ -213,10 +215,10 @@ def register_providers() -> None:
         )
         return StageDirector(compositor, audio=audio, skip_mode_cb=skip_mode_cb)
 
-    def _default_ui_factory(width: int = 1280, height: int = 720) -> Any:
+    def _default_ui_factory(width: int = 1280, height: int = 720, theme: Any = None) -> Any:
         from eager_graphics.ui_components import UIOverlay
 
-        return UIOverlay(width=width, height=height)
+        return UIOverlay(width=width, height=height, theme=theme)
 
     def _default_screens_factory(config: Any, session: Any) -> Any:
         from eager_graphics.screens import (
@@ -229,18 +231,20 @@ def register_providers() -> None:
 
         w = getattr(getattr(session, "overlay", None), "width", 1280) or 1280
         h = getattr(getattr(session, "overlay", None), "height", 720) or 720
-        mgr = ScreenManager(viewport_width=w, viewport_height=h)
+        theme = getattr(getattr(session, "overlay", None), "theme", None)
+        mgr = ScreenManager(viewport_width=w, viewport_height=h, theme=theme)
         mgr.register(
             TitleScreen(
                 title=getattr(config, "title", "Eager Visual Novel"),
+                theme=theme,
                 viewport_width=w,
                 viewport_height=h,
             )
         )
-        mgr.register(SaveLoadScreen("save", viewport_width=w, viewport_height=h))
-        mgr.register(SaveLoadScreen("load", viewport_width=w, viewport_height=h))
-        mgr.register(PreferencesScreen(viewport_width=w, viewport_height=h))
-        mgr.register(HistoryScreen(viewport_width=w, viewport_height=h))
+        mgr.register(SaveLoadScreen("save", theme=theme, viewport_width=w, viewport_height=h))
+        mgr.register(SaveLoadScreen("load", theme=theme, viewport_width=w, viewport_height=h))
+        mgr.register(PreferencesScreen(theme=theme, viewport_width=w, viewport_height=h))
+        mgr.register(HistoryScreen(theme=theme, viewport_width=w, viewport_height=h))
         return mgr
 
     def _pyglet_audio_factory() -> Any:

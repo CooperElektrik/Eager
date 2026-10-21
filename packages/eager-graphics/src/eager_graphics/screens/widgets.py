@@ -67,7 +67,7 @@ class Button:
             line_spacing = font_size * 1.35
             total_text_h = len(lines) * line_spacing
             start_y = self.rect.y + (self.rect.height - total_text_h) / 2.0 + (font_size * 0.4)
-            tx = self.rect.x + 16.0
+            tx = self.rect.x + max(12.0, 16.0 * (font_size / 16.0))
             for idx, line in enumerate(lines):
                 line_y = start_y + idx * line_spacing
                 if idx == 0:
@@ -82,23 +82,25 @@ class Button:
                     )
                 elif idx == 1:
                     sub_col = Color(text_color.r * 0.75, text_color.g * 0.75, text_color.b * 0.75, text_color.a)
+                    sub_font_size = max(10, round(font_size * (13.0 / 16.0)))
                     backend.draw_text(
                         tx,
                         line_y,
                         line,
                         color=sub_col,
-                        font_size=max(10, font_size - 3),
+                        font_size=sub_font_size,
                         anchor_x=TextAnchor.LEFT,
                         anchor_y=TextAnchor.MIDDLE,
                     )
                 else:
                     snip_col = Color(text_color.r * 0.88, text_color.g * 0.88, text_color.b * 0.88, text_color.a)
+                    snip_font_size = max(11, round(font_size * (14.0 / 16.0)))
                     backend.draw_text(
                         tx,
                         line_y,
                         line,
                         color=snip_col,
-                        font_size=max(11, font_size - 2),
+                        font_size=snip_font_size,
                         anchor_x=TextAnchor.LEFT,
                         anchor_y=TextAnchor.MIDDLE,
                     )

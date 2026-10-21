@@ -7,8 +7,8 @@ from eager_graphics.screens.builtin import (
     TitleScreen,
 )
 from eager_graphics.screens.screen import Screen, ScreenManager
-from eager_graphics.screens.theme import Theme
 from eager_graphics.screens.widgets import Bar, Button, Grid, Label, Slider
+from eager_graphics.theme import Theme
 
 __all__ = [
     "Bar",

@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from eager_graphics.protocol import UIDrawBackend
-from eager_graphics.screens.theme import Theme
 from eager_graphics.screens.widgets import Button, Label, Slider
+from eager_graphics.theme import Theme
 
 
 class Screen:
@@ -34,6 +34,16 @@ class Screen:
             self.viewport_width = width
             self.viewport_height = height
             self.rebuild_layout()
+
+    def scale_font_size(self, base_size: float) -> int:
+        """Scale a base font size proportionally with the viewport height (reference 720p)."""
+        scale = float(self.viewport_height) / 720.0
+        return max(1, round(float(base_size) * scale))
+
+    def set_theme(self, theme: Theme) -> None:
+        """Update screen visual theme and recompute layout."""
+        self.theme = theme
+        self.rebuild_layout()
 
     def rebuild_layout(self) -> None:
         """Recompute layout/geometry of widgets based on current viewport dimensions."""
@@ -82,12 +92,18 @@ class Screen:
 class ScreenManager:
     """Stack and registry of screens."""
 
-    def __init__(self, viewport_width: int = 1280, viewport_height: int = 720) -> None:
+    def __init__(
+        self,
+        viewport_width: int = 1280,
+        viewport_height: int = 720,
+        theme: Theme | None = None,
+    ) -> None:
         self.screens: dict[str, Screen] = {}
         self.active_screen: Screen | None = None
         self._history_stack: list[str] = []
         self.viewport_width: int = viewport_width
         self.viewport_height: int = viewport_height
+        self.theme: Theme | None = theme
 
     def set_viewport(self, width: int, height: int) -> None:
         """Update viewport dimensions for all registered screens."""
@@ -97,7 +113,16 @@ class ScreenManager:
             if hasattr(screen, "set_viewport"):
                 screen.set_viewport(width, height)
 
+    def set_theme(self, theme: Theme) -> None:
+        """Update visual theme across all registered screens."""
+        self.theme = theme
+        for screen in self.screens.values():
+            if hasattr(screen, "set_theme"):
+                screen.set_theme(theme)
+
     def register(self, screen: Screen) -> None:
+        if self.theme is not None and (screen.theme is None or screen.theme.name == "default"):
+            screen.set_theme(self.theme)
         self.screens[screen.name] = screen
         if hasattr(screen, "set_viewport"):
             screen.set_viewport(self.viewport_width, self.viewport_height)

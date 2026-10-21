@@ -35,6 +35,8 @@ from typing import TYPE_CHECKING, Any
 from eager_core.text import parse_text_tags
 from eager_core.types import Color
 
+from eager_graphics.theme import Theme
+
 if TYPE_CHECKING:
     from eager_graphics.protocol import UIDrawBackend
     from eager_graphics.ui_state import ChoiceOption, UIState
@@ -49,6 +51,7 @@ __all__ = [
     "QuickMenu",
     "TextAnchor",
     "TextboxStyle",
+    "Theme",
     "UIOverlay",
     "wrap_text",
 ]
@@ -136,6 +139,11 @@ class TextboxStyle:
     def box_margin(self, viewport_width: float) -> float:
         """Return the horizontal gutter either side of the textbox."""
         return float(max(self.min_margin, int(viewport_width * self.margin_ratio)))
+
+    @classmethod
+    def from_theme(cls, theme: Theme, **overrides: Any) -> TextboxStyle:
+        """Create a TextboxStyle aligned with a visual Theme configuration."""
+        return theme.to_textbox_style(**overrides)
 
 
 def wrap_text(
@@ -314,8 +322,15 @@ class DialogueBox:
         height: int = 720,
         *,
         style: TextboxStyle | None = None,
+        theme: Theme | None = None,
     ) -> None:
-        self.style = style or TextboxStyle()
+        if style is not None:
+            self.style = style
+        elif theme is not None:
+            self.style = theme.to_textbox_style()
+        else:
+            self.style = TextboxStyle()
+        self.theme: Theme | None = theme
         self.viewport_width = width
         self.viewport_height = height
         self.speaker: str | None = None
@@ -326,6 +341,11 @@ class DialogueBox:
         self.is_read: bool = False
         self.visible_chars: int | None = None
         self.speaker_color: Color | None = None
+
+    def set_theme(self, theme: Theme) -> None:
+        """Apply styling from a Theme."""
+        self.theme = theme
+        self.style = theme.to_textbox_style()
 
     # ── state ──────────────────────────────────────────────────────────
 
@@ -652,6 +672,11 @@ class ChoiceMenuStyle:
         """Return the button width for a viewport of *viewport_width* pixels."""
         return float(min(self.button_width, int(viewport_width * self.button_width_ratio)))
 
+    @classmethod
+    def from_theme(cls, theme: Theme, **overrides: Any) -> ChoiceMenuStyle:
+        """Create a ChoiceMenuStyle aligned with a visual Theme configuration."""
+        return theme.to_choice_menu_style(**overrides)
+
 
 class ChoiceMenu:
     """Vertically stacked, centre-aligned branch-selection buttons.
@@ -667,12 +692,24 @@ class ChoiceMenu:
         height: int = 720,
         *,
         style: ChoiceMenuStyle | None = None,
+        theme: Theme | None = None,
     ) -> None:
-        self.style = style or ChoiceMenuStyle()
+        if style is not None:
+            self.style = style
+        elif theme is not None:
+            self.style = theme.to_choice_menu_style()
+        else:
+            self.style = ChoiceMenuStyle()
+        self.theme: Theme | None = theme
         self.viewport_width = width
         self.viewport_height = height
         self.options: tuple[ChoiceOption, ...] = ()
         self.selected_index: int | None = None
+
+    def set_theme(self, theme: Theme) -> None:
+        """Apply styling from a Theme."""
+        self.theme = theme
+        self.style = theme.to_choice_menu_style()
 
     def set_viewport(self, width: int, height: int) -> None:
         """Update the viewport the component lays itself out against."""
@@ -993,11 +1030,22 @@ class QuickMenu:
         ("prefs", "Prefs"),
     )
 
-    def __init__(self, viewport_width: int = 1280, viewport_height: int = 720) -> None:
+    def __init__(
+        self,
+        viewport_width: int = 1280,
+        viewport_height: int = 720,
+        *,
+        theme: Theme | None = None,
+    ) -> None:
         self.viewport_width = viewport_width
         self.viewport_height = viewport_height
         self.hovered_action: str | None = None
         self.is_read: bool = False
+        self.theme: Theme | None = theme
+
+    def set_theme(self, theme: Theme) -> None:
+        """Apply styling from a Theme."""
+        self.theme = theme
 
     def set_viewport(self, width: int, height: int) -> None:
         self.viewport_width = width
@@ -1029,10 +1077,16 @@ class QuickMenu:
 
     def draw(self, backend: UIDrawBackend) -> None:
         """Render quick action buttons cleanly without harsh boxes."""
-        text_col = Color(0.68, 0.72, 0.78, 0.65)
-        hover_col = Color(0.95, 0.96, 0.98, 1.0)
-        hover_pill = Color(1.0, 1.0, 1.0, 0.08)
-        read_skip_col = Color(0.95, 0.86, 0.62, 0.85)
+        if self.theme is not None:
+            text_col = self.theme.muted_text_color
+            hover_col = self.theme.text_color
+            hover_pill = Color(self.theme.button_hover.r, self.theme.button_hover.g, self.theme.button_hover.b, 0.25)
+            read_skip_col = self.theme.accent_color
+        else:
+            text_col = Color(0.68, 0.72, 0.78, 0.65)
+            hover_col = Color(0.95, 0.96, 0.98, 1.0)
+            hover_pill = Color(1.0, 1.0, 1.0, 0.08)
+            read_skip_col = Color(0.95, 0.86, 0.62, 0.85)
 
         for act_id, label, bx, by, bw, bh in self.layout():
             is_hovered = getattr(self, "hovered_action", None) == act_id
@@ -1077,6 +1131,7 @@ class UIOverlay:
     height: int = 720
     dialogue_style: TextboxStyle | None = None
     choice_style: ChoiceMenuStyle | None = None
+    theme: Theme | None = None
     error_overlay: str | None = None
     dialogue_box: DialogueBox = field(init=False)
     choice_menu: ChoiceMenu = field(init=False)
@@ -1085,11 +1140,36 @@ class UIOverlay:
     quick_menu: QuickMenu = field(init=False)
 
     def __post_init__(self) -> None:
-        self.dialogue_box = DialogueBox(self.width, self.height, style=self.dialogue_style)
-        self.choice_menu = ChoiceMenu(self.width, self.height, style=self.choice_style)
+        if self.theme is not None:
+            if self.dialogue_style is None:
+                self.dialogue_style = self.theme.to_textbox_style()
+            if self.choice_style is None:
+                self.choice_style = self.theme.to_choice_menu_style()
+
+        self.dialogue_box = DialogueBox(
+            self.width,
+            self.height,
+            style=self.dialogue_style,
+            theme=self.theme if self.dialogue_style is None else None,
+        )
+        self.choice_menu = ChoiceMenu(
+            self.width,
+            self.height,
+            style=self.choice_style,
+            theme=self.theme if self.choice_style is None else None,
+        )
         self.input_box = InputBox(self.width, self.height)
         self.end_notice = EndNotice(self.width, self.height)
-        self.quick_menu = QuickMenu(self.width, self.height)
+        self.quick_menu = QuickMenu(self.width, self.height, theme=self.theme)
+
+    def set_theme(self, theme: Theme) -> None:
+        """Apply a new Theme across the overlay and all child components."""
+        self.theme = theme
+        self.dialogue_style = theme.to_textbox_style()
+        self.choice_style = theme.to_choice_menu_style()
+        self.dialogue_box.set_theme(theme)
+        self.choice_menu.set_theme(theme)
+        self.quick_menu.set_theme(theme)
 
     # ── state ──────────────────────────────────────────────────────────
 

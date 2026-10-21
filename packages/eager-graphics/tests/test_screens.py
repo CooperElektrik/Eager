@@ -515,6 +515,95 @@ height = 720
         self.assertGreater(fhd_rect.width, orig_btn_rect.width)
         self.assertGreater(fhd_rect.y, orig_btn_rect.y)
 
+    def test_font_size_scaling_with_viewport_height(self):
+        """Screen font_size values must scale proportionally with viewport height relative to 720p."""
+        from eager_graphics.screens import (
+            HistoryScreen,
+            PreferencesScreen,
+            SaveLoadScreen,
+            TitleScreen,
+        )
+
+        backend_720 = MockUIDrawBackend()
+        backend_1080 = MockUIDrawBackend()
+
+        # 1. TitleScreen: title (32) and button (16)
+        title_720 = TitleScreen("Title Test", viewport_width=1280, viewport_height=720)
+        title_720.draw(backend_720, 1280, 720)
+        texts_720 = {t[0]: t[3].get("font_size") for t in backend_720.texts}
+        self.assertEqual(texts_720["Title Test"], 32)
+        self.assertEqual(texts_720["Start Game"], 16)
+
+        title_1080 = TitleScreen("Title Test", viewport_width=1920, viewport_height=1080)
+        title_1080.draw(backend_1080, 1920, 1080)
+        texts_1080 = {t[0]: t[3].get("font_size") for t in backend_1080.texts}
+        self.assertEqual(texts_1080["Title Test"], 48)  # 32 * 1.5
+        self.assertEqual(texts_1080["Start Game"], 24)  # 16 * 1.5
+
+        # 2. SaveLoadScreen: header (28) and back button (16)
+        backend_720.texts.clear()
+        backend_1080.texts.clear()
+        save_720 = SaveLoadScreen("save", viewport_width=1280, viewport_height=720)
+        save_720.draw(backend_720, 1280, 720)
+        texts_720 = {t[0]: t[3].get("font_size") for t in backend_720.texts}
+        self.assertEqual(texts_720["Save Game"], 28)
+        self.assertEqual(texts_720["Back"], 16)
+
+        save_1080 = SaveLoadScreen("save", viewport_width=1920, viewport_height=1080)
+        save_1080.draw(backend_1080, 1920, 1080)
+        texts_1080 = {t[0]: t[3].get("font_size") for t in backend_1080.texts}
+        self.assertEqual(texts_1080["Save Game"], 42)  # 28 * 1.5
+        self.assertEqual(texts_1080["Back"], 24)  # 16 * 1.5
+
+        # 3. PreferencesScreen: header (28), labels (16, 18), back button (16)
+        backend_720.texts.clear()
+        backend_1080.texts.clear()
+        pref_720 = PreferencesScreen(viewport_width=1280, viewport_height=720)
+        pref_720.draw(backend_720, 1280, 720)
+        texts_720 = {t[0]: t[3].get("font_size") for t in backend_720.texts}
+        self.assertEqual(texts_720["Preferences"], 28)
+        self.assertEqual(texts_720["Master Volume"], 16)
+        self.assertEqual(texts_720["Language"], 18)
+        self.assertEqual(texts_720["Back"], 16)
+
+        pref_1080 = PreferencesScreen(viewport_width=1920, viewport_height=1080)
+        pref_1080.draw(backend_1080, 1920, 1080)
+        texts_1080 = {t[0]: t[3].get("font_size") for t in backend_1080.texts}
+        self.assertEqual(texts_1080["Preferences"], 42)  # 28 * 1.5
+        self.assertEqual(texts_1080["Master Volume"], 24)  # 16 * 1.5
+        self.assertEqual(texts_1080["Language"], 27)  # 18 * 1.5
+        self.assertEqual(texts_1080["Back"], 24)  # 16 * 1.5
+
+        # 4. HistoryScreen: header (28), empty (16), entry (14)
+        backend_720.texts.clear()
+        backend_1080.texts.clear()
+        hist_720 = HistoryScreen(viewport_width=1280, viewport_height=720)
+        hist_720.draw(backend_720, 1280, 720)
+        texts_720 = {t[0]: t[3].get("font_size") for t in backend_720.texts}
+        self.assertEqual(texts_720["Dialogue History"], 28)
+        self.assertEqual(texts_720["No dialogue recorded yet."], 16)
+
+        hist_1080 = HistoryScreen(viewport_width=1920, viewport_height=1080)
+        hist_1080.draw(backend_1080, 1920, 1080)
+        texts_1080 = {t[0]: t[3].get("font_size") for t in backend_1080.texts}
+        self.assertEqual(texts_1080["Dialogue History"], 42)  # 28 * 1.5
+        self.assertEqual(texts_1080["No dialogue recorded yet."], 24)  # 16 * 1.5
+
+    def test_screen_manager_and_screen_theme_propagation(self):
+        """ScreenManager theme updates must propagate to registered screens."""
+        from eager_graphics.screens import ScreenManager, TitleScreen
+        from eager_graphics.theme import Theme
+
+        custom_theme = Theme(name="custom_dark", font_size=20, title_font_size=40)
+        mgr = ScreenManager(theme=custom_theme)
+        title = TitleScreen("Themed Title")
+        mgr.register(title)
+        self.assertEqual(title.theme.name, "custom_dark")
+
+        new_theme = Theme(name="new_theme", font_size=18, title_font_size=36)
+        mgr.set_theme(new_theme)
+        self.assertEqual(title.theme.name, "new_theme")
+
 
 if __name__ == "__main__":
     unittest.main()
