@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from eager_core.storage import atomic_write_json, safe_read_json
 
 if TYPE_CHECKING:
-    from eager_runtime.session import Checkpoint
+    from eager_runtime.state import Checkpoint
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +68,7 @@ class SaveData:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SaveData:
-        from eager_runtime.session import Checkpoint
+        from eager_runtime.state import Checkpoint
 
         meta = SaveMetadata.from_dict(data.get("metadata", {}))
         cp_data = data.get("checkpoint", {})

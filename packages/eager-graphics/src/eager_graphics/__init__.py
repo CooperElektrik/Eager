@@ -51,7 +51,6 @@ from eager_core.types import (
 
 from eager_graphics.compositor import StageCompositor
 from eager_graphics.director import CharacterConfig, StageDirector
-from eager_graphics.history import VisualHistoryManager
 from eager_graphics.layout import LayoutResolver, ViewportTransform
 from eager_graphics.protocol import RenderBackend, RenderItem, UIDrawBackend
 from eager_graphics.stage import ElementState, Layer, Stage, StageElement
@@ -116,7 +115,6 @@ __all__ = [
     "UIState",
     "Vec2",
     "ViewportTransform",
-    "VisualHistoryManager",
     "ease_in_back",
     "ease_in_bounce",
     "ease_in_cubic",

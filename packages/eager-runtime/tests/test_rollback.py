@@ -1,4 +1,4 @@
-"""Unit tests for story history tracking and time-travel rollback in StoryVM."""
+"""Unit tests for CheckpointHistory, interaction checkpoints, and narrative rollback."""
 
 import unittest
 
@@ -7,9 +7,11 @@ import eager_script
 from eager_runtime import (
     ChoicePromptEvent,
     DialogueEvent,
+    GameSession,
     NarrationEvent,
     StoryVM,
 )
+from eager_runtime.state import Checkpoint, CheckpointHistory
 
 SAMPLE_SCRIPT = """
 ## Room --- room
@@ -26,78 +28,120 @@ Narrator: The right room is empty.
 """
 
 
-class TestRollback(unittest.TestCase):
+class TestCheckpointHistory(unittest.TestCase):
+    def test_checkpoint_history_push_pop_roll_forward(self) -> None:
+        ch = CheckpointHistory(max_history=5)
+        self.assertFalse(ch.can_rollback)
+        self.assertFalse(ch.can_roll_forward)
+        self.assertEqual(ch.depth, 0)
+
+        cp1 = Checkpoint(story={"scene": "1"}, visual={}, audio={}, backlog_len=1, ui={})
+        cp2 = Checkpoint(story={"scene": "2"}, visual={}, audio={}, backlog_len=2, ui={})
+
+        ch.push(cp1)
+        self.assertFalse(ch.can_rollback)  # depth is 1
+        self.assertEqual(ch.depth, 1)
+
+        ch.push(cp2)
+        self.assertTrue(ch.can_rollback)  # depth is 2
+        self.assertEqual(ch.depth, 2)
+        self.assertEqual(ch.get_latest(), cp2)
+
+        # Pop cp2 onto redo stack
+        popped = ch.pop()
+        self.assertEqual(popped, cp2)
+        self.assertEqual(ch.depth, 1)
+        self.assertFalse(ch.can_rollback)
+        self.assertTrue(ch.can_roll_forward)
+
+        # Roll forward restores cp2
+        rf = ch.roll_forward()
+        self.assertEqual(rf, cp2)
+        self.assertEqual(ch.depth, 2)
+        self.assertTrue(ch.can_rollback)
+        self.assertFalse(ch.can_roll_forward)
+
+    def test_checkpoint_history_max_capacity(self) -> None:
+        ch = CheckpointHistory(max_history=3)
+        for i in range(5):
+            ch.push(Checkpoint(story={"i": i}, visual={}, audio={}, backlog_len=i, ui={}))
+
+        self.assertEqual(ch.depth, 3)
+        latest = ch.get_latest()
+        self.assertIsNotNone(latest)
+        assert latest is not None
+        self.assertEqual(latest.story["i"], 4)
+
+    def test_checkpoint_history_clear_and_clear_redo(self) -> None:
+        ch = CheckpointHistory(max_history=5)
+        cp1 = Checkpoint(story={"s": 1}, visual={}, audio={}, backlog_len=0, ui={})
+        cp2 = Checkpoint(story={"s": 2}, visual={}, audio={}, backlog_len=0, ui={})
+        ch.push(cp1)
+        ch.push(cp2)
+        ch.pop()
+        self.assertTrue(ch.can_roll_forward)
+
+        ch.clear_redo()
+        self.assertFalse(ch.can_roll_forward)
+
+        ch.clear()
+        self.assertEqual(ch.depth, 0)
+        self.assertFalse(ch.can_rollback)
+
+
+class TestSessionRollback(unittest.TestCase):
     def setUp(self) -> None:
         self.graph = eager_script.parse_graph(SAMPLE_SCRIPT)
-        self.vm = StoryVM(self.graph)
+        self.session = GameSession(self.graph, headless=True)
 
-    def test_step_by_step_rollback(self) -> None:
-        self.assertFalse(self.vm.can_rollback)
+    def test_step_by_step_session_rollback(self) -> None:
+        # Step 1: Narration
+        e1 = self.session.advance()
+        self.assertIsInstance(e1, NarrationEvent)
+        self.assertFalse(self.session.can_rollback)  # First checkpoint
 
-        # Step 1: enter scene
-        self.vm.step()
-        self.assertTrue(self.vm.can_rollback)
+        # Step 2: Dialogue
+        e2 = self.session.advance()
+        self.assertIsInstance(e2, DialogueEvent)
+        self.assertTrue(self.session.can_rollback)
 
-        # Step 2: narration
-        e2 = self.vm.step()
-        self.assertIsInstance(e2, NarrationEvent)
+        # Rollback reverts to before e2 (Narration)
+        self.assertTrue(self.session.rollback())
+        self.assertEqual(self.session.director.ui_state.text, "You wake up in a quiet room.")
 
-        # Step 3: Alice dialogue
-        e3 = self.vm.step()
-        self.assertIsInstance(e3, DialogueEvent)
+        # Roll forward re-applies e2 (Dialogue)
+        self.assertTrue(self.session.roll_forward())
+        self.assertEqual(self.session.director.ui_state.speaker, "Alice")
+        self.assertEqual(self.session.director.ui_state.text, "Are you ready to choose?")
 
-        # Rollback once: should revert before Alice's line
-        success = self.vm.rollback()
-        self.assertTrue(success)
+    def test_session_rollback_across_choice(self) -> None:
+        # Advance through narration and dialogue to choice prompt
+        self.session.advance()  # Narration
+        self.session.advance()  # Dialogue
+        e3 = self.session.advance()  # Choice prompt
+        self.assertIsInstance(e3, ChoicePromptEvent)
 
-        # Stepping again should re-deliver Alice's line
-        replay_e3 = self.vm.step()
-        assert isinstance(replay_e3, DialogueEvent)
-        self.assertEqual(replay_e3.text, "Are you ready to choose?")
+        # Choose left_room (advances onto narration in left_room)
+        self.session.choose(0)
+        self.assertEqual(self.session.vm.current_scene_id, "left_room")
+        self.assertEqual(self.session.director.ui_state.text, "The left room is filled with books.")
 
-    def test_rollback_across_choice_selection(self) -> None:
-        # Step until choice prompt
-        while not self.vm.is_ended:
-            event = self.vm.step()
-            if isinstance(event, ChoicePromptEvent):
-                break
+        # Rollback back to choice prompt
+        self.assertTrue(self.session.rollback())
+        self.assertIsNotNone(self.session.active_choice_prompt)
 
-        # Select choice 0 (left_room)
-        self.vm.choose(0)
-        _ = self.vm.step()
-        self.assertEqual(self.vm.current_scene_id, "left_room")
+        # Choose right_room instead
+        self.session.choose(1)
+        self.assertEqual(self.session.vm.current_scene_id, "right_room")
+        self.assertEqual(self.session.director.ui_state.text, "The right room is empty.")
 
-        # Rollback back to choice prompt!
-        self.vm.rollback()  # undo enter_event
-        self.vm.rollback()  # undo choose / prompt
 
-        # We should be able to step forward and choose right_room instead
-        re_prompt = self.vm.step()
-        self.assertIsInstance(re_prompt, ChoicePromptEvent)
-
-        self.vm.choose(1)  # right_room
-        _ = self.vm.step()
-        self.assertEqual(self.vm.current_scene_id, "right_room")
-
-    def test_disabled_history(self) -> None:
-        vm = StoryVM(self.graph, enable_history=False)
-        self.assertFalse(vm.history_enabled)
-        self.assertFalse(vm.can_rollback)
-
-        vm.step()
-        self.assertFalse(vm.can_rollback)
-        self.assertFalse(vm.rollback())
-
-    def test_enable_disable_history_toggle(self) -> None:
-        vm = StoryVM(self.graph, enable_history=False)
-        self.assertFalse(vm.history_enabled)
-
-        vm.enable_history(max_history=50)
-        self.assertTrue(vm.history_enabled)
-        vm.step()
-        self.assertTrue(vm.can_rollback)
-
-        vm.disable_history()
-        self.assertFalse(vm.history_enabled)
-        self.assertFalse(vm.can_rollback)
-        self.assertFalse(vm.rollback())
+class TestStoryVMLightweight(unittest.TestCase):
+    def test_vm_has_no_legacy_history_stack(self) -> None:
+        graph = eager_script.parse_graph(SAMPLE_SCRIPT)
+        vm = StoryVM(graph)
+        self.assertFalse(hasattr(vm, "_history"))
+        self.assertFalse(hasattr(vm, "enable_history"))
+        self.assertFalse(hasattr(vm, "disable_history"))
+        self.assertFalse(hasattr(vm, "can_rollback"))
+        self.assertFalse(hasattr(vm, "rollback"))

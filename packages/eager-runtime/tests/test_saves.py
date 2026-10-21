@@ -11,7 +11,7 @@ from eager_runtime import (
     SaveManager,
 )
 from eager_runtime.saves import SaveData, SaveMetadata
-from eager_runtime.session import Checkpoint
+from eager_runtime.state import Checkpoint
 
 SAMPLE_SCRIPT = """
 ## Start --- start

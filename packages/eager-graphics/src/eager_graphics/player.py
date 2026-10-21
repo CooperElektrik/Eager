@@ -151,6 +151,13 @@ class BasePlayer:
         self._sync_state()
         return success
 
+    def roll_forward(self) -> bool:
+        """Roll forward through redo stack by one beat."""
+        self._mark_ui_dirty()
+        success = self.session.roll_forward()
+        self._sync_state()
+        return success
+
     def hot_reload(self) -> bool:
         """Hot-reload screenplay from disk, hot-swap VM, reconcile state, and force a redraw."""
         result = self.session.hot_reload()

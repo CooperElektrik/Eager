@@ -51,7 +51,7 @@ from eager_script.expr import ExprError, compile_expr
 from eager_script.hooks import parse_hook_args
 
 from eager_runtime.i18n import compute_beat_id, get_beat_occurrence, strip_explicit_id
-from eager_runtime.state import CallFrame, HistoryManager, StorySnapshot
+from eager_runtime.state import CallFrame, StorySnapshot
 
 if TYPE_CHECKING:
     from eager_script.graph import SceneGraph
@@ -72,15 +72,10 @@ class StoryVM:
         graph: SceneGraph,
         *,
         initial_state: StorySnapshot | None = None,
-        max_history: int = 500,
         rng_seed: int | None = None,
         translation_manager: TranslationManager | None = None,
-        enable_history: bool = True,
     ) -> None:
         self._graph = graph
-        self._history: HistoryManager | None = (
-            HistoryManager(max_history=max_history) if enable_history else None
-        )
         self._translation_manager: TranslationManager = translation_manager or TranslationManager()
 
         self._current_scene_id: str | None = None
@@ -285,24 +280,6 @@ class StoryVM:
         """Set of all scene IDs visited during this playthrough."""
         return set(self._visited_scenes)
 
-    @property
-    def history_enabled(self) -> bool:
-        """True if internal beat-level history recording is enabled."""
-        return self._history is not None
-
-    def enable_history(self, max_history: int = 500) -> None:
-        """Enable internal beat-level history recording."""
-        self._history = HistoryManager(max_history=max_history)
-
-    def disable_history(self) -> None:
-        """Disable internal beat-level history recording."""
-        self._history = None
-
-    @property
-    def can_rollback(self) -> bool:
-        """True if there is at least one step in history available to rewind."""
-        return self._history.can_rollback if self._history is not None else False
-
     def set_variable(self, name: str, value: Any) -> None:
         """Set a story variable value."""
         self._variables[name] = value
@@ -474,20 +451,6 @@ class StoryVM:
                             beat_id=input_cid,
                         )
 
-    def rollback(self) -> bool:
-        """Rewind VM state to the previous recorded beat in history.
-
-        Returns True if rollback was successful, or False if no history exists.
-        """
-        if self._history is None:
-            return False
-        snapshot = self._history.pop()
-        if snapshot is None:
-            return False
-
-        self.load(snapshot)
-        return True
-
     def jump(self, scene_id: str) -> None:
         """Jump execution immediately to a target scene."""
         if scene_id not in self._graph.nodes:
@@ -611,8 +574,6 @@ class StoryVM:
         # 4. Handle scene entry event
         if self._just_entered_scene:
             self._just_entered_scene = False
-            if self._history is not None:
-                self._history.push(self.save())
             return SceneEnterEvent(
                 scene_id=scene.id,
                 display_name=scene.display_name,
@@ -655,9 +616,6 @@ class StoryVM:
                 self._beat_index = item.target_index
                 continue
 
-            # Record state snapshot before consuming narrative beat
-            if self._history is not None:
-                self._history.push(self.save())
             current_beat_idx = self._beat_index
             self._beat_index += 1
             occ = get_beat_occurrence(scene.body, current_beat_idx)

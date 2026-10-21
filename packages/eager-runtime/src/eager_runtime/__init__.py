@@ -30,7 +30,7 @@ from eager_core.input import InputAction, Keymap
 from eager_runtime.dispatcher import EventDispatcher
 from eager_runtime.player import TerminalPlayer
 from eager_runtime.runtime import StoryRuntimeError, StoryVM
-from eager_runtime.state import CallFrame, HistoryManager, StorySnapshot
+from eager_runtime.state import CallFrame, Checkpoint, CheckpointHistory, StorySnapshot
 
 if TYPE_CHECKING:
     from eager_runtime.assets import (
@@ -43,7 +43,7 @@ if TYPE_CHECKING:
     from eager_runtime.persistent import PersistentData
     from eager_runtime.preferences import Preferences
     from eager_runtime.saves import SaveData, SaveManager, SaveMetadata
-    from eager_runtime.session import Checkpoint, CheckpointHistory, GameSession
+    from eager_runtime.session import GameSession
     from eager_runtime.watcher import FileWatcher
 
 __version__ = "0.3.0"
@@ -64,7 +64,6 @@ __all__ = [
     "FileWatcher",
     "FreshBoxEvent",
     "GameSession",
-    "HistoryManager",
     "HookEvent",
     "InputAction",
     "InputPromptEvent",
@@ -94,8 +93,8 @@ _LAZY_EXPORTS = {
     "MissingAssetIssue": "eager_runtime.assets",
     "check_assets": "eager_runtime.assets",
     "GameSession": "eager_runtime.session",
-    "Checkpoint": "eager_runtime.session",
-    "CheckpointHistory": "eager_runtime.session",
+    "Checkpoint": "eager_runtime.state",
+    "CheckpointHistory": "eager_runtime.state",
     "SaveManager": "eager_runtime.saves",
     "SaveMetadata": "eager_runtime.saves",
     "SaveData": "eager_runtime.saves",

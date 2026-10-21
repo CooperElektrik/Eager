@@ -96,7 +96,6 @@ def make_engine(
     dispatcher = EventDispatcher()
     compositor = StageCompositor(virtual_width=1920, virtual_height=1080)
     director = StageDirector(compositor)
-    director.enable_visual_history(max_history=100)
     director.bind(dispatcher)
     renderer = NullRenderer()
     return vm, dispatcher, compositor, director, renderer
@@ -480,96 +479,74 @@ def demo_save_load(script_text: str, *, locale: str | None = None) -> None:
 
 
 def demo_rollback(script_text: str, *, locale: str | None = None) -> None:
-    """Demonstrate synchronized rollback of story and visual state.
+    """Demonstrate synchronized rollback of story, stage, audio, and UI state.
 
-    The StoryVM records a narrative history snapshot before every beat;
-    the StageDirector records a visual history snapshot before every hook.
-    Rolling back pops one entry from each, rewinding the story and the
-    stage together.
+    The GameSession captures atomic Checkpoints at narrative interaction boundaries
+    (dialogue, choices, narration). Rolling back restores story variables, visual
+    stage elements, audio mixer states, and UI text simultaneously.
     """
+    from eager_runtime.session import GameSession
+
     print(colorize("═══ Rollback Demo — Rewinding Story & Visuals ═══", Color.BOLD, Color.CYAN))
     print()
 
-    vm, dispatcher, compositor, director, renderer = make_engine(script_text, locale=locale)
+    graph = parse_graph(script_text)
+    compositor = StageCompositor(virtual_width=1920, virtual_height=1080)
+    director = StageDirector(compositor)
+    session = GameSession(graph, stage=director)
+    locales_dir = Path(__file__).resolve().parent / "locales"
+    if locales_dir.is_dir():
+        session.translation_manager.load_directory(locales_dir)
+    if locale:
+        session.set_language(locale)
 
-    # ── Advance through several beats, then save a full checkpoint ──
-    checkpoint_set = False
-    pre_beat = 0
-
-    for _step_idx in range(7):
-        event = step_and_render(vm, dispatcher, compositor, renderer)
+    # ── Advance through interaction beats ──
+    for step_idx in range(3):
+        event = session.advance()
         if event is None:
             break
         print_event(event)
-
-        if isinstance(event, HookEvent) and not checkpoint_set:
-            # Save full state AFTER the hook is applied
-            _story_snapshot, _visual_snapshot = save_full_state(vm, director)
-            pre_beat = vm.beat_index
-            checkpoint_set = True
-            print(colorize(f"   └─ Checkpoint saved (beat {pre_beat})", Color.DIM))
-
-        if isinstance(event, (SceneEnterEvent, DialogueEvent)):
-            print_visual_state(compositor, director)
-        if isinstance(event, StoryEndEvent):
-            break
+        print_visual_state(session.compositor, session.director)
         print()
 
-    if not checkpoint_set:
-        print(colorize("  No hook found to set a checkpoint. Try a different script.", Color.RED))
-        return
-
-    print()
-    print(colorize("  Continuing a few more beats after the checkpoint...", Color.DIM))
-    for _ in range(3):
-        event = step_and_render(vm, dispatcher, compositor, renderer)
-        if event is None or isinstance(event, StoryEndEvent):
-            break
-        print_event(event)
-        if isinstance(event, (DialogueEvent, NarrationEvent)):
-            print_visual_state(compositor, director)
-        print()
-
-    post_beat = vm.beat_index
-    post_items_count = len(compositor.render_list())
-    post_speaker = director.ui_state.speaker
+    post_beat = session.vm.beat_index
+    post_items_count = len(session.compositor.render_list())
+    post_speaker = session.director.ui_state.speaker
 
     print(colorize(f"  Current:  beat {post_beat}  |  {post_items_count} items  |  speaker='{post_speaker}'", Color.DIM))
     print()
 
     # ── Rollback ──
-    # One narrative rollback + one visual rollback reverts the last hook beat.
-    # Since our checkpoint was at a HookEvent, this should restore the
-    # pre-hook visual state and the pre-beat narrative state.
     print(colorize("[Rollback]", Color.YELLOW), end=" ")
-    story_ok = vm.rollback()
-    visual_ok = director.rollback_visual_state()
-    compositor.update(DT)
+    session_ok = session.rollback()
+    session.compositor.update(DT)
 
-    rb_items_count = len(compositor.render_list())
-    rb_speaker = director.ui_state.speaker
-    rb_beat = vm.beat_index
+    rb_items_count = len(session.compositor.render_list())
+    rb_speaker = session.director.ui_state.speaker
+    rb_beat = session.vm.beat_index
 
     print()
     print(colorize(f"  After:    beat {rb_beat}  |  {rb_items_count} items  |  speaker='{rb_speaker}'", Color.DIM))
     print()
 
-    # ── Re-advance to verify we can reproduce the checkpoint ──
-    event = step_and_render(vm, dispatcher, compositor, renderer)
-    re_items_count = len(compositor.render_list())
-    re_speaker = director.ui_state.speaker
-    re_beat = vm.beat_index
+    # ── Roll forward (Redo) ──
+    print(colorize("[Roll Forward / Redo]", Color.YELLOW), end=" ")
+    redo_ok = session.roll_forward()
+    session.compositor.update(DT)
 
-    print(colorize("  Re-advancing one beat to reproduce the checkpoint:", Color.DIM))
-    print(colorize(f"  Reproduced: beat {re_beat}  |  {re_items_count} items  |  speaker='{re_speaker}'", Color.DIM))
+    re_items_count = len(session.compositor.render_list())
+    re_speaker = session.director.ui_state.speaker
+    re_beat = session.vm.beat_index
+
+    print()
+    print(colorize(f"  Redo:     beat {re_beat}  |  {re_items_count} items  |  speaker='{re_speaker}'", Color.DIM))
     print()
 
-    all_ok = story_ok and visual_ok
-    if all_ok:
-        print(colorize("  [OK] VM rollback returned True", Color.GREEN))
-        print(colorize("  [OK] Visual rollback returned True", Color.GREEN))
+    if session_ok and redo_ok:
+        print(colorize("  [OK] GameSession rollback returned True", Color.GREEN))
+        print(colorize("  [OK] GameSession roll_forward returned True", Color.GREEN))
         if re_beat == post_beat:
-            print(colorize("  [OK] Re-advance reproduced post-checkpoint state", Color.GREEN))
+            print(colorize("  [OK] Roll-forward reproduced post-rollback state", Color.GREEN))
 
     print()
     print(colorize("═══ Demo Complete — Rollback verified ═══", Color.BOLD, Color.CYAN))

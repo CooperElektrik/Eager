@@ -20,7 +20,6 @@ from eager_core.types import BLACK, WHITE, Color, Vec2
 from eager_script import HookArgs, parse_hook_args
 
 from eager_graphics.compositor import StageCompositor
-from eager_graphics.history import VisualHistoryManager
 from eager_graphics.ui_state import ChoiceOption, NVLEntry, UIState
 
 
@@ -79,36 +78,7 @@ class StageDirector:
         self.characters: dict[str, CharacterConfig] = {}
         self.scene_backgrounds: dict[str, tuple[str, str, float]] = {}
         self.ui_state: UIState = UIState()
-        self._visual_history: VisualHistoryManager | None = None
         self._sprite_base_y: dict[str, float] = {}
-
-    def enable_visual_history(self, max_history: int = 500) -> None:
-        """Enable visual state rollback tracking with the specified history capacity."""
-        self._visual_history = VisualHistoryManager(max_history=max_history)
-
-    def snapshot_visual_state(self) -> None:
-        """Capture and push current visual and UI state into the visual history stack."""
-        if self._visual_history is None:
-            return
-        snapshot = {
-            "compositor": self.compositor.save_state(),
-            "ui_state": self.ui_state.to_dict(),
-        }
-        self._visual_history.push(snapshot)
-
-    def rollback_visual_state(self) -> bool:
-        """Pop and restore the previous visual state snapshot from history."""
-        if self._visual_history is None:
-            return False
-        snapshot = self._visual_history.pop()
-        if snapshot is None:
-            return False
-
-        if "compositor" in snapshot:
-            self.compositor.load_state(snapshot["compositor"])
-        if "ui_state" in snapshot:
-            self.ui_state = UIState.from_dict(snapshot["ui_state"])
-        return True
 
     def step(self, dt: float) -> None:
         """Advance compositor timelines and animations by *dt* seconds."""
@@ -123,21 +93,17 @@ class StageDirector:
         self.ui_state = UIState.from_dict(state)
 
     def save_visual_state(self) -> dict[str, Any]:
-        """Return a complete dictionary containing compositor, ui_state, and history stack."""
+        """Serialize compositor stage state."""
         return {
             "compositor": self.compositor.save_state(),
-            "ui_state": self.ui_state.to_dict(),
-            "history": self._visual_history.to_dict() if self._visual_history is not None else None,
         }
 
     def load_visual_state(self, state: dict[str, Any]) -> None:
-        """Restore compositor, UI state, and history stack from a serialized dictionary."""
+        """Restore compositor and UI state from a serialized dictionary."""
         if comp_state := state.get("compositor"):
             self.compositor.load_state(comp_state)
         if ui_state := state.get("ui_state"):
             self.ui_state = UIState.from_dict(ui_state)
-        if hist_state := state.get("history"):
-            self._visual_history = VisualHistoryManager.from_dict(hist_state)
 
     def register_character(
         self,
@@ -193,10 +159,6 @@ class StageDirector:
     ) -> None:
         """Map a scene ID to automatically trigger a background change on SceneEnterEvent."""
         self.scene_backgrounds[scene_id] = (asset_id, transition, duration)
-
-    def on_beat_step(self) -> None:
-        """Explicit callback to snapshot visual and UI state before advancing a narrative beat."""
-        self.snapshot_visual_state()
 
     def bind(self, dispatcher: Any) -> None:
         """Register hook handlers and event listeners on an Eager EventDispatcher."""

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Reusable `Checkpoint` and `CheckpointHistory` models in `eager_runtime.state`, providing bounded checkpoint stacks with redo/roll-forward support at narrative interaction points.
+
+### Changed
+
+- `TerminalPlayer` captures interaction checkpoints (`DialogueEvent`, `NarrationEvent`, `ChoicePromptEvent`) using `CheckpointHistory` and rewinds via checkpoint restoration.
+- `NullStage.save_visual_state()` only serializes stage compositor state, avoiding duplicate UI state persistence.
+
+### Removed
+
+- `HistoryManager` class in `eager_runtime.state`.
+- Beat-level history tracking and rollback methods (`_history`, `history_enabled`, `enable_history()`, `disable_history()`, `can_rollback`, `rollback()`) from `StoryVM`.
+
 ## [0.3.0] - 2026-10-21
 
 ### Added

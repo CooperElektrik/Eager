@@ -182,7 +182,6 @@ class NullStage:
     def save_visual_state(self) -> dict[str, Any]:
         return {
             "compositor": self.compositor.save_state(),
-            "ui_state": self.ui_state.to_dict(),
         }
 
     def load_visual_state(self, state: dict[str, Any]) -> None:

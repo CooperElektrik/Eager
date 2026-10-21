@@ -18,7 +18,7 @@ from eager_core.events import (
 )
 
 from eager_runtime.runtime import StoryVM
-from eager_runtime.state import StorySnapshot
+from eager_runtime.state import Checkpoint, CheckpointHistory, StorySnapshot
 
 
 class TerminalPlayer:
@@ -31,11 +31,13 @@ class TerminalPlayer:
         input_stream: IO[str] | None = None,
         output_stream: IO[str] | None = None,
         use_colors: bool = True,
+        max_history: int = 100,
     ) -> None:
         self.vm = vm
         self.input_stream = input_stream or sys.stdin
         self.output_stream = output_stream or sys.stdout
         self.use_colors = use_colors and self.output_stream.isatty()
+        self.checkpoints = CheckpointHistory(max_history=max_history)
         self._saved_slot: StorySnapshot | None = None
 
     def _print(self, text: str = "") -> None:
@@ -52,9 +54,21 @@ class TerminalPlayer:
         self._print(self._color("Commands: :undo (rewind), :save, :load, :vars, :q (quit)\n", "90"))
 
         while not self.vm.is_ended:
+            snap_before_step = self.vm.save()
             event = self.vm.step()
             if event is None:
                 break
+
+            if isinstance(event, (DialogueEvent, NarrationEvent, ChoicePromptEvent)):
+                self.checkpoints.push(
+                    Checkpoint(
+                        story=snap_before_step.to_dict(),
+                        visual={},
+                        audio={},
+                        backlog_len=0,
+                        ui={},
+                    )
+                )
 
             if isinstance(event, SceneEnterEvent):
                 self._print(
@@ -138,10 +152,13 @@ class TerminalPlayer:
                 continue
 
             if cmd == ":undo" or cmd == ":rollback":
-                if self.vm.can_rollback:
-                    self.vm.rollback()
-                    self._print(self._color("Rewound state to previous beat.", "33"))
-                    return
+                if self.checkpoints.can_rollback:
+                    self.checkpoints.pop()
+                    prev = self.checkpoints.get_latest()
+                    if prev is not None:
+                        self.vm.load(StorySnapshot.from_dict(prev.story))
+                        self._print(self._color("Rewound state to previous beat.", "33"))
+                        return
                 self._print(self._color("Cannot rollback further.", "31"))
                 continue
 

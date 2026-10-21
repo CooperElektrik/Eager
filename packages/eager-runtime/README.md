@@ -87,9 +87,9 @@ json_data = snapshot.to_json(indent=2)
 # Restore state at any time
 vm.load(snapshot)
 
-# Rewind history (undo last choice or beat)
-if vm.can_rollback:
-    vm.rollback()
+# Rollback is managed at narrative interaction points via GameSession
+if session.can_rollback:
+    session.rollback()
 ```
 
 ## GameSession & Audio Wiring

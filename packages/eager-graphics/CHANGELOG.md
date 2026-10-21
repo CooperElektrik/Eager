@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `roll_forward()` method on `BasePlayer` for stepping forward along `GameSession`'s redo stack.
+
+### Changed
+
+- `StageDirector.save_visual_state()` now exclusively serializes stage compositor state, delegating UI state persistence to `save_ui_state()` and eliminating state duplication in checkpoints.
+
+### Removed
+
+- `VisualHistoryManager` and `eager_graphics.history` module.
+- `enable_visual_history()`, `snapshot_visual_state()`, `rollback_visual_state()`, and `on_beat_step()` on `StageDirector`.
+
 ## [0.3.0] - 2026-10-21
 
 ### Added

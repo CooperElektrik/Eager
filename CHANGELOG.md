@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Rollback:** Fully unified state rollback around atomic `Checkpoint` and `CheckpointHistory`, capturing snapshots exclusively at narrative interaction boundaries (`DialogueEvent`, `NarrationEvent`, `ChoicePromptEvent`, `InputPromptEvent`).
+- **Save & Checkpoint schema:** Eliminated redundant duplicate `ui_state` serialization inside stage visual states (`save_visual_state`), cleanly isolating compositor stage state in `visual` and dialogue/UI state in `ui`.
+- **Runtime:** `TerminalPlayer` now uses `CheckpointHistory` to capture interaction points and rewind state on `:undo` / `:rollback`.
+- **Graphics:** Added `roll_forward()` to `BasePlayer` for redo traversal across rolled-back checkpoints.
+
+### Removed
+
+- **Legacy rollback:** Removed `HistoryManager` and beat-level history recording (`_history`, `history_enabled`, `enable_history()`, `disable_history()`, `can_rollback`, `rollback()`) from `StoryVM`.
+- **Visual history:** Removed `VisualHistoryManager` (`eager_graphics/history.py`) and legacy director rollback methods (`enable_visual_history()`, `snapshot_visual_state()`, `rollback_visual_state()`, `on_beat_step()`).
+
 ## [0.3.0] - 2026-10-21
 
 ### Added

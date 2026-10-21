@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import collections
 import copy
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from eager_core.audio import AudioMixerSaveState
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,35 +98,71 @@ class StorySnapshot:
         return cls.from_dict(json.loads(json_str))
 
 
-class HistoryManager:
-    """Chronological trail of snapshots enabling time-travel and rollback."""
+@dataclass(frozen=True, slots=True)
+class Checkpoint:
+    """Unified state snapshot captured at an interactive point in the story."""
 
-    def __init__(self, max_history: int = 500) -> None:
-        self._history: list[StorySnapshot] = []
-        self._max_history = max_history
+    story: dict[str, Any]
+    visual: dict[str, Any]
+    audio: dict[str, Any] | AudioMixerSaveState
+    backlog_len: int
+    ui: dict[str, Any]
+    active_input_prompt: dict[str, Any] | None = None
 
-    def push(self, snapshot: StorySnapshot) -> None:
-        """Record a snapshot in history."""
-        self._history.append(snapshot)
-        if len(self._history) > self._max_history:
-            self._history.pop(0)
 
-    def pop(self) -> StorySnapshot | None:
-        """Pop and return the previous snapshot if available."""
+class CheckpointHistory:
+    """Bounded history stack for interactive story checkpoints with redo support."""
+
+    def __init__(self, max_history: int = 100) -> None:
+        self.max_history = max_history
+        self._history: collections.deque[Checkpoint] = collections.deque(maxlen=max_history)
+        self._redo_stack: list[Checkpoint] = []
+
+    def push(self, checkpoint: Checkpoint) -> None:
+        """Add a checkpoint to the history and clear redo stack."""
+        self._history.append(checkpoint)
+        self._redo_stack.clear()
+
+    def pop(self) -> Checkpoint | None:
+        """Remove and return the most recent checkpoint, preserving it on redo stack."""
         if not self._history:
             return None
-        return self._history.pop()
+        cp = self._history.pop()
+        self._redo_stack.append(cp)
+        return cp
+
+    def roll_forward(self) -> Checkpoint | None:
+        """Pop a checkpoint from redo stack and push it back to history."""
+        if not self._redo_stack:
+            return None
+        cp = self._redo_stack.pop()
+        self._history.append(cp)
+        return cp
 
     def clear(self) -> None:
-        """Clear all recorded history."""
+        """Clear all stored checkpoints and redo stack."""
         self._history.clear()
+        self._redo_stack.clear()
+
+    def clear_redo(self) -> None:
+        """Clear only the redo stack."""
+        self._redo_stack.clear()
 
     @property
     def can_rollback(self) -> bool:
-        """True if there is at least one recorded previous snapshot."""
-        return len(self._history) > 0
+        """True if there is at least one previous checkpoint to restore."""
+        return len(self._history) > 1
+
+    @property
+    def can_roll_forward(self) -> bool:
+        """True if there is at least one popped checkpoint that can be restored forward."""
+        return len(self._redo_stack) > 0
 
     @property
     def depth(self) -> int:
-        """Number of rollback points currently stored."""
+        """Number of checkpoints stored in history."""
         return len(self._history)
+
+    def get_latest(self) -> Checkpoint | None:
+        """Inspect the top checkpoint without popping."""
+        return self._history[-1] if self._history else None

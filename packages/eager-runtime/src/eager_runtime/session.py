@@ -2,13 +2,8 @@
 
 from __future__ import annotations
 
-import collections
-from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from eager_core.audio import AudioMixerSaveState
+from typing import Any
 
 from eager_core.events import (
     AppendEvent,
@@ -43,77 +38,7 @@ from eager_runtime.persistent import PersistentData
 from eager_runtime.preferences import Preferences
 from eager_runtime.runtime import StoryVM
 from eager_runtime.saves import SaveManager
-from eager_runtime.state import StorySnapshot
-
-
-@dataclass(frozen=True, slots=True)
-class Checkpoint:
-    """Unified state snapshot captured at an interactive point in the story."""
-
-    story: dict[str, Any]
-    visual: dict[str, Any]
-    audio: dict[str, Any] | AudioMixerSaveState
-    backlog_len: int
-    ui: dict[str, Any]
-    active_input_prompt: dict[str, Any] | None = None
-
-
-class CheckpointHistory:
-    """Bounded history stack for interactive story checkpoints with redo support."""
-
-    def __init__(self, max_history: int = 100) -> None:
-        self.max_history = max_history
-        self._history: collections.deque[Checkpoint] = collections.deque(maxlen=max_history)
-        self._redo_stack: list[Checkpoint] = []
-
-    def push(self, checkpoint: Checkpoint) -> None:
-        """Add a checkpoint to the history and clear redo stack."""
-        self._history.append(checkpoint)
-        self._redo_stack.clear()
-
-    def pop(self) -> Checkpoint | None:
-        """Remove and return the most recent checkpoint, preserving it on redo stack."""
-        if not self._history:
-            return None
-        cp = self._history.pop()
-        self._redo_stack.append(cp)
-        return cp
-
-    def roll_forward(self) -> Checkpoint | None:
-        """Pop a checkpoint from redo stack and push it back to history."""
-        if not self._redo_stack:
-            return None
-        cp = self._redo_stack.pop()
-        self._history.append(cp)
-        return cp
-
-    def clear(self) -> None:
-        """Clear all stored checkpoints and redo stack."""
-        self._history.clear()
-        self._redo_stack.clear()
-
-    def clear_redo(self) -> None:
-        """Clear only the redo stack."""
-        self._redo_stack.clear()
-
-    @property
-    def can_rollback(self) -> bool:
-        """True if there is at least one previous checkpoint to restore."""
-        return len(self._history) > 1
-
-    @property
-    def can_roll_forward(self) -> bool:
-        """True if there is at least one popped checkpoint that can be restored forward."""
-        return len(self._redo_stack) > 0
-
-    @property
-    def depth(self) -> int:
-        """Number of checkpoints stored in history."""
-        return len(self._history)
-
-    def get_latest(self) -> Checkpoint | None:
-        """Inspect the top checkpoint without popping."""
-        return self._history[-1] if self._history else None
+from eager_runtime.state import Checkpoint, CheckpointHistory, StorySnapshot
 
 
 def _create_default_stage(
@@ -217,12 +142,10 @@ class GameSession:
 
         if isinstance(project_or_script, StoryVM):
             self.vm = project_or_script
-            self.vm.disable_history()
         else:
             self.vm = StoryVM(
                 self.graph,
                 translation_manager=self.translation_manager,
-                enable_history=False,
             )
         self.dispatcher = EventDispatcher()
         self.audio = AudioMixer(backend=audio_backend, asset_dir=self.asset_dir)

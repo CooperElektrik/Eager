@@ -744,12 +744,14 @@ def test_session_disables_vm_beat_history() -> None:
 
     graph = eager_script.parse_graph(SAMPLE_STORY)
     session = GameSession(graph)
-    assert session.vm.history_enabled is False
+    assert not hasattr(session.vm, "_history")
+    assert not hasattr(session.vm, "history_enabled")
 
     vm_standalone = StoryVM(graph)
-    assert vm_standalone.history_enabled is True
+    assert not hasattr(vm_standalone, "_history")
+    assert not hasattr(vm_standalone, "history_enabled")
     session2 = GameSession(vm_standalone)
-    assert session2.vm.history_enabled is False
+    assert not hasattr(session2.vm, "_history")
 
 
 def test_character_metadata_registration_and_speaker_styling() -> None:
