@@ -70,6 +70,9 @@ audio = [
     "miniaudio>=0.12.4",
 ]
 
+[project.entry-points."eager.providers"]
+graphics = "eager_graphics:register_providers"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

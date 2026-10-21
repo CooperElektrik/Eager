@@ -84,34 +84,10 @@ source_modules = ["eager_graphics"]
 forbidden_modules = ["eager_runtime"]
 
 [[tool.importlinter.contracts]]
-name = "eager-runtime story VM and headless primitives strictly forbid eager-graphics"
+name = "eager-runtime strictly forbids eager-graphics"
 type = "forbidden"
-source_modules = [
-    "eager_runtime.runtime",
-    "eager_runtime.headless",
-]
+source_modules = ["eager_runtime"]
 forbidden_modules = ["eager_graphics"]
-
-[[tool.importlinter.contracts]]
-name = "eager-runtime core modules do not directly import eager-graphics"
-type = "forbidden"
-source_modules = [
-    "eager_runtime.runtime",
-    "eager_runtime.headless",
-    "eager_runtime.dispatcher",
-    "eager_runtime.state",
-    "eager_runtime.persistent",
-    "eager_runtime.saves",
-    "eager_runtime.preferences",
-    "eager_runtime.backlog",
-    "eager_runtime.i18n",
-    "eager_runtime.assets",
-    "eager_runtime.player",
-    "eager_runtime.project",
-    "eager_runtime.watcher",
-]
-forbidden_modules = ["eager_graphics"]
-allow_indirect_imports = true
 
 # ---------------------------------------------------------------------------
 # eager-graphics internal boundaries

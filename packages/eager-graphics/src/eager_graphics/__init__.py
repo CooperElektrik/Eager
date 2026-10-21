@@ -147,7 +147,7 @@ __all__ = [
 from eager_core.timing import FrameClock  # noqa: F401
 
 from eager_graphics.player import BasePlayer  # noqa: F401
-from eager_graphics.renderers.null import NullRenderer  # noqa: F401
+from eager_graphics.renderers.null import NullRenderer
 
 if TYPE_CHECKING:
     from eager_graphics.renderers import (
@@ -172,6 +172,7 @@ if TYPE_CHECKING:
 __all__.append("NullRenderer")
 __all__.append("FrameClock")
 __all__.append("BasePlayer")
+__all__.append("register_providers")
 
 # Optional backends (Pyglet, PIL) are NOT eagerly imported here to
 # avoid side effects — e.g. Pyglet initialises GTK/EGL on Wayland.
@@ -184,6 +185,102 @@ __all__.extend([
     "PygletPlayer",
     "PygletRenderer",
 ])
+
+
+def register_providers() -> None:
+    """Register eager-graphics presentation factories with eager-core protocols."""
+    from typing import Any
+
+    from eager_core.protocols import (
+        register_audio_backend,
+        register_player,
+        register_renderer,
+        register_screen_manager_factory,
+        register_stage_factory,
+        register_ui_factory,
+    )
+
+    def _default_stage_factory(
+        virtual_width: int,
+        virtual_height: int,
+        audio: Any,
+        skip_mode_cb: Any,
+    ) -> Any:
+        from eager_graphics.compositor import StageCompositor
+        from eager_graphics.director import StageDirector
+
+        compositor = StageCompositor(
+            virtual_width=virtual_width,
+            virtual_height=virtual_height,
+        )
+        return StageDirector(compositor, audio=audio, skip_mode_cb=skip_mode_cb)
+
+    def _default_ui_factory(width: int = 1280, height: int = 720) -> Any:
+        from eager_graphics.ui_components import UIOverlay
+
+        return UIOverlay(width=width, height=height)
+
+    def _default_screens_factory(config: Any, session: Any) -> Any:
+        from eager_graphics.screens import (
+            HistoryScreen,
+            PreferencesScreen,
+            SaveLoadScreen,
+            ScreenManager,
+            TitleScreen,
+        )
+
+        w = getattr(getattr(session, "overlay", None), "width", 1280) or 1280
+        h = getattr(getattr(session, "overlay", None), "height", 720) or 720
+        mgr = ScreenManager(viewport_width=w, viewport_height=h)
+        mgr.register(
+            TitleScreen(
+                title=getattr(config, "title", "Eager Visual Novel"),
+                viewport_width=w,
+                viewport_height=h,
+            )
+        )
+        mgr.register(SaveLoadScreen("save", viewport_width=w, viewport_height=h))
+        mgr.register(SaveLoadScreen("load", viewport_width=w, viewport_height=h))
+        mgr.register(PreferencesScreen(viewport_width=w, viewport_height=h))
+        mgr.register(HistoryScreen(viewport_width=w, viewport_height=h))
+        return mgr
+
+    def _pyglet_audio_factory() -> Any:
+        from eager_graphics.renderers.pyglet import PygletAudioBackend
+
+        return PygletAudioBackend()
+
+    def _miniaudio_audio_factory() -> Any:
+        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
+
+        return MiniaudioAudioBackend()
+
+    def _null_renderer_factory() -> Any:
+        return NullRenderer()
+
+    def _pil_player_factory(*args: Any, **kwargs: Any) -> Any:
+        from eager_graphics.renderers.pil import PILPlayer
+
+        return PILPlayer(*args, **kwargs)
+
+    def _pyglet_player_factory(*args: Any, **kwargs: Any) -> Any:
+        from eager_graphics.renderers.pyglet import PygletPlayer
+
+        return PygletPlayer(*args, **kwargs)
+
+    register_stage_factory(_default_stage_factory)
+    register_ui_factory(_default_ui_factory)
+    register_screen_manager_factory(_default_screens_factory)
+    register_player("pil", _pil_player_factory)
+    register_player("pyglet", _pyglet_player_factory)
+    register_audio_backend("pyglet", _pyglet_audio_factory)
+    register_audio_backend("pil", _miniaudio_audio_factory)
+    register_audio_backend("miniaudio", _miniaudio_audio_factory)
+    register_renderer("null", _null_renderer_factory)
+
+
+# Automatically register on import
+register_providers()
 
 
 def __getattr__(name: str) -> object:

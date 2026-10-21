@@ -6,7 +6,8 @@ and presentation subsystems (eager-graphics or custom engines).
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from collections.abc import Callable
+from typing import Any, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -37,7 +38,7 @@ class UIStateProtocol(Protocol):
 class StageProtocol(Protocol):
     """Protocol for visual stage management and event binding in visual novel sessions."""
 
-    ui_state: object
+    ui_state: Any
 
     def bind(self, dispatcher: object) -> None:
         """Bind stage event handlers to the given event dispatcher."""
@@ -114,3 +115,127 @@ class ScreenManagerProtocol(Protocol):
     def handle_mouse_move(self, x: float, y: float) -> bool:
         """Forward mouse move to active screen."""
         ...
+
+
+# ── Provider & Factory Inversion of Control ──────────────────────────
+
+StageFactory = Callable[..., StageProtocol]
+UIFactory = Callable[..., UIProtocol]
+ScreenManagerFactory = Callable[..., ScreenManagerProtocol]
+
+_stage_factory: StageFactory | None = None
+_ui_factory: UIFactory | None = None
+_screen_manager_factory: ScreenManagerFactory | None = None
+
+_player_factories: dict[str, Any] = {}
+_audio_backends: dict[str, Any] = {}
+_renderer_factories: dict[str, Any] = {}
+
+_providers_loaded: bool = False
+
+
+def register_stage_factory(factory: StageFactory | None) -> None:
+    """Register a global factory callable returning a StageProtocol instance."""
+    global _stage_factory
+    _stage_factory = factory
+
+
+def get_stage_factory() -> StageFactory | None:
+    """Return the registered stage factory callable, if any."""
+    return _stage_factory
+
+
+def register_ui_factory(factory: UIFactory | None) -> None:
+    """Register a global factory callable returning a UIProtocol instance."""
+    global _ui_factory
+    _ui_factory = factory
+
+
+def get_ui_factory() -> UIFactory | None:
+    """Return the registered UI factory callable, if any."""
+    return _ui_factory
+
+
+def register_screen_manager_factory(factory: ScreenManagerFactory | None) -> None:
+    """Register a global factory callable returning a ScreenManagerProtocol instance."""
+    global _screen_manager_factory
+    _screen_manager_factory = factory
+
+
+def get_screen_manager_factory() -> ScreenManagerFactory | None:
+    """Return the registered screen manager factory callable, if any."""
+    return _screen_manager_factory
+
+
+def register_player(backend: str, player_cls: Any) -> None:
+    """Register an interactive player implementation for *backend* (e.g. 'pil', 'pyglet')."""
+    _player_factories[backend.lower()] = player_cls
+
+
+def get_player(backend: str) -> Any | None:
+    """Retrieve an interactive player implementation by backend name."""
+    return _player_factories.get(backend.lower())
+
+
+def list_players() -> list[str]:
+    """Return list of registered player backend names."""
+    return sorted(_player_factories.keys())
+
+
+def register_audio_backend(backend: str, audio_factory: Any) -> None:
+    """Register an audio backend factory for *backend* (e.g. 'pyglet', 'miniaudio')."""
+    _audio_backends[backend.lower()] = audio_factory
+
+
+def get_audio_backend(backend: str) -> Any | None:
+    """Retrieve an audio backend factory by backend name."""
+    return _audio_backends.get(backend.lower())
+
+
+def register_renderer(backend: str, renderer_factory: Any) -> None:
+    """Register a renderer backend factory (e.g. 'null', 'pil', 'pyglet')."""
+    _renderer_factories[backend.lower()] = renderer_factory
+
+
+def get_renderer(backend: str) -> Any | None:
+    """Retrieve a renderer backend factory by name."""
+    return _renderer_factories.get(backend.lower())
+
+
+def load_providers() -> None:
+    """Discover and execute provider entry points registered under 'eager.providers'."""
+    global _providers_loaded
+    if _providers_loaded:
+        return
+    _providers_loaded = True
+    try:
+        import importlib.metadata
+
+        eps = importlib.metadata.entry_points()
+        selected: Any
+        if hasattr(eps, "select"):
+            selected = eps.select(group="eager.providers")
+        else:
+            selected = eps.get("eager.providers", [])
+        for ep in selected:
+            try:
+                fn = ep.load()
+                if callable(fn):
+                    fn()
+            except Exception:  # noqa: BLE001, S110
+                pass
+    except Exception:  # noqa: BLE001, S110
+        pass
+
+
+def reset_providers() -> None:
+    """Reset all registered factories and providers (primarily for unit testing)."""
+    global _stage_factory, _ui_factory, _screen_manager_factory, _providers_loaded
+    _stage_factory = None
+    _ui_factory = None
+    _screen_manager_factory = None
+    _player_factories.clear()
+    _audio_backends.clear()
+    _renderer_factories.clear()
+    _providers_loaded = False
+

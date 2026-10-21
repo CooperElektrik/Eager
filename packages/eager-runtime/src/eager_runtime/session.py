@@ -25,6 +25,10 @@ from eager_core.protocols import (
     ScreenManagerProtocol,
     StageProtocol,
     UIProtocol,
+    get_screen_manager_factory,
+    get_stage_factory,
+    get_ui_factory,
+    load_providers,
 )
 from eager_core.storage import get_default_save_dir
 from eager_script import parse_graph
@@ -120,49 +124,32 @@ def _create_default_stage(
     audio: Any,
     skip_mode_cb: Any,
 ) -> Any:
-    try:
-        from eager_graphics.compositor import StageCompositor
-        from eager_graphics.director import StageDirector
-
-        compositor = StageCompositor(
+    load_providers()
+    factory = get_stage_factory()
+    if factory is not None:
+        return factory(
             virtual_width=virtual_width,
             virtual_height=virtual_height,
+            audio=audio,
+            skip_mode_cb=skip_mode_cb,
         )
-        return StageDirector(compositor, audio=audio, skip_mode_cb=skip_mode_cb)
-    except ImportError:
-        return NullStage(virtual_width=virtual_width, virtual_height=virtual_height)
+    return NullStage(virtual_width=virtual_width, virtual_height=virtual_height)
 
 
 def _create_default_ui(width: int = 1280, height: int = 720) -> Any:
-    try:
-        from eager_graphics.ui_components import UIOverlay
-
-        return UIOverlay(width=width, height=height)
-    except ImportError:
-        return NullUI(width=width, height=height)
+    load_providers()
+    factory = get_ui_factory()
+    if factory is not None:
+        return factory(width=width, height=height)
+    return NullUI(width=width, height=height)
 
 
 def _create_default_screens(config: Any, session: Any) -> Any:
-    try:
-        from eager_graphics.screens import (
-            HistoryScreen,
-            PreferencesScreen,
-            SaveLoadScreen,
-            ScreenManager,
-            TitleScreen,
-        )
-
-        w = getattr(getattr(session, "overlay", None), "width", 1280) or 1280
-        h = getattr(getattr(session, "overlay", None), "height", 720) or 720
-        mgr = ScreenManager(viewport_width=w, viewport_height=h)
-        mgr.register(TitleScreen(title=getattr(config, "title", "Eager Visual Novel"), viewport_width=w, viewport_height=h))
-        mgr.register(SaveLoadScreen("save", viewport_width=w, viewport_height=h))
-        mgr.register(SaveLoadScreen("load", viewport_width=w, viewport_height=h))
-        mgr.register(PreferencesScreen(viewport_width=w, viewport_height=h))
-        mgr.register(HistoryScreen(viewport_width=w, viewport_height=h))
-        return mgr
-    except ImportError:
-        return NullScreenManager()
+    load_providers()
+    factory = get_screen_manager_factory()
+    if factory is not None:
+        return factory(config=config, session=session)
+    return NullScreenManager()
 
 
 class GameSession:
@@ -197,6 +184,7 @@ class GameSession:
         stage: StageProtocol | None = None,
         ui: UIProtocol | None = None,
         screens: ScreenManagerProtocol | None = None,
+        headless: bool = False,
     ) -> None:
         self.script_path = Path(project_or_script) if isinstance(project_or_script, (str, Path)) else None
         self.backend = backend
@@ -243,6 +231,8 @@ class GameSession:
 
         if stage is not None:
             self.stage: Any = stage
+        elif headless:
+            self.stage = NullStage(virtual_width=virtual_width, virtual_height=virtual_height)
         else:
             self.stage = _create_default_stage(
                 virtual_width=virtual_width,
@@ -278,7 +268,12 @@ class GameSession:
 
         self.checkpoints = CheckpointHistory(max_history=rollback_limit)
         self.keymap = Keymap()
-        self.ui: Any = ui if ui is not None else _create_default_ui(width=1280, height=720)
+        if ui is not None:
+            self.ui: Any = ui
+        elif headless:
+            self.ui = NullUI(width=1280, height=720)
+        else:
+            self.ui = _create_default_ui(width=1280, height=720)
         self.overlay: Any = self.ui
 
         # Persistent state, preferences, and saves
@@ -296,9 +291,12 @@ class GameSession:
         self.vm.set_variable("persistent", self.persistent)
 
         # Screens and Theme
-        self.screens: Any = (
-            screens if screens is not None else _create_default_screens(config, self)
-        )
+        if screens is not None:
+            self.screens: Any = screens
+        elif headless:
+            self.screens = NullScreenManager()
+        else:
+            self.screens = _create_default_screens(config, self)
 
         from eager_runtime.backlog import Backlog
 
@@ -387,13 +385,14 @@ class GameSession:
             self.director.restore_ui_state(checkpoint.ui)
         elif hasattr(self.director, "ui_state") and hasattr(self.director.ui_state, "from_dict"):
             self.director.ui_state = self.director.ui_state.from_dict(checkpoint.ui)
-        else:
-            try:
-                from eager_graphics.ui_state import UIState
-
-                self.director.ui_state = UIState.from_dict(checkpoint.ui)
-            except ImportError:
+        elif hasattr(self.director, "ui_state") and self.director.ui_state is not None:
+            cls = type(self.director.ui_state)
+            if hasattr(cls, "from_dict"):
+                self.director.ui_state = cls.from_dict(checkpoint.ui)
+            else:
                 self.director.ui_state = HeadlessUIState.from_dict(checkpoint.ui)
+        else:
+            self.director.ui_state = HeadlessUIState.from_dict(checkpoint.ui)
 
         if hasattr(self.director, "ui_state"):
             self.director.ui_state.visible_chars = None

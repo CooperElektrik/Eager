@@ -16,6 +16,14 @@ from pathlib import Path
 from typing import Any
 
 import eager_script
+from eager_core.protocols import (
+    get_audio_backend,
+    get_player,
+    get_renderer,
+    get_stage_factory,
+    list_players,
+    load_providers,
+)
 
 from eager_runtime.player import TerminalPlayer
 from eager_runtime.runtime import StoryVM
@@ -35,23 +43,23 @@ def _build_common_script_args(parser: argparse.ArgumentParser) -> None:
 
 def _ensure_graphics() -> None:
     """Raise a helpful error if eager_graphics is not installed."""
-    try:
-        import eager_graphics  # noqa: F401
-    except ImportError as exc:
+    load_providers()
+    if get_stage_factory() is None:
         raise ImportError(
             "eager_graphics is required for visual-novel commands.\n"
             "Install it with: pip install eager-graphics[all]"
-        ) from exc
+        )
 
 
 def _version_string() -> str:
+    import eager_runtime
+
     try:
-        import eager_graphics
+        import importlib.metadata
 
-        return f"eager {eager_graphics.__version__}"
-    except ImportError:
-        import eager_runtime
-
+        gfx_version = importlib.metadata.version("eager-graphics")
+        return f"eager {gfx_version}"
+    except Exception:  # noqa: BLE001
         return f"eager {eager_runtime.__version__}"
 
 
@@ -381,18 +389,11 @@ def _create_audio_backend(backend: str, *, no_audio: bool = False) -> Any:
     if no_audio:
         return NullAudioBackend()
 
-    if backend == "pyglet":
+    load_providers()
+    backend_factory = get_audio_backend(backend)
+    if backend_factory is not None:
         try:
-            from eager_graphics.renderers.pyglet import PygletAudioBackend
-
-            return PygletAudioBackend()
-        except Exception:  # noqa: BLE001
-            return NullAudioBackend()
-    if backend == "pil":
-        try:
-            from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
-
-            return MiniaudioAudioBackend()
+            return backend_factory()
         except Exception:  # noqa: BLE001
             return NullAudioBackend()
 
@@ -519,8 +520,6 @@ def _cmd_render(args: argparse.Namespace) -> int:
     """Run a story to completion in headless mode (NullRenderer)."""
     _ensure_graphics()
 
-    from eager_graphics.renderers.null import NullRenderer
-
     from eager_runtime.session import GameSession
 
     session = GameSession(
@@ -534,9 +533,14 @@ def _cmd_render(args: argparse.Namespace) -> int:
 
     sys.stderr.write(f"Rendering '{args.script}' headlessly...\n")
 
+    renderer_factory = get_renderer("null")
+    renderer = renderer_factory() if renderer_factory is not None else None
+    if renderer is None:
+        raise RuntimeError("No null renderer registered. Ensure eager-graphics is installed.")
+
     result = _run_headless(
         session,
-        NullRenderer(),
+        renderer,
         dt=args.dt,
         max_steps=args.max_steps,
         auto_choose=args.auto_choose,
@@ -559,33 +563,25 @@ def _run_interactive_player(session: Any, *, backend: str) -> None:
     All interactive players (PygletPlayer and PILPlayer) share a
     common interface and run their own event loops via ``run()``.
     """
+    _ensure_graphics()
+    player_cls = get_player(backend)
+    if player_cls is None:
+        raise ValueError(
+            f"No player registered for backend '{backend}'. "
+            f"Available backends: {', '.join(list_players()) or 'none'}. "
+            f"Ensure eager-graphics is installed."
+        )
+
     asset_dir = str(session.asset_dir) if getattr(session, "asset_dir", None) else None
-
-    if backend == "pil":
-        from eager_graphics.renderers.pil import PILPlayer
-
-        player: Any = PILPlayer(
-            session=session,
-            width=1280,
-            height=720,
-            title="Eager Visual Novel (PIL)",
-            asset_dir=asset_dir,
-        )
-        player.run()
-        return
-
-    if backend == "pyglet":
-        from eager_graphics.renderers.pyglet import PygletPlayer
-
-        player = PygletPlayer(
-            session=session,
-            width=1280,
-            height=720,
-            title="Eager Visual Novel (Pyglet)",
-            asset_dir=asset_dir,
-        )
-        player.run()
-        return
+    title = f"Eager Visual Novel ({backend.upper()})"
+    player: Any = player_cls(
+        session=session,
+        width=1280,
+        height=720,
+        title=title,
+        asset_dir=asset_dir,
+    )
+    player.run()
 
 
 def _cmd_run(args: argparse.Namespace) -> int:

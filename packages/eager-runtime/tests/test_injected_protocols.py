@@ -184,3 +184,32 @@ def test_null_stage_and_null_ui():
     session.choose(0)
     assert session.director.ui_state.speaker == "Alice"
     assert "Path A" in session.director.ui_state.text
+
+
+def test_default_headless_fallback_when_providers_empty():
+    from unittest.mock import patch
+
+    from eager_core.protocols import reset_providers
+    from eager_graphics import register_providers
+
+    try:
+        reset_providers()
+        graph = eager_script.parse_graph(SAMPLE_SCRIPT)
+        # 1. Explicit headless=True creates headless NullStage / NullUI
+        session_headless = GameSession(graph, headless=True)
+        assert isinstance(session_headless.stage, NullStage)
+        assert isinstance(session_headless.ui, NullUI)
+
+        # 2. When provider loading finds no providers, defaults to NullStage / NullUI
+        with patch("eager_runtime.session.load_providers"):
+            reset_providers()
+            session_no_providers = GameSession(graph)
+            assert isinstance(session_no_providers.stage, NullStage)
+            assert isinstance(session_no_providers.ui, NullUI)
+
+            evt = session_no_providers.advance()
+            assert evt is not None
+            assert session_no_providers.director.ui_state.speaker == "Alice"
+    finally:
+        # Restore graphics providers so subsequent tests have them
+        register_providers()

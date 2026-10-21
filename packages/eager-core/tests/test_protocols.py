@@ -102,3 +102,61 @@ def test_protocols_runtime_checkable():
 
     mgr = DummyScreenManager()
     assert isinstance(mgr, ScreenManagerProtocol)
+
+
+def test_provider_registry():
+    from eager_core.protocols import (
+        get_audio_backend,
+        get_player,
+        get_renderer,
+        get_screen_manager_factory,
+        get_stage_factory,
+        get_ui_factory,
+        list_players,
+        register_audio_backend,
+        register_player,
+        register_renderer,
+        register_screen_manager_factory,
+        register_stage_factory,
+        register_ui_factory,
+        reset_providers,
+    )
+
+    reset_providers()
+    assert get_stage_factory() is None
+    assert get_ui_factory() is None
+    assert get_screen_manager_factory() is None
+    assert get_player("foo") is None
+    assert get_audio_backend("foo") is None
+    assert get_renderer("foo") is None
+    assert list_players() == []
+
+    # Register dummies
+    def dummy_stage_factory(**kwargs):
+        return DummyStage()
+
+    def dummy_ui_factory(**kwargs):
+        return DummyUI()
+
+    def dummy_screens_factory(**kwargs):
+        return DummyScreenManager()
+
+    register_stage_factory(dummy_stage_factory)
+    register_ui_factory(dummy_ui_factory)
+    register_screen_manager_factory(dummy_screens_factory)
+    register_player("test_player", object)
+    register_audio_backend("test_audio", object)
+    register_renderer("test_renderer", object)
+
+    assert get_stage_factory() is dummy_stage_factory
+    assert get_ui_factory() is dummy_ui_factory
+    assert get_screen_manager_factory() is dummy_screens_factory
+    assert get_player("test_player") is object
+    assert get_player("TEST_PLAYER") is object
+    assert list_players() == ["test_player"]
+    assert get_audio_backend("test_audio") is object
+    assert get_renderer("test_renderer") is object
+
+    reset_providers()
+    assert get_stage_factory() is None
+    assert list_players() == []
