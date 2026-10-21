@@ -38,6 +38,9 @@ class DummyStage:
     def step(self, dt: float) -> None:
         pass
 
+    def finish_animations(self) -> None:
+        pass
+
     def save_visual_state(self) -> dict[str, Any]:
         return {}
 

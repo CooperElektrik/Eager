@@ -152,3 +152,46 @@ def test_tween_cancellation_during_update_safety() -> None:
     assert timeline.has_tweens(target1)
     assert timeline.active_count == 1
 
+
+def test_tween_finish_and_timeline_finish_all() -> None:
+    target1 = DummyTarget()
+    target2 = DummyTarget()
+    timeline = Timeline()
+
+    completed1 = False
+    completed2 = False
+
+    def on_done1() -> None:
+        nonlocal completed1
+        completed1 = True
+
+    def on_done2() -> None:
+        nonlocal completed2
+        completed2 = True
+
+    timeline.add_tween(target1, "opacity", 1.0, 5.0, on_complete=on_done1)
+    timeline.add_tween(target2, "position", Vec2(50.0, 100.0), 3.0, on_complete=on_done2)
+
+    assert timeline.active_count == 2
+    assert target1.opacity == 0.0
+    assert target2.position == Vec2(0.0, 0.0)
+
+    # finish_all immediately completes all tweens and invokes on_complete callbacks
+    timeline.finish_all()
+    assert timeline.active_count == 0
+    assert target1.opacity == 1.0
+    assert target2.position == Vec2(50.0, 100.0)
+    assert completed1 is True
+    assert completed2 is True
+
+
+def test_timeline_flush_alias() -> None:
+    target = DummyTarget()
+    timeline = Timeline()
+    timeline.add_tween(target, "opacity", 0.75, 2.0)
+    assert target.opacity == 0.0
+    timeline.flush()
+    assert timeline.active_count == 0
+    assert target.opacity == pytest.approx(0.75)
+
+

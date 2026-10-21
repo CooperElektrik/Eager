@@ -26,6 +26,17 @@ class Tween:
     on_update: Callable[[Any], Any] | None = None
     finished: bool = False
 
+    def finish(self) -> None:
+        """Immediately complete the tween at its end_value and invoke callbacks."""
+        if self.finished:
+            return
+        self.finished = True
+        self._apply_value(self.end_value)
+        if self.on_update is not None:
+            self.on_update(self.end_value)
+        if self.on_complete is not None:
+            self.on_complete()
+
     def update(self, dt: float) -> bool:
         """Advance the tween by dt seconds. Returns True if tween is still running."""
         if self.finished:
@@ -37,13 +48,7 @@ class Tween:
 
         active_time = self.elapsed - self.delay
         if self.duration <= 0.0 or active_time >= self.duration:
-            # Reached or passed end of tween
-            self._apply_value(self.end_value)
-            self.finished = True
-            if self.on_update is not None:
-                self.on_update(self.end_value)
-            if self.on_complete is not None:
-                self.on_complete()
+            self.finish()
             return False
 
         # Compute normalized progress
@@ -203,6 +208,21 @@ class Timeline:
                 tween.update(dt)
 
         self._tweens = [t for t in self._tweens if not t.finished]
+
+    def finish_all(self) -> None:
+        """Complete all active tweens immediately, snapping to end values and running callbacks."""
+        iterations = 0
+        while self._tweens and iterations < 100:
+            iterations += 1
+            current = list(self._tweens)
+            self._tweens.clear()
+            for tween in current:
+                if not tween.finished:
+                    tween.finish()
+
+    def flush(self) -> None:
+        """Alias for finish_all()."""
+        self.finish_all()
 
     def clear(self) -> None:
         """Cancel and remove all active tweens."""

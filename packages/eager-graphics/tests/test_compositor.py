@@ -245,3 +245,36 @@ def test_compositor_character_reshow_with_slide() -> None:
     items_left_done = comp.render_list()
     alice_left_done = next(it for it in items_left_done if "alice" in it.asset_id)
     assert alice_left_done.x == pytest.approx(480.0)
+
+
+def test_compositor_save_state_flushes_active_fade_and_crossfade() -> None:
+    """Verify save_state snaps active tweens so checkpoints do not store opacity 0.0 or pending transitions."""
+    comp = StageCompositor(1920, 1080)
+    comp.set_background("bg/garden", transition="cut")
+
+    # Start a fade-in show_character with duration 0.5 without ticking update()
+    comp.show_character("alice", "happy", position="center", transition="fade", duration=0.5)
+
+    # Crossfade background to bg/hall without ticking update()
+    comp.set_background("bg/hall", transition="dissolve", duration=0.5)
+
+    assert comp.timeline.active_count > 0
+
+    # save_state() flushes all active tweens before taking the snapshot
+    snapshot = comp.save_state()
+    assert comp.timeline.active_count == 0
+
+    # Clear and restore snapshot
+    comp.clear()
+    assert len(comp.render_list()) == 0
+
+    comp.load_state(snapshot)
+    items = comp.render_list()
+    asset_ids = {it.asset_id for it in items}
+    assert "alice/happy" in asset_ids
+    assert "bg/hall" in asset_ids
+    assert "bg/garden" not in asset_ids  # old background was cleaned up
+
+    alice_item = next(it for it in items if it.asset_id == "alice/happy")
+    assert alice_item.opacity == pytest.approx(1.0)
+

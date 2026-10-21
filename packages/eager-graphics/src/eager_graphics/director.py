@@ -84,6 +84,10 @@ class StageDirector:
         """Advance compositor timelines and animations by *dt* seconds."""
         self.compositor.step(dt)
 
+    def finish_animations(self) -> None:
+        """Immediately complete active stage animations."""
+        self.compositor.finish_animations()
+
     def save_ui_state(self) -> dict[str, Any]:
         """Serialize current UI state."""
         return self.ui_state.to_dict()

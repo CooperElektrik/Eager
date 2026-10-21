@@ -88,6 +88,39 @@ def test_session_rollback_restores_state_and_visuals() -> None:
     assert char_items[0].asset_id == "alice/cheerful"
 
 
+def test_session_transitory_animation_on_save_and_rollback() -> None:
+    fade_story = """
+## Scene 1 --- scene1
+~ bg garden with cut
+~ show alice cheerful at center with fade duration=0.5
+Alice: Welcome to the garden!
+~ show bob stern at right with cut
+Bob: I followed you here.
+"""
+    graph = eager_script.parse_graph(fade_story)
+    session = GameSession(graph)
+
+    # Advance lands on Alice: Welcome to the garden!
+    session.advance()
+    assert session.director.ui_state.speaker == "Alice"
+
+    # Advance to Bob
+    session.advance()
+    assert session.director.ui_state.speaker == "Bob"
+
+    # Roll back to Alice: Welcome to the garden!
+    ok = session.rollback()
+    assert ok is True
+    assert session.director.ui_state.speaker == "Alice"
+
+    # Alice must be fully visible and in render_list, not invisible at opacity 0.0
+    char_items = [it for it in session.compositor.render_list() if it.layer == "characters"]
+    assert len(char_items) == 1
+    assert char_items[0].asset_id == "alice/cheerful"
+    assert char_items[0].opacity == 1.0
+
+
+
 def test_session_rollback_onto_choice_reshows_menu() -> None:
     graph = eager_script.parse_graph(SAMPLE_STORY)
     session = GameSession(graph)

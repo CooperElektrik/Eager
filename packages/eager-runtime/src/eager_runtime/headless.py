@@ -88,6 +88,9 @@ class NullCompositor:
     def step(self, dt: float) -> None:
         pass
 
+    def finish_animations(self) -> None:
+        pass
+
     def render_list(self) -> list[Any]:
         return []
 
@@ -178,6 +181,9 @@ class NullStage:
 
     def step(self, dt: float) -> None:
         self.compositor.step(dt)
+
+    def finish_animations(self) -> None:
+        self.compositor.finish_animations()
 
     def save_visual_state(self) -> dict[str, Any]:
         return {

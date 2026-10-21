@@ -352,6 +352,11 @@ class GameSession:
             # Cannot advance while awaiting text input
             return self.active_input_prompt
 
+        if hasattr(self.director, "finish_animations"):
+            self.director.finish_animations()
+        elif hasattr(self.stage, "finish_animations"):
+            self.stage.finish_animations()
+
         self.auto_timer = 0.0
 
         while not self.vm.is_ended:

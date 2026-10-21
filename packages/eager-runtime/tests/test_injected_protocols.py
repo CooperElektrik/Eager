@@ -79,6 +79,9 @@ class CustomMockStage:
     def step(self, dt: float) -> None:
         self.stepped_dt += dt
 
+    def finish_animations(self) -> None:
+        pass
+
     def save_visual_state(self) -> dict[str, Any]:
         state = {"custom_marker": 42}
         self.saved_states.append(state)

@@ -48,6 +48,10 @@ class StageProtocol(Protocol):
         """Advance stage animations and timelines by *dt* seconds."""
         ...
 
+    def finish_animations(self) -> None:
+        """Immediately complete active stage animations."""
+        ...
+
     def save_visual_state(self) -> dict[str, object]:
         """Serialize current visual stage state for checkpointing."""
         ...

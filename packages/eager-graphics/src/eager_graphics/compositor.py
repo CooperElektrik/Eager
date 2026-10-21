@@ -1008,8 +1008,17 @@ class StageCompositor:
     # Snapshot & Serialization
     # =========================================================================
 
+    def finish_animations(self) -> None:
+        """Immediately complete all active timeline tweens."""
+        self.timeline.finish_all()
+
     def save_state(self) -> dict[str, Any]:
-        """Create a complete serializable snapshot of the visual stage state."""
+        """Create a complete serializable snapshot of the visual stage state.
+
+        Active animations are flushed before serialization to avoid saving
+        transitory 0.0-opacity or mid-transition states.
+        """
+        self.timeline.finish_all()
         return {
             "stage": self.stage.to_dict(),
             "virtual_width": self.virtual_width,
