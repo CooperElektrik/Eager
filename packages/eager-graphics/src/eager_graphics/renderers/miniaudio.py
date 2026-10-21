@@ -21,6 +21,8 @@ except ImportError:
 
 _WARNED_MISSING = False
 
+STREAMING_CHANNELS = frozenset({"music", "ambient", "bgm", "bgs"})
+
 
 def _check_miniaudio() -> bool:
     global _WARNED_MISSING
@@ -38,23 +40,30 @@ def _check_miniaudio() -> bool:
 class _ChannelTrack:
     def __init__(
         self,
-        samples: array.array,
+        samples: array.array | None,
         sample_rate: int,
         nchannels: int,
         volume: float = 1.0,
         loop: bool = False,
         loop_start_frame: int | None = None,
         loop_end_frame: int | None = None,
+        path_str: str | None = None,
+        stream: Any = None,
     ) -> None:
-        self.samples = samples  # s16 samples interleaved
+        self.samples = samples  # s16 samples interleaved for in-memory sfx
         self.sample_rate = sample_rate
         self.nchannels = nchannels
         self.volume = volume
         self.loop = loop
         self.loop_start_frame = loop_start_frame
         self.loop_end_frame = loop_end_frame
+        self.path_str = path_str
+        self.stream = stream
+        self.buffer: array.array = array.array("h")
         self.frame_pos: int = 0
-        self.total_frames: int = len(samples) // nchannels if nchannels > 0 else 0
+        self.total_frames: int = (
+            len(samples) // nchannels if (samples is not None and nchannels > 0) else -1
+        )
         self.is_playing: bool = True
         self.is_paused: bool = False
 
@@ -98,48 +107,109 @@ class MiniaudioAudioBackend(BaseAudioBackend):
                         mixed = [0] * (req * self.nchannels)
 
                         for track in list(self._tracks.values()):
-                            if not track.is_playing or track.is_paused or track.total_frames == 0:
+                            if not track.is_playing or track.is_paused:
                                 continue
 
                             vol = track.volume
-                            samples = track.samples
                             t_channels = track.nchannels
-                            cur_f = track.frame_pos
-                            total_f = track.total_frames
-                            loop_end = (
-                                min(track.loop_end_frame, total_f)
-                                if track.loop_end_frame is not None
-                                else total_f
-                            )
-                            loop_start = (
-                                track.loop_start_frame
-                                if track.loop_start_frame is not None
-                                else 0
-                            )
 
-                            out_idx = 0
-                            for _ in range(req):
-                                if cur_f >= loop_end:
-                                    if track.loop:
-                                        cur_f = loop_start
+                            if track.samples is not None:
+                                samples = track.samples
+                                cur_f = track.frame_pos
+                                total_f = track.total_frames
+                                if total_f <= 0:
+                                    continue
+                                loop_end = (
+                                    min(track.loop_end_frame, total_f)
+                                    if track.loop_end_frame is not None
+                                    else total_f
+                                )
+                                loop_start = (
+                                    track.loop_start_frame
+                                    if track.loop_start_frame is not None
+                                    else 0
+                                )
+
+                                out_idx = 0
+                                for _ in range(req):
+                                    if cur_f >= loop_end:
+                                        if track.loop:
+                                            cur_f = loop_start
+                                        else:
+                                            track.is_playing = False
+                                            break
+
+                                    samp_idx = cur_f * t_channels
+                                    if t_channels == 2:
+                                        s_left = samples[samp_idx]
+                                        s_right = samples[samp_idx + 1]
                                     else:
-                                        track.is_playing = False
-                                        break
+                                        s_left = samples[samp_idx]
+                                        s_right = s_left
 
-                                samp_idx = cur_f * t_channels
-                                if t_channels == 2:
-                                    s_left = samples[samp_idx]
-                                    s_right = samples[samp_idx + 1]
-                                else:
-                                    s_left = samples[samp_idx]
-                                    s_right = s_left
+                                    mixed[out_idx] += int(s_left * vol)
+                                    mixed[out_idx + 1] += int(s_right * vol)
+                                    out_idx += 2
+                                    cur_f += 1
 
-                                mixed[out_idx] += int(s_left * vol)
-                                mixed[out_idx + 1] += int(s_right * vol)
-                                out_idx += 2
-                                cur_f += 1
+                                track.frame_pos = cur_f
 
-                            track.frame_pos = cur_f
+                            elif track.stream is not None:
+                                needed_samples = req * t_channels
+                                while len(track.buffer) < needed_samples:
+                                    if track.loop_end_frame is not None and track.frame_pos >= track.loop_end_frame:
+                                        if track.loop and track.path_str:
+                                            seek = track.loop_start_frame or 0
+                                            track.frame_pos = seek
+                                            try:
+                                                track.stream = miniaudio.stream_file(
+                                                    track.path_str,
+                                                    output_format=miniaudio.SampleFormat.SIGNED16,
+                                                    nchannels=track.nchannels,
+                                                    sample_rate=track.sample_rate,
+                                                    seek_frame=seek,
+                                                )
+                                            except Exception:  # noqa: BLE001
+                                                track.is_playing = False
+                                                break
+                                        else:
+                                            track.is_playing = False
+                                            break
+                                    try:
+                                        frames_to_fetch = req
+                                        if track.loop_end_frame is not None:
+                                            frames_to_fetch = min(frames_to_fetch, track.loop_end_frame - track.frame_pos)
+                                        chunk = track.stream.send(max(1, frames_to_fetch))
+                                        track.buffer.extend(chunk)
+                                        track.frame_pos += len(chunk) // t_channels
+                                    except StopIteration:
+                                        if track.loop and track.path_str:
+                                            seek = track.loop_start_frame or 0
+                                            track.frame_pos = seek
+                                            try:
+                                                track.stream = miniaudio.stream_file(
+                                                    track.path_str,
+                                                    output_format=miniaudio.SampleFormat.SIGNED16,
+                                                    nchannels=track.nchannels,
+                                                    sample_rate=track.sample_rate,
+                                                    seek_frame=seek,
+                                                )
+                                            except Exception:  # noqa: BLE001
+                                                track.is_playing = False
+                                                break
+                                        else:
+                                            track.is_playing = False
+                                            break
+
+                                samples_to_take = min(len(track.buffer), needed_samples)
+                                out_idx = 0
+                                for i in range(0, samples_to_take, t_channels):
+                                    s_left = track.buffer[i]
+                                    s_right = track.buffer[i + 1] if t_channels == 2 else s_left
+                                    mixed[out_idx] += int(s_left * vol)
+                                    mixed[out_idx + 1] += int(s_right * vol)
+                                    out_idx += 2
+                                del track.buffer[:samples_to_take]
 
                         # Clamp mixed samples to signed 16-bit
                         out_arr = array.array(
@@ -179,28 +249,54 @@ class MiniaudioAudioBackend(BaseAudioBackend):
             return
 
         path_str = str(asset_path)
-        try:
-            decoded = miniaudio.decode_file(
-                path_str,
-                output_format=miniaudio.SampleFormat.SIGNED16,
-                nchannels=self.nchannels,
-                sample_rate=self.sample_rate,
-            )
-        except Exception:  # noqa: BLE001
-            return
-
         start_frame = int(loop_start * self.sample_rate) if loop_start is not None else None
         end_frame = int(loop_end * self.sample_rate) if loop_end is not None else None
 
-        track = _ChannelTrack(
-            samples=decoded.samples,
-            sample_rate=self.sample_rate,
-            nchannels=self.nchannels,
-            volume=max(0.0, min(1.0, volume)),
-            loop=loop,
-            loop_start_frame=start_frame,
-            loop_end_frame=end_frame,
-        )
+        if channel.lower() in STREAMING_CHANNELS:
+            try:
+                stream = miniaudio.stream_file(
+                    path_str,
+                    output_format=miniaudio.SampleFormat.SIGNED16,
+                    nchannels=self.nchannels,
+                    sample_rate=self.sample_rate,
+                    seek_frame=start_frame or 0,
+                )
+            except Exception:  # noqa: BLE001
+                return
+
+            track = _ChannelTrack(
+                samples=None,
+                sample_rate=self.sample_rate,
+                nchannels=self.nchannels,
+                volume=max(0.0, min(1.0, volume)),
+                loop=loop,
+                loop_start_frame=start_frame,
+                loop_end_frame=end_frame,
+                path_str=path_str,
+                stream=stream,
+            )
+            if start_frame:
+                track.frame_pos = start_frame
+        else:
+            try:
+                decoded = miniaudio.decode_file(
+                    path_str,
+                    output_format=miniaudio.SampleFormat.SIGNED16,
+                    nchannels=self.nchannels,
+                    sample_rate=self.sample_rate,
+                )
+            except Exception:  # noqa: BLE001
+                return
+
+            track = _ChannelTrack(
+                samples=decoded.samples,
+                sample_rate=self.sample_rate,
+                nchannels=self.nchannels,
+                volume=max(0.0, min(1.0, volume)),
+                loop=loop,
+                loop_start_frame=start_frame,
+                loop_end_frame=end_frame,
+            )
         with self._lock:
             self._tracks[channel] = track
 

@@ -68,6 +68,33 @@ class TestHardwareAudioBackends(unittest.TestCase):
 
         backend.shutdown()
 
+    def test_miniaudio_streaming_vs_decoding(self) -> None:
+        pytest.importorskip("miniaudio")
+        from unittest.mock import patch
+
+        import miniaudio
+
+        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
+
+        backend = MiniaudioAudioBackend()
+
+        with patch.object(miniaudio, "stream_file", wraps=miniaudio.stream_file) as mock_stream, \
+             patch.object(miniaudio, "decode_file", wraps=miniaudio.decode_file) as mock_decode:
+            # Long-running channel (music) must use stream_file
+            backend.play("music", self.wav_path, loop=True)
+            self.assertTrue(mock_stream.called)
+            self.assertFalse(mock_decode.called)
+
+            mock_stream.reset_mock()
+            mock_decode.reset_mock()
+
+            # Short sound effect channel (sfx) must use decode_file
+            backend.play("sfx", self.wav_path, loop=False)
+            self.assertTrue(mock_decode.called)
+            self.assertFalse(mock_stream.called)
+
+        backend.shutdown()
+
     def test_miniaudio_audio_backend_thread_safety(self) -> None:
         pytest.importorskip("miniaudio")
         import threading
