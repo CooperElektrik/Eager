@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 from eager_core.storage import atomic_write_json, safe_read_json
 
@@ -33,7 +34,7 @@ class TranslationCatalog:
             return val
         return fallback
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize catalog to dictionary."""
         return {
             "locale": self.locale,
@@ -43,12 +44,15 @@ class TranslationCatalog:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> TranslationCatalog:
+    def from_dict(cls, data: Mapping[str, object]) -> TranslationCatalog:
         """Create catalog from dictionary."""
         locale = str(data.get("locale", "default"))
-        meta = {str(k): str(v) for k, v in data.get("metadata", {}).items()}
-        speakers = {str(k): str(v) for k, v in data.get("speakers", {}).items()}
-        strings = {str(k): str(v) for k, v in data.get("strings", {}).items()}
+        meta_raw = data.get("metadata")
+        meta = {str(k): str(v) for k, v in cast(Mapping[object, object], meta_raw).items()} if isinstance(meta_raw, Mapping) else {}
+        speakers_raw = data.get("speakers")
+        speakers = {str(k): str(v) for k, v in cast(Mapping[object, object], speakers_raw).items()} if isinstance(speakers_raw, Mapping) else {}
+        strings_raw = data.get("strings")
+        strings = {str(k): str(v) for k, v in cast(Mapping[object, object], strings_raw).items()} if isinstance(strings_raw, Mapping) else {}
         return cls(locale=locale, strings=strings, speakers=speakers, metadata=meta)
 
     def save_json(self, path: Path | str) -> None:
@@ -59,11 +63,12 @@ class TranslationCatalog:
     def load_json(cls, path: Path | str) -> TranslationCatalog:
         """Load catalog from a JSON file."""
         data = safe_read_json(Path(path), default={})
-        if not isinstance(data, dict):
+        if not isinstance(data, Mapping):
             return cls(locale=Path(path).stem)
-        if "locale" not in data:
-            data["locale"] = Path(path).stem
-        return cls.from_dict(data)
+        dict_data: dict[str, object] = {str(k): v for k, v in cast(Mapping[object, object], data).items()}
+        if "locale" not in dict_data:
+            dict_data["locale"] = Path(path).stem
+        return cls.from_dict(dict_data)
 
 
 class TranslationManager:

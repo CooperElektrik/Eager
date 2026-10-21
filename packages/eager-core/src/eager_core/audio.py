@@ -5,11 +5,19 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol, TypedDict, cast
 
 _POOL_SUFFIX_RE = re.compile(r"^(.*)_(\d+)$")
+
+
+class AudioMixerSaveState(TypedDict):
+    master_volume: float
+    channel_volumes: dict[str, float]
+    channels: dict[str, dict[str, object]]
+    serial_counter: int
 
 
 class AudioBackend(Protocol):
@@ -55,6 +63,7 @@ class BaseAudioBackend:
 
     def update(self, dt: float) -> None:
         """Periodic per-frame audio pump/update tick."""
+        _ = dt
 
     def shutdown(self) -> None:
         """Free low-level audio resources and devices."""
@@ -82,7 +91,7 @@ class ChannelState:
     fade_target_vol: float = 0.0
     stop_on_fade_complete: bool = False
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "name": self.name,
             "current_asset": self.current_asset,
@@ -102,31 +111,42 @@ class ChannelState:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ChannelState:
+    def from_dict(cls, data: Mapping[str, object]) -> ChannelState:
+        raw_queue = data.get("queue")
+        queue_list = [str(x) for x in cast(list[object], raw_queue)] if isinstance(raw_queue, list) else []
+        name_val = data["name"]
+        vol_val = data.get("volume", 1.0)
+        serial_val = data.get("serial", 0)
+        ft_val = data.get("fade_timer", 0.0)
+        fd_val = data.get("fade_duration", 0.0)
+        fsv_val = data.get("fade_start_vol", 0.0)
+        ftv_val = data.get("fade_target_vol", 0.0)
+        ls_val = data.get("loop_start")
+        le_val = data.get("loop_end")
         return cls(
-            name=data["name"],
-            current_asset=data.get("current_asset"),
-            volume=float(data.get("volume", 1.0)),
+            name=str(name_val),
+            current_asset=str(data["current_asset"]) if data.get("current_asset") is not None else None,
+            volume=float(vol_val) if isinstance(vol_val, (int, float, str)) else 1.0,
             loop=bool(data.get("loop", False)),
             is_playing=bool(data.get("is_playing", False)),
             is_paused=bool(data.get("is_paused", False)),
-            queue=list(data.get("queue", [])),
-            loop_start=data.get("loop_start"),
-            loop_end=data.get("loop_end"),
-            serial=int(data.get("serial", 0)),
-            fade_timer=float(data.get("fade_timer", 0.0)),
-            fade_duration=float(data.get("fade_duration", 0.0)),
-            fade_start_vol=float(data.get("fade_start_vol", 0.0)),
-            fade_target_vol=float(data.get("fade_target_vol", 0.0)),
+            queue=queue_list,
+            loop_start=float(ls_val) if ls_val is not None and isinstance(ls_val, (int, float, str)) else None,
+            loop_end=float(le_val) if le_val is not None and isinstance(le_val, (int, float, str)) else None,
+            serial=int(serial_val) if isinstance(serial_val, (int, str)) else 0,
+            fade_timer=float(ft_val) if isinstance(ft_val, (int, float, str)) else 0.0,
+            fade_duration=float(fd_val) if isinstance(fd_val, (int, float, str)) else 0.0,
+            fade_start_vol=float(fsv_val) if isinstance(fsv_val, (int, float, str)) else 0.0,
+            fade_target_vol=float(ftv_val) if isinstance(ftv_val, (int, float, str)) else 0.0,
             stop_on_fade_complete=bool(data.get("stop_on_fade_complete", False)),
         )
 
 
-class NullAudioBackend(BaseAudioBackend):
+class NullAudioBackend:
     """Headless no-op audio backend recording calls for test inspection."""
 
     def __init__(self) -> None:
-        self.calls: list[tuple[Any, ...]] = []
+        self.calls: list[tuple[object, ...]] = []
         self._playing_channels: set[str] = set()
         self.shutdown_called: bool = False
 
@@ -171,13 +191,13 @@ class NullAudioBackend(BaseAudioBackend):
 class AudioMixer:
     """Manages audio playback across music, sound, voice, and ambient channels."""
 
-    STANDARD_CHANNELS = ("music", "sound", "voice", "ambient")
+    STANDARD_CHANNELS: tuple[str, ...] = ("music", "sound", "voice", "ambient")
 
     #: Default cap on concurrent auto-allocated pool channels per base
     #: (e.g. ``sound_0`` … ``sound_15``). When every slot is busy the oldest
     #: entry is stolen. Set to ``None`` (or pass ``max_polyphony<=0``) for
     #: unbounded growth.
-    DEFAULT_MAX_POLYPHONY = 16
+    DEFAULT_MAX_POLYPHONY: int = 16
 
     def __init__(
         self,
@@ -185,7 +205,7 @@ class AudioMixer:
         asset_dir: Path | str | None = None,
     ) -> None:
         self.backend: AudioBackend = backend if backend is not None else NullAudioBackend()
-        self.asset_dir = Path(asset_dir) if asset_dir is not None else None
+        self.asset_dir: Path | None = Path(asset_dir) if asset_dir is not None else None
 
         self.channels: dict[str, ChannelState] = {
             name: ChannelState(name=name, loop=(name in ("music", "ambient")))
@@ -382,7 +402,7 @@ class AudioMixer:
             # _type_volume fallback, so only brand-new base/custom channel
             # names get an explicit entry.
             if not self._is_pool_member(channel):
-                self.channel_volumes.setdefault(channel, 1.0)
+                _ = self.channel_volumes.setdefault(channel, 1.0)
 
         chan = self.channels[channel]
         if loop is not None:
@@ -526,10 +546,10 @@ class AudioMixer:
         if channel not in self.channels:
             self.channels[channel] = ChannelState(name=channel)
             if not self._is_pool_member(channel):
-                self.channel_volumes.setdefault(channel, 1.0)
+                _ = self.channel_volumes.setdefault(channel, 1.0)
         chan = self.channels[channel]
         if not chan.is_playing:
-            self.play(channel, asset_path)
+            _ = self.play(channel, asset_path)
         else:
             chan.queue.append(asset_path)
 
@@ -559,7 +579,7 @@ class AudioMixer:
             # Advance channel queue if idle and tracks are queued
             if not chan.is_playing and chan.queue:
                 next_asset = chan.queue.pop(0)
-                self.play(chan.name, next_asset)
+                _ = self.play(chan.name, next_asset)
 
         if hasattr(self.backend, "update"):
             self.backend.update(dt)
@@ -569,7 +589,7 @@ class AudioMixer:
         if hasattr(self.backend, "shutdown"):
             self.backend.shutdown()
 
-    def save_state(self) -> dict[str, Any]:
+    def save_state(self) -> AudioMixerSaveState:
         """Save mixer state for checkpoints and saves.
 
         Idle pool members (``sound_0`` with nothing playing, nothing queued
@@ -593,16 +613,38 @@ class AudioMixer:
             "serial_counter": self._serial_counter,
         }
 
-    def load_state(self, state: dict[str, Any]) -> None:
+    def load_state(self, state: Mapping[str, object]) -> None:
         """Restore mixer state from checkpoint."""
         if not state:
             return
-        self.master_volume = float(state.get("master_volume", 1.0))
-        self.channel_volumes = {k: float(v) for k, v in state.get("channel_volumes", {}).items()}
-        self._serial_counter = max(self._serial_counter, int(state.get("serial_counter", 0)))
+        master_vol = state.get("master_volume", 1.0)
+        if isinstance(master_vol, (int, float, str)):
+            self.master_volume = float(master_vol)
 
-        raw_channels = state.get("channels", {})
-        for name, data in raw_channels.items():
+        raw_channel_volumes = state.get("channel_volumes")
+        if isinstance(raw_channel_volumes, Mapping):
+            self.channel_volumes = {
+                str(k): float(v)
+                for k, v in cast(Mapping[object, object], raw_channel_volumes).items()
+                if isinstance(v, (int, float, str))
+            }
+
+        serial_counter = state.get("serial_counter", 0)
+        if isinstance(serial_counter, (int, str)):
+            self._serial_counter = max(self._serial_counter, int(serial_counter))
+
+        raw_channels = state.get("channels")
+        raw_channels_dict: dict[str, object] = (
+            {str(k): v for k, v in cast(Mapping[object, object], raw_channels).items()}
+            if isinstance(raw_channels, Mapping)
+            else {}
+        )
+        for name, data_obj in raw_channels_dict.items():
+            if not isinstance(data_obj, Mapping):
+                continue
+            data: dict[str, object] = {
+                str(k): v for k, v in cast(Mapping[object, object], data_obj).items()
+            }
             chan = ChannelState.from_dict(data)
             existing = self.channels.get(name)
 
@@ -620,7 +662,7 @@ class AudioMixer:
 
             was_paused = bool(data.get("is_paused", False))
             self.channels[name] = chan
-            if is_same_track:
+            if is_same_track and existing is not None:
                 # Same music track/serial continues smoothly across rollback without restarting from frame 0
                 if abs(existing.volume - chan.volume) > 1e-4:
                     self.backend.set_volume(name, self._effective_volume(name))
@@ -629,7 +671,7 @@ class AudioMixer:
                 elif not chan.is_paused and existing.is_paused:
                     self.backend.resume(name)
             elif chan.is_playing and chan.current_asset:
-                self.play(
+                _ = self.play(
                     name,
                     chan.current_asset,
                     loop=chan.loop,
@@ -637,7 +679,8 @@ class AudioMixer:
                     loop_start=chan.loop_start,
                     loop_end=chan.loop_end,
                 )
-                restored_serial = int(data.get("serial", 0))
+                serial_obj = data.get("serial", 0)
+                restored_serial = int(serial_obj) if isinstance(serial_obj, (int, str)) else 0
                 if restored_serial > 0:
                     chan.serial = restored_serial
                 if was_paused:
@@ -646,7 +689,7 @@ class AudioMixer:
                 self._stop_one(name)
 
         for name in list(self.channels):
-            if name not in raw_channels:
+            if name not in raw_channels_dict:
                 if self._is_pool_member(name):
                     # Drop ghost pool slots allocated after this snapshot so
                     # rollback/checkpoints do not accumulate them forever.

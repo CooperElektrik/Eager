@@ -25,7 +25,9 @@ def test_events_to_dict():
     opt2 = ChoiceOption(1, "Go right", "right_path", 11)
     choice = ChoicePromptEvent(options=(opt1, opt2), line_number=9)
     assert choice.type == "choice_prompt"
-    assert len(choice.to_dict()["options"]) == 2
+    opts = choice.to_dict()["options"]
+    assert isinstance(opts, list)
+    assert len(opts) == 2
 
     exit_ev = SceneExitEvent("intro", "jump", "next", 12)
     assert exit_ev.type == "scene_exit"

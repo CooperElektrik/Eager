@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,9 +56,13 @@ class Vec2:
         return {"x": self.x, "y": self.y}
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Vec2:
+    def from_dict(cls, data: Mapping[str, object]) -> Vec2:
         """Create vector from dictionary."""
-        return cls(float(data["x"]), float(data["y"]))
+        x_val = data["x"]
+        y_val = data["y"]
+        if not isinstance(x_val, (int, float, str)) or not isinstance(y_val, (int, float, str)):
+            raise TypeError("Vec2 coordinates must be numbers or numeric strings")
+        return cls(float(x_val), float(y_val))
 
     @classmethod
     def from_value(cls, val: Vec2 | tuple[float, float] | list[float] | float) -> Vec2:
@@ -67,10 +71,7 @@ class Vec2:
             return val
         if isinstance(val, (tuple, list)):
             return cls(float(val[0]), float(val[1]))
-        if isinstance(val, (int, float)):
-            return cls(float(val), float(val))
-        msg = f"Cannot coerce value of type {type(val)} to Vec2"
-        raise TypeError(msg)
+        return cls(float(val), float(val))
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,13 +123,24 @@ class Color:
         return {"r": self.r, "g": self.g, "b": self.b, "a": self.a}
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Color:
+    def from_dict(cls, data: Mapping[str, object]) -> Color:
         """Create color from dictionary."""
+        r_val = data["r"]
+        g_val = data["g"]
+        b_val = data["b"]
+        a_val = data.get("a", 1.0)
+        if (
+            not isinstance(r_val, (int, float, str))
+            or not isinstance(g_val, (int, float, str))
+            or not isinstance(b_val, (int, float, str))
+            or not isinstance(a_val, (int, float, str))
+        ):
+            raise TypeError("Color channels must be numbers or numeric strings")
         return cls(
-            r=float(data["r"]),
-            g=float(data["g"]),
-            b=float(data["b"]),
-            a=float(data.get("a", 1.0)),
+            r=float(r_val),
+            g=float(g_val),
+            b=float(b_val),
+            a=float(a_val),
         )
 
     @classmethod

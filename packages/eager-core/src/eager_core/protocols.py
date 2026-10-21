@@ -6,7 +6,7 @@ and presentation subsystems (eager-graphics or custom engines).
 
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -16,7 +16,7 @@ class UIStateProtocol(Protocol):
     speaker: str | None
     text: str
     emotion: str | None
-    choices: list[Any]
+    choices: list[object]
     is_finished: bool
     visible_chars: int | None
 
@@ -28,7 +28,7 @@ class UIStateProtocol(Protocol):
         """Clear active dialogue and speaker information."""
         ...
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize UI state to a dictionary."""
         ...
 
@@ -37,9 +37,9 @@ class UIStateProtocol(Protocol):
 class StageProtocol(Protocol):
     """Protocol for visual stage management and event binding in visual novel sessions."""
 
-    ui_state: Any
+    ui_state: object
 
-    def bind(self, dispatcher: Any) -> None:
+    def bind(self, dispatcher: object) -> None:
         """Bind stage event handlers to the given event dispatcher."""
         ...
 
@@ -47,11 +47,11 @@ class StageProtocol(Protocol):
         """Advance stage animations and timelines by *dt* seconds."""
         ...
 
-    def save_visual_state(self) -> dict[str, Any]:
+    def save_visual_state(self) -> dict[str, object]:
         """Serialize current visual stage state for checkpointing."""
         ...
 
-    def load_visual_state(self, state: dict[str, Any]) -> None:
+    def load_visual_state(self, state: dict[str, object]) -> None:
         """Restore visual stage state from serialized checkpoint data."""
         ...
 
@@ -66,11 +66,11 @@ class UIProtocol(Protocol):
         """Update viewport dimensions for layout calculation."""
         ...
 
-    def draw(self, *args: Any, **kwargs: Any) -> None:
+    def draw(self, *args: object, **kwargs: object) -> None:
         """Draw UI chrome and elements to the render target."""
         ...
 
-    def sync(self, *args: Any, **kwargs: Any) -> None:
+    def sync(self, *args: object, **kwargs: object) -> None:
         """Synchronize UI components with current UI state."""
         ...
 
@@ -87,23 +87,23 @@ class UIProtocol(Protocol):
 class ScreenManagerProtocol(Protocol):
     """Protocol for menu screen stack and registry management."""
 
-    screens: dict[str, Any]
-    active_screen: Any
+    screens: dict[str, object]
+    active_screen: object
     is_active: bool
 
-    def register(self, screen: Any) -> None:
+    def register(self, screen: object) -> None:
         """Register a screen under its name."""
         ...
 
-    def show(self, name: str, session: Any) -> bool:
+    def show(self, name: str, session: object) -> bool:
         """Display the screen with the given name."""
         ...
 
-    def hide(self, session: Any) -> None:
+    def hide(self, session: object) -> None:
         """Dismiss the active screen."""
         ...
 
-    def draw(self, *args: Any, **kwargs: Any) -> None:
+    def draw(self, *args: object, **kwargs: object) -> None:
         """Render the active screen."""
         ...
 

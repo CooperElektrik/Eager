@@ -91,4 +91,4 @@ class Keymap:
 
     def unbind(self, key_name: str) -> None:
         """Unbind a key name."""
-        self.bindings.pop(key_name.lower(), None)
+        _ = self.bindings.pop(key_name.lower(), None)

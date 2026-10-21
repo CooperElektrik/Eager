@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, TypeAlias
+from typing import TypeAlias
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,7 +19,7 @@ class SceneEnterEvent:
     def type(self) -> str:
         return "scene_enter"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "type": self.type,
             "scene_id": self.scene_id,
@@ -42,8 +43,8 @@ class DialogueEvent:
     def type(self) -> str:
         return "dialogue"
 
-    def to_dict(self) -> dict[str, Any]:
-        data: dict[str, Any] = {
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {
             "type": self.type,
             "speaker": self.speaker,
             "text": self.text,
@@ -68,8 +69,8 @@ class AppendEvent:
     def type(self) -> str:
         return "append"
 
-    def to_dict(self) -> dict[str, Any]:
-        data: dict[str, Any] = {
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {
             "type": self.type,
             "text": self.text,
             "line_number": self.line_number,
@@ -91,8 +92,8 @@ class FreshBoxEvent:
     def type(self) -> str:
         return "fresh_box"
 
-    def to_dict(self) -> dict[str, Any]:
-        data: dict[str, Any] = {
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {
             "type": self.type,
             "text": self.text,
             "line_number": self.line_number,
@@ -114,8 +115,8 @@ class NarrationEvent:
     def type(self) -> str:
         return "narration"
 
-    def to_dict(self) -> dict[str, Any]:
-        data: dict[str, Any] = {
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {
             "type": self.type,
             "text": self.text,
             "line_number": self.line_number,
@@ -137,8 +138,8 @@ class ChoiceOption:
     enabled: bool = True
     beat_id: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
-        data: dict[str, Any] = {
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {
             "index": self.index,
             "text": self.text,
             "target": self.target,
@@ -152,15 +153,21 @@ class ChoiceOption:
         return data
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ChoiceOption:
+    def from_dict(cls, data: Mapping[str, object]) -> ChoiceOption:
+        idx_val = data["index"]
+        text_val = data["text"]
+        target_val = data.get("target")
+        line_val = data.get("line_number", 0)
+        cond_val = data.get("condition")
+        beat_val = data.get("beat_id")
         return cls(
-            index=int(data["index"]),
-            text=str(data["text"]),
-            target=data.get("target"),
-            line_number=int(data.get("line_number", 0)),
-            condition=data.get("condition"),
+            index=int(idx_val) if isinstance(idx_val, (int, str)) else 0,
+            text=str(text_val),
+            target=str(target_val) if target_val is not None else None,
+            line_number=int(line_val) if isinstance(line_val, (int, str)) else 0,
+            condition=str(cond_val) if cond_val is not None else None,
             enabled=bool(data.get("enabled", True)),
-            beat_id=data.get("beat_id"),
+            beat_id=str(beat_val) if beat_val is not None else None,
         )
 
 
@@ -176,8 +183,8 @@ class ChoicePromptEvent:
     def type(self) -> str:
         return "choice_prompt"
 
-    def to_dict(self) -> dict[str, Any]:
-        data: dict[str, Any] = {
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {
             "type": self.type,
             "options": [opt.to_dict() for opt in self.options],
             "line_number": self.line_number,
@@ -199,7 +206,7 @@ class HookEvent:
     def type(self) -> str:
         return "hook"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "type": self.type,
             "hook_name": self.hook_name,
@@ -221,7 +228,7 @@ class SceneExitEvent:
     def type(self) -> str:
         return "scene_exit"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "type": self.type,
             "scene_id": self.scene_id,
@@ -242,7 +249,7 @@ class StoryEndEvent:
     def type(self) -> str:
         return "story_end"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "type": self.type,
             "scene_id": self.scene_id,
@@ -264,8 +271,8 @@ class InputPromptEvent:
     def type(self) -> str:
         return "input_prompt"
 
-    def to_dict(self) -> dict[str, Any]:
-        data: dict[str, Any] = {
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {
             "type": self.type,
             "var_name": self.var_name,
             "prompt": self.prompt,

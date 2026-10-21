@@ -91,7 +91,7 @@ def parse_text_tags(raw: str) -> FormattedText:
                 pass
         elif tag_content == "/color":
             if color_stack:
-                color_stack.pop()
+                _ = color_stack.pop()
         elif tag_content.startswith("size="):
             val = tag_content.split("=", 1)[1]
             try:
@@ -101,7 +101,7 @@ def parse_text_tags(raw: str) -> FormattedText:
                 pass
         elif tag_content == "/size":
             if len(size_stack) > 1:
-                size_stack.pop()
+                _ = size_stack.pop()
         elif tag_content == "w" or tag_content.startswith("w="):
             # Wait tag: default 0.5s or explicit duration
             dur = 0.5
@@ -153,9 +153,9 @@ class TextReveal:
         chars_per_second: float = 50.0,
         initial_visible_chars: int = 0,
     ) -> None:
-        self.formatted = formatted
-        self.chars_per_second = chars_per_second
-        self.total_chars = len(formatted.plain_text)
+        self.formatted: FormattedText = formatted
+        self.chars_per_second: float = chars_per_second
+        self.total_chars: int = len(formatted.plain_text)
 
         if chars_per_second <= 0:
             self.visible_chars: float = float(self.total_chars)

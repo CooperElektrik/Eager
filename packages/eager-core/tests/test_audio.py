@@ -1,6 +1,7 @@
 """Tests for eager_core audio: AudioBackend, NullAudioBackend, and AudioMixer."""
 
 import unittest
+from typing import cast
 
 from eager_core.audio import AudioMixer, NullAudioBackend
 
@@ -18,7 +19,7 @@ class TestAudioMixer(unittest.TestCase):
         self.assertEqual(call[1], "music")
         self.assertEqual(call[2], "bgm/theme.ogg")
         self.assertTrue(call[3])
-        self.assertAlmostEqual(call[4], 0.8)
+        self.assertAlmostEqual(cast(float, call[4]), 0.8)
         self.assertEqual(call[5], 0.0)  # fade_in
         self.assertEqual(call[6], 10.0)  # loop_start
         self.assertEqual(call[7], 90.0)  # loop_end
@@ -27,7 +28,7 @@ class TestAudioMixer(unittest.TestCase):
         mixer.set_master_volume(0.5)
         music_vol_calls = [c for c in backend.calls if c[0] == "set_volume" and c[1] == "music"]
         self.assertTrue(len(music_vol_calls) > 0)
-        self.assertAlmostEqual(music_vol_calls[-1][2], 0.4)  # 0.5 master * 0.8 track
+        self.assertAlmostEqual(cast(float, music_vol_calls[-1][2]), 0.4)  # 0.5 master * 0.8 track
 
         # Stop channel
         mixer.stop("music")
@@ -72,7 +73,7 @@ class TestAudioMixer(unittest.TestCase):
         self.assertEqual(play_calls[0][1], "music")
         self.assertEqual(play_calls[0][2], "theme.ogg")
         self.assertTrue(play_calls[0][3])
-        self.assertAlmostEqual(play_calls[0][4], 0.7)
+        self.assertAlmostEqual(cast(float, play_calls[0][4]), 0.7)
         self.assertEqual(play_calls[0][6], 12.5)
         self.assertEqual(play_calls[0][7], 95.0)
 
@@ -252,7 +253,7 @@ class TestAudioMixer(unittest.TestCase):
         slot = mixer.play("sound", "click.ogg", auto_channels=True)
         self.assertAlmostEqual(mixer.channels[slot].volume, 0.5)
         last_play = [c for c in backend.calls if c[0] == "play"][-1]
-        self.assertAlmostEqual(last_play[4], 0.5)  # master * type * inherited track
+        self.assertAlmostEqual(cast(float, last_play[4]), 0.5)  # master * type * inherited track
 
         # An explicit volume overrides the inheritance.
         slot2 = mixer.play("sound", "bang.ogg", auto_channels=True, volume=0.9)
