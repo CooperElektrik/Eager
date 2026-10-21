@@ -7,9 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-21
+
+### Added
+
+- Headless protocol stubs (`NullStage`, `NullUI`, `NullScreenManager`, `HeadlessUIState`) in `eager_runtime.headless` implementing core protocols.
+- `enable_history()`, `disable_history()`, and `history_enabled` properties on `StoryVM` to control internal beat-level history recording.
+
 ### Changed
 
+- Injected stage/UI architecture: `GameSession` now accepts injected `stage`, `ui`, and `screens` conforming to `eager_core.protocols`, fully decoupling `eager-runtime` from `eager-graphics`.
+- Unified rollback: `GameSession` manages unified story and visual checkpoints, disabling redundant `StoryVM` beat-level snapshots by default.
+- Propagated viewport resize events from `GameSession` to registered screens and UI.
 - `GameSession.handle_input(InputAction.POINTER_MOVE, ...)` returns a boolean indicating whether the pointer move changed any UI hover state across screens, choice menus, or quick menus.
+
+### Fixed
+
+- Serialized `active_input_prompt` in `SaveData` so pending text input modal prompts round-trip correctly across save/load cycles.
+- Quoted argument parsing for `~ input` hook commands in `StoryVM`, preserving spaces within prompt strings and default values.
+- Registered `@character` metadata (name, display name, color) from `SceneGraph` into `stage` and `ui_state` on story load.
+- Resolved all basedpyright type errors and warnings across the package.
 
 ## [0.2.0] - 2026-10-19
 
@@ -35,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/CooperElektrik/Eager/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/CooperElektrik/Eager/compare/97609c1...v0.2.0
 [0.1.0]: https://github.com/CooperElektrik/Eager/commit/97609c1

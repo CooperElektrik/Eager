@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     from eager_runtime.session import Checkpoint, CheckpointHistory, GameSession
     from eager_runtime.watcher import FileWatcher
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "AppendEvent",

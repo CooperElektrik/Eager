@@ -7,13 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-21
+
+### Added
+
+- `BasePlayer` in `eager_graphics.player`, abstracting shared session management, event dispatching, and hotkeys for window player implementations (`PILPlayer`, `PygletPlayer`).
+- `StageProtocol` implementation methods on `StageDirector`.
+- Viewport resize handling (`on_resize` / `handle_resize`) across `Screen` and `ScreenManager`.
+- Background audio streaming in `MiniaudioAudioBackend` using `miniaudio.stream_file` for music and ambient channels to eliminate main thread loading hitches.
+- `draw_rect_outline` and `_blend_rect` helpers on `PILRenderer` for drawing bordered and translucent shapes.
+
 ### Changed
 
+- Proportional screen layout: `SaveScreen`, `LoadScreen`, `PreferencesScreen`, and `HistoryScreen` dynamically adapt positions, margins, font sizes, and card dimensions to viewport dimensions.
+- Deduplicated `PILPlayer` and `PygletPlayer` into `BasePlayer`.
 - `Screen.handle_mouse_move` and `ScreenManager.handle_mouse_move` return a boolean indicating whether a hover state actually changed.
+- `wrap_text` returns character span tuples `(line_str, start_char_idx, end_char_idx)` instead of plain strings.
+- `wrap_text` cache key includes backend type and font family to prevent cross-backend/font cache collisions.
 
 ### Fixed
 
+- Alpha transparency handling in `PILRenderer` for translucent rectangle shapes, borders, and text glyphs.
+- Formatted text line-finding in `DialogueBox.draw`, preventing text style/typewriter offset corruption on repeated words.
+- Guarded against uninitialized sessions in `HistoryScreen.draw`.
+- Forwarded character display name and color metadata to `StageDirector` and `DialogueBox`.
 - Telemetry now correctly reports `Tier 3 (Stage Cache / UI Only)` when `PILRenderer` restores the stage from `_stage_cache`.
+- Resolved all basedpyright type errors and warnings across the package.
 
 ### Performance
 
@@ -65,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/CooperElektrik/Eager/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/CooperElektrik/Eager/compare/97609c1...v0.2.0
 [0.1.0]: https://github.com/CooperElektrik/Eager/commit/97609c1

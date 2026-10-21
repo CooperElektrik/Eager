@@ -7,10 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-21
+
+### Added
+
+- **Architecture:** `StageProtocol`, `UIProtocol`, `UIStateProtocol`, and `ScreenManagerProtocol` defined in `eager-core` and injected into `GameSession`, completely decoupling `eager-runtime` from `eager-graphics`.
+- **Runtime:** Headless protocol stubs (`NullStage`, `NullUI`, `NullScreenManager`, `HeadlessUIState`) in `eager_runtime.headless`.
+- **Audio:** Audio streaming in `MiniaudioAudioBackend` for long-running tracks (BGM/ambient) using `miniaudio.stream_file` to eliminate main thread loading hitches.
+- **Graphics:** `BasePlayer` class deduplicating common session handling, screen management, and input loops between `PILPlayer` and `PygletPlayer`.
+
+### Changed
+
+- **Screens:** Dynamic viewport scaling for built-in screens (`SaveScreen`, `LoadScreen`, `PreferencesScreen`, `HistoryScreen`) adapting layout geometries, fonts, and card dimensions proportionally.
+- **Rollback:** Unified rollback systems in `GameSession`, disabling redundant beat-level history snapshots in `StoryVM` by default.
+- **Text:** `wrap_text` returns `(line, start, end)` character spans for reliable formatting/reveal offset calculation, and caches results by backend type and font family.
+- **Input:** `GameSession.handle_input` and `ScreenManager.handle_mouse_move` return whether hover states changed to gate UI redraws.
+
+### Fixed
+
+- **PIL backend:** Fixed translucent rendering for rectangles, borders, and text glyphs.
+- **Saves:** Serialized `active_input_prompt` in `SaveData` to persist active text input dialogs across saves and loads.
+- **Script runtime:** Parse `~ input` hook arguments with quote awareness to support multi-word prompts and defaults.
+- **Dialogue:** Forward `@character` definitions into `StageDirector` and `UIState` so character colors and display names render correctly.
+- **Screens:** Guarded against uninitialized session references in `HistoryScreen.draw`.
+- **Type safety:** Resolved all basedpyright type errors and strict type warnings across `eager-core`, `eager-runtime`, and `eager-graphics`.
+
 ### Performance
 
 - **PIL backend & GameSession:** Hit-test gating on pointer motion to avoid spurious UI invalidation and stay in Tier 0 (Idle Skip) at 60+ Hz.
 - **PIL backend:** Guaranteed clean stage buffer snapshots into `_stage_cache` for settled frames to accelerate UI-only repaints (Tier 3).
+- **Audio:** Streaming audio playback avoids blocking the main thread when loading large music files.
 
 ## [0.2.0] - 2026-10-19
 
@@ -39,6 +65,7 @@ Consolidates all changes after the v0.1.0 release (initial commit `97609c1`, 202
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/CooperElektrik/Eager/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/CooperElektrik/Eager/compare/97609c1...v0.2.0
 [0.1.0]: https://github.com/CooperElektrik/Eager/commit/97609c1
