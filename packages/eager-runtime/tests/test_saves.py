@@ -10,6 +10,7 @@ from eager_runtime import (
     Preferences,
     SaveManager,
 )
+from eager_runtime.saves import SaveData, SaveMetadata
 from eager_runtime.session import Checkpoint
 
 SAMPLE_SCRIPT = """
@@ -64,6 +65,39 @@ class TestSaveSystem(unittest.TestCase):
         self.assertTrue(manager.delete_slot("slot_1"))
         self.assertIsNone(manager.load_slot("slot_1"))
         self.assertEqual(len(manager.list_slots()), 0)
+
+    def test_save_and_load_active_input_prompt(self):
+        manager = SaveManager(self.save_dir)
+        prompt_data = {"var_name": "hero_name", "prompt": "Enter name:", "default": "Traveler"}
+        cp = Checkpoint(
+            story={"current_scene": "start"},
+            visual={},
+            audio={},
+            backlog_len=0,
+            ui={},
+            active_input_prompt=prompt_data,
+        )
+
+        manager.save_slot("input_slot", cp)
+        loaded = manager.load_slot("input_slot")
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded.active_input_prompt, prompt_data)
+
+        # Also test SaveData directly
+        save_data = SaveData(
+            metadata=SaveMetadata(
+                slot_name="test",
+                timestamp="2026-10-21T00:00:00",
+                scene_id="start",
+                scene_name="Start",
+                dialogue_snippet="hi",
+            ),
+            checkpoint=cp,
+        )
+        d = save_data.to_dict()
+        self.assertEqual(d["checkpoint"]["active_input_prompt"], prompt_data)
+        restored = SaveData.from_dict(d)
+        self.assertEqual(restored.checkpoint.active_input_prompt, prompt_data)
 
     def test_quicksave_and_autosave(self):
         manager = SaveManager(self.save_dir)

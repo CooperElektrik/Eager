@@ -62,6 +62,7 @@ class SaveData:
                 "audio": self.checkpoint.audio,
                 "backlog_len": self.checkpoint.backlog_len,
                 "ui": self.checkpoint.ui,
+                "active_input_prompt": self.checkpoint.active_input_prompt,
             },
         }
 
@@ -77,6 +78,7 @@ class SaveData:
             audio=cp_data.get("audio", {}),
             backlog_len=int(cp_data.get("backlog_len", 0)),
             ui=cp_data.get("ui", {}),
+            active_input_prompt=cp_data.get("active_input_prompt"),
         )
         return cls(metadata=meta, checkpoint=cp)
 
