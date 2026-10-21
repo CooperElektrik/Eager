@@ -109,7 +109,10 @@ class TerminalPlayer:
                 cmd = line.strip()
             except (EOFError, KeyboardInterrupt):
                 self._print("\nInterrupted.")
-                self.vm.jump(prompt.options[0].target)
+                if prompt.options[0].target is not None:
+                    self.vm.jump(prompt.options[0].target)
+                else:
+                    self.vm.choose(0)
                 return
 
             if not cmd:
@@ -158,7 +161,7 @@ class TerminalPlayer:
             # Attempt textual match
             found = False
             for opt in prompt.options:
-                if cmd.lower() in opt.text.lower() or cmd.lower() == opt.target.lower():
+                if cmd.lower() in opt.text.lower() or (opt.target is not None and cmd.lower() == opt.target.lower()):
                     self.vm.choose(opt.index)
                     found = True
                     return

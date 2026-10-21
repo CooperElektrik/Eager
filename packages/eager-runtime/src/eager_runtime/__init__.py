@@ -9,7 +9,7 @@ does not require ``eager_graphics`` to be installed).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from eager_core.events import (
     AppendEvent,
@@ -31,6 +31,20 @@ from eager_runtime.dispatcher import EventDispatcher
 from eager_runtime.player import TerminalPlayer
 from eager_runtime.runtime import StoryRuntimeError, StoryVM
 from eager_runtime.state import CallFrame, HistoryManager, StorySnapshot
+
+if TYPE_CHECKING:
+    from eager_runtime.assets import (
+        AssetCheckReport,
+        AssetReference,
+        MissingAssetIssue,
+        check_assets,
+    )
+    from eager_runtime.backlog import Backlog, BacklogEntry
+    from eager_runtime.persistent import PersistentData
+    from eager_runtime.preferences import Preferences
+    from eager_runtime.saves import SaveData, SaveManager, SaveMetadata
+    from eager_runtime.session import Checkpoint, CheckpointHistory, GameSession
+    from eager_runtime.watcher import FileWatcher
 
 __version__ = "0.2.0"
 

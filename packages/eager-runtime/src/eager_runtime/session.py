@@ -6,7 +6,10 @@ import collections
 import copy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from eager_core.audio import AudioMixerSaveState
 
 from eager_core.events import (
     AppendEvent,
@@ -14,6 +17,7 @@ from eager_core.events import (
     DialogueEvent,
     InputPromptEvent,
     NarrationEvent,
+    StoryEndEvent,
     StoryEvent,
 )
 from eager_core.input import InputAction, Keymap
@@ -46,7 +50,7 @@ class Checkpoint:
 
     story: dict[str, Any]
     visual: dict[str, Any]
-    audio: dict[str, Any]
+    audio: dict[str, Any] | AudioMixerSaveState
     backlog_len: int
     ui: dict[str, Any]
     active_input_prompt: dict[str, Any] | None = None
@@ -115,7 +119,7 @@ def _create_default_stage(
     virtual_height: int,
     audio: Any,
     skip_mode_cb: Any,
-) -> StageProtocol:
+) -> Any:
     try:
         from eager_graphics.compositor import StageCompositor
         from eager_graphics.director import StageDirector
@@ -129,7 +133,7 @@ def _create_default_stage(
         return NullStage(virtual_width=virtual_width, virtual_height=virtual_height)
 
 
-def _create_default_ui(width: int = 1280, height: int = 720) -> UIProtocol:
+def _create_default_ui(width: int = 1280, height: int = 720) -> Any:
     try:
         from eager_graphics.ui_components import UIOverlay
 
@@ -138,7 +142,7 @@ def _create_default_ui(width: int = 1280, height: int = 720) -> UIProtocol:
         return NullUI(width=width, height=height)
 
 
-def _create_default_screens(config: Any, session: Any) -> ScreenManagerProtocol:
+def _create_default_screens(config: Any, session: Any) -> Any:
     try:
         from eager_graphics.screens import (
             HistoryScreen,
@@ -204,7 +208,8 @@ class GameSession:
         self._ui_dirty: bool = True
 
         # Parse scene graph
-        if self.script_path is not None:
+        if isinstance(project_or_script, (str, Path)):
+            self.script_path = Path(project_or_script)
             text = self.script_path.read_text(encoding="utf-8")
             self.graph: Any = parse_graph(text)
         elif hasattr(project_or_script, "graph"):
@@ -237,7 +242,7 @@ class GameSession:
         self.audio = AudioMixer(backend=audio_backend, asset_dir=self.asset_dir)
 
         if stage is not None:
-            self.stage: StageProtocol = stage
+            self.stage: Any = stage
         else:
             self.stage = _create_default_stage(
                 virtual_width=virtual_width,
@@ -273,7 +278,7 @@ class GameSession:
 
         self.checkpoints = CheckpointHistory(max_history=rollback_limit)
         self.keymap = Keymap()
-        self.ui: UIProtocol = ui if ui is not None else _create_default_ui(width=1280, height=720)
+        self.ui: Any = ui if ui is not None else _create_default_ui(width=1280, height=720)
         self.overlay: Any = self.ui
 
         # Persistent state, preferences, and saves
@@ -291,7 +296,7 @@ class GameSession:
         self.vm.set_variable("persistent", self.persistent)
 
         # Screens and Theme
-        self.screens: ScreenManagerProtocol = (
+        self.screens: Any = (
             screens if screens is not None else _create_default_screens(config, self)
         )
 
@@ -510,14 +515,14 @@ class GameSession:
                     self.text_reveal = None
                     self.director.ui_state.visible_chars = None
 
-                if event.type == "choice_prompt":
+                if isinstance(event, ChoicePromptEvent):
                     self.active_choice_prompt = event
                     if hasattr(self, "overlay") and getattr(self.overlay, "choice_menu", None) is not None:
                         self.overlay.choice_menu.set_options(event.options)
-                elif event.type == "input_prompt":
+                elif isinstance(event, InputPromptEvent):
                     self.active_input_prompt = event
                     self.input_text = getattr(event, "default", "")
-                elif event.type == "story_end":
+                elif isinstance(event, StoryEndEvent):
                     self.is_finished = True
                     self.mode = "ended"
 

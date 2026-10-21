@@ -166,9 +166,7 @@ class NullStage:
         self.ui_state.text += event.text
 
     def _on_fresh_box(self, event: FreshBoxEvent) -> None:
-        self.ui_state.speaker = event.speaker
         self.ui_state.text = event.text
-        self.ui_state.emotion = event.emotion
         self.ui_state.visible_chars = None
         self.ui_state.clear_choices()
 

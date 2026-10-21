@@ -37,6 +37,7 @@ from eager_script import (
     ParsedCall,
     ParsedChoiceSet,
     ParsedCondJump,
+    ParsedDefault,
     ParsedDialogue,
     ParsedFreshBox,
     ParsedHook,
@@ -144,7 +145,7 @@ class StoryVM:
         """Evaluate graph defaults if not already set."""
         if hasattr(self._graph, "defaults") and self._graph.defaults:
             for d in self._graph.defaults:
-                if d.name not in self._variables:
+                if isinstance(d, ParsedDefault) and d.name not in self._variables:
                     val = self._evaluate_expr(d.expr_src)
                     self._variables[d.name] = val
 
@@ -544,6 +545,10 @@ class StoryVM:
             if target is None:
                 msg = f"Choice target '{choice}' not found among active choices."
                 raise StoryRuntimeError(msg)
+
+        if target is None:
+            msg = f"Choice '{choice}' has no valid target scene."
+            raise StoryRuntimeError(msg)
 
         self._pending_choice = None
         self._pending_input = None

@@ -564,7 +564,7 @@ def _run_interactive_player(session: Any, *, backend: str) -> None:
     if backend == "pil":
         from eager_graphics.renderers.pil import PILPlayer
 
-        player = PILPlayer(
+        player: Any = PILPlayer(
             session=session,
             width=1280,
             height=720,

@@ -129,7 +129,7 @@ class SaveManager:
         """Load checkpoint from a named slot."""
         path = self._slot_path(slot_name)
         data = safe_read_json(path)
-        if not data or "checkpoint" not in data:
+        if not isinstance(data, dict) or "checkpoint" not in data:
             return None
         save_obj = SaveData.from_dict(data)
         return save_obj.checkpoint
@@ -138,9 +138,12 @@ class SaveManager:
         """Inspect metadata for a slot without parsing full checkpoint."""
         path = self._slot_path(slot_name)
         data = safe_read_json(path)
-        if not data or "metadata" not in data:
+        if not isinstance(data, dict) or "metadata" not in data:
             return None
-        return SaveMetadata.from_dict(data["metadata"])
+        meta_data = data["metadata"]
+        if not isinstance(meta_data, dict):
+            return None
+        return SaveMetadata.from_dict(meta_data)
 
     def delete_slot(self, slot_name: str) -> bool:
         """Delete save slot file."""
