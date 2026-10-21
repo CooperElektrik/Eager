@@ -47,6 +47,7 @@ from eager_script import (
     ParsedSet,
 )
 from eager_script.expr import ExprError, compile_expr
+from eager_script.hooks import parse_hook_args
 
 from eager_runtime.i18n import compute_beat_id, get_beat_occurrence, strip_explicit_id
 from eager_runtime.state import CallFrame, HistoryManager, StorySnapshot
@@ -445,9 +446,21 @@ class StoryVM:
                     hook_name = parts[0] if parts else ""
                     args = parts[1] if len(parts) > 1 else ""
                     if hook_name == "input":
-                        subparts = args.split(None, 1)
-                        var_name = subparts[0] if subparts else "player_input"
-                        prompt_text = subparts[1].strip().strip("\"'") if len(subparts) > 1 else "Enter input:"
+                        parsed_hook = parse_hook_args(args)
+                        pos = parsed_hook.positional
+                        var_name = pos[0] if pos else "player_input"
+                        default_text = parsed_hook.kwargs.get("default", "")
+                        if "prompt" in parsed_hook.kwargs:
+                            prompt_text = parsed_hook.kwargs["prompt"]
+                        elif len(pos) == 3 and not default_text:
+                            prompt_text = pos[1]
+                            default_text = pos[2]
+                        elif len(pos) == 2:
+                            prompt_text = pos[1]
+                        elif len(pos) > 3 and not default_text:
+                            prompt_text = " ".join(pos[1:])
+                        else:
+                            prompt_text = "Enter input:"
                         occ = get_beat_occurrence(scene.body, snapshot.pending_input_beat)
                         cid = compute_beat_id(self._current_scene_id, item, occurrence=occ)
                         input_cid = f"{cid}.input" if cid else None
@@ -455,6 +468,7 @@ class StoryVM:
                         self._pending_input = InputPromptEvent(
                             var_name=var_name,
                             prompt=self._interpolate(raw_prompt),
+                            default=self._interpolate(default_text),
                             line_number=item.line_number,
                             beat_id=input_cid,
                         )
@@ -696,14 +710,27 @@ class StoryVM:
                 args = parts[1] if len(parts) > 1 else ""
                 if hook_name == "input":
                     # ~ input var_name [default=val] Prompt text
-                    subparts = args.split(None, 1)
-                    var_name = subparts[0] if subparts else "player_input"
-                    prompt_text = subparts[1].strip().strip("\"'") if len(subparts) > 1 else "Enter input:"
+                    parsed_hook = parse_hook_args(args)
+                    pos = parsed_hook.positional
+                    var_name = pos[0] if pos else "player_input"
+                    default_text = parsed_hook.kwargs.get("default", "")
+                    if "prompt" in parsed_hook.kwargs:
+                        prompt_text = parsed_hook.kwargs["prompt"]
+                    elif len(pos) == 3 and not default_text:
+                        prompt_text = pos[1]
+                        default_text = pos[2]
+                    elif len(pos) == 2:
+                        prompt_text = pos[1]
+                    elif len(pos) > 3 and not default_text:
+                        prompt_text = " ".join(pos[1:])
+                    else:
+                        prompt_text = "Enter input:"
                     input_cid = f"{cid}.input" if cid else None
                     raw_prompt, _ = self._translate_beat(input_cid, prompt_text)
                     input_prompt = InputPromptEvent(
                         var_name=var_name,
                         prompt=self._interpolate(raw_prompt),
+                        default=self._interpolate(default_text),
                         line_number=item.line_number,
                         beat_id=input_cid,
                     )

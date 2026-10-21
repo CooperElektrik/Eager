@@ -145,6 +145,8 @@ Alice: Welcome, [hero_name]!
     assert isinstance(ev2, InputPromptEvent)
     assert session.active_input_prompt is not None
     assert session.active_input_prompt.var_name == "hero_name"
+    assert session.active_input_prompt.prompt == "Enter name:"
+    assert session.active_input_prompt.default == "Traveler"
 
     # 3. Submit player input
     ev3 = session.submit_input("Valiant")
@@ -173,6 +175,8 @@ Alice: Welcome, [hero_name]!
     assert session.mode == "game"
     assert session.active_input_prompt is not None
     assert session.active_input_prompt.var_name == "hero_name"
+    assert session.active_input_prompt.prompt == "Enter name:"
+    assert session.active_input_prompt.default == "Traveler"
 
     # 7. Resubmit input with different value
     session.submit_input("Champion")
@@ -427,8 +431,13 @@ Alice: Welcome, [hero_name]!
     ev = session.advance()  # input_prompt
     assert ev is not None
     assert ev.type == "input_prompt"
+    assert ev.prompt == "Enter name:"
+    assert ev.default == "Traveler"
     assert session.active_input_prompt is not None
+    assert session.input_text == "Traveler"
 
+    # Reset input_text to test typing
+    session.input_text = ""
     # Test TEXT_CHAR
     for ch in "Hero":
         session.handle_input(InputAction.TEXT_CHAR, char=ch)
