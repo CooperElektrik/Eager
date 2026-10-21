@@ -472,7 +472,7 @@ class HistoryScreen(Screen):
 
     def replay_voice(self, voice: str) -> None:
         """Replay recorded voice audio for a backlog entry."""
-        if not voice:
+        if not voice or self.session is None:
             return
         if hasattr(self.session, "play_voice") and callable(self.session.play_voice):
             self.session.play_voice(voice)
@@ -518,11 +518,11 @@ class HistoryScreen(Screen):
             Button(
                 Rect(back_x, back_y, back_w, back_h),
                 "Back",
-                action=lambda: getattr(self.session, "screens", None) and self.session.screens.hide(self.session),
+                action=lambda: getattr(self.session, "screens", None) and self.session.screens.hide(self.session) if self.session is not None else None,
             )
         )
 
-        backlog = getattr(self.session, "backlog", None)
+        backlog = getattr(self.session, "backlog", None) if self.session is not None else None
         entries = backlog.entries if backlog else []
         self._last_built_scroll_offset = self.scroll_offset
         self._last_built_entry_count = len(entries)
@@ -559,6 +559,8 @@ class HistoryScreen(Screen):
             curr_y += step_y
 
     def scroll_up(self) -> None:
+        if self.session is None:
+            return
         backlog = getattr(self.session, "backlog", None)
         max_entries = len(backlog.entries) if backlog else 0
         if self.scroll_offset + 5 < max_entries:
@@ -566,6 +568,8 @@ class HistoryScreen(Screen):
             self._rebuild_buttons()
 
     def scroll_down(self) -> None:
+        if self.session is None:
+            return
         if self.scroll_offset > 0:
             self.scroll_offset -= 1
             self._rebuild_buttons()
@@ -576,15 +580,18 @@ class HistoryScreen(Screen):
         vw = float(self.viewport_width)
         vh = float(self.viewport_height)
 
-        backlog = getattr(self.session, "backlog", None)
-        entries = backlog.entries if backlog else []
-        if (
-            not self.buttons
-            or self._last_built_scroll_offset != self.scroll_offset
-            or self._last_built_entry_count != len(entries)
-            or self._last_built_viewport != (self.viewport_width, self.viewport_height)
-        ):
-            self._rebuild_buttons()
+        if self.session is not None:
+            backlog = getattr(self.session, "backlog", None)
+            entries = backlog.entries if backlog else []
+            if (
+                not self.buttons
+                or self._last_built_scroll_offset != self.scroll_offset
+                or self._last_built_entry_count != len(entries)
+                or self._last_built_viewport != (self.viewport_width, self.viewport_height)
+            ):
+                self._rebuild_buttons()
+        else:
+            entries = []
 
         backend.draw_rect(0, 0, width, height, self.theme.bg_color)
         title_x = vw * (100.0 / 1280.0)

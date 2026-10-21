@@ -233,6 +233,20 @@ height = 720
         history_screen.draw(backend, 1280, 720)
         self.assertTrue(any("Dialogue History" in t[0] for t in backend.texts))
 
+    def test_history_screen_draw_before_on_enter(self):
+        from eager_graphics.screens import HistoryScreen
+
+        history_screen = HistoryScreen()
+        backend = MockUIDrawBackend()
+        # Draw without session / before on_enter
+        history_screen.draw(backend, 1280, 720)
+        self.assertTrue(any("Dialogue History" in t[0] for t in backend.texts))
+        self.assertTrue(any("No dialogue recorded yet." in t[0] for t in backend.texts))
+        # Back button action should be safe to call even without session
+        for btn in history_screen.buttons:
+            if btn.text == "Back" and btn.action:
+                btn.action()
+
     def test_screen_manager_navigation_and_input(self):
         from eager_graphics.screens import Screen
 
