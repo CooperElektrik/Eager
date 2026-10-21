@@ -360,11 +360,7 @@ class DialogueBox:
         self.side_image = None
         self.visible_chars = None
         self.speaker_color = None
-        self.text = ""
-        self.emotion = None
-        self.side_image = None
         self.show_advance_arrow = True
-        self.visible_chars = None
 
     def cache_key(self) -> tuple[Any, ...]:
         """Return a hashable key covering everything that affects rendering."""
