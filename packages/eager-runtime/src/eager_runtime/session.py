@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import collections
-import copy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -35,7 +34,6 @@ from eager_script import parse_graph
 
 from eager_runtime.dispatcher import EventDispatcher
 from eager_runtime.headless import (
-    HeadlessUIState,
     NullCompositor,
     NullScreenManager,
     NullStage,
@@ -244,15 +242,9 @@ class GameSession:
         self.compositor: Any = getattr(self.stage, "compositor", None)
         if self.compositor is None:
             self.compositor = NullCompositor(virtual_width=virtual_width, virtual_height=virtual_height)
-        if hasattr(self.stage, "bind"):
-            self.stage.bind(self.dispatcher)
+        self.stage.bind(self.dispatcher)
 
-        if (
-            hasattr(self.graph, "characters")
-            and isinstance(self.graph.characters, dict)
-            and hasattr(self.director, "register_character")
-            and callable(self.director.register_character)
-        ):
+        if self.graph.characters:
             for cid, cinfo in self.graph.characters.items():
                 attrs = cinfo.get("attrs", {}) if isinstance(cinfo, dict) else {}
                 name = cinfo.get("name") if isinstance(cinfo, dict) else None
@@ -326,13 +318,11 @@ class GameSession:
 
     def apply_preferences(self) -> None:
         """Apply current preferences to audio mixer, translation locale, and subsystems."""
-        if hasattr(self, "audio") and self.audio is not None:
-            self.audio.set_master_volume(self.preferences.master_volume)
-            self.audio.set_channel_volume("music", self.preferences.music_volume)
-            self.audio.set_channel_volume("sound", self.preferences.sfx_volume)
-            self.audio.set_channel_volume("voice", self.preferences.voice_volume)
-        if hasattr(self, "vm") and self.vm is not None:
-            self.vm.set_locale(self.preferences.language)
+        self.audio.set_master_volume(self.preferences.master_volume)
+        self.audio.set_channel_volume("music", self.preferences.music_volume)
+        self.audio.set_channel_volume("sound", self.preferences.sfx_volume)
+        self.audio.set_channel_volume("voice", self.preferences.voice_volume)
+        self.vm.set_locale(self.preferences.language)
 
     def set_language(self, locale: str) -> None:
         """Switch active language locale, updating VM and persisting preferences."""
@@ -342,27 +332,17 @@ class GameSession:
 
     def play_voice(self, voice_path: str) -> None:
         """Replay a voice clip on the voice channel."""
-        if hasattr(self, "audio") and self.audio is not None:
-            self.audio.play("voice", str(voice_path), loop=False)
+        self.audio.play("voice", str(voice_path), loop=False)
 
     def _capture_checkpoint(self) -> Checkpoint:
         """Generate a unified checkpoint of the current session state."""
         input_data = (
             self.active_input_prompt.to_dict()
-            if self.active_input_prompt is not None and hasattr(self.active_input_prompt, "to_dict")
-            else (copy.deepcopy(self.active_input_prompt) if self.active_input_prompt is not None else None)
+            if self.active_input_prompt is not None
+            else None
         )
-        visual_state = (
-            self.director.save_visual_state()
-            if hasattr(self.director, "save_visual_state")
-            else {}
-        )
-        if hasattr(self.director, "save_ui_state"):
-            ui_state_dict = self.director.save_ui_state()
-        elif hasattr(self.director, "ui_state") and hasattr(self.director.ui_state, "to_dict"):
-            ui_state_dict = self.director.ui_state.to_dict()
-        else:
-            ui_state_dict = {}
+        visual_state = self.director.save_visual_state()
+        ui_state_dict = self.director.save_ui_state()
 
         return Checkpoint(
             story=self.vm.save().to_dict(),
@@ -377,25 +357,10 @@ class GameSession:
         """Restore full session state from a checkpoint."""
         snap = StorySnapshot.from_dict(checkpoint.story)
         self.vm.load(snap)
-        if hasattr(self.director, "load_visual_state"):
-            self.director.load_visual_state(checkpoint.visual)
+        self.director.load_visual_state(checkpoint.visual)
         self.audio.load_state(checkpoint.audio)
-
-        if hasattr(self.director, "restore_ui_state"):
-            self.director.restore_ui_state(checkpoint.ui)
-        elif hasattr(self.director, "ui_state") and hasattr(self.director.ui_state, "from_dict"):
-            self.director.ui_state = self.director.ui_state.from_dict(checkpoint.ui)
-        elif hasattr(self.director, "ui_state") and self.director.ui_state is not None:
-            cls = type(self.director.ui_state)
-            if hasattr(cls, "from_dict"):
-                self.director.ui_state = cls.from_dict(checkpoint.ui)
-            else:
-                self.director.ui_state = HeadlessUIState.from_dict(checkpoint.ui)
-        else:
-            self.director.ui_state = HeadlessUIState.from_dict(checkpoint.ui)
-
-        if hasattr(self.director, "ui_state"):
-            self.director.ui_state.visible_chars = None
+        self.director.restore_ui_state(checkpoint.ui)
+        self.director.ui_state.visible_chars = None
         self.text_reveal = None
         if len(self.backlog.entries) > checkpoint.backlog_len:
             self.backlog.entries = self.backlog.entries[: checkpoint.backlog_len]
@@ -516,11 +481,11 @@ class GameSession:
 
                 if isinstance(event, ChoicePromptEvent):
                     self.active_choice_prompt = event
-                    if hasattr(self, "overlay") and getattr(self.overlay, "choice_menu", None) is not None:
+                    if self.overlay.choice_menu is not None:
                         self.overlay.choice_menu.set_options(event.options)
                 elif isinstance(event, InputPromptEvent):
                     self.active_input_prompt = event
-                    self.input_text = getattr(event, "default", "")
+                    self.input_text = event.default
                 elif isinstance(event, StoryEndEvent):
                     self.is_finished = True
                     self.mode = "ended"
@@ -540,7 +505,7 @@ class GameSession:
         """Submit user text input for active input prompt and advance."""
         if self.active_input_prompt is None:
             return None
-        var_name = getattr(self.active_input_prompt, "var_name", "player_input")
+        var_name = self.active_input_prompt.var_name
         self.vm.set_variable(var_name, value)
         self.active_input_prompt = None
         self.input_text = ""
@@ -553,13 +518,11 @@ class GameSession:
 
         # Verify choice is enabled before advancing
         if isinstance(choice, int):
-            if 0 <= choice < len(self.active_choice_prompt.options) and not getattr(
-                self.active_choice_prompt.options[choice], "enabled", True
-            ):
+            if 0 <= choice < len(self.active_choice_prompt.options) and not self.active_choice_prompt.options[choice].enabled:
                 return None
         else:
             for opt in self.active_choice_prompt.options:
-                if (opt.target == choice or opt.text == choice) and not getattr(opt, "enabled", True):
+                if (opt.target == choice or opt.text == choice) and not opt.enabled:
                     return None
 
         self.vm.choose(choice)
@@ -651,10 +614,7 @@ class GameSession:
 
     def update(self, dt: float) -> None:
         """Update animation timelines, compositor, audio, typewriter reveal, and timers."""
-        if hasattr(self.director, "step"):
-            self.director.step(dt)
-        elif self.compositor is not None and hasattr(self.compositor, "step"):
-            self.compositor.step(dt)
+        self.director.step(dt)
         self.audio.update(dt)
 
         # Automatic hot-reload via file-watcher
@@ -665,22 +625,19 @@ class GameSession:
         if self.text_reveal is not None and not self.text_reveal.is_complete:
             self.text_reveal.update(dt)
             if self.text_reveal.is_complete:
-                if hasattr(self.director, "ui_state"):
-                    self.director.ui_state.visible_chars = None
+                self.director.ui_state.visible_chars = None
             else:
-                if hasattr(self.director, "ui_state"):
-                    self.director.ui_state.visible_chars = int(self.text_reveal.visible_chars)
+                self.director.ui_state.visible_chars = int(self.text_reveal.visible_chars)
 
         # Update input box cursor if input prompt is active
-        if self.active_input_prompt is not None and hasattr(self, "overlay") and hasattr(self.overlay, "input_box") and self.overlay.input_box is not None:
+        if self.active_input_prompt is not None and self.overlay.input_box is not None:
             self.overlay.input_box.update(dt)
 
         # Skip mode advances immediately until player choices, input prompt, or story ends
         if self.skip_mode and not self.is_finished:
             if self.text_reveal is not None:
                 self.text_reveal.complete_immediately()
-                if hasattr(self.director, "ui_state"):
-                    self.director.ui_state.visible_chars = None
+                self.director.ui_state.visible_chars = None
             while (
                 self.skip_mode
                 and not self.is_finished
@@ -698,21 +655,20 @@ class GameSession:
                     break
         elif self.auto_mode and not self.is_finished and self.active_choice_prompt is None and self.active_input_prompt is None:
             reveal_done = (self.text_reveal is None or self.text_reveal.is_complete)
-            voice_playing = hasattr(self, "audio") and self.audio is not None and self.audio.is_playing("voice")
+            voice_playing = self.audio.is_playing("voice")
             if reveal_done and not voice_playing:
                 self.auto_timer += dt
                 base_time = float(getattr(self.preferences, "auto_forward_time", 3.0))
                 # Scale wait time slightly by character count (0.02s per char capped at 2.0s)
                 # so long unvoiced paragraphs have sufficient reading time
-                cur_text = getattr(getattr(self.director, "ui_state", None), "text", "") or ""
+                cur_text = self.director.ui_state.text or ""
                 extra_pause = min(2.0, len(cur_text) * 0.02)
                 threshold = base_time + extra_pause
                 if self.auto_timer >= threshold:
                     self.auto_timer = 0.0
                     if self.text_reveal is not None:
                         self.text_reveal.complete_immediately()
-                        if hasattr(self.director, "ui_state"):
-                            self.director.ui_state.visible_chars = None
+                        self.director.ui_state.visible_chars = None
                     self.advance()
 
     def draw(self, ui_backend: Any, width: int, height: int) -> None:
@@ -726,34 +682,30 @@ class GameSession:
         elif self.auto_mode:
             status_badge = "AUTO >"
 
-        if not self.ui_hidden and hasattr(self, "overlay") and self.overlay is not None:
+        if not self.ui_hidden:
             is_read = self.is_current_beat_read()
-            if hasattr(self.overlay, "set_viewport"):
-                self.overlay.set_viewport(width, height)
-            if hasattr(self.overlay, "draw"):
-                self.overlay.draw(
-                    ui_backend,
-                    getattr(self.director, "ui_state", None),
-                    self.active_choice_prompt,
-                    self.active_input_prompt,
-                    input_text=self.input_text,
-                    is_finished=self.is_finished,
-                    show_quick_menu=True,
-                    status_badge=status_badge,
-                    is_read=is_read,
-                )
+            self.overlay.set_viewport(width, height)
+            self.overlay.draw(
+                ui_backend,
+                self.director.ui_state,
+                self.active_choice_prompt,
+                self.active_input_prompt,
+                input_text=self.input_text,
+                is_finished=self.is_finished,
+                show_quick_menu=True,
+                status_badge=status_badge,
+                is_read=is_read,
+            )
 
         # Draw active screen on top
-        if hasattr(self, "screens") and self.screens.active_screen:
-            if hasattr(self.screens, "set_viewport"):
-                self.screens.set_viewport(width, height)
+        if self.screens.active_screen:
+            self.screens.set_viewport(width, height)
             self.screens.draw(ui_backend, width, height)
 
     def _handle_quick_action(self, action_name: str) -> Any:
         """Handle clicks on the in-game quick menu buttons."""
         if action_name == "log":
-            if hasattr(self, "screens"):
-                return self.screens.show("history", self)
+            return self.screens.show("history", self)
         elif action_name == "skip":
             self.skip_mode = not self.skip_mode
             return self.skip_mode
@@ -761,23 +713,21 @@ class GameSession:
             self.auto_mode = not self.auto_mode
             return self.auto_mode
         elif action_name == "save":
-            if hasattr(self, "screens"):
-                return self.screens.show("save", self)
+            return self.screens.show("save", self)
         elif action_name == "load":
-            if hasattr(self, "screens"):
-                return self.screens.show("load", self)
+            return self.screens.show("load", self)
         elif action_name == "quicksave":
             return self.quicksave()
         elif action_name == "quickload":
             return self.quickload()
-        elif action_name == "prefs" and hasattr(self, "screens"):
+        elif action_name == "prefs":
             return self.screens.show("preferences", self)
         return None
 
     def handle_input(self, action: InputAction, **payload: Any) -> Any:
         """Process semantic InputAction events."""
         # 1. Screen active intercepts:
-        if hasattr(self, "screens") and self.screens.is_active:
+        if self.screens.is_active:
             if action in (InputAction.GAME_MENU, InputAction.CANCEL):
                 self.screens.hide(self)
                 return True
@@ -807,11 +757,11 @@ class GameSession:
         if (
             self.active_choice_prompt is not None
             and self.active_choice_prompt.options
-            and getattr(self.overlay, "choice_menu", None) is not None
+            and self.overlay.choice_menu is not None
         ):
             opts = self.active_choice_prompt.options
             opts_count = len(opts)
-            enabled_indices = [i for i, opt in enumerate(opts) if getattr(opt, "enabled", True)]
+            enabled_indices = [i for i, opt in enumerate(opts) if opt.enabled]
             if action == InputAction.NAV_UP and enabled_indices:
                 cur = self.overlay.choice_menu.selected_index
                 if cur in enabled_indices:
@@ -832,7 +782,7 @@ class GameSession:
                 if self.overlay.choice_menu.selected_index is not None:
                     idx = self.overlay.choice_menu.selected_index
                     self.overlay.choice_menu.selected_index = None
-                    if 0 <= idx < opts_count and getattr(opts[idx], "enabled", True):
+                    if 0 <= idx < opts_count and opts[idx].enabled:
                         return self.choose(idx)
                     return False
 
@@ -842,14 +792,14 @@ class GameSession:
                 ch = payload.get("char", "")
                 if ch:
                     self.input_text += ch
-                    if getattr(self.overlay, "input_box", None) is not None:
+                    if self.overlay.input_box is not None:
                         self.overlay.input_box.text_buffer = self.input_text
                     self._ui_dirty = True
                     return True
             elif action == InputAction.TEXT_BACKSPACE:
                 if self.input_text:
                     self.input_text = self.input_text[:-1]
-                    if getattr(self.overlay, "input_box", None) is not None:
+                    if self.overlay.input_box is not None:
                         self.overlay.input_box.text_buffer = self.input_text
                     self._ui_dirty = True
                     return True
@@ -864,9 +814,8 @@ class GameSession:
         if action in (InputAction.ADVANCE, InputAction.CONFIRM):
             if self.text_reveal is not None and not self.text_reveal.is_complete:
                 self.text_reveal.complete_immediately()
-                if hasattr(self.director, "ui_state"):
-                    self.director.ui_state.visible_chars = None
-                if getattr(self.overlay, "dialogue_box", None) is not None:
+                self.director.ui_state.visible_chars = None
+                if self.overlay.dialogue_box is not None:
                     self.overlay.dialogue_box.visible_chars = None
                     self.overlay.dialogue_box.show_advance_arrow = (self.active_choice_prompt is None)
                 return True
@@ -900,23 +849,21 @@ class GameSession:
         elif action == InputAction.QUICK_LOAD:
             return self.quickload()
         elif action == InputAction.GAME_MENU:
-            if hasattr(self, "screens"):
-                return self.screens.show("save", self)
+            return self.screens.show("save", self)
         elif action == InputAction.HISTORY:
-            if hasattr(self, "screens"):
-                return self.screens.show("history", self)
+            return self.screens.show("history", self)
         elif action == InputAction.RELOAD:
             return self.hot_reload()
         elif action == InputAction.POINTER_CLICK:
             x = payload.get("x", 0.0)
             y = payload.get("y", 0.0)
             # Check quick action bar in UIOverlay
-            if not self.ui_hidden and hasattr(self.overlay, "hit_test_quick_action"):
+            if not self.ui_hidden:
                 qa = self.overlay.hit_test_quick_action(x, y)
                 if qa:
                     return self._handle_quick_action(qa)
             # Check choices
-            if self.active_choice_prompt is not None and hasattr(self.overlay, "hit_test_choice"):
+            if self.active_choice_prompt is not None:
                 idx = self.overlay.hit_test_choice(x, y)
                 if idx is not None:
                     return self.choose(idx)
@@ -924,9 +871,8 @@ class GameSession:
             # Check typewriter reveal completion
             if self.text_reveal is not None and not self.text_reveal.is_complete:
                 self.text_reveal.complete_immediately()
-                if hasattr(self.director, "ui_state"):
-                    self.director.ui_state.visible_chars = None
-                if getattr(self.overlay, "dialogue_box", None) is not None:
+                self.director.ui_state.visible_chars = None
+                if self.overlay.dialogue_box is not None:
                     self.overlay.dialogue_box.visible_chars = None
                     self.overlay.dialogue_box.show_advance_arrow = (self.active_choice_prompt is None)
                 return True
@@ -937,37 +883,32 @@ class GameSession:
             x = payload.get("x", 0.0)
             y = payload.get("y", 0.0)
             hover_changed = False
-            if hasattr(self, "overlay") and self.overlay is not None:
-                # Choice menu hover update
-                if self.active_choice_prompt is not None and getattr(self.overlay, "choice_menu", None) is not None:
-                    idx = self.overlay.hit_test_choice(x, y)
-                    if self.overlay.choice_menu.selected_index != idx:
-                        self.overlay.choice_menu.selected_index = idx
-                        hover_changed = True
-                # Quick menu hover update
-                if not self.ui_hidden and getattr(self.overlay, "quick_menu", None) is not None:
-                    qa = self.overlay.hit_test_quick_action(x, y)
-                    if getattr(self.overlay.quick_menu, "hovered_action", None) != qa:
-                        self.overlay.quick_menu.hovered_action = qa
-                        hover_changed = True
+            # Choice menu hover update
+            if self.active_choice_prompt is not None and self.overlay.choice_menu is not None:
+                idx = self.overlay.hit_test_choice(x, y)
+                if self.overlay.choice_menu.selected_index != idx:
+                    self.overlay.choice_menu.selected_index = idx
+                    hover_changed = True
+            # Quick menu hover update
+            if not self.ui_hidden and self.overlay.quick_menu is not None:
+                qa = self.overlay.hit_test_quick_action(x, y)
+                if self.overlay.quick_menu.hovered_action != qa:
+                    self.overlay.quick_menu.hovered_action = qa
+                    hover_changed = True
             return hover_changed
         return None
 
     def _set_error_overlay(self, msg: str) -> None:
         """Set error overlay and clear active choices/prompts."""
-        if hasattr(self, "overlay") and self.overlay is not None:
-            self.overlay.error_overlay = msg
-        if hasattr(self, "director") and self.director is not None and hasattr(self.director, "ui_state"):
-            self.director.ui_state.speaker = "Error"
-            self.director.ui_state.text = msg
-            if hasattr(self.director.ui_state, "clear_choices"):
-                self.director.ui_state.clear_choices()
+        self.overlay.error_overlay = msg
+        self.director.ui_state.speaker = "Error"
+        self.director.ui_state.text = msg
+        self.director.ui_state.clear_choices()
         self.active_choice_prompt = None
 
     def _clear_error_overlay(self) -> None:
         """Clear the error overlay from the UI."""
-        if hasattr(self, "overlay") and self.overlay is not None:
-            self.overlay.error_overlay = None
+        self.overlay.error_overlay = None
 
     def _refresh_presentation_after_reload(self, new_scene: Any, display_idx: int) -> None:
         """Update active dialogue/choice display to reflect the reloaded scene body."""
@@ -1053,8 +994,7 @@ class GameSession:
 
         # 5. Force a redraw
         self._ui_dirty = True
-        if hasattr(self, "overlay") and self.overlay is not None and hasattr(self.overlay, "sync"):
-            self.overlay.sync(
+        self.overlay.sync(
                 self.director.ui_state,
                 self.active_choice_prompt,
                 self.active_input_prompt,

@@ -532,9 +532,9 @@ class StageDirector:
 
     def handle_dialogue_event(self, event: Any) -> None:
         """Update UI state, sync sprite, and play dialogue voice audio on the voice channel."""
-        speaker = getattr(event, "speaker", None)
-        text = getattr(event, "text", "")
-        emotion = getattr(event, "emotion", None)
+        speaker = event.speaker
+        text = event.text
+        emotion = event.emotion
         voice = getattr(event, "voice", None)
 
         char_cfg = self._find_character_config(speaker)
@@ -691,7 +691,7 @@ class StageDirector:
 
     def handle_append_event(self, event: Any) -> None:
         """Append text to current UI dialogue buffer."""
-        add_text = getattr(event, "text", "")
+        add_text = event.text
         current = self.ui_state.text or ""
         self.ui_state.text = f"{current} {add_text}".strip()
         self.ui_state.clear_choices()
@@ -702,7 +702,7 @@ class StageDirector:
 
     def handle_fresh_box_event(self, event: Any) -> None:
         """Clear textbox content but preserve speaker for fresh box."""
-        self.ui_state.text = getattr(event, "text", "")
+        self.ui_state.text = event.text
         self.ui_state.clear_choices()
 
         if self.ui_state.nvl_mode:
@@ -711,7 +711,7 @@ class StageDirector:
     def handle_narration_event(self, event: Any) -> None:
         """Update UI state with narration text and stop active voice."""
         self.ui_state.speaker = None
-        self.ui_state.text = getattr(event, "text", "")
+        self.ui_state.text = event.text
         self.ui_state.emotion = None
         self.ui_state.side_image = None
         self.ui_state.clear_choices()
@@ -727,7 +727,7 @@ class StageDirector:
 
     def handle_scene_enter_event(self, event: Any) -> None:
         """Trigger registered background transitions when entering new scenes."""
-        scene_id = getattr(event, "scene_id", None)
+        scene_id = event.scene_id
         if scene_id and scene_id in self.scene_backgrounds:
             asset_id, trans, dur = self.scene_backgrounds[scene_id]
             self.compositor.set_background(asset_id, transition=trans, duration=dur)
@@ -741,16 +741,15 @@ class StageDirector:
 
     def handle_choice_prompt_event(self, event: Any) -> None:
         """Populate UI state choices from ChoicePromptEvent."""
-        raw_options = getattr(event, "options", [])
         self.ui_state.choices = [
             ChoiceOption(
-                index=getattr(opt, "index", idx),
-                text=getattr(opt, "text", ""),
-                target=getattr(opt, "target", None),
-                enabled=getattr(opt, "enabled", True),
-                condition=getattr(opt, "condition", None),
+                index=opt.index,
+                text=opt.text,
+                target=opt.target,
+                enabled=opt.enabled,
+                condition=opt.condition,
             )
-            for idx, opt in enumerate(raw_options)
+            for opt in event.options
         ]
 
     def handle_story_end_event(self, event: Any) -> None:

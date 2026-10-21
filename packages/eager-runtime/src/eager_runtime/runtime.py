@@ -143,7 +143,7 @@ class StoryVM:
 
     def _apply_graph_defaults(self) -> None:
         """Evaluate graph defaults if not already set."""
-        if hasattr(self._graph, "defaults") and self._graph.defaults:
+        if self._graph.defaults:
             for d in self._graph.defaults:
                 if isinstance(d, ParsedDefault) and d.name not in self._variables:
                     val = self._evaluate_expr(d.expr_src)
@@ -495,7 +495,7 @@ class StoryVM:
             raise StoryRuntimeError(msg)
 
         target_node = self._graph.nodes.get(scene_id)
-        if target_node is not None and not getattr(target_node, "is_anonymous", False):
+        if target_node is not None and not target_node.is_anonymous:
             while self._call_stack and self._call_stack[-1].kind == "inline":
                 self._call_stack.pop()
 
@@ -560,7 +560,7 @@ class StoryVM:
         if (
             target is not None
             and target_node is not None
-            and getattr(target_node, "is_anonymous", False)
+            and target_node.is_anonymous
             and self._current_scene_id is not None
         ):
             self._call_stack.append(CallFrame(self._current_scene_id, self._beat_index, "inline"))
@@ -660,19 +660,15 @@ class StoryVM:
                 self._history.push(self.save())
             current_beat_idx = self._beat_index
             self._beat_index += 1
-            cid = None
-            if self._current_scene_id is not None and self._graph is not None:
-                node = self._graph.nodes.get(self._current_scene_id)
-                occ = get_beat_occurrence(node.body, current_beat_idx) if node else 1
-                cid = compute_beat_id(self._current_scene_id, item, occurrence=occ)
-
+            occ = get_beat_occurrence(scene.body, current_beat_idx)
+            cid = compute_beat_id(self._current_scene_id, item, occurrence=occ)
             beat_id = cid
 
             if isinstance(item, ParsedDialogue):
                 raw_speaker = self._translate_speaker(item.speaker)
                 interp_speaker = self._interpolate(raw_speaker)
                 # If speaker matches a character ID, we could map name if needed, but interpolate handles [var]
-                if hasattr(self._graph, "characters") and isinstance(self._graph.characters, dict):
+                if self._graph.characters:
                     cid_match = interp_speaker if interp_speaker in self._graph.characters else interp_speaker.lower()
                     if cid_match in self._graph.characters:
                         interp_speaker = self._graph.characters[cid_match].get("name", interp_speaker)
@@ -758,7 +754,7 @@ class StoryVM:
             if isinstance(item, ParsedJump):
                 # An unconditional jump out of an anonymous inline block abandons the
                 # block's pending return to the enclosing scene.
-                if getattr(scene, "is_anonymous", False):
+                if scene.is_anonymous:
                     while self._call_stack and self._call_stack[-1].kind == "inline":
                         self._call_stack.pop()
                 self._next_transition_target = item.target

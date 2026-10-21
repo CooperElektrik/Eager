@@ -581,13 +581,11 @@ class AudioMixer:
                 next_asset = chan.queue.pop(0)
                 _ = self.play(chan.name, next_asset)
 
-        if hasattr(self.backend, "update"):
-            self.backend.update(dt)
+        self.backend.update(dt)
 
     def shutdown(self) -> None:
         """Shut down the audio backend and release audio resources."""
-        if hasattr(self.backend, "shutdown"):
-            self.backend.shutdown()
+        self.backend.shutdown()
 
     def save_state(self) -> AudioMixerSaveState:
         """Save mixer state for checkpoints and saves.

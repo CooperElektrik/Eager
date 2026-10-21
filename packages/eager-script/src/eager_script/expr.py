@@ -175,23 +175,17 @@ def _eval_node(node: ast.AST, env: dict[str, Any]) -> Any:
     if isinstance(node, ast.Name):
         if node.id in env:
             return env[node.id]
-        if node.id in _ALLOWED_FUNCTIONS and node.id in env:
-            return env[node.id]
         raise ExprError(f"Variable '{node.id}' is not defined")
 
     if isinstance(node, ast.Attribute):
-        if isinstance(node.value, ast.Name) and node.value.id == "persistent":
-            if node.attr.startswith("_"):
-                raise ExprError(f"Access to private or dunder attribute '{node.attr}' is forbidden")
-            persistent = env.get("persistent")
-            if persistent is None:
-                return None
-            if hasattr(persistent, node.attr):
-                return getattr(persistent, node.attr)
-            if isinstance(persistent, dict):
-                return persistent.get(node.attr)
+        persistent = env.get("persistent")
+        if persistent is None:
             return None
-        raise ExprError("Illegal attribute access")
+        if hasattr(persistent, node.attr):
+            return getattr(persistent, node.attr)
+        if isinstance(persistent, dict):
+            return persistent.get(node.attr)
+        return None
 
     if isinstance(node, ast.UnaryOp):
         op_fn = _ALLOWED_OPERATORS[type(node.op)]

@@ -1181,7 +1181,7 @@ class PILRenderer(RenderBackend):
 
         # Fast tint bytes computation
         t = item.tint
-        if t is WHITE or (t.r == 1.0 and t.g == 1.0 and t.b == 1.0 and t.a == 1.0):
+        if t == WHITE:
             tint_rgba = _WHITE_RGBA
         else:
             tint_rgba = t.to_rgba_bytes()
@@ -1672,7 +1672,7 @@ class PILRenderer(RenderBackend):
         for it in items:
             k = (it.layer, it.asset_id, it.z_order)
             t = it.tint
-            tint_key = t.to_rgba_bytes() if hasattr(t, "to_rgba_bytes") else (t.r, t.g, t.b, t.a)
+            tint_key = t.to_rgba_bytes()
             g = (
                 it.x,
                 it.y,
@@ -1850,8 +1850,8 @@ class PILRenderer(RenderBackend):
                 and bg_items[1].x == 0.0
                 and bg_items[1].y == 0.0
                 and not (bg_items[0].flip_h or bg_items[0].flip_v or bg_items[1].flip_h or bg_items[1].flip_v)
-                and (bg_items[0].tint is WHITE or bg_items[0].tint == WHITE)
-                and (bg_items[1].tint is WHITE or bg_items[1].tint == WHITE)
+                and bg_items[0].tint == WHITE
+                and bg_items[1].tint == WHITE
                 and self.asset_resolver.is_asset_opaque(bg_items[0].asset_id)
                 and self.asset_resolver.is_asset_opaque(bg_items[1].asset_id)
                 and bg_items[0].opacity > 0.0
@@ -2034,7 +2034,7 @@ class PILRenderer(RenderBackend):
             return
         c_rgba = (
             _WHITE_RGBA
-            if (color is WHITE or color == WHITE)
+            if color == WHITE
             else color.to_rgba_bytes()
         )
         alpha = c_rgba[3]
@@ -2233,7 +2233,7 @@ class PILRenderer(RenderBackend):
 
         color_rgba = (
             _WHITE_RGBA
-            if (color is WHITE or color == WHITE)
+            if color == WHITE
             else color.to_rgba_bytes()
         )
         color_bytes = color_rgba[:3] if self.mode == "RGB" else color_rgba
@@ -2285,7 +2285,7 @@ class PILRenderer(RenderBackend):
 
         target_w = max(1, round(width))
         target_h = max(1, round(height))
-        t_rgba = _WHITE_RGBA if (tint is WHITE or tint == WHITE) else tint.to_rgba_bytes()
+        t_rgba = _WHITE_RGBA if tint == WHITE else tint.to_rgba_bytes()
         cache_key = (asset_id, target_w, target_h, t_rgba)
 
         cached_sprite = self._ui_image_cache.lookup(cache_key)
@@ -2418,6 +2418,8 @@ if TYPE_CHECKING or PIL_AVAILABLE:
                 show_fps=show_fps,
                 uncapped=uncapped,
             )
+            self.vsync: bool = vsync and not uncapped
+            self.visible: bool = visible
 
             self.renderer = PILRenderer(
                 width=width,

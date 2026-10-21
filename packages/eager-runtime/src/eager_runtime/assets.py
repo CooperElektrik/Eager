@@ -83,7 +83,7 @@ def extract_asset_references(
             for it in node.body:
                 items_to_scan.append((it, node_id))
         # Preamble character definitions from graph.characters
-        if hasattr(graph, "characters") and isinstance(graph.characters, dict):
+        if graph.characters:
             for cid, cdef in graph.characters.items():
                 c_id = str(cid).strip().lower()
                 attrs_dict: dict[str, str] = {}

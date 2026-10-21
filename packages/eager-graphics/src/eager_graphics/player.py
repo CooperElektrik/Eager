@@ -41,10 +41,6 @@ class BasePlayer:
         self.title: str = title
         self.asset_dir: str | Path | None = asset_dir
         self.scale_mode: ScaleMode = scale_mode
-        if not hasattr(self, "vsync"):
-            self.vsync: bool = vsync and not uncapped
-        if not hasattr(self, "visible"):
-            self.visible: bool = visible
         self.uncapped: bool = uncapped
 
         self.vm: Any = getattr(session, "vm", None)
@@ -54,10 +50,7 @@ class BasePlayer:
         self.audio: Any = getattr(session, "audio", None)
         self.keymap: Keymap = getattr(session, "keymap", None) or Keymap()
         self.overlay: Any = getattr(session, "overlay", None) or UIOverlay(width=width, height=height)
-        if hasattr(self.overlay, "set_viewport"):
-            self.overlay.set_viewport(width, height)
-        if hasattr(session, "overlay") and hasattr(session.overlay, "set_viewport"):
-            session.overlay.set_viewport(width, height)
+        self.overlay.set_viewport(width, height)
 
         # Debug overlay mode
         if isinstance(show_fps, DebugOverlayMode):
@@ -114,7 +107,7 @@ class BasePlayer:
         Called whenever the active choice prompt, input prompt, or dialogue changes so that
         input handling sees up-to-date layout even before the next draw.
         """
-        if self.director is not None and hasattr(self.director, "ui_state"):
+        if self.director is not None:
             self.current_speaker = self.director.ui_state.speaker
             self.current_text = self.director.ui_state.text
             self.current_emotion = self.director.ui_state.emotion
@@ -124,14 +117,13 @@ class BasePlayer:
             if hasattr(self.session, "is_current_beat_read")
             else False
         )
-        if hasattr(self, "overlay") and self.overlay is not None and hasattr(self.overlay, "sync"):
-            self.overlay.sync(
-                getattr(self.director, "ui_state", None),
-                self.active_choice_prompt,
-                self.active_input_prompt,
-                input_text=input_text,
-                is_read=is_read,
-            )
+        self.overlay.sync(
+            self.director.ui_state if self.director is not None else None,
+            self.active_choice_prompt,
+            self.active_input_prompt,
+            input_text=input_text,
+            is_read=is_read,
+        )
 
     def _sync_state(self) -> None:
         """Mirror active prompts and finished flag from session and refresh overlay."""
@@ -176,10 +168,7 @@ class BasePlayer:
         """Keep the UI components laid out against the new window size."""
         self.width = width
         self.height = height
-        if hasattr(self, "overlay") and self.overlay is not None and hasattr(self.overlay, "set_viewport"):
-            self.overlay.set_viewport(width, height)
-        if hasattr(self.session, "overlay") and self.session.overlay is not None and hasattr(self.session.overlay, "set_viewport"):
-            self.session.overlay.set_viewport(width, height)
+        self.overlay.set_viewport(width, height)
 
     def tick(self, dt: float) -> None:
         """Advance animations and pump audio mixer / session logic."""
@@ -194,7 +183,7 @@ class BasePlayer:
 
     def close(self) -> None:
         """Release audio mixer resources."""
-        if self.audio is not None and hasattr(self.audio, "shutdown"):
+        if self.audio is not None:
             self.audio.shutdown()
 
     @staticmethod

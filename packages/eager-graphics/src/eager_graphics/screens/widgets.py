@@ -41,22 +41,15 @@ class Button:
     ) -> None:
         """Render button rectangle and text."""
         col = hover_color if self.hovered else fill_color
-        outline_fn = getattr(backend, "draw_rect_outline", None)
-        if callable(outline_fn):
-            backend.draw_rect(self.rect.x, self.rect.y, self.rect.width, self.rect.height, col)
-            outline_fn(
-                self.rect.x, self.rect.y, self.rect.width, self.rect.height, border_color, line_width=1.0
-            )
-        else:
-            backend.draw_rect(
-                self.rect.x,
-                self.rect.y,
-                self.rect.width,
-                self.rect.height,
-                col,
-                border_color=border_color,
-                border_width=1.0,
-            )
+        backend.draw_rect(
+            self.rect.x,
+            self.rect.y,
+            self.rect.width,
+            self.rect.height,
+            col,
+            border_color=border_color,
+            border_width=1.0,
+        )
         lines = self.text.split("\n")
         if len(lines) == 1:
             tx = self.rect.x + self.rect.width / 2
@@ -184,31 +177,17 @@ class Bar:
         ratio = max(0.0, min(1.0, self.value / self.max_value)) if self.max_value > 0 else 0.0
         fill_w = self.rect.width * ratio
 
-        if border_color is not None:
-            outline_fn = getattr(backend, "draw_rect_outline", None)
-            if callable(outline_fn):
-                backend.draw_rect(self.rect.x, self.rect.y, self.rect.width, self.rect.height, bar_color)
-                if fill_w > 0:
-                    backend.draw_rect(self.rect.x, self.rect.y, fill_w, self.rect.height, fill_color)
-                outline_fn(
-                    self.rect.x, self.rect.y, self.rect.width, self.rect.height, border_color, line_width=line_width
-                )
-            else:
-                backend.draw_rect(
-                    self.rect.x,
-                    self.rect.y,
-                    self.rect.width,
-                    self.rect.height,
-                    bar_color,
-                    border_color=border_color,
-                    border_width=line_width,
-                )
-                if fill_w > 0:
-                    backend.draw_rect(self.rect.x, self.rect.y, fill_w, self.rect.height, fill_color)
-        else:
-            backend.draw_rect(self.rect.x, self.rect.y, self.rect.width, self.rect.height, bar_color)
-            if fill_w > 0:
-                backend.draw_rect(self.rect.x, self.rect.y, fill_w, self.rect.height, fill_color)
+        backend.draw_rect(
+            self.rect.x,
+            self.rect.y,
+            self.rect.width,
+            self.rect.height,
+            bar_color,
+            border_color=border_color,
+            border_width=line_width if border_color is not None else 0.0,
+        )
+        if fill_w > 0:
+            backend.draw_rect(self.rect.x, self.rect.y, fill_w, self.rect.height, fill_color)
 
 
 @dataclass

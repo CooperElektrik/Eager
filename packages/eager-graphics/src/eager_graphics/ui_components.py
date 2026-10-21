@@ -438,7 +438,6 @@ class DialogueBox:
         # Background: gradient scrim or solid rect
         if (
             style.layout_mode == "cinematic"
-            and hasattr(backend, "draw_gradient_rect")
             and style.gradient_top is not None
             and style.gradient_mid is not None
         ):
@@ -471,7 +470,6 @@ class DialogueBox:
         elif (
             style.gradient_top is not None
             and style.gradient_bottom is not None
-            and hasattr(backend, "draw_gradient_rect")
         ):
             backend.draw_gradient_rect(
                 box_x,
@@ -588,57 +586,23 @@ class DialogueBox:
                     piece_text = seg.text[overlap_start - seg_start : overlap_end - seg_start]
                     seg_font_size = max(1, round(style.text_font_size * seg.size_mult))
                     seg_color = seg.color if seg.color is not None else style.text_color
-                    try:
-                        backend.draw_text(
-                            x_cursor,
-                            line_y,
-                            piece_text,
-                            font_size=seg_font_size,
-                            color=seg_color,
-                            bold=seg.bold,
-                            italic=seg.italic,
-                            cache=is_fully_revealed,
-                        )
-                    except TypeError:
-                        try:
-                            backend.draw_text(
-                                x_cursor,
-                                line_y,
-                                piece_text,
-                                font_size=seg_font_size,
-                                color=seg_color,
-                                bold=seg.bold,
-                                italic=seg.italic,
-                            )
-                        except TypeError:
-                            backend.draw_text(
-                                x_cursor,
-                                line_y,
-                                piece_text,
-                                font_size=seg_font_size,
-                                color=seg_color,
-                            )
-                    try:
-                        piece_w, _ = backend.measure_text(
-                            piece_text,
-                            font_size=seg_font_size,
-                            bold=seg.bold,
-                            italic=seg.italic,
-                            cache=is_fully_revealed,
-                        )
-                    except TypeError:
-                        try:
-                            piece_w, _ = backend.measure_text(
-                                piece_text,
-                                font_size=seg_font_size,
-                                bold=seg.bold,
-                                italic=seg.italic,
-                            )
-                        except TypeError:
-                            piece_w, _ = backend.measure_text(
-                                piece_text,
-                                font_size=seg_font_size,
-                            )
+                    backend.draw_text(
+                        x_cursor,
+                        line_y,
+                        piece_text,
+                        font_size=seg_font_size,
+                        color=seg_color,
+                        bold=seg.bold,
+                        italic=seg.italic,
+                        cache=is_fully_revealed,
+                    )
+                    piece_w, _ = backend.measure_text(
+                        piece_text,
+                        font_size=seg_font_size,
+                        bold=seg.bold,
+                        italic=seg.italic,
+                        cache=is_fully_revealed,
+                    )
                     x_cursor += piece_w
         if layout.show_arrow and is_fully_revealed:
             arrow_sym = getattr(style, "arrow_symbol", "▼")
@@ -734,7 +698,7 @@ class ChoiceMenu:
         return (
             self.viewport_width,
             self.viewport_height,
-            tuple((opt.index, opt.text, getattr(opt, "enabled", True)) for opt in self.options),
+            tuple((opt.index, opt.text, opt.enabled) for opt in self.options),
             self.selected_index,
         )
 
@@ -769,7 +733,7 @@ class ChoiceMenu:
         for index, (bx, by, bw, bh) in enumerate(self.layout()):
             if bx <= x <= bx + bw and by <= y <= by + bh:
                 opt = self.options[index]
-                if not getattr(opt, "enabled", True):
+                if not opt.enabled:
                     return None
                 return index
         return None
@@ -782,7 +746,7 @@ class ChoiceMenu:
         style = self.style
         for index, (bx, by, bw, bh) in enumerate(self.layout()):
             opt = self.options[index]
-            is_enabled = getattr(opt, "enabled", True)
+            is_enabled = opt.enabled
             is_selected = (self.selected_index == index) and is_enabled
 
             if not is_enabled:
@@ -939,13 +903,7 @@ class InputBox:
         # 6. Blinking cursor
         if self.cursor_visible:
             # Measure width of current buffer to place cursor
-            if hasattr(backend, "measure_text"):
-                try:
-                    text_w, _ = backend.measure_text(self.text_buffer, font_size=15)
-                except TypeError:
-                    text_w, _ = backend.measure_text(self.text_buffer)
-            else:
-                text_w = float(len(self.text_buffer) * 9)
+            text_w, _ = backend.measure_text(self.text_buffer, font_size=15)
             cursor_x = text_x + text_w + 2.0
             cursor_h = 20.0
             cursor_y = text_y - (cursor_h / 2.0)
@@ -1294,12 +1252,7 @@ class UIOverlay:
             by = 20.0
             fill = Color(0.06, 0.08, 0.11, 0.80)
             border = Color(1.0, 1.0, 1.0, 0.12)
-            outline_fn = getattr(backend, "draw_rect_outline", None)
-            if callable(outline_fn):
-                backend.draw_rect(bx, by, badge_w, badge_h, fill)
-                outline_fn(bx, by, badge_w, badge_h, border, line_width=1.0)
-            else:
-                backend.draw_rect(bx, by, badge_w, badge_h, fill, border_color=border, border_width=1.0)
+            backend.draw_rect(bx, by, badge_w, badge_h, fill, border_color=border, border_width=1.0)
             backend.draw_text(
                 bx + badge_w / 2.0,
                 by + badge_h / 2.0,

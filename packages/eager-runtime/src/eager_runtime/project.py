@@ -71,10 +71,8 @@ def merge_graphs(graphs: list[SceneGraph], *, strict: bool = False) -> SceneGrap
 
         combined_edges.extend(g.edges)
         combined_preamble.extend(g.preamble)
-        if hasattr(g, "characters"):
-            combined_characters.update(g.characters)
-        if hasattr(g, "defaults"):
-            combined_defaults.extend(g.defaults)
+        combined_characters.update(g.characters)
+        combined_defaults.extend(g.defaults)
 
     # Validate transition targets
     for edge in combined_edges:
