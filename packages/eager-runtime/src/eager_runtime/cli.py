@@ -226,6 +226,18 @@ def build_parser() -> argparse.ArgumentParser:
     # i18n
     _add_i18n_subparser(subparsers)
 
+    # Optional LSP subcommand if eager_script_lsp is installed
+    try:
+        import eager_script_lsp.cli as lsp_cli
+        lsp_p = subparsers.add_parser(
+            "lsp",
+            help="Run Language Server Protocol (LSP) server for Eager-Script screenplays.",
+        )
+        lsp_cli.add_arguments(lsp_p)
+        lsp_p.set_defaults(func=lsp_cli.run_cli)
+    except ImportError:
+        pass
+
     return parser
 
 

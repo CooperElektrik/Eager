@@ -1,0 +1,95 @@
+{
+  "name": "eager-script-vscode",
+  "displayName": "Eager-Script",
+  "description": "Rich IDE language support, diagnostics, and tools for Eager-Script screenplays",
+  "version": "0.4.0",
+  "publisher": "eager-engine",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CooperElektrik/Eager"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Snippets"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "eager-script",
+        "aliases": [
+          "Eager-Script",
+          "eager"
+        ],
+        "extensions": [
+          ".es"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "eager-script",
+        "scopeName": "source.eager-script",
+        "path": "./syntaxes/eager-script.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "eager.warpAndPlay",
+        "title": "Play from Here (Warp & Play)"
+      },
+      {
+        "command": "eager.showReferences",
+        "title": "Show Scene References"
+      },
+      {
+        "command": "eager.restartServer",
+        "title": "Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Eager-Script",
+      "properties": {
+        "eager.server.path": {
+          "type": "string",
+          "default": "",
+          "description": "Custom path or command to run eager-script-lsp (leave empty to use 'uv run eager-script-lsp')."
+        },
+        "eager.player.backend": {
+          "type": "string",
+          "enum": [
+            "pil",
+            "pyglet",
+            "terminal"
+          ],
+          "default": "pil",
+          "description": "Default render player backend for 'Play from here' Code Lens."
+        },
+        "eager.player.watch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable hot reload watcher when launching player."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./ && npx esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.3.3"
+  }
+}

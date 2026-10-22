@@ -12,6 +12,7 @@ dependencies = [
     "eager-graphics",
     "eager-runtime",
     "eager-script",
+    "eager-script-lsp",
 ]
 
 [tool.uv]
@@ -29,6 +30,7 @@ eager-script = { workspace = true }
 eager-runtime = { workspace = true }
 eager-graphics = { workspace = true }
 eager-core = { workspace = true }
+eager-script-lsp = { workspace = true }
 
 [tool.uv.workspace]
 members = [
@@ -36,6 +38,7 @@ members = [
     "packages/eager-runtime",
     "packages/eager-graphics",
     "packages/eager-core",
+    "packages/eager-script-lsp",
 ]
 
 [build-system]
@@ -51,6 +54,7 @@ root_packages = [
     "eager_graphics",
     "eager_runtime",
     "eager_script",
+    "eager_script_lsp",
 ]
 
 # ---------------------------------------------------------------------------
@@ -65,6 +69,7 @@ forbidden_modules = [
     "eager_script",
     "eager_runtime",
     "eager_graphics",
+    "eager_script_lsp",
 ]
 
 [[tool.importlinter.contracts]]
@@ -75,18 +80,28 @@ forbidden_modules = [
     "eager_core",
     "eager_runtime",
     "eager_graphics",
+    "eager_script_lsp",
 ]
 
 [[tool.importlinter.contracts]]
 name = "eager-graphics does not import eager-runtime"
 type = "forbidden"
 source_modules = ["eager_graphics"]
-forbidden_modules = ["eager_runtime"]
+forbidden_modules = [
+    "eager_runtime",
+    "eager_script_lsp",
+]
 
 [[tool.importlinter.contracts]]
 name = "eager-runtime strictly forbids eager-graphics"
 type = "forbidden"
 source_modules = ["eager_runtime"]
+forbidden_modules = ["eager_graphics"]
+
+[[tool.importlinter.contracts]]
+name = "eager-script-lsp strictly forbids eager-graphics"
+type = "forbidden"
+source_modules = ["eager_script_lsp"]
 forbidden_modules = ["eager_graphics"]
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eager-script-lsp"
+version = "0.4.0"
+description = "Full-featured Language Server Protocol (LSP) server for Eager-Script screenplays."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Cooper" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Text Processing :: Markup",
+]
+keywords = ["screenplay", "lsp", "language-server", "visual-novel", "eager"]
+
+dependencies = [
+    "pygls >= 1.3.0",
+    "lsprotocol >= 2023.0.0",
+    "eager-core >= 0.4.0",
+    "eager-script >= 0.4.0",
+    "eager-runtime >= 0.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4.0",
+]
+
+[project.scripts]
+eager-script-lsp = "eager_script_lsp.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.basedpyright]
+typeCheckingMode = "standard"
+include = ["src", "tests"]
+venvPath = "../.."
+venv = ".venv"

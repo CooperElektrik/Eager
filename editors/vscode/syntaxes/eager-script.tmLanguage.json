@@ -1,0 +1,195 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Eager-Script",
+  "scopeName": "source.eager-script",
+  "patterns": [
+    {
+      "name": "comment.line.number-sign.eager-script",
+      "match": "^\\s*#(?!#).*$"
+    },
+    {
+      "name": "comment.line.inline.eager-script",
+      "match": "(?<=\\s)#.*$"
+    },
+    {
+      "name": "meta.label.eager-script",
+      "match": "^\\s*(##)\\s+(.*?)(?:\\s*(---)\\s*([A-Za-z0-9_-]+))?\\s*$",
+      "captures": {
+        "1": { "name": "keyword.control.header.eager-script" },
+        "2": { "name": "entity.name.type.class.eager-script" },
+        "3": { "name": "keyword.operator.separator.eager-script" },
+        "4": { "name": "entity.name.function.label.eager-script" }
+      }
+    },
+    {
+      "name": "meta.call.eager-script",
+      "match": "^\\s*(>>)\\s+([a-zA-Z0-9_-]+)\\s*$",
+      "captures": {
+        "1": { "name": "keyword.control.call.eager-script" },
+        "2": { "name": "entity.name.function.target.eager-script" }
+      }
+    },
+    {
+      "name": "meta.return.eager-script",
+      "match": "^\\s*(<<)\\s*$",
+      "captures": {
+        "1": { "name": "keyword.control.return.eager-script" }
+      }
+    },
+    {
+      "name": "meta.jump.eager-script",
+      "match": "^\\s*(>)\\s+([a-zA-Z0-9_-]+)\\s*$",
+      "captures": {
+        "1": { "name": "keyword.control.jump.eager-script" },
+        "2": { "name": "entity.name.function.target.eager-script" }
+      }
+    },
+    {
+      "name": "meta.choice.eager-script",
+      "match": "^\\s*(\\?)\\s+(.+?)(?:\\s*\\(([^()]+)\\))?(?:\\s+(if)\\s+(.+))?\\s*$",
+      "captures": {
+        "1": { "name": "keyword.control.choice.eager-script" },
+        "2": { "name": "string.unquoted.choice.eager-script" },
+        "3": { "name": "entity.name.function.choice-target.eager-script" },
+        "4": { "name": "keyword.control.conditional.eager-script" },
+        "5": { "name": "source.expression.eager-script" }
+      }
+    },
+    {
+      "name": "meta.append.eager-script",
+      "match": "^\\s*(-)\\s+(.*)$",
+      "captures": {
+        "1": { "name": "keyword.operator.append.eager-script" },
+        "2": { "patterns": [{ "include": "#dialogue_content" }] }
+      }
+    },
+    {
+      "name": "meta.freshbox.eager-script",
+      "match": "^\\s*(/)\\s+(.*)$",
+      "captures": {
+        "1": { "name": "keyword.operator.fresh-box.eager-script" },
+        "2": { "patterns": [{ "include": "#dialogue_content" }] }
+      }
+    },
+    {
+      "name": "meta.hook.eager-script",
+      "match": "^\\s*(~)\\s+([a-zA-Z0-9_]+)(.*)$",
+      "captures": {
+        "1": { "name": "keyword.operator.hook.eager-script" },
+        "2": { "name": "entity.name.function.hook.eager-script" },
+        "3": { "patterns": [{ "include": "#hook_arguments" }] }
+      }
+    },
+    {
+      "name": "meta.directive.character.eager-script",
+      "match": "^\\s*(@character)\\s+([a-zA-Z0-9_]+)(?:\\s+(?:\"([^\"]*)\"|'([^']*)'))?(.*)$",
+      "captures": {
+        "1": { "name": "keyword.control.directive.eager-script" },
+        "2": { "name": "entity.name.class.character.eager-script" },
+        "3": { "name": "string.quoted.double.eager-script" },
+        "4": { "name": "string.quoted.single.eager-script" },
+        "5": { "patterns": [{ "include": "#key_value_pairs" }] }
+      }
+    },
+    {
+      "name": "meta.directive.default.eager-script",
+      "match": "^\\s*(@default)\\s+([a-zA-Z0-9_]+)\\s*(=)\\s*(.+)$",
+      "captures": {
+        "1": { "name": "keyword.control.directive.eager-script" },
+        "2": { "name": "variable.other.declaration.eager-script" },
+        "3": { "name": "keyword.operator.assignment.eager-script" },
+        "4": { "name": "source.expression.eager-script" }
+      }
+    },
+    {
+      "name": "meta.directive.if.eager-script",
+      "match": "^\\s*(@if|@elif)\\s+(.+)$",
+      "captures": {
+        "1": { "name": "keyword.control.conditional.eager-script" },
+        "2": { "name": "source.expression.eager-script" }
+      }
+    },
+    {
+      "name": "meta.directive.block.eager-script",
+      "match": "^\\s*(@else|@end)\\s*$",
+      "captures": {
+        "1": { "name": "keyword.control.directive.eager-script" }
+      }
+    },
+    {
+      "name": "meta.variable.set.eager-script",
+      "match": "^\\s*(\\$)\\s*([a-zA-Z0-9_\\.]+)\\s*(\\+=|-=|\\*=|/=|%=|=)\\s*(.+)$",
+      "captures": {
+        "1": { "name": "keyword.operator.variable.eager-script" },
+        "2": { "name": "variable.other.mutation.eager-script" },
+        "3": { "name": "keyword.operator.assignment.eager-script" },
+        "4": { "name": "source.expression.eager-script" }
+      }
+    },
+    {
+      "name": "meta.dialogue.eager-script",
+      "match": "^\\s*([A-Za-z_][A-Za-z0-9_\\s\\.\\-'\"]*?)(?:\\s*\\(([^)]+)\\))?(:)(?:\\s+(.*)|\\s*)$",
+      "captures": {
+        "1": { "name": "entity.name.class.speaker.eager-script" },
+        "2": { "name": "variable.parameter.emotion.eager-script" },
+        "3": { "name": "punctuation.separator.colon.eager-script" },
+        "4": { "patterns": [{ "include": "#dialogue_content" }] }
+      }
+    },
+    {
+      "include": "#dialogue_content"
+    }
+  ],
+  "repository": {
+    "dialogue_content": {
+      "patterns": [
+        {
+          "name": "entity.name.tag.voice.eager-script",
+          "match": "\\{voice:([^}]+)\\}"
+        },
+        {
+          "name": "constant.other.color.eager-script",
+          "match": "\\{color=(#[0-9a-fA-F]{3,8})\\}"
+        },
+        {
+          "name": "entity.name.tag.inline.eager-script",
+          "match": "\\{(?:b|/b|i|/i|size=[^}]+|w=[^}]+|p=[^}]+|id=[^}]+|/color)\\}"
+        },
+        {
+          "name": "variable.other.interpolation.eager-script",
+          "match": "\\[([A-Za-z0-9_\\.]+)\\]"
+        }
+      ]
+    },
+    "key_value_pairs": {
+      "patterns": [
+        {
+          "match": "\\b([a-zA-Z0-9_]+)=([^\"][\\S]*|\"[^\"]*\")",
+          "captures": {
+            "1": { "name": "variable.parameter.key.eager-script" },
+            "2": { "name": "string.unquoted.value.eager-script" }
+          }
+        }
+      ]
+    },
+    "hook_arguments": {
+      "patterns": [
+        {
+          "name": "keyword.control.contextual.eager-script",
+          "match": "\\b(at|with|to)\\b"
+        },
+        {
+          "match": "\\b([a-zA-Z0-9_]+)=([^\"][\\S]*|\"[^\"]*\")",
+          "captures": {
+            "1": { "name": "variable.parameter.kwarg.eager-script" },
+            "2": { "name": "string.unquoted.kwarg-value.eager-script" }
+          }
+        },
+        {
+          "name": "constant.other.color.hex.eager-script",
+          "match": "#[0-9a-fA-F]{3,8}\\b"
+        }
+      ]
+    }
+  }
+}

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Language Server Protocol (`eager-script-lsp`):** Added the `eager-script-lsp` package providing full LSP 3.17+ server support for Eager-Script screenplays, featuring resilient document scanning, workspace symbol indexing, real-time diagnostics (syntax, dead targets, asset checks, i18n keys), context-aware completions, hover previews, go-to-definition, reference search, call hierarchies, multi-file rename, semantic tokens, inlay hints, color decorators, and "Warp & Play" code lenses.
+- **CLI & Integration:** Added the `eager-script-lsp` standalone executable and the `eager lsp` runtime CLI subcommand supporting stdio, TCP, WebSocket, and headless batch diagnostics (`--check`). Added optional `lsp` extra to `eager-runtime`.
+- **VS Code Extension:** Added VS Code extension in `editors/vscode` with full TextMate grammar and language server integration.
+
 ## [0.4.0] - 2026-10-21
 
 ### Added

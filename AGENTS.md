@@ -34,11 +34,13 @@ Operational guidelines and constraints for autonomous agents in `eager-mono`.
 ```text
 eager-script ──┐
                ├── eager-graphics (presentation, renderer backends)
- eager-core ───┘
-      │
+ eager-core ───┤
+      │        ├── eager-script-lsp (LSP server, language tooling)
+      │        │
       └──────── eager-runtime (headless story VM, sessions)
-                       │ (optional extra)
-                       └── eager-graphics
+                       │ (optional extras)
+                       ├── eager-graphics
+                       └── eager-script-lsp
 ```
 
 ### Invariants
@@ -103,8 +105,9 @@ A task is complete only when all steps pass:
 3. **Type checking:**
    ```bash
    (cd packages/eager-script && uv run basedpyright)
-   (cd packages/eager-runtime && uv run basedpyright)
-   (cd packages/eager-graphics && uv run basedpyright)
+   (cd packages/eager-runtime && uv run basedpyright src)
+   (cd packages/eager-graphics && uv run basedpyright src)
+   (cd packages/eager-script-lsp && uv run basedpyright)
    ```
 4. **Git review:**
    ```bash
