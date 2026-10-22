@@ -150,8 +150,9 @@ class GameSession:
         # Parse scene graph
         if isinstance(project_or_script, (str, Path)):
             self.script_path = Path(project_or_script)
-            text = self.script_path.read_text(encoding="utf-8")
-            self.graph: Any = parse_graph(text)
+            from eager_runtime.project import load_project_graph, resolve_project_scripts
+            self.graph: Any = load_project_graph(self.script_path)
+            self._project_scripts = resolve_project_scripts(self.script_path)
         elif hasattr(project_or_script, "graph"):
             self.graph = project_or_script.graph
         else:
@@ -265,7 +266,7 @@ class GameSession:
         if self.script_path is not None:
             from eager_runtime.watcher import FileWatcher
 
-            self.watcher: FileWatcher | None = FileWatcher(self.script_path)
+            self.watcher: FileWatcher | None = FileWatcher(getattr(self, "_project_scripts", [self.script_path]))
         else:
             self.watcher = None
 
@@ -1010,8 +1011,11 @@ class GameSession:
 
         # 2. Re-parse the script
         try:
-            text = target_path.read_text(encoding="utf-8")
-            new_graph = parse_graph(text)
+            from eager_runtime.project import load_project_graph, resolve_project_scripts
+            new_graph = load_project_graph(target_path)
+            self._project_scripts = resolve_project_scripts(target_path)
+            if self.watcher is not None:
+                self.watcher.target_paths = self._project_scripts
         except Exception as exc:  # noqa: BLE001
             self._set_error_overlay(f"Hot-reload parse error: {exc}")
             self._ui_dirty = True
