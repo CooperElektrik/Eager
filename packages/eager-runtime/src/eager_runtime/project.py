@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from eager_core.types import Color
-from eager_script import SceneGraph, to_graph
+from eager_script import SceneGraph, parse_graph, to_graph
 
 logger = logging.getLogger(__name__)
 
@@ -132,3 +133,65 @@ def merge_graphs(graphs: list[SceneGraph], *, strict: bool = False) -> SceneGrap
                 raise ValueError(msg)
 
     return merged
+
+
+def resolve_project_scripts(target_path: Path) -> list[Path]:
+    """Resolve all .es files in a project directory or via @include directives."""
+    es_files: list[Path] = []
+
+    if target_path.is_dir():
+        cfg_path = target_path / "game.toml"
+        if cfg_path.exists():
+            # Find all .es files in the project directory
+            for p in target_path.rglob("*.es"):
+                if not any(part.startswith((".", "venv", "__pycache__")) for part in p.parts):
+                    es_files.append(p)
+        else:
+            for p in target_path.rglob("*.es"):
+                if not any(part.startswith((".", "venv", "__pycache__")) for part in p.parts):
+                    es_files.append(p)
+    else:
+        # Load script and any includes recursively
+        visited: set[Path] = set()
+        queue = [target_path.resolve()]
+
+        while queue:
+            current = queue.pop(0)
+            if current in visited or not current.is_file():
+                continue
+
+            visited.add(current)
+            es_files.append(current)
+
+            try:
+                text = current.read_text(encoding="utf-8")
+                for line in text.splitlines():
+                    # Check for @include "filename.es" or 'filename.es'
+                    m = re.match(r'^\s*@include\s+["\']([^"\']+)["\']', line)
+                    if m:
+                        inc_name = m.group(1)
+                        inc_path = (current.parent / inc_name).resolve()
+                        queue.append(inc_path)
+            except OSError:
+                pass
+
+    return es_files
+
+
+def load_project_graph(target_path: Path, *, strict: bool = False) -> SceneGraph:
+    """Load and merge all scene graphs for a project or script file."""
+
+    es_files = resolve_project_scripts(target_path)
+    graphs: list[SceneGraph] = []
+
+    for es_file in es_files:
+        try:
+            text = es_file.read_text(encoding="utf-8")
+            graphs.append(parse_graph(text))
+        except (ValueError, TypeError, OSError):
+            logger.warning(f"Failed to parse {es_file}")
+
+    if not graphs:
+        return to_graph([])
+
+    return merge_graphs(graphs, strict=strict)

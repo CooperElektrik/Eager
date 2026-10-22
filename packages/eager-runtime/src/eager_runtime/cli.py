@@ -26,6 +26,7 @@ from eager_core.protocols import (
 )
 
 from eager_runtime.player import TerminalPlayer
+from eager_runtime.project import load_project_graph, resolve_project_scripts
 from eager_runtime.runtime import StoryVM
 
 # ── shared helpers ────────────────────────────────────────────────────
@@ -252,8 +253,7 @@ def run_play(args: argparse.Namespace) -> int:
         print(f"Error: Screenplay file '{script_path}' not found.", file=sys.stderr)
         return 1
 
-    text = script_path.read_text(encoding="utf-8")
-    graph = eager_script.parse_graph(text)
+    graph = load_project_graph(script_path)
 
     if not graph.nodes:
         print("Warning: Script contains no scenes.", file=sys.stderr)
@@ -281,8 +281,7 @@ def run_inspect(args: argparse.Namespace) -> int:
         print(f"Error: Screenplay file '{script_path}' not found.", file=sys.stderr)
         return 1
 
-    text = script_path.read_text(encoding="utf-8")
-    graph = eager_script.parse_graph(text)
+    graph = load_project_graph(script_path)
 
     print(f"File: {script_path.name}")
     print(f"Entry Scene: {graph.entry or '(None)'}")
@@ -302,8 +301,7 @@ def run_test_run(args: argparse.Namespace) -> int:
         print(f"Error: Screenplay file '{script_path}' not found.", file=sys.stderr)
         return 1
 
-    text = script_path.read_text(encoding="utf-8")
-    graph = eager_script.parse_graph(text)
+    graph = load_project_graph(script_path)
 
     from eager_core.i18n import TranslationManager
 
@@ -745,24 +743,18 @@ def _cmd_check(args: argparse.Namespace) -> int:
         sys.stderr.write(f"Error: Path '{target_path}' not found.\n")
         return 1
 
-    if target_path.is_dir():
-        from eager_runtime.project import ProjectConfig
+    es_files = resolve_project_scripts(target_path)
+    if not es_files:
+        sys.stderr.write(f"Error: No .es scripts found in '{target_path}'.\n")
+        return 1
 
-        cfg_path = target_path / "game.toml"
-        cfg = ProjectConfig.load(cfg_path) if cfg_path.exists() else ProjectConfig()
-        script_file = target_path / cfg.entry_script
-        if not script_file.exists():
-            es_files = list(target_path.glob("*.es"))
-            if not es_files:
-                sys.stderr.write(f"Error: No .es scripts found in '{target_path}'.\n")
-                return 1
-            script_file = es_files[0]
-    else:
-        script_file = target_path
+    script_file = es_files[0]  # Used for asset dir resolution later
 
     try:
-        text = script_file.read_text(encoding="utf-8")
-        items = eager_script.parse(text)
+        items = []
+        for f in es_files:
+            text = f.read_text(encoding="utf-8")
+            items.extend(eager_script.parse(text))
         result = eager_script.validate(items)
     except (eager_script.ParseError, OSError, ValueError, TypeError) as err:
         sys.stderr.write(f"Check failed with error: {err}\n")
@@ -801,7 +793,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
         from eager_runtime.assets import check_assets
 
-        graph = eager_script.to_graph(items)
+        graph = load_project_graph(target_path)
         report = check_assets(graph, resolved_asset_dir)
 
         print(f"\nAsset Consistency Check: '{resolved_asset_dir}'")
@@ -868,13 +860,11 @@ def _resolve_script_file(target_path: Path) -> Path | None:
 def _cmd_i18n_extract(args: argparse.Namespace) -> int:
     """Extract translatable screenplay strings into a catalog JSON file."""
     target = Path(args.script)
-    script_file = _resolve_script_file(target)
-    if script_file is None or not script_file.is_file():
-        sys.stderr.write(f"Error: Script file not found for '{target}'.\n")
+    try:
+        graph = load_project_graph(target)
+    except OSError as e:
+        sys.stderr.write(f"Error: failed to load project graph for '{target}': {e}\n")
         return 1
-
-    text = script_file.read_text(encoding="utf-8")
-    graph = eager_script.parse_graph(text)
 
     from eager_core.i18n import TranslationCatalog
 
@@ -913,13 +903,11 @@ def _cmd_i18n_extract(args: argparse.Namespace) -> int:
 def _cmd_i18n_check(args: argparse.Namespace) -> int:
     """Check translation coverage and missing strings for catalog(s)."""
     target = Path(args.script)
-    script_file = _resolve_script_file(target)
-    if script_file is None or not script_file.is_file():
-        sys.stderr.write(f"Error: Script file not found for '{target}'.\n")
+    try:
+        graph = load_project_graph(target)
+    except OSError as e:
+        sys.stderr.write(f"Error: failed to load project graph for '{target}': {e}\n")
         return 1
-
-    text = script_file.read_text(encoding="utf-8")
-    graph = eager_script.parse_graph(text)
 
     from eager_core.i18n import TranslationCatalog
 
