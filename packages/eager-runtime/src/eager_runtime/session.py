@@ -12,6 +12,7 @@ from eager_core.events import (
     DialogueEvent,
     InputPromptEvent,
     NarrationEvent,
+    SceneEnterEvent,
     StoryEndEvent,
     StoryEvent,
 )
@@ -493,6 +494,143 @@ class GameSession:
         self.vm.choose(choice)
         self.active_choice_prompt = None
         return self.advance()
+
+    def warp(
+        self,
+        target_scene: str,
+        *,
+        simulate: bool = True,
+        max_steps: int = 10000,
+    ) -> bool:
+        """Fast-forward / jump directly to target_scene, reconstructing stage and story state.
+
+        If *simulate* is True and a path from story entry (or a root ancestor)
+        to *target_scene* exists in the scene graph, simulates preceding scenes
+        headlessly. Stage directives, character placements, expressions, variables,
+        and continuous audio are reconstructed, while one-shot audio effects
+        are suppressed and dialogue is added to the backlog.
+        """
+        if target_scene not in self.vm.graph.nodes:
+            return False
+
+        if not simulate:
+            self.vm.jump(target_scene)
+            self.checkpoints.clear()
+            self.checkpoints.push(self._capture_checkpoint())
+            return True
+
+        if self.vm.current_scene_id == target_scene and not self.vm.is_ended:
+            return True
+
+        entry = self.vm.graph.entry
+        path = self.vm.graph.find_path(entry, target_scene) if entry else None
+        if path is None:
+            root = self.vm.graph.find_root_ancestor(target_scene)
+            if root:
+                path = self.vm.graph.find_path(root, target_scene)
+
+        if path is None or len(path) <= 1:
+            self.vm.jump(target_scene)
+            self.checkpoints.clear()
+            self.checkpoints.push(self._capture_checkpoint())
+            return True
+
+        self.vm.jump(path[0])
+        prev_skip = self.skip_mode
+        self.skip_mode = True
+        step_count = 0
+
+        while not self.vm.is_ended and step_count < max_steps:
+            step_count += 1
+            event = self.vm.step()
+            if event is None:
+                break
+
+            if isinstance(event, SceneEnterEvent) and event.scene_id == target_scene:
+                self.dispatcher.dispatch(event)
+                break
+
+            self.dispatcher.dispatch(event)
+            self._last_event = event
+
+            beat_id = getattr(event, "beat_id", None)
+            if beat_id:
+                seen_beats = self.persistent.get("seen_beats")
+                if not isinstance(seen_beats, list):
+                    seen_beats = []
+                    self.persistent["seen_beats"] = seen_beats
+                if beat_id not in seen_beats:
+                    seen_beats.append(beat_id)
+                    self.persistent.save()
+
+            if isinstance(event, DialogueEvent):
+                self.backlog.add(event.speaker, event.text, voice=event.voice, emotion=event.emotion)
+            elif isinstance(event, NarrationEvent):
+                self.backlog.add(None, event.text)
+            elif isinstance(event, AppendEvent):
+                self.backlog.append_to_last(event.text)
+
+            if hasattr(self.director, "finish_animations"):
+                self.director.finish_animations()
+            elif hasattr(self.stage, "finish_animations"):
+                self.stage.finish_animations()
+
+            if isinstance(event, ChoicePromptEvent):
+                chosen_idx = 0
+                curr_scene = self.vm.current_scene_id
+                if curr_scene in path:
+                    curr_idx = path.index(curr_scene)
+                    remaining_targets = set(path[curr_idx + 1 :])
+                    for idx, opt in enumerate(event.options):
+                        if opt.target and opt.target in remaining_targets and opt.enabled:
+                            chosen_idx = idx
+                            break
+                    else:
+                        for idx, opt in enumerate(event.options):
+                            if (
+                                opt.target
+                                and opt.enabled
+                                and target_scene in self.vm.graph.reachable_from(opt.target)
+                            ):
+                                chosen_idx = idx
+                                break
+                else:
+                    for idx, opt in enumerate(event.options):
+                        if (
+                            opt.target
+                            and opt.enabled
+                            and target_scene in self.vm.graph.reachable_from(opt.target)
+                        ):
+                            chosen_idx = idx
+                            break
+                self.vm.choose(chosen_idx)
+            elif isinstance(event, InputPromptEvent):
+                val = event.default or "Player"
+                self.vm.set_variable(event.var_name, val)
+                self.vm._pending_input = None
+
+        if self.vm.current_scene_id != target_scene:
+            self.vm.jump(target_scene)
+
+        if hasattr(self.director, "finish_animations"):
+            self.director.finish_animations()
+        elif hasattr(self.stage, "finish_animations"):
+            self.stage.finish_animations()
+
+        if hasattr(self.director, "ui_state"):
+            self.director.ui_state.speaker = None
+            self.director.ui_state.text = None
+            self.director.ui_state.visible_chars = None
+            self.director.ui_state.clear_choices()
+
+        self.text_reveal = None
+        self.active_choice_prompt = None
+        self.active_input_prompt = None
+        self.skip_mode = prev_skip
+
+        self.checkpoints.clear()
+        self.checkpoints.push(self._capture_checkpoint())
+        return True
 
 
     def save_game(self, slot_name: str) -> Any:

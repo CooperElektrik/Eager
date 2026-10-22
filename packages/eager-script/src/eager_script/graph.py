@@ -148,6 +148,58 @@ class SceneGraph:
                     terminals.append(nid)
         return terminals
 
+    def find_path(self, start: str, target: str) -> list[str] | None:
+        """Find the shortest directed path of scene IDs from start to target using BFS.
+
+        Returns a list of scene IDs [start, ..., target] if a path exists, or None.
+        """
+        if start not in self.nodes or target not in self.nodes:
+            return None
+        if start == target:
+            return [start]
+        queue: deque[list[str]] = deque([[start]])
+        visited: set[str] = {start}
+        while queue:
+            path = queue.popleft()
+            curr = path[-1]
+            for succ in self.successors(curr):
+                if succ == target:
+                    return path + [succ]
+                if succ in self.nodes and succ not in visited:
+                    visited.add(succ)
+                    queue.append(path + [succ])
+        return None
+
+    def find_root_ancestor(self, target: str) -> str | None:
+        """Find a root ancestor (in-degree 0 in its component) that can reach target.
+
+        Uses backward BFS over predecessors. If multiple roots exist, returns the first
+        found. Returns None if target has no predecessors or is not in the graph.
+        """
+        if target not in self.nodes:
+            return None
+        preds = self.predecessors(target)
+        if not preds:
+            return None
+
+        visited: set[str] = set()
+        queue: deque[str] = deque(preds)
+        ancestors: list[str] = []
+        while queue:
+            curr = queue.popleft()
+            if curr in visited or curr not in self.nodes:
+                continue
+            visited.add(curr)
+            ancestors.append(curr)
+            for p in self.predecessors(curr):
+                if p not in visited and p in self.nodes:
+                    queue.append(p)
+
+        for a in ancestors:
+            if not self.predecessors(a):
+                return a
+        return ancestors[0] if ancestors else None
+
     def to_dict(self, include_body: bool = True) -> dict[str, Any]:
         """Convert graph into a JSON-serializable dictionary."""
         data: dict[str, Any] = {

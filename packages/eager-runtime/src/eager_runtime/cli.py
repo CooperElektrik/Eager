@@ -126,6 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     play_p.add_argument("--asset-dir", default=None, help="Directory containing sprite/background assets.")
     play_p.add_argument("--warp", default=None, help="Fast-forward / jump directly to scene label.")
+    play_p.add_argument("--no-warp-sim", action="store_true", help="Bypass state simulation and jump directly when warping.")
     play_p.add_argument("--no-audio", action="store_true", help="Disable audio playback (use NullAudioBackend).")
     play_p.add_argument("--watch", "--hot-reload", dest="watch", action="store_true", help="Automatically hot-reload when script changes on disk.")
     play_p.set_defaults(func=run_play)
@@ -269,6 +270,13 @@ def run_play(args: argparse.Namespace) -> int:
         tm.set_locale(args.lang)
 
     vm = StoryVM(graph, translation_manager=tm)
+    if getattr(args, "warp", None):
+        target_scene = args.warp
+        if target_scene in vm.graph.nodes:
+            vm.jump(target_scene)
+            sys.stderr.write(f"Warped directly to scene '{target_scene}'.\n")
+        else:
+            sys.stderr.write(f"Warning: Warp target '{target_scene}' not found in script.\n")
     player = TerminalPlayer(vm, use_colors=not args.no_color)
     player.play()
     return 0
@@ -515,7 +523,8 @@ def _cmd_play(args: argparse.Namespace) -> int:
     if getattr(args, "warp", None):
         target_scene = args.warp
         if target_scene in session.vm.graph.nodes:
-            session.vm.jump(target_scene)
+            simulate = not getattr(args, "no_warp_sim", False)
+            session.warp(target_scene, simulate=simulate)
             sys.stderr.write(f"Warped directly to scene '{target_scene}'.\n")
         else:
             sys.stderr.write(f"Warning: Warp target '{target_scene}' not found in script.\n")

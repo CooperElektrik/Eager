@@ -395,6 +395,43 @@ Narrator: done
         graph = to_graph([])
         self.assertEqual(graph.anonymous_scenes(), [])
 
+    def test_find_path_linear_and_branching(self) -> None:
+        graph = parse_graph(SAMPLE_SCRIPT)
+        # Entry to finish via peaceful_entry
+        path = graph.find_path("courtyard", "finish")
+        self.assertIsNotNone(path)
+        assert path is not None
+        self.assertEqual(path[0], "courtyard")
+        self.assertEqual(path[-1], "finish")
+        self.assertTrue(path == ["courtyard", "peaceful_entry", "finish"] or path == ["courtyard", "combat_start", "finish"])
+
+        # Direct path between adjacent
+        self.assertEqual(graph.find_path("peaceful_entry", "finish"), ["peaceful_entry", "finish"])
+        # Same node
+        self.assertEqual(graph.find_path("courtyard", "courtyard"), ["courtyard"])
+        # Non-existent target or backwards path
+        self.assertIsNone(graph.find_path("finish", "courtyard"))
+        self.assertIsNone(graph.find_path("courtyard", "nonexistent"))
+
+    def test_find_root_ancestor(self) -> None:
+        script = """
+## Intro --- intro
+Narrator: Hello.
+
+## Sub A --- sub_a
+Narrator: Branch A.
+> sub_b
+
+## Sub B --- sub_b
+Narrator: Branch B.
+"""
+        graph = parse_graph(script)
+        # sub_b's root ancestor should be sub_a
+        self.assertEqual(graph.find_root_ancestor("sub_b"), "sub_a")
+        # intro has no predecessors
+        self.assertIsNone(graph.find_root_ancestor("intro"))
+
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -88,3 +88,26 @@ Narrator: Right ending.
     assert "All-paths exploration completed" in captured.out
     # There are 3 leaves: (Door 1 -> Left), (Door 1 -> Right), (Door 2)
     assert "3 paths explored" in captured.out
+
+
+def test_cli_play_warp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
+    script = """## Start --- start
+Narrator: Hello.
+> next_scene
+
+## Next Scene --- next_scene
+Narrator: At next scene.
+"""
+    sf = tmp_path / "warp.es"
+    sf.write_text(script, encoding="utf-8")
+
+    import eager_runtime.cli
+
+    monkeypatch.setattr(eager_runtime.cli, "_run_interactive_player", lambda session, backend: None)
+
+    code = main(["play", str(sf), "--warp", "next_scene", "--backend", "pil"])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "Warped directly to scene 'next_scene'" in captured.err
+
+
