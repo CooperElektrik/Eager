@@ -23,7 +23,7 @@ from eager_runtime import (
     StorySnapshot,
     StoryVM,
 )
-from eager_runtime.saves import SaveData, SaveMetadata
+from eager_runtime.saves import SaveData, SaveMetadata, SaveMigrationError
 from eager_runtime.state import Checkpoint
 
 SAMPLE_SCRIPT = """
@@ -584,6 +584,261 @@ class TestSaveSystem(unittest.TestCase):
             self.assertGreater(shot_headless.stat().st_size, 0)
         finally:
             script_path.unlink(missing_ok=True)
+
+
+class TestSaveSchemaMigration(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.save_dir = Path(self.temp_dir.name)
+        StorySnapshot.clear_migrations()
+        SaveManager.clear_schema_migrations()
+
+    def tearDown(self) -> None:
+        StorySnapshot.clear_migrations()
+        SaveManager.clear_schema_migrations()
+        self.temp_dir.cleanup()
+
+    def test_story_snapshot_version_declaration(self) -> None:
+        snap = StorySnapshot(
+            current_scene="scene_1",
+            beat_index=0,
+            call_stack=(),
+            variables={"coins": 10},
+            visited_scenes=("scene_1",),
+        )
+        self.assertEqual(snap.version, 1)
+        d = snap.to_dict()
+        self.assertEqual(d["version"], 1)
+
+        restored = StorySnapshot.from_dict(d)
+        self.assertEqual(restored.version, 1)
+
+        snap_v2 = StorySnapshot(
+            current_scene="scene_1",
+            beat_index=0,
+            call_stack=(),
+            variables={"coins": 10},
+            visited_scenes=("scene_1",),
+            version=2,
+        )
+        self.assertEqual(snap_v2.version, 2)
+        d_v2 = snap_v2.to_dict()
+        self.assertEqual(d_v2["version"], 2)
+
+    def test_story_snapshot_migration(self) -> None:
+        def migrate_v1_to_v2(data: dict) -> dict:
+            # Upgrade variable format: coins -> currency: {"gold": coins}
+            coins = data["variables"].pop("coins", 0)
+            data["variables"]["currency"] = {"gold": coins}
+            data["version"] = 2
+            return data
+
+        StorySnapshot.register_migration(1, migrate_v1_to_v2)
+        try:
+            # Older snapshot dict at version 1
+            old_dict = {
+                "version": 1,
+                "current_scene": "intro",
+                "beat_index": 1,
+                "call_stack": [],
+                "variables": {"coins": 50},
+                "visited_scenes": ["intro"],
+            }
+            # Restoring should run migration
+            snap = StorySnapshot.from_dict(old_dict)
+            self.assertEqual(snap.version, 2)
+            self.assertEqual(snap.variables["currency"], {"gold": 50})
+            self.assertNotIn("coins", snap.variables)
+        finally:
+            StorySnapshot.clear_migrations()
+
+    def test_save_data_version_declaration(self) -> None:
+        cp = Checkpoint(
+            story={"current_scene": "start", "version": 1},
+            visual={},
+            audio={},
+            backlog_len=0,
+            ui={},
+        )
+        meta = SaveMetadata(
+            slot_name="test_slot",
+            timestamp="2026-10-22T00:00:00",
+            scene_id="start",
+            scene_name="Start",
+            dialogue_snippet="Hello",
+        )
+        save_data = SaveData(metadata=meta, checkpoint=cp)
+        self.assertEqual(save_data.version, 1)
+        d = save_data.to_dict()
+        self.assertEqual(d["version"], 1)
+        self.assertEqual(d["metadata"]["version"], 1)
+
+        restored = SaveData.from_dict(d)
+        self.assertEqual(restored.version, 1)
+        self.assertEqual(restored.metadata.version, 1)
+
+    def test_load_slot_unversioned_legacy_auto_upgrade(self) -> None:
+        from eager_core.storage import atomic_write_json
+
+        manager = SaveManager(self.save_dir)
+        # Legacy save file with NO "version" field
+        legacy_data = {
+            "metadata": {
+                "slot_name": "legacy",
+                "timestamp": "2026-10-22T00:00:00",
+                "scene_id": "intro",
+                "scene_name": "Intro",
+                "dialogue_snippet": "Legacy",
+                "playtime_seconds": 0.0,
+            },
+            "checkpoint": {
+                "story": {"current_scene": "intro"},
+                "visual": {"layer": "bg"},
+                "audio": {},
+                "backlog_len": 0,
+                "ui": {},
+            },
+        }
+        slot_file = self.save_dir / "legacy.json"
+        atomic_write_json(slot_file, legacy_data)
+
+        # Loading legacy save should succeed and auto-upgrade to version 1
+        cp = manager.load_slot("legacy")
+        self.assertIsNotNone(cp)
+        self.assertEqual(cp.story.get("current_scene"), "intro")
+        self.assertEqual(cp.visual.get("layer"), "bg")
+
+    def test_load_slot_with_registered_migration(self) -> None:
+        manager = SaveManager(self.save_dir)
+        cp = Checkpoint(
+            story={"current_scene": "hallway", "version": 1},
+            visual={"sprites": ["hero"]},
+            audio={},
+            backlog_len=0,
+            ui={},
+        )
+        manager.save_slot("slot_1", cp)
+
+        # Register migration v1 -> v2
+        def migrate_v1_to_v2(data: dict) -> dict:
+            # Upgrade sprites representation
+            sprites = data["checkpoint"]["visual"].get("sprites", [])
+            data["checkpoint"]["visual"]["entities"] = [{"name": s, "scale": 1.0} for s in sprites]
+            data["version"] = 2
+            return data
+
+        manager.register_migration(1, migrate_v1_to_v2)
+
+        # Load with target_version=2
+        loaded = manager.load_slot("slot_1", target_version=2)
+        self.assertIsNotNone(loaded)
+        entities = loaded.visual.get("entities")
+        self.assertEqual(entities, [{"name": "hero", "scale": 1.0}])
+
+    def test_load_slot_with_migration_hook_arg(self) -> None:
+        manager = SaveManager(self.save_dir)
+        cp = Checkpoint(
+            story={"current_scene": "room", "version": 1},
+            visual={"lighting": "dark"},
+            audio={},
+            backlog_len=0,
+            ui={},
+        )
+        manager.save_slot("slot_hook", cp)
+
+        # Provide custom migration hook to load_slot
+        def custom_hook(data: dict, src_v: int, tgt_v: int) -> dict:
+            self.assertEqual(src_v, 1)
+            self.assertEqual(tgt_v, 2)
+            data["checkpoint"]["visual"]["lighting"] = "ambient"
+            data["version"] = tgt_v
+            return data
+
+        loaded = manager.load_slot("slot_hook", target_version=2, migration_hook=custom_hook)
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded.visual.get("lighting"), "ambient")
+
+    def test_load_slot_with_manager_migration_hook(self) -> None:
+        def manager_hook(data: dict, src_v: int, tgt_v: int) -> dict:
+            data["checkpoint"]["ui"]["theme"] = "dark"
+            data["version"] = tgt_v
+            return data
+
+        manager = SaveManager(
+            self.save_dir,
+            target_version=2,
+            migration_hook=manager_hook,
+        )
+        cp = Checkpoint(
+            story={"current_scene": "room", "version": 1},
+            visual={},
+            audio={},
+            backlog_len=0,
+            ui={"theme": "default"},
+        )
+        # Save at v1 using an unupgraded manager
+        SaveManager(self.save_dir, target_version=1).save_slot("slot_mgr", cp)
+
+        loaded = manager.load_slot("slot_mgr")
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded.ui.get("theme"), "dark")
+
+    def test_load_slot_newer_version_raises_save_migration_error(self) -> None:
+        from eager_core.storage import atomic_write_json
+
+        manager = SaveManager(self.save_dir, target_version=1)
+        future_save = {
+            "version": 99,
+            "metadata": {"slot_name": "future"},
+            "checkpoint": {"story": {}, "visual": {}, "audio": {}, "backlog_len": 0, "ui": {}},
+        }
+        atomic_write_json(self.save_dir / "future.json", future_save)
+
+        with self.assertRaises(SaveMigrationError) as ctx:
+            manager.load_slot("future")
+        self.assertIn("newer than target version", str(ctx.exception))
+
+    def test_load_slot_missing_migration_raises_save_migration_error(self) -> None:
+        manager = SaveManager(self.save_dir, target_version=3)
+        cp = Checkpoint(
+            story={"current_scene": "room", "version": 1},
+            visual={},
+            audio={},
+            backlog_len=0,
+            ui={},
+        )
+        SaveManager(self.save_dir, target_version=1).save_slot("slot_gap", cp)
+
+        # target_version is 3, but no migration registered for v1
+        with self.assertRaises(SaveMigrationError) as ctx:
+            manager.load_slot("slot_gap")
+        self.assertIn("No migration registered", str(ctx.exception))
+
+    def test_quickload_and_autoload_with_migration(self) -> None:
+        def hook(data: dict, src_v: int, tgt_v: int) -> dict:
+            data["checkpoint"]["migrated"] = True
+            data["version"] = tgt_v
+            return data
+
+        manager = SaveManager(self.save_dir, target_version=2, migration_hook=hook)
+        cp = Checkpoint(
+            story={"current_scene": "room", "version": 1},
+            visual={},
+            audio={},
+            backlog_len=0,
+            ui={},
+        )
+        # Quicksave at v1
+        SaveManager(self.save_dir, target_version=1).quicksave(cp)
+        SaveManager(self.save_dir, target_version=1).autosave(cp)
+
+        # quickload & autoload through manager (target_version=2)
+        loaded_quick = manager.quickload()
+        self.assertIsNotNone(loaded_quick)
+        self.assertTrue(loaded_quick.story is not None)
+
+        loaded_auto = manager.autoload()
+        self.assertIsNotNone(loaded_auto)
 
 
 

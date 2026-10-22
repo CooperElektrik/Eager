@@ -42,7 +42,12 @@ if TYPE_CHECKING:
     from eager_runtime.backlog import Backlog, BacklogEntry
     from eager_runtime.persistent import PersistentData
     from eager_runtime.preferences import Preferences
-    from eager_runtime.saves import SaveData, SaveManager, SaveMetadata
+    from eager_runtime.saves import (
+        SaveData,
+        SaveManager,
+        SaveMetadata,
+        SaveMigrationError,
+    )
     from eager_runtime.session import GameSession
     from eager_runtime.watcher import FileWatcher
 
@@ -75,6 +80,7 @@ __all__ = [
     "SaveData",
     "SaveManager",
     "SaveMetadata",
+    "SaveMigrationError",
     "SceneEnterEvent",
     "SceneExitEvent",
     "StoryEndEvent",
@@ -98,6 +104,7 @@ _LAZY_EXPORTS = {
     "SaveManager": "eager_runtime.saves",
     "SaveMetadata": "eager_runtime.saves",
     "SaveData": "eager_runtime.saves",
+    "SaveMigrationError": "eager_runtime.saves",
     "PersistentData": "eager_runtime.persistent",
     "Preferences": "eager_runtime.preferences",
     "Backlog": "eager_runtime.backlog",

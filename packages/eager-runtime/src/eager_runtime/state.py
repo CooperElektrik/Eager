@@ -5,8 +5,9 @@ from __future__ import annotations
 import collections
 import copy
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
     from eager_core.audio import AudioMixerSaveState
@@ -40,6 +41,9 @@ class CallFrame:
 class StorySnapshot:
     """An immutable, serializable snapshot of the narrative execution state."""
 
+    CURRENT_VERSION: ClassVar[int] = 1
+    _migrations: ClassVar[dict[int, Callable[[dict[str, Any]], dict[str, Any]]]] = {}
+
     current_scene: str | None
     beat_index: int
     call_stack: tuple[CallFrame, ...]
@@ -51,10 +55,26 @@ class StorySnapshot:
     just_entered_scene: bool = False
     is_ended: bool = False
     rng_state: list[Any] | None = None
+    version: int = 1
+
+    @classmethod
+    def register_migration(
+        cls,
+        from_version: int,
+        migration_fn: Callable[[dict[str, Any]], dict[str, Any]],
+    ) -> None:
+        """Register a schema migration function for a specific StorySnapshot version."""
+        cls._migrations[from_version] = migration_fn
+
+    @classmethod
+    def clear_migrations(cls) -> None:
+        """Clear all registered StorySnapshot migrations."""
+        cls._migrations.clear()
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize snapshot to a JSON-compatible dictionary."""
         return {
+            "version": self.version,
             "current_scene": self.current_scene,
             "beat_index": self.beat_index,
             "call_stack": [frame.to_dict() for frame in self.call_stack],
@@ -73,12 +93,25 @@ class StorySnapshot:
         return json.dumps(self.to_dict(), indent=indent)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> StorySnapshot:
-        """Restore a StorySnapshot from a dictionary."""
+    def from_dict(
+        cls,
+        data: dict[str, Any],
+        *,
+        target_version: int | None = None,
+    ) -> StorySnapshot:
+        """Restore a StorySnapshot from a dictionary, applying migrations if necessary."""
+        data = copy.deepcopy(data)
+        target = cls.CURRENT_VERSION if target_version is None else target_version
+        version = int(data.get("version", 1))
+        while (version < target or version in cls._migrations) and version in cls._migrations:
+            data = cls._migrations[version](data)
+            version = int(data.get("version", version + 1))
+
         call_stack = tuple(CallFrame.from_dict(f) for f in data.get("call_stack", []))
         variables = copy.deepcopy(data.get("variables", {}))
         visited_scenes = tuple(data.get("visited_scenes", []))
         return cls(
+            version=version,
             current_scene=data.get("current_scene"),
             beat_index=data.get("beat_index", 0),
             call_stack=call_stack,
