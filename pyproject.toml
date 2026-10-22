@@ -48,6 +48,10 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 packages = []
 
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+testpaths = ["packages"]
+
 [tool.importlinter]
 root_packages = [
     "eager_core",

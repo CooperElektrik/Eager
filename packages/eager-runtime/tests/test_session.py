@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import eager_script
@@ -903,6 +904,35 @@ Alice: Chosen 2.
     # Confirm choice
     session.handle_input(InputAction.CONFIRM)
     assert session.director.ui_state.text == "Chosen 2."
+
+
+def test_input_prompt_event_and_submission(tmp_path: Path):
+    script = """
+## Start
+~ input player_name "What is your name?"
+Alice: Hello, [player_name]!
+"""
+    script_file = tmp_path / "story.es"
+    script_file.write_text(script, encoding="utf-8")
+
+    session = GameSession(script_file)
+    ev = session.advance()
+
+    # Should pause on input_prompt
+    assert isinstance(ev, InputPromptEvent)
+    assert ev.var_name == "player_name"
+    assert ev.prompt == "What is your name?"
+
+    # Advance is blocked until input is submitted
+    assert session.advance() == ev
+
+    # Submit input
+    diag = session.submit_input("Hero")
+    assert diag is not None
+    assert diag.type == "dialogue"
+    assert "Hello, Hero!" in diag.text
+    assert session.vm.get_variable("player_name") == "Hero"
+
 
 
 
