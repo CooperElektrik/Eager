@@ -26,6 +26,7 @@ from eager_core.protocols import (
 )
 
 from eager_runtime.player import TerminalPlayer
+from eager_runtime.project import load_project_graph, resolve_project_scripts
 from eager_runtime.runtime import StoryVM
 
 # ── shared helpers ────────────────────────────────────────────────────
@@ -252,7 +253,6 @@ def run_play(args: argparse.Namespace) -> int:
         print(f"Error: Screenplay file '{script_path}' not found.", file=sys.stderr)
         return 1
 
-    from eager_runtime.project import load_project_graph
     graph = load_project_graph(script_path)
 
     if not graph.nodes:
@@ -281,7 +281,6 @@ def run_inspect(args: argparse.Namespace) -> int:
         print(f"Error: Screenplay file '{script_path}' not found.", file=sys.stderr)
         return 1
 
-    from eager_runtime.project import load_project_graph
     graph = load_project_graph(script_path)
 
     print(f"File: {script_path.name}")
@@ -302,7 +301,6 @@ def run_test_run(args: argparse.Namespace) -> int:
         print(f"Error: Screenplay file '{script_path}' not found.", file=sys.stderr)
         return 1
 
-    from eager_runtime.project import load_project_graph
     graph = load_project_graph(script_path)
 
     from eager_core.i18n import TranslationManager
@@ -745,7 +743,6 @@ def _cmd_check(args: argparse.Namespace) -> int:
         sys.stderr.write(f"Error: Path '{target_path}' not found.\n")
         return 1
 
-    from eager_runtime.project import resolve_project_scripts, load_project_graph
     es_files = resolve_project_scripts(target_path)
     if not es_files:
         sys.stderr.write(f"Error: No .es scripts found in '{target_path}'.\n")
@@ -795,7 +792,6 @@ def _cmd_check(args: argparse.Namespace) -> int:
             return 1
 
         from eager_runtime.assets import check_assets
-        from eager_runtime.project import load_project_graph
 
         graph = load_project_graph(target_path)
         report = check_assets(graph, resolved_asset_dir)
@@ -864,11 +860,9 @@ def _resolve_script_file(target_path: Path) -> Path | None:
 def _cmd_i18n_extract(args: argparse.Namespace) -> int:
     """Extract translatable screenplay strings into a catalog JSON file."""
     target = Path(args.script)
-    from eager_runtime.project import load_project_graph
-
     try:
         graph = load_project_graph(target)
-    except Exception as e:
+    except OSError as e:
         sys.stderr.write(f"Error: failed to load project graph for '{target}': {e}\n")
         return 1
 
@@ -909,11 +903,9 @@ def _cmd_i18n_extract(args: argparse.Namespace) -> int:
 def _cmd_i18n_check(args: argparse.Namespace) -> int:
     """Check translation coverage and missing strings for catalog(s)."""
     target = Path(args.script)
-    from eager_runtime.project import load_project_graph
-
     try:
         graph = load_project_graph(target)
-    except Exception as e:
+    except OSError as e:
         sys.stderr.write(f"Error: failed to load project graph for '{target}': {e}\n")
         return 1
 

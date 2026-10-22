@@ -26,7 +26,6 @@ from eager_core.protocols import (
     load_providers,
 )
 from eager_core.storage import get_default_save_dir
-from eager_script import parse_graph
 
 from eager_runtime.dispatcher import EventDispatcher
 from eager_runtime.headless import (
@@ -37,6 +36,7 @@ from eager_runtime.headless import (
 )
 from eager_runtime.persistent import PersistentData
 from eager_runtime.preferences import Preferences
+from eager_runtime.project import load_project_graph, resolve_project_scripts
 from eager_runtime.runtime import StoryVM
 from eager_runtime.saves import SaveManager
 from eager_runtime.state import Checkpoint, CheckpointHistory, StorySnapshot
@@ -150,7 +150,6 @@ class GameSession:
         # Parse scene graph
         if isinstance(project_or_script, (str, Path)):
             self.script_path = Path(project_or_script)
-            from eager_runtime.project import load_project_graph, resolve_project_scripts
             self.graph: Any = load_project_graph(self.script_path)
             self._project_scripts = resolve_project_scripts(self.script_path)
         elif hasattr(project_or_script, "graph"):
@@ -1011,7 +1010,6 @@ class GameSession:
 
         # 2. Re-parse the script
         try:
-            from eager_runtime.project import load_project_graph, resolve_project_scripts
             new_graph = load_project_graph(target_path)
             self._project_scripts = resolve_project_scripts(target_path)
             if self.watcher is not None:

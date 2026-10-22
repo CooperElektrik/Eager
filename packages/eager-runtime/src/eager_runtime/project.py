@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from eager_core.types import Color
-from eager_script import SceneGraph, to_graph
+from eager_script import SceneGraph, parse_graph, to_graph
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +137,6 @@ def merge_graphs(graphs: list[SceneGraph], *, strict: bool = False) -> SceneGrap
 
 def resolve_project_scripts(target_path: Path) -> list[Path]:
     """Resolve all .es files in a project directory or via @include directives."""
-    import re
     es_files: list[Path] = []
 
     if target_path.is_dir():
@@ -180,7 +180,6 @@ def resolve_project_scripts(target_path: Path) -> list[Path]:
 
 def load_project_graph(target_path: Path, *, strict: bool = False) -> SceneGraph:
     """Load and merge all scene graphs for a project or script file."""
-    from eager_script import parse_graph
 
     es_files = resolve_project_scripts(target_path)
     graphs: list[SceneGraph] = []
@@ -189,8 +188,8 @@ def load_project_graph(target_path: Path, *, strict: bool = False) -> SceneGraph
         try:
             text = es_file.read_text(encoding="utf-8")
             graphs.append(parse_graph(text))
-        except Exception as e:
-            logger.warning(f"Failed to parse {es_file}: {e}")
+        except (ValueError, TypeError, OSError):
+            logger.warning(f"Failed to parse {es_file}")
 
     if not graphs:
         return to_graph([])
