@@ -9,9 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Language Server Protocol (`eager-script-lsp`):** Added the `eager-script-lsp` package providing full LSP 3.17+ server support for Eager-Script screenplays, featuring resilient document scanning, workspace symbol indexing, real-time diagnostics (syntax, dead targets, asset checks, i18n keys), context-aware completions, hover previews, go-to-definition, reference search, call hierarchies, multi-file rename, semantic tokens, inlay hints, color decorators, and "Warp & Play" code lenses.
+- **Playtime Tracking & Screenshots:** Added session playtime accumulation (`_playtime`, `playtime_formatted`) to `GameSession` and `SaveMetadata`, and wired `InputAction.SCREENSHOT` to capture timestamped frame screenshots to `save_dir / "screenshots"`.
+- **Project Configuration & Themes:** Added theme name and custom `[theme]` color overrides parsing in `ProjectConfig.load()`, propagating configured theme styling into `GameSession` via `eager run`.
+- **Language Server:** Added inlay hints for character display names on speaker tokens when using short character identifiers.
+- **Language Server:** Added the `eager-script-lsp` package providing full LSP 3.17+ server support for Eager-Script screenplays, featuring resilient document scanning, workspace symbol indexing, real-time diagnostics (syntax, dead targets, asset checks, i18n keys), context-aware completions, hover previews, go-to-definition, reference search, call hierarchies, multi-file rename, semantic tokens, inlay hints, color decorators, and "Warp & Play" code lenses.
 - **CLI & Integration:** Added the `eager-script-lsp` standalone executable and the `eager lsp` runtime CLI subcommand supporting stdio, TCP, WebSocket, and headless batch diagnostics (`--check`). Added optional `lsp` extra to `eager-runtime`.
 - **VS Code Extension:** Added VS Code extension in `editors/vscode` with full TextMate grammar and language server integration.
+
+### Fixed
+
+- **Language Server:** Fixed color normalization in `compute_document_colors` where normalized float color channels were erroneously divided by 255.0 a second time.
 
 ## [0.4.0] - 2026-10-21
 

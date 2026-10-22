@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Inlay hints for character display names on speaker tokens in `compute_inlay_hints()` when a speaker identifier has a declared character display name (e.g. `a: Hello` -> `a ("Alice"): Hello`).
+
+### Fixed
+
+- Color literal normalization in `compute_document_colors()`: removed redundant second division by 255.0, restoring proper RGB color preview channels.
+
 ## [0.4.0] - 2026-10-22
 
 ### Added

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `GameSession` session playtime accumulation (`_playtime` and `playtime` property) tracked in `update(dt)`, persisted via `save_slot()` and `quicksave()`, and restored upon `load_game()` and `quickload()`.
+- `SaveMetadata.playtime_formatted` property formatting playtime as `HH:MM:SS` or `MM:SS`.
+- `GameSession.take_screenshot()` and input routing for `InputAction.SCREENSHOT` to save timestamped PNG screenshots to `save_dir / "screenshots"` (using `renderer.save_frame()` when available).
+- `ProjectConfig.load()` support for `theme` and custom `[theme]` color overrides (`theme_overrides`), passed as `config=cfg` into `GameSession` in `cli.py:_cmd_run`.
+
 ## [0.4.0] - 2026-10-21
 
 ### Added

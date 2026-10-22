@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 from pathlib import Path
 from typing import Any
 
@@ -59,11 +60,34 @@ def _create_default_stage(
     return NullStage(virtual_width=virtual_width, virtual_height=virtual_height)
 
 
-def _create_default_ui(width: int = 1280, height: int = 720) -> Any:
+def _resolve_theme(config: Any) -> Any:
+    """Instantiate a Theme object from ProjectConfig if eager_graphics is available."""
+    if config is None:
+        return None
+    theme_name = getattr(config, "theme", None)
+    theme_overrides = getattr(config, "theme_overrides", {}) or {}
+    if not theme_name and not theme_overrides:
+        return None
+    try:
+        from eager_graphics.theme import Theme
+
+        kwargs: dict[str, Any] = {}
+        if theme_name:
+            kwargs["name"] = theme_name
+        kwargs.update(theme_overrides)
+        return Theme(**kwargs)
+    except (ImportError, TypeError, ValueError, AttributeError):
+        return None
+
+
+def _create_default_ui(width: int = 1280, height: int = 720, theme: Any = None) -> Any:
     load_providers()
     factory = get_ui_factory()
     if factory is not None:
-        return factory(width=width, height=height)
+        try:
+            return factory(width=width, height=height, theme=theme)
+        except TypeError:
+            return factory(width=width, height=height)
     return NullUI(width=width, height=height)
 
 
@@ -108,6 +132,7 @@ class GameSession:
         ui: UIProtocol | None = None,
         screens: ScreenManagerProtocol | None = None,
         headless: bool = False,
+        renderer: Any = None,
     ) -> None:
         self.script_path = Path(project_or_script) if isinstance(project_or_script, (str, Path)) else None
         self.backend = backend
@@ -117,6 +142,10 @@ class GameSession:
         self.virtual_height = virtual_height
         self.auto_reload = auto_reload or watch
         self._ui_dirty: bool = True
+        self.config: Any = config
+        self.renderer: Any = renderer
+        self._last_renderer: Any = None
+        self._playtime: float = 0.0
 
         # Parse scene graph
         if isinstance(project_or_script, (str, Path)):
@@ -183,12 +212,13 @@ class GameSession:
 
         self.checkpoints = CheckpointHistory(max_history=rollback_limit)
         self.keymap = Keymap()
+        resolved_theme = _resolve_theme(config) if config is not None else None
         if ui is not None:
             self.ui: Any = ui
         elif headless:
             self.ui = NullUI(width=1280, height=720)
         else:
-            self.ui = _create_default_ui(width=1280, height=720)
+            self.ui = _create_default_ui(width=1280, height=720, theme=resolved_theme)
         self.overlay: Any = self.ui
 
         # Persistent state, preferences, and saves
@@ -238,6 +268,11 @@ class GameSession:
             self.watcher: FileWatcher | None = FileWatcher(self.script_path)
         else:
             self.watcher = None
+
+    @property
+    def playtime(self) -> float:
+        """Accumulated session playtime in seconds."""
+        return self._playtime
 
     def apply_preferences(self) -> None:
         """Apply current preferences to audio mixer, translation locale, and subsystems."""
@@ -463,13 +498,20 @@ class GameSession:
     def save_game(self, slot_name: str) -> Any:
         """Save current checkpoint to named slot."""
         cp = self.checkpoints.get_latest() or self._capture_checkpoint()
-        return self.save_manager.save_slot(slot_name, cp)
+        return self.save_manager.save_slot(
+            slot_name,
+            cp,
+            metadata_extra={"playtime_seconds": self._playtime},
+        )
 
     def load_game(self, slot_name: str) -> bool:
         """Load game from named slot."""
+        meta = self.save_manager.get_slot_metadata(slot_name)
         cp = self.save_manager.load_slot(slot_name)
         if cp is None:
             return False
+        if meta is not None:
+            self._playtime = meta.playtime_seconds
         self._restore_checkpoint(cp)
         self.checkpoints.clear()
         self.checkpoints.push(cp)
@@ -478,10 +520,15 @@ class GameSession:
     def quicksave(self) -> Any:
         """Quicksave current checkpoint."""
         cp = self.checkpoints.get_latest() or self._capture_checkpoint()
-        return self.save_manager.quicksave(cp)
+        return self.save_manager.quicksave(cp, playtime_seconds=self._playtime)
 
     def quickload(self) -> bool:
         """Quickload from quicksave slot."""
+        slot = self.save_manager._latest_rotated_slot("quick", self.save_manager.max_quicksaves)
+        if slot is not None:
+            meta = self.save_manager.get_slot_metadata(slot)
+            if meta is not None:
+                self._playtime = meta.playtime_seconds
         cp = self.save_manager.quickload()
         if cp is None:
             return False
@@ -543,7 +590,10 @@ class GameSession:
         return False
 
     def update(self, dt: float) -> None:
-        """Update animation timelines, compositor, audio, typewriter reveal, and timers."""
+        """Update animation timelines, compositor, audio, typewriter reveal, timers, and playtime."""
+        if dt > 0.0:
+            self._playtime += dt
+
         self.director.step(dt)
         self.audio.update(dt)
 
@@ -606,6 +656,10 @@ class GameSession:
 
     def draw(self, ui_backend: Any, width: int, height: int) -> None:
         """Draw the stage compositor and UI chrome through the given renderer / backend."""
+        self._last_renderer = ui_backend
+        if self.renderer is None:
+            self.renderer = ui_backend
+
         if self.compositor is not None and hasattr(ui_backend, "render_compositor"):
             ui_backend.render_compositor(self.compositor, width, height)
 
@@ -634,6 +688,37 @@ class GameSession:
         if self.screens.active_screen:
             self.screens.set_viewport(width, height)
             self.screens.draw(ui_backend, width, height)
+
+    def take_screenshot(
+        self,
+        target_path: str | Path | None = None,
+        renderer: Any = None,
+        **kwargs: Any,
+    ) -> Path:
+        """Capture the current frame and save a timestamped PNG to save_dir / 'screenshots'."""
+        r = renderer or self.renderer or self._last_renderer
+        screenshot_dir = self.save_manager.save_dir / "screenshots"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        if target_path is None:
+            now = datetime.datetime.now(datetime.UTC)
+            now_str = now.strftime("%Y%m%d_%H%M%S")
+            candidate = screenshot_dir / f"screenshot_{now_str}.png"
+            if candidate.exists():
+                now_str = now.strftime("%Y%m%d_%H%M%S_%f")
+                candidate = screenshot_dir / f"screenshot_{now_str}.png"
+            target_path = candidate
+        else:
+            target_path = Path(target_path)
+
+        if r is not None and hasattr(r, "save_frame"):
+            r.save_frame(target_path, **kwargs)
+        else:
+            # Headless fallback: minimal 1x1 valid PNG
+            target_path.write_bytes(
+                b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4"
+                b"\x00\x00\x00\rIDATx\x9cc`\x00\x00\x00\x02\x00\x01H\xaf\xa4q\x00\x00\x00\x00IEND\xaeB`\x82"
+            )
+        return target_path
 
     def _handle_quick_action(self, action_name: str) -> Any:
         """Handle clicks on the in-game quick menu buttons."""
@@ -683,6 +768,8 @@ class GameSession:
                 y = payload.get("y", 0.0)
                 changed = self.screens.handle_mouse_move(x, y)
                 return bool(changed)
+            if action == InputAction.SCREENSHOT:
+                return self.take_screenshot(**payload)
             return None
 
         # 2. In-game interactions:
@@ -804,6 +891,8 @@ class GameSession:
             return self.screens.show("history", self)
         elif action == InputAction.RELOAD:
             return self.hot_reload()
+        elif action == InputAction.SCREENSHOT:
+            return self.take_screenshot(**payload)
         elif action == InputAction.POINTER_CLICK:
             x = payload.get("x", 0.0)
             y = payload.get("y", 0.0)

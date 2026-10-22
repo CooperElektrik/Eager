@@ -146,3 +146,35 @@ class TestCLIAndPlayer(unittest.TestCase):
                 code = main(["new", str(proj_path)])
                 self.assertEqual(code, 1)
                 self.assertIn("already exists", mock_err.getvalue())
+
+    def test_cmd_run_passes_config_with_theme(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            proj_path = Path(tmp_dir) / "themed_proj"
+            proj_path.mkdir()
+            (proj_path / "game.toml").write_text(
+                """[game]
+title = "Themed Story"
+theme = "slate"
+entry_script = "story.es"
+
+[theme]
+accent_color = "#ff8800"
+""",
+                encoding="utf-8",
+            )
+            (proj_path / "story.es").write_text(
+                "## Start --- start\nNarrator: Hello\n",
+                encoding="utf-8",
+            )
+            with patch("eager_runtime.session.GameSession") as mock_session_cls, patch(
+                "eager_runtime.cli._run_interactive_player"
+            ):
+                code = main(["run", str(proj_path)])
+                self.assertEqual(code, 0)
+                mock_session_cls.assert_called_once()
+                call_kwargs = mock_session_cls.call_args.kwargs
+                self.assertIn("config", call_kwargs)
+                cfg = call_kwargs["config"]
+                self.assertEqual(cfg.title, "Themed Story")
+                self.assertEqual(cfg.theme, "slate")
+                self.assertIn("accent_color", cfg.theme_overrides)

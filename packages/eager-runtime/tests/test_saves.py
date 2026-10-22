@@ -3,6 +3,9 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock
+
+from eager_core.input import InputAction
 
 from eager_runtime import (
     GameSession,
@@ -283,6 +286,51 @@ class TestSaveSystem(unittest.TestCase):
             self.assertTrue(pref_file.exists())
             saved_pref = Preferences.load(pref_file)
             self.assertEqual(saved_pref.language, "ja")
+        finally:
+            script_path.unlink(missing_ok=True)
+
+    def test_game_session_playtime_and_screenshot(self):
+        with tempfile.NamedTemporaryFile("w+", suffix=".es", delete=False) as f:
+            f.write(SAMPLE_SCRIPT)
+            script_path = Path(f.name)
+
+        try:
+            custom_dir = self.save_dir / "playtime_test"
+            custom_dir.mkdir(parents=True, exist_ok=True)
+            session = GameSession(script_path, save_dir=custom_dir)
+
+            # Playtime starts at 0.0
+            self.assertEqual(session.playtime, 0.0)
+
+            # Update accumulates dt
+            session.update(2.5)
+            session.update(3.5)
+            self.assertAlmostEqual(session.playtime, 6.0)
+
+            # Save preserves playtime in metadata
+            meta = session.save_game("play_slot")
+            self.assertAlmostEqual(meta.playtime_seconds, 6.0)
+            self.assertEqual(meta.playtime_formatted, "00:06")
+
+            # Loading slot restores playtime
+            session2 = GameSession(script_path, save_dir=custom_dir)
+            self.assertEqual(session2.playtime, 0.0)
+            self.assertTrue(session2.load_game("play_slot"))
+            self.assertAlmostEqual(session2.playtime, 6.0)
+
+            # Screenshot handling with renderer.save_frame()
+            mock_renderer = MagicMock()
+            session.renderer = mock_renderer
+            shot_path = session.handle_input(InputAction.SCREENSHOT)
+            self.assertTrue(mock_renderer.save_frame.called)
+            self.assertEqual(shot_path.parent, custom_dir / "screenshots")
+            self.assertTrue(shot_path.name.endswith(".png"))
+
+            # Headless screenshot fallback without renderer creates real valid PNG
+            session_headless = GameSession(script_path, save_dir=custom_dir, headless=True)
+            shot_headless = session_headless.handle_input(InputAction.SCREENSHOT)
+            self.assertTrue(shot_headless.is_file())
+            self.assertGreater(shot_headless.stat().st_size, 0)
         finally:
             script_path.unlink(missing_ok=True)
 

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from eager_core.types import Color
 from eager_script import SceneGraph, to_graph
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ class ProjectConfig:
     virtual_width: int = 1920
     virtual_height: int = 1080
     theme: str = "default"
+    theme_overrides: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def load(cls, toml_path: Path) -> ProjectConfig:
@@ -34,6 +36,30 @@ class ProjectConfig:
 
         game_data = data.get("game", {})
         window_data = data.get("window", {})
+        theme_section = data.get("theme", {})
+
+        theme_name = "default"
+        theme_overrides: dict[str, Any] = {}
+
+        if isinstance(theme_section, str):
+            theme_name = theme_section
+        elif isinstance(theme_section, dict):
+            theme_name = str(theme_section.get("name") or game_data.get("theme") or "default")
+            for k, v in theme_section.items():
+                if k == "name":
+                    continue
+                if isinstance(v, str) and (
+                    v.startswith("#")
+                    or v.lower() in ("black", "white", "red", "green", "blue", "transparent")
+                ):
+                    try:
+                        theme_overrides[k] = Color.from_hex(v)
+                    except (ValueError, TypeError):
+                        theme_overrides[k] = v
+                else:
+                    theme_overrides[k] = v
+        else:
+            theme_name = str(game_data.get("theme", "default"))
 
         return cls(
             title=game_data.get("title", "Untitled Project"),
@@ -42,6 +68,8 @@ class ProjectConfig:
             entry_script=game_data.get("entry_script", "main.es"),
             virtual_width=int(window_data.get("width", 1920)),
             virtual_height=int(window_data.get("height", 1080)),
+            theme=theme_name,
+            theme_overrides=theme_overrides,
         )
 
 

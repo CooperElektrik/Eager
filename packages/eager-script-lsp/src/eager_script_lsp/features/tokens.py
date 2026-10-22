@@ -123,14 +123,10 @@ def compute_document_colors(doc: ScriptDocument) -> list[ColorInformation]:
             hex_str = span.value
             try:
                 c = EagerColor.from_hex(hex_str)
-                r_val = c.r / 255.0
-                g_val = c.g / 255.0
-                b_val = c.b / 255.0
-                a_val = c.a / 255.0
                 colors.append(
                     ColorInformation(
                         range=span.range,
-                        color=Color(red=r_val, green=g_val, blue=b_val, alpha=a_val),
+                        color=Color(red=c.r, green=c.g, blue=c.b, alpha=c.a),
                     )
                 )
             except (ValueError, TypeError, KeyError):

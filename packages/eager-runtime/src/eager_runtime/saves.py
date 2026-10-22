@@ -45,6 +45,17 @@ class SaveMetadata:
             playtime_seconds=float(data.get("playtime_seconds", 0.0)),
         )
 
+    @property
+    def playtime_formatted(self) -> str:
+        """Format playtime in seconds to HH:MM:SS (or MM:SS if under an hour)."""
+        total = int(self.playtime_seconds)
+        hours = total // 3600
+        mins = (total % 3600) // 60
+        secs = total % 60
+        if hours > 0:
+            return f"{hours:02d}:{mins:02d}:{secs:02d}"
+        return f"{mins:02d}:{secs:02d}"
+
 
 @dataclass(frozen=True, slots=True)
 class SaveData:

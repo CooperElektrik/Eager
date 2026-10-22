@@ -154,3 +154,29 @@ def test_merge_graphs_cyclic_references() -> None:
     assert set(merged.nodes.keys()) == {"a", "b", "c"}
     assert len(merged.edges) == 3
 
+
+def test_project_config_theme_and_overrides(tmp_path: Path) -> None:
+    toml_path = tmp_path / "game.toml"
+    toml_path.write_text(
+        """
+[game]
+title = "Themed VN"
+theme = "dark"
+
+[theme]
+accent_color = "#ffaa00"
+bg_color = "#112233"
+font_size = 18
+""",
+        encoding="utf-8",
+    )
+    cfg = ProjectConfig.load(toml_path)
+    assert cfg.title == "Themed VN"
+    assert cfg.theme == "dark"
+    assert "accent_color" in cfg.theme_overrides
+    assert cfg.theme_overrides["accent_color"].r == pytest.approx(1.0)
+    assert cfg.theme_overrides["accent_color"].g == pytest.approx(170 / 255, abs=0.01)
+    assert cfg.theme_overrides["accent_color"].b == pytest.approx(0.0)
+    assert cfg.theme_overrides["font_size"] == 18
+
+

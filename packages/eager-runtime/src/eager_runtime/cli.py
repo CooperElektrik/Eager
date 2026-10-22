@@ -628,6 +628,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         audio_backend=audio_backend,
         asset_dir=_resolve_asset_dir(script_path, asset_dir),
         auto_reload=getattr(args, "watch", False),
+        config=cfg,
     )
     _run_interactive_player(session, backend=args.backend)
     return 0

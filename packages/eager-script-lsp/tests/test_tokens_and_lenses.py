@@ -43,6 +43,11 @@ Narrator: Colored {color=#112233}text{/color}
     doc = ScriptDocument("file:///test.es", text)
     colors = compute_document_colors(doc)
     assert len(colors) == 3
+    # Check normalized color values [0.0, 1.0]
+    assert colors[1].color.red == 0.0
+    assert colors[1].color.green == 1.0
+    assert colors[1].color.blue == 0.0
+    assert colors[1].color.alpha == 1.0
 
     # Color presentation
     pres = compute_color_presentation(
@@ -108,6 +113,26 @@ Narrator: Here
             Range(start=Position(line=2, character=0), end=Position(line=4, character=0)),
         )
         assert not any("mountain_shrine" in h.label for h in hints_filtered)
+
+        # Inlay Hints for character display names
+        text_char = """@character a "Alice"
+## Start --- start
+a: Hello world!
+Alice: Already display name!
+"""
+        doc_char = ScriptDocument("file:///char.es", text_char)
+        index.documents["file:///char.es"] = doc_char
+        index._rebuild_index()
+
+        hints_char = compute_inlay_hints(
+            doc_char,
+            index,
+            Range(start=Position(line=0, character=0), end=Position(line=4, character=0)),
+        )
+        alice_hints = [h for h in hints_char if "Alice" in h.label]
+        assert len(alice_hints) == 1
+        assert alice_hints[0].position.line == 2
+        assert alice_hints[0].position.character == 1
 
 
 def test_semantic_tokens_no_overlap():

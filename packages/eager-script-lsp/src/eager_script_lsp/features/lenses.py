@@ -74,7 +74,7 @@ def compute_inlay_hints(
     workspace: WorkspaceIndex,
     range_: Range,
 ) -> list[InlayHint]:
-    """Provide Inlay Hints for auto-generated label slugs and translation coverage."""
+    """Provide Inlay Hints for auto-generated label slugs, character display names, and translation coverage."""
     hints: list[InlayHint] = []
     start_line = range_.start.line
     end_line = range_.end.line
@@ -93,7 +93,23 @@ def compute_inlay_hints(
                 )
             )
 
-    # 2. Locale status hints on dialogue lines
+    # 2. Character display name hints on speaker tokens
+    for span in doc.spans:
+        if span.kind == "speaker" and start_line <= span.start_line <= end_line:
+            char_sym = workspace.get_character(span.value)
+            if char_sym is not None and char_sym.name and char_sym.name != span.value:
+                pos = Position(line=span.end_line, character=span.end_col)
+                hints.append(
+                    InlayHint(
+                        position=pos,
+                        label=f' ("{char_sym.name}")',
+                        kind=InlayHintKind.Type,
+                        padding_left=True,
+                        tooltip=f"Character: {char_sym.name}",
+                    )
+                )
+
+    # 3. Locale status hints on dialogue lines
     if workspace.translation_catalogs:
         for span in doc.spans:
             if span.kind == "speaker" and start_line <= span.start_line <= end_line:
