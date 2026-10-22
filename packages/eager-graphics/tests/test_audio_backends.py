@@ -73,6 +73,10 @@ class TestHardwareAudioBackends(unittest.TestCase):
         from unittest.mock import patch
 
         import miniaudio
+        try:
+            miniaudio.PlaybackDevice()
+        except miniaudio.MiniaudioError:
+            pytest.skip("No audio device available to initialize miniaudio backend")
 
         from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
 
