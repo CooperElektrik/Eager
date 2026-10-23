@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import time
 
 __all__ = ["FrameClock"]
+
+logger = logging.getLogger(__name__)
 
 
 class FrameClock:
@@ -63,6 +66,8 @@ class FrameClock:
 
         dt = now - self._last_time
         self._last_dt = max(0.0, dt)
+        if self._last_dt > 0.5:
+            logger.warning("Large frame delta: %.3fs (possible frame stall)", self._last_dt)
         self._last_time = now
         self._frame_count += 1
         self._timestamps.append(now)
@@ -77,6 +82,7 @@ class FrameClock:
 
     def reset(self) -> None:
         """Clear all recorded timestamps and counters."""
+        logger.debug("Resetting FrameClock (was %d frames, %.3fs elapsed)", self._frame_count, self.elapsed)
         self._timestamps.clear()
         self._frame_count = 0
         self._start_time = None

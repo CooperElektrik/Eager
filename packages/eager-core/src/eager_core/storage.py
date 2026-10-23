@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import cast
+
+logger = logging.getLogger(__name__)
 
 
 def get_default_save_dir(game_name: str = "default") -> Path:
@@ -27,16 +30,19 @@ def atomic_write_json(file_path: Path, data: object) -> None:
     text = json.dumps(data, indent=2)
     _ = temp_path.write_text(text, encoding="utf-8")
     _ = temp_path.replace(file_path)
+    logger.debug("Atomically wrote JSON to %s", file_path)
 
 
 def safe_read_json(file_path: Path, default: object = None, *, backup_corrupt: bool = False) -> object:
     """Read JSON file safely, returning default if missing or corrupted."""
     if not file_path.exists():
+        logger.debug("JSON file not found: %s (returning default)", file_path)
         return default
     try:
         text = file_path.read_text(encoding="utf-8")
         return cast(object, json.loads(text))
     except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+        logger.warning("Failed to read JSON file %s (returning default)", file_path, exc_info=True)
         if backup_corrupt:
             try:
                 import shutil

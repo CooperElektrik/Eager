@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 
 from eager_core.types import Color
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,7 +91,7 @@ def parse_text_tags(raw: str) -> FormattedText:
                 c = Color.from_hex(hex_val)
                 color_stack.append(c)
             except ValueError:
-                pass
+                logger.debug("Invalid color tag {color=%s}, ignoring", hex_val)
         elif tag_content == "/color":
             if color_stack:
                 _ = color_stack.pop()
@@ -98,7 +101,7 @@ def parse_text_tags(raw: str) -> FormattedText:
                 mult = float(val)
                 size_stack.append(mult)
             except ValueError:
-                pass
+                logger.debug("Invalid size tag {size=%s}, ignoring", val)
         elif tag_content == "/size":
             if len(size_stack) > 1:
                 _ = size_stack.pop()
@@ -109,6 +112,7 @@ def parse_text_tags(raw: str) -> FormattedText:
                 try:
                     dur = float(tag_content.split("=", 1)[1])
                 except ValueError:
+                    logger.debug("Invalid wait tag {w=%s}, using default 0.5s", tag_content)
                     dur = 0.5
             pauses.append(PausePoint(char_index=current_char_offset, duration=dur))
         elif tag_content == "p" or tag_content.startswith("p="):
@@ -118,6 +122,7 @@ def parse_text_tags(raw: str) -> FormattedText:
                 try:
                     dur = float(tag_content.split("=", 1)[1])
                 except ValueError:
+                    logger.debug("Invalid paragraph tag {p=%s}, using default 1.0s", tag_content)
                     dur = 1.0
             pauses.append(PausePoint(char_index=current_char_offset, duration=dur))
 

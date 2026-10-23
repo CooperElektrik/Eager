@@ -6,8 +6,11 @@ and presentation subsystems (eager-graphics or custom engines).
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -181,6 +184,7 @@ _providers_loaded: bool = False
 
 def register_stage_factory(factory: StageFactory | None) -> None:
     """Register a global factory callable returning a StageProtocol instance."""
+    logger.debug("Registering stage factory: %s", factory)
     global _stage_factory
     _stage_factory = factory
 
@@ -192,6 +196,7 @@ def get_stage_factory() -> StageFactory | None:
 
 def register_ui_factory(factory: UIFactory | None) -> None:
     """Register a global factory callable returning a UIProtocol instance."""
+    logger.debug("Registering UI factory: %s", factory)
     global _ui_factory
     _ui_factory = factory
 
@@ -203,6 +208,7 @@ def get_ui_factory() -> UIFactory | None:
 
 def register_screen_manager_factory(factory: ScreenManagerFactory | None) -> None:
     """Register a global factory callable returning a ScreenManagerProtocol instance."""
+    logger.debug("Registering screen manager factory: %s", factory)
     global _screen_manager_factory
     _screen_manager_factory = factory
 
@@ -214,6 +220,7 @@ def get_screen_manager_factory() -> ScreenManagerFactory | None:
 
 def register_player(backend: str, player_cls: Any) -> None:
     """Register an interactive player implementation for *backend* (e.g. 'pil', 'pyglet')."""
+    logger.debug("Registering player backend %r: %s", backend, player_cls)
     _player_factories[backend.lower()] = player_cls
 
 
@@ -229,6 +236,7 @@ def list_players() -> list[str]:
 
 def register_audio_backend(backend: str, audio_factory: Any) -> None:
     """Register an audio backend factory for *backend* (e.g. 'pyglet', 'miniaudio')."""
+    logger.debug("Registering audio backend %r: %s", backend, audio_factory)
     _audio_backends[backend.lower()] = audio_factory
 
 
@@ -239,6 +247,7 @@ def get_audio_backend(backend: str) -> Any | None:
 
 def register_renderer(backend: str, renderer_factory: Any) -> None:
     """Register a renderer backend factory (e.g. 'null', 'pil', 'pyglet')."""
+    logger.debug("Registering renderer backend %r: %s", backend, renderer_factory)
     _renderer_factories[backend.lower()] = renderer_factory
 
 
@@ -266,11 +275,12 @@ def load_providers() -> None:
             try:
                 fn = ep.load()
                 if callable(fn):
+                    logger.debug("Loading provider entry point %r", ep.name)
                     fn()
-            except Exception:  # noqa: BLE001, S110
-                pass
-    except Exception:  # noqa: BLE001, S110
-        pass
+            except Exception:
+                logger.warning("Failed to load provider entry point %r", ep.name, exc_info=True)
+    except Exception:
+        logger.warning("Failed to discover eager.providers entry points", exc_info=True)
 
 
 def reset_providers() -> None:

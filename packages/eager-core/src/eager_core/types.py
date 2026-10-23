@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +64,7 @@ class Vec2:
         x_val = data["x"]
         y_val = data["y"]
         if not isinstance(x_val, (int, float, str)) or not isinstance(y_val, (int, float, str)):
+            logger.warning("Vec2.from_dict received non-numeric values: x=%r, y=%r", x_val, y_val)
             raise TypeError("Vec2 coordinates must be numbers or numeric strings")
         return cls(float(x_val), float(y_val))
 

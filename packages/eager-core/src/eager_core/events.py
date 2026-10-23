@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TypeAlias
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)

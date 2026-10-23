@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Callable
 from typing import TypeAlias
+
+logger = logging.getLogger(__name__)
 
 EasingFunc: TypeAlias = Callable[[float], float]
 
@@ -177,5 +180,6 @@ def get_easing(name_or_func: str | EasingFunc | None) -> EasingFunc:
     func = EASING_MAP.get(clean)
     if func is not None:
         return func
+    logger.debug("Unknown easing function requested: %r (available: %s)", name_or_func, sorted(EASING_MAP))
     msg = f"Unknown easing function: '{name_or_func}'"
     raise ValueError(msg)

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
 from eager_core.storage import atomic_write_json, safe_read_json
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -97,8 +100,9 @@ class TranslationManager:
                 catalog = TranslationCatalog.load_json(file_path)
                 self.register_catalog(catalog)
                 loaded.append(catalog.locale.lower())
-            except Exception:  # noqa: BLE001, S110
-                pass
+                logger.debug("Loaded translation catalog %r from %s", catalog.locale, file_path)
+            except Exception:
+                logger.warning("Failed to load translation catalog %s", file_path, exc_info=True)
         return loaded
 
     def set_locale(self, locale: str) -> None:
@@ -111,6 +115,7 @@ class TranslationManager:
             cat = self.catalogs[self.active_locale]
             val = cat.get_text(key, default)
             if val != default:
+                logger.debug("Translation key %r resolved in locale %r", key, self.active_locale)
                 return val
 
         if (
@@ -118,8 +123,12 @@ class TranslationManager:
             and self.fallback_locale in self.catalogs
         ):
             cat = self.catalogs[self.fallback_locale]
-            return cat.get_text(key, default)
+            val = cat.get_text(key, default)
+            if val != default:
+                logger.debug("Translation fallback to %r for key %r", self.fallback_locale, key)
+                return val
 
+        logger.debug("Translation key %r not found in any catalog, returning default", key)
         return default
 
     def translate_speaker(self, speaker: str) -> str:

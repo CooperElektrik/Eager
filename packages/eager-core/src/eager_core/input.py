@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from enum import Enum
 from typing import ClassVar
+
+logger = logging.getLogger(__name__)
 
 
 class InputAction(str, Enum):
@@ -87,8 +90,10 @@ class Keymap:
 
     def bind(self, key_name: str, action: InputAction) -> None:
         """Bind a key name to an InputAction."""
+        logger.debug("Binding %r -> %s", key_name, action.value)
         self.bindings[key_name.lower()] = action
 
     def unbind(self, key_name: str) -> None:
         """Unbind a key name."""
+        logger.debug("Unbinding %r", key_name)
         _ = self.bindings.pop(key_name.lower(), None)

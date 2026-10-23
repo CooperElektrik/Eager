@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, TypedDict, cast
+
+logger = logging.getLogger(__name__)
 
 _POOL_SUFFIX_RE = re.compile(r"^(.*)_(\d+)$")
 
@@ -206,6 +209,8 @@ class AudioMixer:
     ) -> None:
         self.backend: AudioBackend = backend if backend is not None else NullAudioBackend()
         self.asset_dir: Path | None = Path(asset_dir) if asset_dir is not None else None
+        if backend is None:
+            logger.debug("AudioMixer initialized with NullAudioBackend (headless mode)")
 
         self.channels: dict[str, ChannelState] = {
             name: ChannelState(name=name, loop=(name in ("music", "ambient")))
@@ -330,6 +335,7 @@ class AudioMixer:
         )
         if busy:
             victim = busy[0][1]
+            logger.debug("Stealing oldest pool slot %r (base %r) due to polyphony cap %s", victim, base, cap)
             self.channels[victim].queue.clear()
             return victim
         return f"{base}_0"
@@ -395,6 +401,7 @@ class AudioMixer:
         if use_auto and not self._is_pool_member(channel):
             inherit_base = channel
             channel = self._allocate_pool_channel(channel, max_polyphony)
+            logger.debug("Auto-allocated pool channel %r for base %r", channel, inherit_base)
 
         if channel not in self.channels:
             self.channels[channel] = ChannelState(name=channel)
@@ -585,6 +592,7 @@ class AudioMixer:
 
     def shutdown(self) -> None:
         """Shut down the audio backend and release audio resources."""
+        logger.debug("Shutting down audio backend %r", type(self.backend).__name__)
         self.backend.shutdown()
 
     def save_state(self) -> AudioMixerSaveState:
@@ -594,7 +602,7 @@ class AudioMixer:
         and no fade running) are pruned so checkpoints do not accumulate
         ghost channels over a long session.
         """
-        return {
+        result: AudioMixerSaveState = {
             "master_volume": self.master_volume,
             "channel_volumes": dict(self.channel_volumes),
             "channels": {
@@ -610,6 +618,8 @@ class AudioMixer:
             },
             "serial_counter": self._serial_counter,
         }
+        logger.debug("Saved mixer state: %d channels, master_volume=%.2f", len(result["channels"]), self.master_volume)
+        return result
 
     def load_state(self, state: Mapping[str, object]) -> None:
         """Restore mixer state from checkpoint."""
@@ -639,6 +649,7 @@ class AudioMixer:
         )
         for name, data_obj in raw_channels_dict.items():
             if not isinstance(data_obj, Mapping):
+                logger.warning("load_state: skipping non-mapping channel entry %r", name)
                 continue
             data: dict[str, object] = {
                 str(k): v for k, v in cast(Mapping[object, object], data_obj).items()
@@ -669,6 +680,7 @@ class AudioMixer:
                 elif not chan.is_paused and existing.is_paused:
                     self.backend.resume(name)
             elif chan.is_playing and chan.current_asset:
+                logger.debug("Restoring playback on channel %r (asset=%r)", name, chan.current_asset)
                 _ = self.play(
                     name,
                     chan.current_asset,
