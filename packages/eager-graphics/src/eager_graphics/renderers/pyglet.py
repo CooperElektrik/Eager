@@ -533,8 +533,8 @@ class PygletRenderer(RenderBackend):
         if region is None:
             tex = texture.get_texture()
             region = tex.get_region(0, 0, tex.width, tex.height)
-            region.anchor_x = round(texture.width * fx)
-            region.anchor_y = round(texture.height * (1.0 - fy))
+            region.anchor_x = float(texture.width * fx)
+            region.anchor_y = float(texture.height * (1.0 - fy))
             self._region_cache[region_key] = region
 
         scale_x_dir = -1.0 if item.flip_h else 1.0
@@ -736,10 +736,12 @@ class PygletRenderer(RenderBackend):
         border_width: float = 0.0,
     ) -> None:
         """Draw a filled rectangle, optionally stroked with a border."""
-        w = max(0.0, float(width))
-        h = max(0.0, float(height))
-        fx = float(x)
-        fy = self._flip_y(y, h)
+        r_left, r_top = round(x), round(y)
+        r_right, r_bottom = round(x + width), round(y + height)
+        w = max(0.0, float(r_right - r_left))
+        h = max(0.0, float(r_bottom - r_top))
+        fx = float(r_left)
+        fy = self._flip_y(float(r_top), h)
         col_rgba = color.to_rgba_bytes()
         group = self._get_ui_group(self._ui_order)
         self._ui_order += 1
@@ -807,10 +809,12 @@ class PygletRenderer(RenderBackend):
         line_width: float = 1.0,
     ) -> None:
         """Draw an unfilled rectangle outline with thickness *line_width*."""
-        w = max(0.0, float(width))
-        h = max(0.0, float(height))
-        fx = float(x)
-        fy = self._flip_y(y, h)
+        r_left, r_top = round(x), round(y)
+        r_right, r_bottom = round(x + width), round(y + height)
+        w = max(0.0, float(r_right - r_left))
+        h = max(0.0, float(r_bottom - r_top))
+        fx = float(r_left)
+        fy = self._flip_y(float(r_top), h)
         bw = float(line_width)
         col_rgba = color.to_rgba_bytes()
         group = self._get_ui_group(self._ui_order)
@@ -850,10 +854,12 @@ class PygletRenderer(RenderBackend):
         bottom_color: Color,
     ) -> None:
         """Draw a rectangle filled with a vertical linear gradient."""
-        w = max(1.0, float(width))
-        h = max(1.0, float(height))
-        fx = float(x)
-        fy = self._flip_y(y, h)
+        r_left, r_top = round(x), round(y)
+        r_right, r_bottom = round(x + width), round(y + height)
+        w = max(1.0, float(r_right - r_left))
+        h = max(1.0, float(r_bottom - r_top))
+        fx = float(r_left)
+        fy = self._flip_y(float(r_top), h)
         group = self._get_ui_group(self._ui_order)
         self._ui_order += 1
 

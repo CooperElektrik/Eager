@@ -1585,7 +1585,7 @@ class PILRenderer(RenderBackend):
             # Generate and scale gradient once
             grad = Image.new("RGBA", (1, h))
             pixels = [
-                tuple(int(tc[i] + (bc[i] - tc[i]) * y_step / (h - 1)) for i in range(4))
+                tuple(round(tc[i] + (bc[i] - tc[i]) * y_step / (h - 1)) for i in range(4))
                 for y_step in range(h)
             ]
             grad.putdata(pixels)
