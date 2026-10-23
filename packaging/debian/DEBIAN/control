@@ -1,0 +1,13 @@
+Package: eager
+Version: 0.4.0
+Section: games
+Priority: optional
+Architecture: amd64
+Depends: libgl1, libglx0, libjpeg62, zlib1g, libfreetype6, libwebp7
+Maintainer: Cooper <cooper@example.com>
+Description: Eager visual novel engine
+ Eager is a headless narrative runtime and graphics compositor for
+ visual novels built with the Eager-Script screenplay DSL.
+ This package bundles the Python runtime and all dependencies,
+ so no separate Python installation is required.
+Homepage: https://github.com/CooperElektrik/Eager
