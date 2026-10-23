@@ -64,6 +64,26 @@ class PygletAssetResolver:
         if self.asset_dir is not None and self.asset_dir.is_dir():
             self._index_asset_dir(self.asset_dir)
 
+    @staticmethod
+    def _clamp_texture(tex: pyglet.image.AbstractImage) -> pyglet.image.AbstractImage:
+        """Clamp texture edges to prevent filtering bleeding across boundaries."""
+        try:
+            from pyglet.gl import (
+                GL_CLAMP_TO_EDGE,
+                GL_TEXTURE_WRAP_S,
+                GL_TEXTURE_WRAP_T,
+                glBindTexture,
+                glTexParameteri,
+            )
+
+            t = tex.get_texture()
+            glBindTexture(t.target, t.id)
+            glTexParameteri(t.target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+            glTexParameteri(t.target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        except Exception:
+            pass
+        return tex
+
     def get_texture(
         self,
         asset_id: str,
@@ -89,13 +109,13 @@ class PygletAssetResolver:
             elif asset_id.startswith("backgrounds/"):
                 candidate_ids.append(f"bg/{asset_id[12:]}")
 
-            extensions = [".png", ".jpg", ".jpeg", ".webp"]
+            extensions = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"]
             for cid in candidate_ids:
                 if self._asset_index:
                     if cid in self._asset_index:
                         file_path = self._asset_index[cid]
                         try:
-                            tex = pyglet.image.load(str(file_path)).get_texture()
+                            tex = self._clamp_texture(pyglet.image.load(str(file_path)).get_texture())
                             self._cache[asset_id] = tex
                             return tex
                         except (OSError, ImageDecodeException):
@@ -105,7 +125,7 @@ class PygletAssetResolver:
                         if target in self._asset_index:
                             file_path = self._asset_index[target]
                             try:
-                                tex = pyglet.image.load(str(file_path)).get_texture()
+                                tex = self._clamp_texture(pyglet.image.load(str(file_path)).get_texture())
                                 self._cache[asset_id] = tex
                                 return tex
                             except (OSError, ImageDecodeException):
@@ -115,7 +135,7 @@ class PygletAssetResolver:
                         file_path = self.asset_dir / f"{cid}{ext}"
                         if file_path.is_file():
                             try:
-                                tex = pyglet.image.load(str(file_path)).get_texture()
+                                tex = self._clamp_texture(pyglet.image.load(str(file_path)).get_texture())
                                 self._cache[asset_id] = tex
                                 return tex
                             except (OSError, ImageDecodeException):
@@ -123,7 +143,7 @@ class PygletAssetResolver:
 
         # 2. Generate placeholder texture
         img = self._generate_placeholder(asset_id, default_width, default_height)
-        tex = img.get_texture()
+        tex = self._clamp_texture(img.get_texture())
         self._cache[asset_id] = tex
         return tex
 
