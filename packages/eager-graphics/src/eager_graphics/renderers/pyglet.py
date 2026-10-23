@@ -80,7 +80,7 @@ class PygletAssetResolver:
             glBindTexture(t.target, t.id)
             glTexParameteri(t.target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
             glTexParameteri(t.target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         return tex
 
@@ -533,8 +533,8 @@ class PygletRenderer(RenderBackend):
         if region is None:
             tex = texture.get_texture()
             region = tex.get_region(0, 0, tex.width, tex.height)
-            region.anchor_x = float(texture.width * fx)
-            region.anchor_y = float(texture.height * (1.0 - fy))
+            region.anchor_x = round(texture.width * fx)
+            region.anchor_y = round(texture.height * (1.0 - fy))
             self._region_cache[region_key] = region
 
         scale_x_dir = -1.0 if item.flip_h else 1.0

@@ -4,10 +4,6 @@ from __future__ import annotations
 
 import base64
 import io
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import pyglet
 
 _CANONICAL_FONT_NAME = "Aileron"
 _FALLBACK_FONT_NAME = "sans-serif"
@@ -22,7 +18,7 @@ def get_default_font_data() -> bytes | None:
         for const in ImageFont.load_default.__code__.co_consts:
             if isinstance(const, bytes) and len(const) > 1000:
                 return base64.b64decode(const)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return None
 
@@ -41,7 +37,7 @@ def register_pyglet_default_font() -> str:
             pyglet.font.add_file(io.BytesIO(data))
             _PYGLET_FONT_REGISTERED = True
             return _CANONICAL_FONT_NAME
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     return _FALLBACK_FONT_NAME
