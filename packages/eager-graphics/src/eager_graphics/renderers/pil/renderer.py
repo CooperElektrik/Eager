@@ -1335,12 +1335,15 @@ class PILRenderer(RenderBackend):
                             )
                             self._scaled_cache.put(scale_key1, tex1, _image_nbytes(tex1))
 
-                        total_op = bg_items[0].opacity + bg_items[1].opacity
-                        blend_alpha = (
-                            min(1.0, max(0.0, bg_items[1].opacity / total_op))
-                            if total_op > 0.0
-                            else 0.5
-                        )
+                        if bg_items[0].opacity >= 1.0:
+                            blend_alpha = min(1.0, max(0.0, bg_items[1].opacity))
+                        else:
+                            total_op = bg_items[0].opacity + bg_items[1].opacity
+                            blend_alpha = (
+                                min(1.0, max(0.0, bg_items[1].opacity / total_op))
+                                if total_op > 0.0
+                                else 0.5
+                            )
                         blended = Image.blend(tex0, tex1, blend_alpha)
                         if self.mode == "RGB" and blended.mode == "RGBA":
                             blended = blended.convert("RGB")

@@ -192,7 +192,10 @@ class StageCompositor:
                     easing=get_easing("ease_in_out_quad"),
                 )
         else:
-            # Crossfade / Dissolve: fade in new, fade out old
+            # Crossfade / Dissolve: fade in incoming background over current background,
+            # keeping old background opaque until the incoming transition completes.
+            # This ensures standard alpha blending (t * new + (1 - t) * old) produces
+            # an exact linear crossfade without any brightness dip to black.
             self.timeline.add_tween(
                 target=new_elem.state,
                 property_name="opacity",
@@ -200,14 +203,6 @@ class StageCompositor:
                 duration=duration,
                 on_complete=_cleanup_old_bg,
             )
-
-            for old in old_elems:
-                self.timeline.add_tween(
-                    target=old.state,
-                    property_name="opacity",
-                    end_value=0.0,
-                    duration=duration,
-                )
 
     def clear_background(
         self,
