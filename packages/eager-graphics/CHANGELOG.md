@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `eager_graphics.fonts` module providing canonical typeface extraction and dynamic registration into `pyglet.font` (`register_pyglet_default_font`, `get_default_font_data`).
+- Automated pixel parity test suite (`tests/test_backend_parity.py`) verifying rendering equivalence, typographic extents, and transition blending between PIL and Pyglet.
+
+### Changed
+
+- `PygletRenderer` now configures `dpi=72` on `Label` and `font.load` so `font_size` maps 1:1 to window pixels matching `PILRenderer`.
+- `PygletRenderer.draw_rect`, `draw_rect_outline`, and `draw_gradient_rect` now snap coordinates to integer pixels, matching PIL and preventing subpixel hairline seams between adjacent UI panels.
+- `PygletAssetResolver` now indexes and resolves `.bmp` and `.gif` formats matching `PILAssetResolver`.
+
+### Fixed
+
+- **Background Crossfade Blending:** `StageCompositor.set_background` maintains the outgoing background at full opacity (`1.0`) during crossfade/dissolve transitions while the incoming background fades in on top, avoiding the 25% midpoint luminance dip to black under standard Porter-Duff alpha blending.
+- **Typographic Metrics & Anchors:** `PILRenderer.measure_text` now computes typographic line heights (`ascent + descent`) and advance widths (`font.getlength`) matching Pyglet's text metrics and line-wrapping behavior; fixed `_PIL_ANCHOR_Y["bottom"] = "b"` to align with text bounds instead of baseline.
+- **Texture Bleeding:** Applied `GL_CLAMP_TO_EDGE` wrap mode to textures in `PygletAssetResolver` to prevent edge texels from filtering with opposing borders on transparent stage sprites.
+- **Gradient Rounding:** `PILRenderer.draw_gradient_rect` now rounds color interpolation values to the nearest integer byte instead of truncating, matching OpenGL GPU vertex color interpolation.
+
 ## [0.4.0] - 2026-10-21
 
 ### Added

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Graphics Parity:** Added `eager_graphics.fonts` and automated cross-backend rendering parity tests (`test_backend_parity.py`) asserting typographic metrics, UI primitive rasterization, stage composition, and crossfade blending equivalence between PIL and Pyglet.
 - **Playtime Tracking & Screenshots:** Added session playtime accumulation (`_playtime`, `playtime_formatted`) to `GameSession` and `SaveMetadata`, and wired `InputAction.SCREENSHOT` to capture timestamped frame screenshots to `save_dir / "screenshots"`.
 - **Project Configuration & Themes:** Added theme name and custom `[theme]` color overrides parsing in `ProjectConfig.load()`, propagating configured theme styling into `GameSession` via `eager run`.
 - **Language Server:** Added inlay hints for character display names on speaker tokens when using short character identifiers.
@@ -18,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Graphics Parity:** Resolved cross-backend divergences between `PILRenderer` and `PygletRenderer`:
+  - Maintained outgoing background opacity at `1.0` during crossfades to achieve mathematically linear blending ($OVER$) without midpoint luminance dips to black.
+  - Aligned Pyglet font point sizing to 1:1 window pixels (`dpi=72`) and unified `measure_text` typographic metrics and anchor definitions with PIL.
+  - Snapped Pyglet UI rectangle and gradient boundaries to integer pixels to eliminate subpixel hairline seams.
+  - Clamped texture sampling (`GL_CLAMP_TO_EDGE`) in `PygletAssetResolver` to prevent edge texel bleeding on transparent sprites.
+  - Rounded gradient color interpolation in PIL to match GPU hardware vertex color interpolation.
 - **Language Server:** Fixed color normalization in `compute_document_colors` where normalized float color channels were erroneously divided by 255.0 a second time.
 
 ## [0.4.0] - 2026-10-21
