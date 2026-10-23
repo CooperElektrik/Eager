@@ -146,6 +146,7 @@ def test_provider_registry():
         get_renderer,
         get_screen_manager_factory,
         get_stage_factory,
+        get_theme_factory,
         get_ui_factory,
         list_players,
         register_audio_backend,
@@ -153,6 +154,7 @@ def test_provider_registry():
         register_renderer,
         register_screen_manager_factory,
         register_stage_factory,
+        register_theme_factory,
         register_ui_factory,
         reset_providers,
     )
@@ -160,6 +162,7 @@ def test_provider_registry():
     reset_providers()
     assert get_stage_factory() is None
     assert get_ui_factory() is None
+    assert get_theme_factory() is None
     assert get_screen_manager_factory() is None
     assert get_player("foo") is None
     assert get_audio_backend("foo") is None
@@ -176,8 +179,12 @@ def test_provider_registry():
     def dummy_screens_factory(**kwargs):
         return DummyScreenManager()
 
+    def dummy_theme_factory(**kwargs):
+        return {"name": "dummy"}
+
     register_stage_factory(dummy_stage_factory)
     register_ui_factory(dummy_ui_factory)
+    register_theme_factory(dummy_theme_factory)
     register_screen_manager_factory(dummy_screens_factory)
     register_player("test_player", object)
     register_audio_backend("test_audio", object)
@@ -185,6 +192,7 @@ def test_provider_registry():
 
     assert get_stage_factory() is dummy_stage_factory
     assert get_ui_factory() is dummy_ui_factory
+    assert get_theme_factory() is dummy_theme_factory
     assert get_screen_manager_factory() is dummy_screens_factory
     assert get_player("test_player") is object
     assert get_player("TEST_PLAYER") is object
@@ -194,4 +202,5 @@ def test_provider_registry():
 
     reset_providers()
     assert get_stage_factory() is None
+    assert get_theme_factory() is None
     assert list_players() == []

@@ -5,6 +5,8 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from eager_script_lsp.workspace import WorkspaceIndex
 
 
@@ -55,3 +57,42 @@ Narrator: Score is [score].
         # Check asset indexing
         assert "classroom_day" in index.asset_index.backgrounds
         assert "smile" in index.asset_index.characters.get("hoshiko", set())
+
+
+def test_workspace_index_entry_script_priority_and_sorting(tmp_path: Path):
+    (tmp_path / "game.toml").write_text('[game]\nentry_script = "act1.es"\n', encoding="utf-8")
+    (tmp_path / "act2.es").write_text("## Act2 --- act2\nNarrator: Act 2\n", encoding="utf-8")
+    (tmp_path / "act1.es").write_text("## Act1 --- act1\nNarrator: Act 1\n", encoding="utf-8")
+    (tmp_path / "act0.es").write_text("## Act0 --- act0\nNarrator: Act 0\n", encoding="utf-8")
+
+    index = WorkspaceIndex(tmp_path)
+    index.initialize()
+
+    docs = list(index.documents.keys())
+    # act1.es should be indexed first because entry_script is act1.es
+    assert docs[0].endswith("act1.es")
+    # act1 should be entry of merged graph
+    assert index.merged_graph is not None
+    assert index.merged_graph.entry == "act1"
+
+
+def test_workspace_index_ignores_external_symlinks(tmp_path: Path):
+    outside = tmp_path / "outside.es"
+    outside.write_text("## Outside --- outside\nNarrator: Outside\n", encoding="utf-8")
+
+    ws_dir = tmp_path / "workspace"
+    ws_dir.mkdir()
+    (ws_dir / "main.es").write_text("## Main --- main\nNarrator: Main\n", encoding="utf-8")
+    symlink = ws_dir / "external.es"
+    try:
+        symlink.symlink_to(outside)
+    except OSError:
+        pytest.skip("Symlinks not supported")
+
+    index = WorkspaceIndex(ws_dir)
+    index.initialize()
+
+    doc_paths = list(index.documents.keys())
+    assert any(p.endswith("main.es") for p in doc_paths)
+    assert not any("outside" in p or "external" in p for p in doc_paths)
+

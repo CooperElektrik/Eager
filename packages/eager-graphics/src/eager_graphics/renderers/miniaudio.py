@@ -179,9 +179,41 @@ class MiniaudioAudioBackend(BaseAudioBackend):
                                         frames_to_fetch = req
                                         if track.loop_end_frame is not None:
                                             frames_to_fetch = min(frames_to_fetch, track.loop_end_frame - track.frame_pos)
-                                        chunk = track.stream.send(max(1, frames_to_fetch))
-                                        track.buffer.extend(chunk)
-                                        track.frame_pos += len(chunk) // t_channels
+                                        self._lock.release()
+                                        try:
+                                            chunk = track.stream.send(max(1, frames_to_fetch))
+                                        except StopIteration:
+                                            chunk = []
+                                        except Exception:  # noqa: BLE001
+                                            chunk = []
+                                            track.is_playing = False
+                                        finally:
+                                            self._lock.acquire()
+
+                                        if not track.is_playing or track not in self._tracks.values():
+                                            break
+
+                                        if not chunk:
+                                            if track.loop and track.path_str and miniaudio is not None:
+                                                seek = track.loop_start_frame or 0
+                                                track.frame_pos = seek
+                                                try:
+                                                    track.stream = miniaudio.stream_file(
+                                                        track.path_str,
+                                                        output_format=miniaudio.SampleFormat.SIGNED16,
+                                                        nchannels=track.nchannels,
+                                                        sample_rate=track.sample_rate,
+                                                        seek_frame=seek,
+                                                    )
+                                                except Exception:  # noqa: BLE001
+                                                    track.is_playing = False
+                                                    break
+                                            else:
+                                                track.is_playing = False
+                                                break
+                                        else:
+                                            track.buffer.extend(chunk)
+                                            track.frame_pos += len(chunk) // t_channels
                                     except StopIteration:
                                         if track.loop and track.path_str and miniaudio is not None:
                                             seek = track.loop_start_frame or 0
@@ -302,7 +334,9 @@ class MiniaudioAudioBackend(BaseAudioBackend):
 
     def stop(self, channel: str, *, fade_out: float = 0.0) -> None:
         with self._lock:
-            self._tracks.pop(channel, None)
+            track = self._tracks.pop(channel, None)
+            if track is not None:
+                track.is_playing = False
 
     def set_volume(self, channel: str, volume: float) -> None:
         with self._lock:
@@ -335,6 +369,8 @@ class MiniaudioAudioBackend(BaseAudioBackend):
 
     def shutdown(self) -> None:
         with self._lock:
+            for track in self._tracks.values():
+                track.is_playing = False
             self._tracks.clear()
         if self._device is not None:
             try:

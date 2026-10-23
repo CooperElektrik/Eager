@@ -12,10 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Graphics Parity:** Added `eager_graphics.fonts` and automated cross-backend rendering parity tests (`test_backend_parity.py`) asserting typographic metrics, UI primitive rasterization, stage composition, and crossfade blending equivalence between PIL and Pyglet.
 - **Playtime Tracking & Screenshots:** Added session playtime accumulation (`_playtime`, `playtime_formatted`) to `GameSession` and `SaveMetadata`, and wired `InputAction.SCREENSHOT` to capture timestamped frame screenshots to `save_dir / "screenshots"`.
 - **Project Configuration & Themes:** Added theme name and custom `[theme]` color overrides parsing in `ProjectConfig.load()`, propagating configured theme styling into `GameSession` via `eager run`.
+- **Decoupled Theme Provider:** Added `ThemeFactory` protocol type and `register_theme_factory` / `get_theme_factory` in `eager_core.protocols`, allowing runtime theme resolution without importing `eager-graphics` in headless environments.
 - **Language Server:** Added inlay hints for character display names on speaker tokens when using short character identifiers.
 - **Language Server:** Added the `eager-script-lsp` package providing full LSP 3.17+ server support for Eager-Script screenplays, featuring resilient document scanning, workspace symbol indexing, real-time diagnostics (syntax, dead targets, asset checks, i18n keys), context-aware completions, hover previews, go-to-definition, reference search, call hierarchies, multi-file rename, semantic tokens, inlay hints, color decorators, and "Warp & Play" code lenses.
 - **CLI & Integration:** Added the `eager-script-lsp` standalone executable and the `eager lsp` runtime CLI subcommand supporting stdio, TCP, WebSocket, and headless batch diagnostics (`--check`). Added optional `lsp` extra to `eager-runtime`.
 - **VS Code Extension:** Added VS Code extension in `editors/vscode` with full TextMate grammar and language server integration.
+
+### Changed
+
+- **Script Discovery:** `resolve_project_scripts` and `WorkspaceIndex` now sort screenplay files deterministically and prioritize the entry script specified in `game.toml` as index 0, while excluding `dist` and `build` directories.
+- **Dependencies:** Relaxed `eager-runtime` dependency on `eager-script` from exact `== 0.4.0` to `>= 0.4.0`.
 
 ### Fixed
 
@@ -25,7 +31,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Snapped Pyglet UI rectangle and gradient boundaries to integer pixels to eliminate subpixel hairline seams.
   - Clamped texture sampling (`GL_CLAMP_TO_EDGE`) in `PygletAssetResolver` to prevent edge texel bleeding on transparent sprites.
   - Rounded gradient color interpolation in PIL to match GPU hardware vertex color interpolation.
+- **Persistent Variables:** In-script assignments to `$ persistent.<var>`, compound assignments, `StoryVM.set_variable` / `get_variable`, and dialogue text interpolation `[persistent.<var>]` now interact directly with `PersistentData`, and persistent variables are excluded from `StorySnapshot` and save states to prevent rollback on undo/rewind. Initialized `PersistentData` before `StoryVM` creation so top-level `@default` expressions can resolve persistent variables.
+- **Audio Concurrency & Deadlocks:** In `MiniaudioAudioBackend`, released the backend lock during audio stream generator chunk reads (`track.stream.send`) to prevent worker thread deadlocks with audio control methods (`stop`, `set_volume`, `shutdown`). Fixed stream EOF handling on non-looping channels to cleanly update `is_playing = False`.
+- **Character Attribute Parsing:** Used `shlex.split` in `ScreenplayParser` for `@character` declarations so quoted attribute values containing spaces are parsed without truncation.
+- **Graph Branch Condition Accumulation:** Fixed branch condition accumulation in `_process_scene_body` (`eager_script.graph`) so `@elif` branches negate prior sibling conditions and `@else` branches negate all preceding conditions.
 - **Language Server:** Fixed color normalization in `compute_document_colors` where normalized float color channels were erroneously divided by 255.0 a second time.
+- **Headless Runtime:** `NullStage._on_append` now appends dialogue text with space separation and clears active choices; `StorySnapshot.from_dict` migration loop enforces strictly monotonic version progression.
+
+### Security
+
+- **Path Traversal Guards:** Added path traversal validation preventing directory traversal attacks across:
+  - `AudioMixer._resolve_asset` for audio files.
+  - `PILAssetResolver` and `PygletAssetResolver` for image and sprite textures.
+  - `resolve_project_scripts` for screenplay includes (`@include`) and script discovery.
+  - `WorkspaceIndex` for external symlink screening.
+  - `_cmd_build` excluding target archives and build directories from recursive bundling.
 
 ## [0.4.0] - 2026-10-21
 

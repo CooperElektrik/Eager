@@ -840,9 +840,14 @@ def _cmd_build(args: argparse.Namespace) -> int:
     with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for file in proj_dir.rglob("*"):
             if file.is_file():
+                resolved_file = file.resolve()
+                if resolved_file == out_path:
+                    continue
+                if not resolved_file.is_relative_to(proj_dir):
+                    continue
                 rel = file.relative_to(proj_dir)
-                # Skip venv, cache, git directories
-                if any(part.startswith((".", "__pycache__", "venv")) for part in rel.parts):
+                # Skip venv, cache, git directories, dist and build
+                if any(part.startswith((".", "__pycache__", "venv")) or part in ("dist", "build") for part in rel.parts):
                     continue
                 zf.write(file, rel)
 
@@ -852,15 +857,10 @@ def _cmd_build(args: argparse.Namespace) -> int:
 
 def _resolve_script_file(target_path: Path) -> Path | None:
     if target_path.is_dir():
-        from eager_runtime.project import ProjectConfig
+        from eager_runtime.project import resolve_project_scripts
 
-        cfg_path = target_path / "game.toml"
-        cfg = ProjectConfig.load(cfg_path) if cfg_path.exists() else ProjectConfig()
-        candidate = target_path / cfg.entry_script
-        if candidate.is_file():
-            return candidate
-        es_files = list(target_path.glob("*.es"))
-        return es_files[0] if es_files else None
+        scripts = resolve_project_scripts(target_path)
+        return scripts[0] if scripts else None
     elif target_path.is_file():
         return target_path
     return None

@@ -23,6 +23,7 @@ from eager_core.protocols import (
     UIProtocol,
     get_screen_manager_factory,
     get_stage_factory,
+    get_theme_factory,
     get_ui_factory,
     load_providers,
 )
@@ -62,23 +63,25 @@ def _create_default_stage(
 
 
 def _resolve_theme(config: Any) -> Any:
-    """Instantiate a Theme object from ProjectConfig if eager_graphics is available."""
+    """Instantiate a Theme object or options dict from ProjectConfig."""
     if config is None:
         return None
     theme_name = getattr(config, "theme", None)
     theme_overrides = getattr(config, "theme_overrides", {}) or {}
     if not theme_name and not theme_overrides:
         return None
-    try:
-        from eager_graphics.theme import Theme
-
-        kwargs: dict[str, Any] = {}
-        if theme_name:
-            kwargs["name"] = theme_name
-        kwargs.update(theme_overrides)
-        return Theme(**kwargs)
-    except (ImportError, TypeError, ValueError, AttributeError):
-        return None
+    load_providers()
+    factory = get_theme_factory()
+    kwargs: dict[str, Any] = {}
+    if theme_name:
+        kwargs["name"] = theme_name
+    kwargs.update(theme_overrides)
+    if factory is not None:
+        try:
+            return factory(**kwargs)
+        except (TypeError, ValueError, AttributeError):
+            return None
+    return kwargs
 
 
 def _create_default_ui(width: int = 1280, height: int = 720, theme: Any = None) -> Any:
@@ -170,15 +173,28 @@ class GameSession:
         if locales_dir is not None:
             self.translation_manager.load_directory(locales_dir)
 
+        # Persistent state, preferences, and saves
+        save_dir = (
+            self._custom_save_dir
+            if self._custom_save_dir is not None
+            else get_default_save_dir(self.script_path.stem if self.script_path else "default")
+        )
+        self.persistent = PersistentData(save_dir / "persistent.json")
+        self.preferences = Preferences.load(save_dir / "preferences.json")
+        self.save_manager = SaveManager(save_dir)
+
         if isinstance(project_or_script, StoryVM):
             self.vm = project_or_script
+            self.vm.set_variable("persistent", self.persistent)
         else:
             self.vm = StoryVM(
                 self.graph,
                 translation_manager=self.translation_manager,
+                persistent=self.persistent,
             )
         self.dispatcher = EventDispatcher()
         self.audio = AudioMixer(backend=audio_backend, asset_dir=self.asset_dir)
+        self.apply_preferences()
 
         if stage is not None:
             self.stage: Any = stage
@@ -221,20 +237,6 @@ class GameSession:
         else:
             self.ui = _create_default_ui(width=1280, height=720, theme=resolved_theme)
         self.overlay: Any = self.ui
-
-        # Persistent state, preferences, and saves
-        save_dir = (
-            self._custom_save_dir
-            if self._custom_save_dir is not None
-            else get_default_save_dir(self.script_path.stem if self.script_path else "default")
-        )
-        self.persistent = PersistentData(save_dir / "persistent.json")
-        self.preferences = Preferences.load(save_dir / "preferences.json")
-        self.apply_preferences()
-        self.save_manager = SaveManager(save_dir)
-
-        # Share persistent with VM
-        self.vm.set_variable("persistent", self.persistent)
 
         # Screens and Theme
         if screens is not None:

@@ -28,7 +28,7 @@ classifiers = [
 keywords = ["screenplay", "narrative-engine", "visual-novel", "interactive-fiction", "runtime", "eager"]
 
 dependencies = [
-    "eager-script == 0.4.0",
+    "eager-script >= 0.4.0",
     "eager-core >= 0.4.0",
 ]
 

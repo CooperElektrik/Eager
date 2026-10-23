@@ -105,7 +105,12 @@ class StorySnapshot:
         version = int(data.get("version", 1))
         while (version < target or version in cls._migrations) and version in cls._migrations:
             data = cls._migrations[version](data)
-            version = int(data.get("version", version + 1))
+            next_v = int(data.get("version", version + 1))
+            if next_v <= version:
+                raise ValueError(
+                    f"StorySnapshot migration for version {version} failed to advance version monotonically (got {next_v})"
+                )
+            version = next_v
 
         call_stack = tuple(CallFrame.from_dict(f) for f in data.get("call_stack", []))
         variables = copy.deepcopy(data.get("variables", {}))

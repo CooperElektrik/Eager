@@ -224,10 +224,15 @@ class AudioMixer:
     def _resolve_asset(self, asset_path: str) -> Path | str:
         """Resolve audio file relative to asset_dir if configured."""
         if self.asset_dir is not None:
-            cand = self.asset_dir / asset_path
+            resolved_base = self.asset_dir.resolve()
+            cand = (self.asset_dir / asset_path).resolve()
+            if not cand.is_relative_to(resolved_base):
+                raise ValueError(f"Path traversal detected in audio asset path: {asset_path}")
             if cand.exists():
                 return cand
-            audio_cand = self.asset_dir / "audio" / asset_path
+            audio_cand = (self.asset_dir / "audio" / asset_path).resolve()
+            if not audio_cand.is_relative_to(resolved_base):
+                raise ValueError(f"Path traversal detected in audio asset path: {asset_path}")
             if audio_cand.exists():
                 return audio_cand
         return asset_path

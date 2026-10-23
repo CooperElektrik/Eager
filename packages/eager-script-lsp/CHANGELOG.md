@@ -11,9 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Inlay hints for character display names on speaker tokens in `compute_inlay_hints()` when a speaker identifier has a declared character display name (e.g. `a: Hello` -> `a ("Alice"): Hello`).
 
+### Changed
+
+- Dynamically resolve package version via `importlib.metadata.version` in `EagerLanguageServer` with fallback to `0.4.0`.
+- Deterministically sort discovered screenplay files in `WorkspaceIndex` and prioritize the project's configured `entry_script` from `game.toml`, while excluding `dist` and `build` directories.
+
 ### Fixed
 
 - Color literal normalization in `compute_document_colors()`: removed redundant second division by 255.0, restoring proper RGB color preview channels.
+
+### Security
+
+- Ignored external symlinks and paths resolving outside the workspace directory during script discovery in `WorkspaceIndex`.
 
 ## [0.4.0] - 2026-10-22
 

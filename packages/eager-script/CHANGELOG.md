@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Character Attribute Parsing:** Parse `@character` attributes using `shlex.split` so quoted values containing spaces (e.g. `title="The Great Magician"`) are parsed without truncation, falling back safely to whitespace splitting if quotes are malformed.
+- **Graph Branch Condition Accumulation:** Fixed branch condition accumulation in `_process_scene_body` (`eager_script.graph`) so `@elif` edges negate all prior sibling conditions (`(not (a)) and (b)`), and `@else` edges negate all preceding conditions (`(not (a)) and (not (b))`), correctly preserving nested conditional jump logic in `SceneGraph`.
+
 ## [0.4.0] - 2026-10-21
 
 ### Added

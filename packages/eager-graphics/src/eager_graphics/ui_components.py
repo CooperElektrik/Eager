@@ -1171,6 +1171,11 @@ class UIOverlay:
     quick_menu: QuickMenu = field(init=False)
 
     def __post_init__(self) -> None:
+        if isinstance(self.theme, dict):
+            try:
+                self.theme = Theme(**self.theme)
+            except (TypeError, ValueError, AttributeError):
+                self.theme = None
         if self.theme is not None:
             if self.dialogue_style is None:
                 self.dialogue_style = self.theme.to_textbox_style()

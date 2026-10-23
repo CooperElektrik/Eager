@@ -197,8 +197,14 @@ def register_providers() -> None:
         register_renderer,
         register_screen_manager_factory,
         register_stage_factory,
+        register_theme_factory,
         register_ui_factory,
     )
+
+    def _default_theme_factory(**kwargs: Any) -> Any:
+        from eager_graphics.theme import Theme
+
+        return Theme(**kwargs)
 
     def _default_stage_factory(
         virtual_width: int,
@@ -216,8 +222,14 @@ def register_providers() -> None:
         return StageDirector(compositor, audio=audio, skip_mode_cb=skip_mode_cb)
 
     def _default_ui_factory(width: int = 1280, height: int = 720, theme: Any = None) -> Any:
+        from eager_graphics.theme import Theme
         from eager_graphics.ui_components import UIOverlay
 
+        if isinstance(theme, dict):
+            try:
+                theme = Theme(**theme)
+            except (TypeError, ValueError, AttributeError):
+                theme = None
         return UIOverlay(width=width, height=height, theme=theme)
 
     def _default_screens_factory(config: Any, session: Any) -> Any:
@@ -228,10 +240,16 @@ def register_providers() -> None:
             ScreenManager,
             TitleScreen,
         )
+        from eager_graphics.theme import Theme
 
         w = getattr(getattr(session, "overlay", None), "width", 1280) or 1280
         h = getattr(getattr(session, "overlay", None), "height", 720) or 720
         theme = getattr(getattr(session, "overlay", None), "theme", None)
+        if isinstance(theme, dict):
+            try:
+                theme = Theme(**theme)
+            except (TypeError, ValueError, AttributeError):
+                theme = None
         mgr = ScreenManager(viewport_width=w, viewport_height=h, theme=theme)
         mgr.register(
             TitleScreen(
@@ -272,6 +290,7 @@ def register_providers() -> None:
 
     register_stage_factory(_default_stage_factory)
     register_ui_factory(_default_ui_factory)
+    register_theme_factory(_default_theme_factory)
     register_screen_manager_factory(_default_screens_factory)
     register_player("pil", _pil_player_factory)
     register_player("pyglet", _pyglet_player_factory)

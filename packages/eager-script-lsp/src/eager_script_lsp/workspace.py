@@ -193,12 +193,23 @@ class WorkspaceIndex:
         if self.root_path.is_file() and self.root_path.suffix == ".es":
             es_files.append(self.root_path)
         elif self.root_path.is_dir():
+            project_root = self.root_path.resolve()
             for p in self.root_path.rglob("*.es"):
                 if not p.is_file() or any(
-                    part.startswith((".", "venv", "__pycache__")) or part == "dist" for part in p.parts
+                    part.startswith((".", "venv", "__pycache__")) or part in ("dist", "build") for part in p.parts
                 ):
                     continue
-                es_files.append(p)
+                resolved_p = p.resolve()
+                if not resolved_p.is_relative_to(project_root):
+                    continue
+                es_files.append(resolved_p)
+
+            es_files.sort(key=lambda p: str(p))
+            if getattr(self.config, "entry_script", None):
+                entry_file = (self.root_path / self.config.entry_script).resolve()
+                if entry_file in es_files:
+                    es_files.remove(entry_file)
+                    es_files.insert(0, entry_file)
 
         for es_path in es_files:
             try:

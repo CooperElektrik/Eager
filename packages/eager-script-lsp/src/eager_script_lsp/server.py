@@ -8,6 +8,7 @@ from pathlib import Path
 from lsprotocol import types
 from pygls.lsp.server import LanguageServer
 
+from eager_script_lsp import __version__
 from eager_script_lsp.document import ScriptDocument
 from eager_script_lsp.features.completion import compute_completions
 from eager_script_lsp.features.diagnostics import compute_diagnostics
@@ -44,7 +45,7 @@ class EagerLanguageServer(LanguageServer):
     """Eager-Script Language Server."""
 
     def __init__(self, *args, **kwargs) -> None:
-        super().__init__("eager-script-lsp", "0.4.0", *args, **kwargs)
+        super().__init__("eager-script-lsp", __version__, *args, **kwargs)
         self.workspace_index: WorkspaceIndex = WorkspaceIndex(Path.cwd())
 
 

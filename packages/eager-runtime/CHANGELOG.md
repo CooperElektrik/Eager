@@ -14,6 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GameSession.take_screenshot()` and input routing for `InputAction.SCREENSHOT` to save timestamped PNG screenshots to `save_dir / "screenshots"` (using `renderer.save_frame()` when available).
 - `ProjectConfig.load()` support for `theme` and custom `[theme]` color overrides (`theme_overrides`), passed as `config=cfg` into `GameSession` in `cli.py:_cmd_run`.
 
+### Changed
+
+- Headless theme decoupling: `_resolve_theme` in `session.py` resolves theme configurations via `get_theme_factory()` provider registry (or falls back to raw option dictionaries) instead of importing `eager_graphics.theme.Theme` directly.
+- Script discovery ordering: `resolve_project_scripts` deterministically sorts discovered screenplay files and prioritizes the configured `entry_script` from `game.toml` as index 0; excludes `build` and `dist` directories.
+- Relaxed `eager-script` dependency specification in `pyproject.toml` from `== 0.4.0` to `>= 0.4.0`.
+
+### Fixed
+
+- **Persistent Variables:** Routed in-script `$ persistent.<key> = ...` and compound assignments (`+=`, `-=`, etc.), `StoryVM.set_variable` / `get_variable`, and dialogue text interpolation `[persistent.<key>]` directly to the injected `PersistentData` instance; accepted `persistent` and `initial_variables` in `StoryVM.__init__`; excluded `persistent` variables from `StorySnapshot` and save states to ensure persistence state is never rolled back during undo/rewind.
+- **Initialization Order:** Initialized `PersistentData` before `StoryVM` creation in `GameSession.__init__`, allowing top-level `@default` expressions referencing `persistent.<var>` to resolve against persistent data.
+- **NullStage Dialogue Append:** `NullStage._on_append` now appends dialogue text with whitespace separation matching interactive renderers and clears active choice selections.
+- **Snapshot Migrations:** Guarded `StorySnapshot.from_dict` migration loop to require strict monotonic version advancement, preventing infinite loops on buggy migration handlers.
+
+### Security
+
+- Path traversal guards in `resolve_project_scripts` preventing script inclusion or traversal outside the project directory via symlinks or parent references (`..`) in `@include` directives.
+- Project export safety in `_cmd_build` excluding target zip files and build artifacts (`dist`, `build`) from recursively bundling into the archive.
+
 ## [0.4.0] - 2026-10-21
 
 ### Added

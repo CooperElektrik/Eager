@@ -140,18 +140,29 @@ def resolve_project_scripts(target_path: Path) -> list[Path]:
     es_files: list[Path] = []
 
     if target_path.is_dir():
+        project_root = target_path.resolve()
         cfg_path = target_path / "game.toml"
-        if cfg_path.exists():
-            # Find all .es files in the project directory
-            for p in target_path.rglob("*.es"):
-                if not any(part.startswith((".", "venv", "__pycache__")) for part in p.parts):
-                    es_files.append(p)
-        else:
-            for p in target_path.rglob("*.es"):
-                if not any(part.startswith((".", "venv", "__pycache__")) for part in p.parts):
-                    es_files.append(p)
+        cfg = ProjectConfig.load(cfg_path) if cfg_path.exists() else ProjectConfig()
+
+        discovered: list[Path] = []
+        for p in target_path.rglob("*.es"):
+            if not any(part.startswith((".", "venv", "__pycache__")) or part in ("dist", "build") for part in p.parts):
+                resolved_p = p.resolve()
+                if not resolved_p.is_relative_to(project_root):
+                    raise ValueError(
+                        f"Path traversal detected: script '{p.name}' resolves outside project root"
+                    )
+                discovered.append(resolved_p)
+
+        discovered.sort(key=lambda p: str(p))
+        entry_file = (target_path / cfg.entry_script).resolve()
+        if entry_file in discovered:
+            discovered.remove(entry_file)
+            discovered.insert(0, entry_file)
+        es_files = discovered
     else:
         # Load script and any includes recursively
+        project_root = target_path.resolve().parent
         visited: set[Path] = set()
         queue = [target_path.resolve()]
 
@@ -171,6 +182,10 @@ def resolve_project_scripts(target_path: Path) -> list[Path]:
                     if m:
                         inc_name = m.group(1)
                         inc_path = (current.parent / inc_name).resolve()
+                        if not inc_path.is_relative_to(project_root):
+                            raise ValueError(
+                                f"Path traversal detected: @include '{inc_name}' resolves outside project root"
+                            )
                         queue.append(inc_path)
             except OSError:
                 pass

@@ -453,15 +453,25 @@ def _process_scene_body(
     hooks_append = hooks.append
     seen_hooks: set[str] = set()
 
-    cond_stack: list[str] = []
+    branch_stack: list[tuple[list[str], str | None]] = []
 
     def _active_cond() -> str | None:
-        valid = [c for c in cond_stack if c]
-        if not valid:
+        level_conds: list[str] = []
+        for priors, current in branch_stack:
+            parts = [f"not ({p})" for p in priors]
+            if current is not None:
+                parts.append(current)
+            if not parts:
+                continue
+            if len(parts) == 1:
+                level_conds.append(parts[0])
+            else:
+                level_conds.append(" and ".join(f"({p})" for p in parts))
+        if not level_conds:
             return None
-        if len(valid) == 1:
-            return valid[0]
-        return " and ".join(f"({c})" for c in valid)
+        if len(level_conds) == 1:
+            return level_conds[0]
+        return " and ".join(f"({c})" for c in level_conds)
 
     for item in body:
         if isinstance(item, ParsedJump):
@@ -517,19 +527,25 @@ def _process_scene_body(
                 seen_hooks.add(h)
                 hooks_append(h)
         elif isinstance(item, ParsedIf):
-            cond_stack.append(item.expr_src)
+            branch_stack.append(([], item.expr_src))
             flat_append(item)
         elif isinstance(item, ParsedElif):
-            if cond_stack:
-                cond_stack[-1] = item.expr_src
+            if branch_stack:
+                priors, current = branch_stack[-1]
+                if current is not None:
+                    priors.append(current)
+                branch_stack[-1] = (priors, item.expr_src)
             flat_append(item)
         elif isinstance(item, ParsedElse):
-            if cond_stack and cond_stack[-1]:
-                cond_stack[-1] = f"not ({cond_stack[-1]})"
+            if branch_stack:
+                priors, current = branch_stack[-1]
+                if current is not None:
+                    priors.append(current)
+                branch_stack[-1] = (priors, None)
             flat_append(item)
         elif isinstance(item, ParsedEnd):
-            if cond_stack:
-                cond_stack.pop()
+            if branch_stack:
+                branch_stack.pop()
             flat_append(item)
         else:
             flat_append(item)

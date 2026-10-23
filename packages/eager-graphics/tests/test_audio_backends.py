@@ -134,6 +134,67 @@ class TestHardwareAudioBackends(unittest.TestCase):
         self.assertEqual(len(errors), 0)
         backend.shutdown()
 
+    def test_miniaudio_stream_eof_non_loop(self) -> None:
+        pytest.importorskip("miniaudio")
+        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend, _ChannelTrack
+
+        backend = MiniaudioAudioBackend()
+
+        class DummyStream:
+            def send(self, n):
+                return []
+
+        track = _ChannelTrack(
+            samples=None,
+            sample_rate=44100,
+            nchannels=2,
+            volume=1.0,
+            loop=False,
+            stream=DummyStream(),
+        )
+        backend._tracks["music"] = track
+        if backend._generator is not None:
+            backend._generator.send(100)
+            self.assertFalse(track.is_playing)
+        backend.shutdown()
+
+    def test_miniaudio_stream_stop_and_shutdown_clears_is_playing(self) -> None:
+        pytest.importorskip("miniaudio")
+        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend, _ChannelTrack
+
+        backend = MiniaudioAudioBackend()
+
+        class DummyStream:
+            def send(self, n):
+                return [0] * 100
+
+        track = _ChannelTrack(
+            samples=None,
+            sample_rate=44100,
+            nchannels=2,
+            volume=1.0,
+            loop=False,
+            stream=DummyStream(),
+        )
+        backend._tracks["music"] = track
+        self.assertTrue(track.is_playing)
+        backend.stop("music")
+        self.assertFalse(track.is_playing)
+
+        track2 = _ChannelTrack(
+            samples=None,
+            sample_rate=44100,
+            nchannels=2,
+            volume=1.0,
+            loop=False,
+            stream=DummyStream(),
+        )
+        backend._tracks["sfx"] = track2
+        self.assertTrue(track2.is_playing)
+        backend.shutdown()
+        self.assertFalse(track2.is_playing)
+
+
 
 if __name__ == "__main__":
     unittest.main()

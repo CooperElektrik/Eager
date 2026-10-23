@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `eager_graphics.fonts` module providing canonical typeface extraction and dynamic registration into `pyglet.font` (`register_pyglet_default_font`, `get_default_font_data`).
 - Automated pixel parity test suite (`tests/test_backend_parity.py`) verifying rendering equivalence, typographic extents, and transition blending between PIL and Pyglet.
+- Registered `ThemeFactory` provider (`_default_theme_factory`) in `register_providers()` returning `Theme` instances for decoupled runtime discovery.
+- Supported dictionary-based theme configurations in `UIOverlay` and `ScreenManager`.
 
 ### Changed
 
@@ -24,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Typographic Metrics & Anchors:** `PILRenderer.measure_text` now computes typographic line heights (`ascent + descent`) and advance widths (`font.getlength`) matching Pyglet's text metrics and line-wrapping behavior; fixed `_PIL_ANCHOR_Y["bottom"] = "b"` to align with text bounds instead of baseline.
 - **Texture Bleeding:** Applied `GL_CLAMP_TO_EDGE` wrap mode to textures in `PygletAssetResolver` to prevent edge texels from filtering with opposing borders on transparent stage sprites.
 - **Gradient Rounding:** `PILRenderer.draw_gradient_rect` now rounds color interpolation values to the nearest integer byte instead of truncating, matching OpenGL GPU vertex color interpolation.
+- **Audio Concurrency & Deadlocks:** In `MiniaudioAudioBackend`, released the backend lock during audio stream generator chunk reads (`track.stream.send`) to prevent worker thread deadlocks with audio control methods (`stop`, `set_volume`, `shutdown`).
+- **Stream Lifecycle & EOF:** In `MiniaudioAudioBackend`, set `track.is_playing = False` upon stream EOF on non-looping channels, and cleared playing state on `stop()` and `shutdown()`.
+
+### Security
+
+- **Asset Path Traversal:** Added path traversal guards to `PILAssetResolver` and `PygletAssetResolver` verifying resolved asset paths remain strictly within the configured `asset_dir`.
 
 ## [0.4.0] - 2026-10-21
 

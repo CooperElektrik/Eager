@@ -166,7 +166,10 @@ class NullStage:
         self.ui_state.clear_choices()
 
     def _on_append(self, event: AppendEvent) -> None:
-        self.ui_state.text += event.text
+        add_text = event.text
+        current = self.ui_state.text or ""
+        self.ui_state.text = f"{current} {add_text}".strip()
+        self.ui_state.clear_choices()
 
     def _on_fresh_box(self, event: FreshBoxEvent) -> None:
         self.ui_state.text = event.text

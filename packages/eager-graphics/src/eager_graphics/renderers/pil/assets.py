@@ -39,6 +39,7 @@ class PILAssetResolver:
 
         # 1. Attempt loading from disk if asset_dir configured
         if self.asset_dir is not None:
+            resolved_base = self.asset_dir.resolve()
             candidate_ids = [asset_id]
             if not asset_id.startswith("characters/"):
                 candidate_ids.append(f"characters/{asset_id}")
@@ -48,8 +49,13 @@ class PILAssetResolver:
                 candidate_ids.append(f"bg/{asset_id[12:]}")
 
             for cid in candidate_ids:
+                cand_path = (self.asset_dir / cid).resolve()
+                if not cand_path.is_relative_to(resolved_base):
+                    raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
                 for ext in _EXTENSIONS:
-                    file_path = self.asset_dir / f"{cid}{ext}"
+                    file_path = (self.asset_dir / f"{cid}{ext}").resolve()
+                    if not file_path.is_relative_to(resolved_base):
+                        raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
                     if file_path.is_file():
                         try:
                             with Image.open(file_path) as raw_img:

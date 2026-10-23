@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ThemeFactory` protocol type and `register_theme_factory` / `get_theme_factory` provider registry functions in `eager_core.protocols` for decoupled theme factory registration without graphics dependencies (with reset support in `reset_providers()`).
+
+### Security
+
+- Path traversal guard in `AudioMixer._resolve_asset` ensuring resolved audio asset paths remain strictly within the configured `asset_dir`.
+
 ## [0.4.0] - 2026-10-21
 
 ### Added

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 import sys
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, replace
@@ -712,7 +713,11 @@ class ScreenplayParser:
                 display_name = name_d or name_s or char_id
                 attrs: list[tuple[str, str]] = []
                 if rest:
-                    for token in rest.split():
+                    try:
+                        tokens = shlex.split(rest)
+                    except ValueError:
+                        tokens = rest.split()
+                    for token in tokens:
                         if "=" in token:
                             k, v = token.split("=", 1)
                             attrs.append((k.strip(), v.strip().strip("\"'")))

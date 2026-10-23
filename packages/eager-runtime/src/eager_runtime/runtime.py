@@ -74,6 +74,8 @@ class StoryVM:
         initial_state: StorySnapshot | None = None,
         rng_seed: int | None = None,
         translation_manager: TranslationManager | None = None,
+        persistent: Any | None = None,
+        initial_variables: dict[str, Any] | None = None,
     ) -> None:
         self._graph = graph
         self._translation_manager: TranslationManager = translation_manager or TranslationManager()
@@ -82,6 +84,14 @@ class StoryVM:
         self._beat_index: int = 0
         self._call_stack: list[CallFrame] = []
         self._variables: dict[str, Any] = {}
+        if persistent is not None:
+            self._variables["persistent"] = persistent
+        else:
+            from eager_runtime.persistent import PersistentData
+
+            self._variables["persistent"] = PersistentData()
+        if initial_variables:
+            self._variables.update(initial_variables)
         self._visited_scenes: set[str] = set()
 
         self._rng = random.Random(rng_seed)
@@ -142,7 +152,7 @@ class StoryVM:
             for d in self._graph.defaults:
                 if isinstance(d, ParsedDefault) and d.name not in self._variables:
                     val = self._evaluate_expr(d.expr_src)
-                    self._variables[d.name] = val
+                    self.set_variable(d.name, val)
 
     def _get_eval_env(self) -> dict[str, Any]:
         """Build evaluation environment for expression evaluation."""
@@ -181,7 +191,7 @@ class StoryVM:
                     return f"[{var_name}]"
                 curr: Any = self._variables.get(parts[0])
                 for p in parts[1:]:
-                    if isinstance(curr, dict):
+                    if isinstance(curr, dict) or hasattr(curr, "get"):
                         curr = curr.get(p)
                     elif hasattr(curr, p):
                         curr = getattr(curr, p)
@@ -280,8 +290,40 @@ class StoryVM:
         """Set of all scene IDs visited during this playthrough."""
         return set(self._visited_scenes)
 
+    def _set_persistent_var(self, key: str, value: Any) -> None:
+        p = self._variables.get("persistent")
+        if p is None:
+            from eager_runtime.persistent import PersistentData
+
+            p = PersistentData()
+            self._variables["persistent"] = p
+        if hasattr(p, "__setitem__"):
+            p[key] = value
+        else:
+            setattr(p, key, value)
+        if hasattr(p, "save") and callable(p.save):
+            try:
+                p.save()
+            except OSError:
+                pass
+
+    def _get_persistent_var(self, key: str, default: Any = None) -> Any:
+        p = self._variables.get("persistent")
+        if p is None:
+            return default
+        if hasattr(p, "get") and callable(p.get):
+            return p.get(key, default)
+        return getattr(p, key, default)
+
     def set_variable(self, name: str, value: Any) -> None:
         """Set a story variable value."""
+        if name.startswith("persistent."):
+            key = name[len("persistent."):]
+            self._set_persistent_var(key, value)
+            if self._pending_input is not None and self._pending_input.var_name == name:
+                self._pending_input = None
+            return
+
         self._variables[name] = value
         if self._pending_input is not None and self._pending_input.var_name == name:
             self._pending_input = None
@@ -295,6 +337,9 @@ class StoryVM:
 
     def get_variable(self, name: str, default: Any = None) -> Any:
         """Retrieve a story variable value."""
+        if name.startswith("persistent."):
+            key = name[len("persistent."):]
+            return self._get_persistent_var(key, default)
         return self._variables.get(name, default)
 
     def _build_choice_prompt(
@@ -391,7 +436,11 @@ class StoryVM:
             pending_input_b = self._beat_index - 1
 
         # Filter out persistent object from per-save variables (persistent state is saved independently)
-        vars_to_save = {k: copy.deepcopy(v) for k, v in self._variables.items() if k != "persistent"}
+        vars_to_save = {
+            k: copy.deepcopy(v)
+            for k, v in self._variables.items()
+            if k != "persistent" and not k.startswith("persistent.")
+        }
 
         return StorySnapshot(
             current_scene=self._current_scene_id,
@@ -417,9 +466,17 @@ class StoryVM:
         self._beat_index = snapshot.beat_index
         self._call_stack = list(snapshot.call_stack)
         persistent_obj = self._variables.get("persistent")
-        self._variables = copy.deepcopy(snapshot.variables)
+        self._variables = {
+            k: copy.deepcopy(v)
+            for k, v in snapshot.variables.items()
+            if not k.startswith("persistent.")
+        }
         if persistent_obj is not None:
             self._variables["persistent"] = persistent_obj
+        else:
+            from eager_runtime.persistent import PersistentData
+
+            self._variables["persistent"] = PersistentData()
         self._visited_scenes = set(snapshot.visited_scenes)
 
         if snapshot.rng_state is not None:
@@ -589,18 +646,39 @@ class StoryVM:
             if isinstance(item, ParsedSet):
                 val = self._evaluate_expr(item.expr_src)
                 target = item.target
-                if item.op == "=":
-                    self._variables[target] = val
-                elif item.op == "+=":
-                    self._variables[target] = self._variables.get(target, 0) + val
-                elif item.op == "-=":
-                    self._variables[target] = self._variables.get(target, 0) - val
-                elif item.op == "*=":
-                    self._variables[target] = self._variables.get(target, 1) * val
-                elif item.op == "/=":
-                    self._variables[target] = self._variables.get(target, 1) / val
-                elif item.op == "%=":
-                    self._variables[target] = self._variables.get(target, 1) % val
+                if target.startswith("persistent."):
+                    key = target[len("persistent."):]
+                    cur = self._get_persistent_var(key, 0 if item.op in ("+=", "-=") else 1)
+                    if cur is None and item.op != "=":
+                        cur = 0 if item.op in ("+=", "-=") else 1
+                    if item.op == "=":
+                        new_val = val
+                    elif item.op == "+=":
+                        new_val = cur + val
+                    elif item.op == "-=":
+                        new_val = cur - val
+                    elif item.op == "*=":
+                        new_val = cur * val
+                    elif item.op == "/=":
+                        new_val = cur / val
+                    elif item.op == "%=":
+                        new_val = cur % val
+                    else:
+                        new_val = val
+                    self._set_persistent_var(key, new_val)
+                else:
+                    if item.op == "=":
+                        self._variables[target] = val
+                    elif item.op == "+=":
+                        self._variables[target] = self._variables.get(target, 0) + val
+                    elif item.op == "-=":
+                        self._variables[target] = self._variables.get(target, 0) - val
+                    elif item.op == "*=":
+                        self._variables[target] = self._variables.get(target, 1) * val
+                    elif item.op == "/=":
+                        self._variables[target] = self._variables.get(target, 1) / val
+                    elif item.op == "%=":
+                        self._variables[target] = self._variables.get(target, 1) % val
                 self._beat_index += 1
                 continue
 

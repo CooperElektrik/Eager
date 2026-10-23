@@ -170,10 +170,12 @@ class ScreenManagerProtocol(Protocol):
 StageFactory = Callable[..., StageProtocol]
 UIFactory = Callable[..., UIProtocol]
 ScreenManagerFactory = Callable[..., ScreenManagerProtocol]
+ThemeFactory = Callable[..., Any]
 
 _stage_factory: StageFactory | None = None
 _ui_factory: UIFactory | None = None
 _screen_manager_factory: ScreenManagerFactory | None = None
+_theme_factory: ThemeFactory | None = None
 
 _player_factories: dict[str, Any] = {}
 _audio_backends: dict[str, Any] = {}
@@ -216,6 +218,18 @@ def register_screen_manager_factory(factory: ScreenManagerFactory | None) -> Non
 def get_screen_manager_factory() -> ScreenManagerFactory | None:
     """Return the registered screen manager factory callable, if any."""
     return _screen_manager_factory
+
+
+def register_theme_factory(factory: ThemeFactory | None) -> None:
+    """Register a global factory callable returning a theme instance."""
+    logger.debug("Registering theme factory: %s", factory)
+    global _theme_factory
+    _theme_factory = factory
+
+
+def get_theme_factory() -> ThemeFactory | None:
+    """Return the registered theme factory callable, if any."""
+    return _theme_factory
 
 
 def register_player(backend: str, player_cls: Any) -> None:
@@ -285,10 +299,11 @@ def load_providers() -> None:
 
 def reset_providers() -> None:
     """Reset all registered factories and providers (primarily for unit testing)."""
-    global _stage_factory, _ui_factory, _screen_manager_factory, _providers_loaded
+    global _stage_factory, _ui_factory, _screen_manager_factory, _theme_factory, _providers_loaded
     _stage_factory = None
     _ui_factory = None
     _screen_manager_factory = None
+    _theme_factory = None
     _player_factories.clear()
     _audio_backends.clear()
     _renderer_factories.clear()

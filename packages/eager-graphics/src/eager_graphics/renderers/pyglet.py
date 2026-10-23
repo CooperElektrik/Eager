@@ -101,6 +101,7 @@ class PygletAssetResolver:
 
         # 1. Attempt loading from disk if asset_dir configured
         if self.asset_dir is not None:
+            resolved_base = self.asset_dir.resolve()
             candidate_ids = [asset_id]
             if not asset_id.startswith("characters/"):
                 candidate_ids.append(f"characters/{asset_id}")
@@ -111,9 +112,14 @@ class PygletAssetResolver:
 
             extensions = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"]
             for cid in candidate_ids:
+                cand_path = (self.asset_dir / cid).resolve()
+                if not cand_path.is_relative_to(resolved_base):
+                    raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
                 if self._asset_index:
                     if cid in self._asset_index:
-                        file_path = self._asset_index[cid]
+                        file_path = self._asset_index[cid].resolve()
+                        if not file_path.is_relative_to(resolved_base):
+                            raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
                         try:
                             tex = self._clamp_texture(pyglet.image.load(str(file_path)).get_texture())
                             self._cache[asset_id] = tex
@@ -123,7 +129,9 @@ class PygletAssetResolver:
                     for ext in extensions:
                         target = f"{cid}{ext}"
                         if target in self._asset_index:
-                            file_path = self._asset_index[target]
+                            file_path = self._asset_index[target].resolve()
+                            if not file_path.is_relative_to(resolved_base):
+                                raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
                             try:
                                 tex = self._clamp_texture(pyglet.image.load(str(file_path)).get_texture())
                                 self._cache[asset_id] = tex
@@ -132,7 +140,9 @@ class PygletAssetResolver:
                                 pass
                 else:
                     for ext in extensions:
-                        file_path = self.asset_dir / f"{cid}{ext}"
+                        file_path = (self.asset_dir / f"{cid}{ext}").resolve()
+                        if not file_path.is_relative_to(resolved_base):
+                            raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
                         if file_path.is_file():
                             try:
                                 tex = self._clamp_texture(pyglet.image.load(str(file_path)).get_texture())

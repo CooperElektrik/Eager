@@ -2,4 +2,9 @@
 
 from __future__ import annotations
 
-__version__ = "0.4.0"
+import importlib.metadata
+
+try:
+    __version__ = importlib.metadata.version("eager-script-lsp")
+except (importlib.metadata.PackageNotFoundError, ImportError):
+    __version__ = "0.4.0"
