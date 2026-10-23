@@ -194,7 +194,9 @@ class WorkspaceIndex:
             es_files.append(self.root_path)
         elif self.root_path.is_dir():
             for p in self.root_path.rglob("*.es"):
-                if not p.is_file() or any(part.startswith((".", "venv", "__pycache__")) for part in p.parts):
+                if not p.is_file() or any(
+                    part.startswith((".", "venv", "__pycache__")) or part == "dist" for part in p.parts
+                ):
                     continue
                 es_files.append(p)
 
@@ -210,8 +212,23 @@ class WorkspaceIndex:
         # 4. Build workspace symbols & merged graph
         self._rebuild_index()
 
+    def _is_excluded_uri(self, uri: str) -> bool:
+        """Return True if the URI points to a build artifact directory such as dist/."""
+        try:
+            path = uri_to_path(uri)
+        except (ValueError, TypeError):
+            return False
+        return "dist" in path.parts
+
     def update_document(self, uri: str, text: str) -> ScriptDocument:
-        """Incrementally update or add a document and refresh symbols."""
+        """Incrementally update or add a document and refresh symbols.
+
+        Build artifact directories (e.g. ``dist/``) are excluded so that
+        compiled copies of screenplay files do not produce false duplicate
+        scene label diagnostics against their source counterparts.
+        """
+        if self._is_excluded_uri(uri):
+            return self.documents.get(uri, ScriptDocument(uri, text))
         doc = ScriptDocument(uri, text)
         self.documents[uri] = doc
         self._rebuild_index()

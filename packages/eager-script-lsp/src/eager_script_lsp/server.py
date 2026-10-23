@@ -83,6 +83,8 @@ def create_server() -> EagerLanguageServer:
 
     def _validate_and_publish_all() -> None:
         for doc_uri in list(server.workspace_index.documents.keys()):
+            if server.workspace_index._is_excluded_uri(doc_uri):
+                continue
             _validate_and_publish(doc_uri)
 
     @server.feature(types.TEXT_DOCUMENT_DID_OPEN)
