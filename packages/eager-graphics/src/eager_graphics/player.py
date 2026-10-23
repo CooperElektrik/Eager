@@ -173,6 +173,11 @@ class BasePlayer:
 
     def on_resize(self, width: int, height: int) -> None:
         """Keep the UI components laid out against the new window size."""
+        # Guard against re-entrant resize events.  Some backends (e.g. Pyglet on
+        # X11/Wayland) dispatch a resize event when the window size property is
+        # assigned, which would otherwise recurse forever.
+        if width == self.width and height == self.height:
+            return
         self.width = width
         self.height = height
         self.overlay.set_viewport(width, height)
