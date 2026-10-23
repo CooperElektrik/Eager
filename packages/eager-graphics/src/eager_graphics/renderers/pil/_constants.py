@@ -19,7 +19,7 @@ _PLACEHOLDER_GRAD_LUT: list[int] = [int(200 + p * 0.21) for p in range(256)]
 _OPAQUE_LUT: list[int] = [255 if i == 255 else 0 for i in range(256)]
 _WHITE_RGBA: tuple[int, int, int, int] = (255, 255, 255, 255)
 _PIL_ANCHOR_X: dict[str, str] = {"left": "l", "center": "m", "right": "r"}
-_PIL_ANCHOR_Y: dict[str, str] = {"top": "t", "middle": "m", "bottom": "s"}
+_PIL_ANCHOR_Y: dict[str, str] = {"top": "t", "middle": "m", "bottom": "b"}
 
 # Downscales by more than this factor first run a cheap integer ``reduce()``
 # (cached as a mip level) before the filtered resize.  Mirrors Pillow's own

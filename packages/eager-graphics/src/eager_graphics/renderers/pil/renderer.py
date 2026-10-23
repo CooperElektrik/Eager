@@ -1797,16 +1797,28 @@ class PILRenderer(RenderBackend):
 
         font = self._ui_font(font_size)
         stroke_w = 1 if bold else 0
+        lines = text.split("\n")
         try:
-            left, top, right, bottom = font.getbbox(text, stroke_width=stroke_w)
-            result = (float(right - left), float(bottom - top))
+            ascent, descent = font.getmetrics()
+            line_height = float(ascent + descent)
+            if line_height <= 0:
+                line_height = float(font_size) * 1.2
+            width = max((float(font.getlength(line)) for line in lines), default=0.0)
+            if stroke_w > 0:
+                width += stroke_w * 2
+            height = line_height * max(1, len(lines))
+            result = (width, height)
         except (AttributeError, ValueError, TypeError):
             try:
-                draw = ImageDraw.Draw(self._image)
-                left, top, right, bottom = draw.textbbox((0, 0), text, font=font, stroke_width=stroke_w)
+                left, top, right, bottom = font.getbbox(text, stroke_width=stroke_w)
                 result = (float(right - left), float(bottom - top))
             except (AttributeError, ValueError, TypeError):
-                result = (float(font_size) * 0.5 * len(text), float(font_size) * 1.2)
+                try:
+                    draw = ImageDraw.Draw(self._image)
+                    left, top, right, bottom = draw.textbbox((0, 0), text, font=font, stroke_width=stroke_w)
+                    result = (float(right - left), float(bottom - top))
+                except (AttributeError, ValueError, TypeError):
+                    result = (float(font_size) * 0.5 * len(text), float(font_size) * 1.2)
 
         if cache and len(self._measure_cache) < 2048:
             self._measure_cache[cache_key] = result

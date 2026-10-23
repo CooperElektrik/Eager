@@ -23,6 +23,7 @@ from eager_core.input import InputAction
 from eager_core.timing import FrameClock
 from eager_core.types import BLACK, WHITE, Color
 
+from eager_graphics.fonts import register_pyglet_default_font
 from eager_graphics.layout import LayoutResolver, ViewportTransform
 from eager_graphics.player import BasePlayer
 from eager_graphics.protocol import RenderBackend, RenderItem
@@ -227,6 +228,7 @@ def _cached_measure_text(
             size=font_size,
             weight="bold" if bold else "normal",
             italic=italic,
+            dpi=72,
         )
         lines = text.split("\n")
         line_height = float(font.ascent - font.descent)
@@ -909,6 +911,7 @@ class PygletRenderer(RenderBackend):
                 text,
                 font_name=self._ui_font_name(),
                 font_size=font_size,
+                dpi=72,
                 weight=weight_str,
                 italic=italic,
                 x=fx,
@@ -1015,7 +1018,7 @@ class PygletRenderer(RenderBackend):
 
     def _ui_font_name(self) -> str:
         """Return the font family used for UI text."""
-        return "sans-serif"
+        return register_pyglet_default_font()
 
     def measure_text(
         self,
