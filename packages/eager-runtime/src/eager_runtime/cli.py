@@ -26,7 +26,7 @@ from eager_core.protocols import (
 )
 
 from eager_runtime.player import TerminalPlayer
-from eager_runtime.project import load_project_graph, resolve_project_scripts
+from eager_runtime.project import load_project_graph, mask_script_includes, resolve_project_scripts
 from eager_runtime.runtime import StoryVM
 
 # ── shared helpers ────────────────────────────────────────────────────
@@ -763,7 +763,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
         items = []
         for f in es_files:
             text = f.read_text(encoding="utf-8")
-            items.extend(eager_script.parse(text))
+            cleaned = mask_script_includes(text)
+            items.extend(eager_script.parse(cleaned))
         result = eager_script.validate(items)
     except (eager_script.ParseError, OSError, ValueError, TypeError) as err:
         sys.stderr.write(f"Check failed with error: {err}\n")

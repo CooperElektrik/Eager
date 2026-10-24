@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from eager_core.types import Color
-from eager_script import SceneGraph, parse_graph, to_graph
+from eager_script import ParseError, SceneGraph, parse_graph, to_graph
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +193,11 @@ def resolve_project_scripts(target_path: Path) -> list[Path]:
     return es_files
 
 
+def mask_script_includes(text: str) -> str:
+    """Mask out @include directives as comments while preserving exact line numbering."""
+    return re.sub(r"^([ \t]*)@include\b", r"\1# @include", text, flags=re.MULTILINE)
+
+
 def load_project_graph(target_path: Path, *, strict: bool = False) -> SceneGraph:
     """Load and merge all scene graphs for a project or script file."""
 
@@ -202,11 +207,13 @@ def load_project_graph(target_path: Path, *, strict: bool = False) -> SceneGraph
     for es_file in es_files:
         try:
             text = es_file.read_text(encoding="utf-8")
-            graphs.append(parse_graph(text))
-        except (ValueError, TypeError, OSError):
-            logger.warning(f"Failed to parse {es_file}")
+            cleaned = mask_script_includes(text)
+            graphs.append(parse_graph(cleaned))
+        except (ValueError, TypeError, OSError, ParseError) as exc:
+            logger.warning("Failed to parse %s: %s", es_file, exc)
 
     if not graphs:
         return to_graph([])
 
     return merge_graphs(graphs, strict=strict)
+

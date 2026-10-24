@@ -15,7 +15,7 @@ Official VS Code extension for authoring **Eager-Script (`.es`)** visual novel s
 
 ### From VSIX
 ```bash
-code --install-extension eager-script-vscode-0.4.0.vsix
+code --install-extension eager-script-vscode-0.5.0.vsix
 ```
 
 ### Development / Local Testing

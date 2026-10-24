@@ -6,11 +6,11 @@ An engine for visual novels.
 
 | Package | Import | Description | Version |
 |---|---|---|---|
-| `eager-script` | `eager_script` | Zero-dependency screenplay DSL parser: AST, scene graph, validator, safe expressions | 0.4.0 |
-| `eager-core` | `eager_core` | Shared dependency-free leaf: audio mixing, geometry/color types, easing, timing, input, storage, text tags | 0.4.0 |
-| `eager-runtime` | `eager_runtime` | Headless story VM, event dispatcher, `GameSession` controller, saves/rollback, terminal player, `eager` CLI | 0.4.0 |
-| `eager-graphics` | `eager_graphics` | Renderer-agnostic stage compositor & presentation layer (Null / Pyglet / PIL backends), UI screens, themes | 0.4.0 |
-| `eager-script-lsp` | `eager_script_lsp` | Language Server Protocol (LSP) server for Eager-Script screenplays (`eager-script-lsp` daemon & `eager lsp`) | 0.4.0 |
+| `eager-script` | `eager_script` | Zero-dependency screenplay DSL parser: AST, scene graph, validator, safe expressions | 0.5.0 |
+| `eager-core` | `eager_core` | Shared dependency-free leaf: audio mixing, geometry/color types, easing, timing, input, storage, text tags | 0.5.0 |
+| `eager-runtime` | `eager_runtime` | Headless story VM, event dispatcher, `GameSession` controller, saves/rollback, terminal player, `eager` CLI | 0.5.0 |
+| `eager-graphics` | `eager_graphics` | Renderer-agnostic stage compositor & presentation layer (Null / Pyglet / PIL backends), UI screens, themes | 0.5.0 |
+| `eager-script-lsp` | `eager_script_lsp` | Language Server Protocol (LSP) server for Eager-Script screenplays (`eager-script-lsp` daemon & `eager lsp`) | 0.5.0 |
 
 Dependency DAG: `eager-script` and `eager-core` are zero-dependency leaves; `eager-graphics` depends on both; `eager-runtime` depends on `eager-script` + `eager-core` and optionally on `eager-graphics` and `eager-script-lsp`; `eager-script-lsp` depends on `eager-script`, `eager-core`, and `eager-runtime`.
 
