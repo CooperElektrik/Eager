@@ -51,7 +51,7 @@ if TYPE_CHECKING:
     from eager_runtime.session import GameSession
     from eager_runtime.watcher import FileWatcher
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "AppendEvent",

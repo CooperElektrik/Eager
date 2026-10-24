@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eager-script"
-version = "0.4.0"
+version = "0.5.0"
 description = "Fast, zero-dependency screenplay DSL parser for interactive narrative and visual novels."
 readme = "README.md"
 requires-python = ">=3.11"
