@@ -1164,6 +1164,8 @@ class UIOverlay:
     choice_style: ChoiceMenuStyle | None = None
     theme: Theme | None = None
     error_overlay: str | None = None
+    toast_text: str | None = None
+    toast_timer: float = 0.0
     dialogue_box: DialogueBox = field(init=False)
     choice_menu: ChoiceMenu = field(init=False)
     input_box: InputBox = field(init=False)
@@ -1218,6 +1220,19 @@ class UIOverlay:
         self.input_box.set_viewport(width, height)
         self.end_notice.set_viewport(width, height)
         self.quick_menu.set_viewport(width, height)
+
+    def show_toast(self, text: str, duration: float = 2.0) -> None:
+        """Display a transient toast message (e.g. quicksave/quickload confirmation)."""
+        self.toast_text = text
+        self.toast_timer = float(duration)
+
+    def update_toast(self, dt: float) -> None:
+        """Decrement the toast timer and clear the message when it expires."""
+        if self.toast_text is not None and self.toast_timer > 0.0:
+            self.toast_timer -= float(dt)
+            if self.toast_timer <= 0.0:
+                self.toast_text = None
+                self.toast_timer = 0.0
 
     def sync(
         self,
@@ -1371,6 +1386,30 @@ class UIOverlay:
                 status_badge,
                 font_size=self.scale_font_size(12),
                 color=Color(0.92, 0.93, 0.95, 0.95),
+                anchor_x=TextAnchor.CENTER,
+                anchor_y=TextAnchor.MIDDLE,
+            )
+
+        if self.toast_text:
+            tw = min(float(self.width) - 40.0, 520.0)
+            th = 34.0
+            tx = (float(self.width) - tw) / 2.0
+            ty = float(self.height) - th - 40.0
+            backend.draw_rect(
+                tx,
+                ty,
+                tw,
+                th,
+                Color(0.05, 0.07, 0.10, 0.85),
+                border_color=Color(1.0, 1.0, 1.0, 0.15),
+                border_width=1.0,
+            )
+            backend.draw_text(
+                tx + tw / 2.0,
+                ty + th / 2.0,
+                self.toast_text,
+                font_size=self.scale_font_size(14),
+                color=Color(0.95, 0.96, 0.98, 1.0),
                 anchor_x=TextAnchor.CENTER,
                 anchor_y=TextAnchor.MIDDLE,
             )

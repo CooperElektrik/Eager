@@ -68,7 +68,7 @@ def _invoke_migration_hook(
 class SaveMetadata:
     """Metadata displayed on save/load slot buttons and inspect views."""
 
-    CURRENT_VERSION: ClassVar[int] = 1
+    CURRENT_VERSION: ClassVar[int] = 2
 
     slot_name: str
     timestamp: str  # ISO-8601 string
@@ -76,7 +76,8 @@ class SaveMetadata:
     scene_name: str | None
     dialogue_snippet: str | None
     playtime_seconds: float = 0.0
-    version: int = 1
+    thumbnail_path: str | None = None
+    version: int = 2
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -87,6 +88,7 @@ class SaveMetadata:
             "scene_name": self.scene_name,
             "dialogue_snippet": self.dialogue_snippet,
             "playtime_seconds": self.playtime_seconds,
+            "thumbnail_path": self.thumbnail_path,
         }
 
     @classmethod
@@ -98,6 +100,7 @@ class SaveMetadata:
             scene_name=data.get("scene_name"),
             dialogue_snippet=data.get("dialogue_snippet"),
             playtime_seconds=float(data.get("playtime_seconds", 0.0)),
+            thumbnail_path=data.get("thumbnail_path"),
             version=int(data.get("version", 1)),
         )
 
@@ -155,10 +158,27 @@ class SaveData:
         return cls(metadata=meta, checkpoint=cp, version=version)
 
 
+def _migrate_save_data_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
+    """Migrate save data from schema v1 to v2.
+
+    Adds ``thumbnail_path`` (``None``) to metadata and bumps both the top-level
+    and metadata version fields to 2.
+    """
+    data = copy.deepcopy(data)
+    data["version"] = 2
+    metadata = data.get("metadata")
+    if isinstance(metadata, dict):
+        metadata.setdefault("thumbnail_path", None)
+        metadata["version"] = 2
+    return data
+
+
 class SaveManager:
     """Manages reading, writing, listing, and organizing game save files."""
 
-    _class_migrations: ClassVar[dict[int, Callable[[dict[str, Any]], dict[str, Any]]]] = {}
+    _class_migrations: ClassVar[dict[int, Callable[[dict[str, Any]], dict[str, Any]]]] = {
+        1: _migrate_save_data_v1_to_v2,
+    }
 
     def __init__(
         self,
@@ -279,6 +299,7 @@ class SaveManager:
             scene_name=extra.get("scene_name", scene_id),
             dialogue_snippet=dialogue_snippet[:100] if dialogue_snippet else None,
             playtime_seconds=float(extra.get("playtime_seconds", 0.0)),
+            thumbnail_path=extra.get("thumbnail_path"),
             version=self.target_version,
         )
 

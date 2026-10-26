@@ -671,11 +671,11 @@ class TestSaveSchemaMigration(unittest.TestCase):
         self.assertEqual(save_data.version, 1)
         d = save_data.to_dict()
         self.assertEqual(d["version"], 1)
-        self.assertEqual(d["metadata"]["version"], 1)
+        self.assertEqual(d["metadata"]["version"], 2)
 
         restored = SaveData.from_dict(d)
         self.assertEqual(restored.version, 1)
-        self.assertEqual(restored.metadata.version, 1)
+        self.assertEqual(restored.metadata.version, 2)
 
     def test_load_slot_unversioned_legacy_auto_upgrade(self) -> None:
         from eager_core.storage import atomic_write_json

@@ -70,7 +70,7 @@ from eager_core.types import (
     Vec2,
 )
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     # Types & Geometry

@@ -152,7 +152,7 @@ wheels = [
 
 [[package]]
 name = "eager-core"
-version = "0.5.0"
+version = "0.6.0"
 source = { editable = "packages/eager-core" }
 
 [package.optional-dependencies]
@@ -170,7 +170,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "eager-engine"
-version = "0.5.0"
+version = "0.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "eager-core" },
@@ -211,7 +211,7 @@ dev = [
 
 [[package]]
 name = "eager-graphics"
-version = "0.5.0"
+version = "0.6.0"
 source = { editable = "packages/eager-graphics" }
 dependencies = [
     { name = "eager-core" },
@@ -263,7 +263,7 @@ provides-extras = ["dev", "hardware", "software", "software-simd", "all", "audio
 
 [[package]]
 name = "eager-runtime"
-version = "0.5.0"
+version = "0.6.0"
 source = { editable = "packages/eager-runtime" }
 dependencies = [
     { name = "eager-core" },
@@ -299,7 +299,7 @@ provides-extras = ["graphics", "lsp", "dev"]
 
 [[package]]
 name = "eager-script"
-version = "0.5.0"
+version = "0.6.0"
 source = { editable = "packages/eager-script" }
 
 [package.optional-dependencies]
@@ -317,7 +317,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "eager-script-lsp"
-version = "0.5.0"
+version = "0.6.0"
 source = { editable = "packages/eager-script-lsp" }
 dependencies = [
     { name = "eager-core" },

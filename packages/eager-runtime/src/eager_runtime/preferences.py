@@ -19,6 +19,7 @@ class Preferences:
     sfx_volume: float = 1.0
     voice_volume: float = 1.0
     skip_unseen: bool = False
+    autosave_enabled: bool = True
     fullscreen: bool = False
     resolution_scale: float = 1.0
     language: str = "default"

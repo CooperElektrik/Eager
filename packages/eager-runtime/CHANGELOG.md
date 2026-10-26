@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-10-24
+
+### Added
+
+- **Save Slot Thumbnails:** `SaveMetadata` carries a `thumbnail_path` field (schema v1→v2 with automatic migration). `GameSession.save_game()` captures a thumbnail screenshot to `save_dir/screenshots/thumbs/` and stores the path in slot metadata.
+- **Autosave:** New `Preferences.autosave_enabled` flag (default `true`). `GameSession.advance()` automatically saves to circular autosave slots at each narrative interaction boundary, respecting `skip_mode` and `max_autosaves`.
+- **Quicksave/Quickload Toast:** Transient toast confirmation ("Saved to quickslot" / "Loaded quickslot") shown via `UIOverlay.show_toast()` when using F5/F9 or the quick menu.
+
+### Changed
+
+- `SaveMetadata` schema bumped from v1 to v2; v1 saves are automatically migrated on load.
+- `SaveManager.save_slot()` accepts `thumbnail_path` via `metadata_extra`.
+
 ## [0.5.0] - 2026-10-24
 
 ### Added

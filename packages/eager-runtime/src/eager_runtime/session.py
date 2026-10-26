@@ -459,13 +459,19 @@ class GameSession:
                     self.mode = "ended"
 
                 # Push checkpoint after reaching interaction
-                self.checkpoints.push(self._capture_checkpoint())
+                cp = self._capture_checkpoint()
+                self.checkpoints.push(cp)
+                if getattr(self.preferences, "autosave_enabled", True) and not self.skip_mode:
+                    self.save_manager.autosave(cp, playtime_seconds=self._playtime)
                 return event
 
         if self.vm.is_ended:
             self.is_finished = True
             self.mode = "ended"
-            self.checkpoints.push(self._capture_checkpoint())
+            cp = self._capture_checkpoint()
+            self.checkpoints.push(cp)
+            if getattr(self.preferences, "autosave_enabled", True) and not self.skip_mode:
+                self.save_manager.autosave(cp, playtime_seconds=self._playtime)
 
         return None
 
@@ -636,12 +642,25 @@ class GameSession:
 
 
     def save_game(self, slot_name: str) -> Any:
-        """Save current checkpoint to named slot."""
+        """Save current checkpoint to named slot, capturing a thumbnail screenshot."""
         cp = self.checkpoints.get_latest() or self._capture_checkpoint()
+        thumb_path: Path | None = None
+        try:
+            thumb_dir = self.save_manager.save_dir / "screenshots" / "thumbs"
+            thumb_dir.mkdir(parents=True, exist_ok=True)
+            thumb_path = self.take_screenshot(
+                target_path=thumb_dir / f"thumb_{slot_name}.png"
+            )
+        except Exception:  # noqa: BLE001
+            # A missing renderer or screenshot failure must never break saving.
+            thumb_path = None
         return self.save_manager.save_slot(
             slot_name,
             cp,
-            metadata_extra={"playtime_seconds": self._playtime},
+            metadata_extra={
+                "playtime_seconds": self._playtime,
+                "thumbnail_path": str(thumb_path) if thumb_path else None,
+            },
         )
 
     def load_game(self, slot_name: str) -> bool:
@@ -660,7 +679,10 @@ class GameSession:
     def quicksave(self) -> Any:
         """Quicksave current checkpoint."""
         cp = self.checkpoints.get_latest() or self._capture_checkpoint()
-        return self.save_manager.quicksave(cp, playtime_seconds=self._playtime)
+        result = self.save_manager.quicksave(cp, playtime_seconds=self._playtime)
+        if hasattr(self.overlay, "show_toast"):
+            self.overlay.show_toast("Saved to quickslot", 2.0)
+        return result
 
     def quickload(self) -> bool:
         """Quickload from quicksave slot."""
@@ -675,6 +697,8 @@ class GameSession:
         self._restore_checkpoint(cp)
         self.checkpoints.clear()
         self.checkpoints.push(cp)
+        if hasattr(self.overlay, "show_toast"):
+            self.overlay.show_toast("Loaded quickslot", 2.0)
         return True
 
     @property
@@ -748,6 +772,10 @@ class GameSession:
                 self.director.ui_state.visible_chars = None
             else:
                 self.director.ui_state.visible_chars = int(self.text_reveal.visible_chars)
+
+        # Update transient toast timer (quicksave/quickload feedback)
+        if hasattr(self.overlay, "update_toast"):
+            self.overlay.update_toast(dt)
 
         # Update input box cursor if input prompt is active
         if self.active_input_prompt is not None:
