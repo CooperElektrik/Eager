@@ -355,10 +355,11 @@ class StageDirector:
         self.compositor.set_expression(char_id, expr)
 
     def handle_fade_in(self, args: str) -> None:
-        """Handle '~ fade_in [duration=X]'."""
+        """Handle '~ fade_in [duration=X] [color=#000]'."""
         parsed = parse_hook_args(args)
         duration = parsed.get_float("duration", 1.0)
-        self.compositor.fade_in(duration=duration)
+        color = _hook_color(parsed, "color", BLACK)
+        self.compositor.fade_in(duration=duration, color=color)
 
     def handle_fade_out(self, args: str) -> None:
         """Handle '~ fade_out [duration=X] [color=#000]'."""

@@ -140,3 +140,40 @@ def test_crossfade_parity(headless_window: Window) -> None:
     # Mean difference during crossfade should be minimal
     for ch_mean in stat.mean:
         assert ch_mean < 2.0, f"High average channel difference during crossfade: {stat.mean}"
+
+
+def test_fade_overlay_parity(headless_window: Window) -> None:
+    """Verify screen fade overlays (fade_in and fade_out) render identically across PIL and Pyglet."""
+    w, h = 640, 360
+    py_r = PygletRenderer(width=w, height=h, window=headless_window, scale_mode=ScaleMode.LETTERBOX)
+    pil_r = PILRenderer(width=w, height=h, mode="RGBA", adaptive_resampling=False, scale_mode=ScaleMode.LETTERBOX)
+
+    # 1. fade_out midpoint test
+    comp_out = StageCompositor(1920, 1080)
+    comp_out.set_background("bg/castle", duration=0.0)
+    comp_out.fade_out(duration=1.0, color=BLACK)
+    comp_out.update(0.5)
+
+    pil_out = pil_r.render_compositor(comp_out, w, h)
+    py_r.render_compositor(comp_out, w, h)
+    py_out = _read_pyglet_frame(headless_window).crop((0, 0, w, h))
+
+    diff_out = ImageChops.difference(pil_out, py_out)
+    stat_out = ImageStat.Stat(diff_out)
+    for ch_mean in stat_out.mean:
+        assert ch_mean < 1.0, f"High difference in fade_out at midpoint: {stat_out.mean}"
+
+    # 2. fade_in midpoint test (custom white fade)
+    comp_in = StageCompositor(1920, 1080)
+    comp_in.set_background("bg/castle", duration=0.0)
+    comp_in.fade_in(duration=1.0, color=WHITE)
+    comp_in.update(0.5)
+
+    pil_in = pil_r.render_compositor(comp_in, w, h)
+    py_r.render_compositor(comp_in, w, h)
+    py_in = _read_pyglet_frame(headless_window).crop((0, 0, w, h))
+
+    diff_in = ImageChops.difference(pil_in, py_in)
+    stat_in = ImageStat.Stat(diff_in)
+    for ch_mean in stat_in.mean:
+        assert ch_mean < 1.0, f"High difference in fade_in at midpoint: {stat_in.mean}"

@@ -88,6 +88,41 @@ def test_pil_fade_out_does_not_hang() -> None:
         assert px[:3] == (0, 0, 0)
 
 
+def test_fade_in_with_custom_color() -> None:
+    """fade_in should support custom colors (e.g. white fade-in from flash)."""
+    comp = StageCompositor(1920, 1080)
+    comp.fade_in(duration=0.4, color=WHITE)
+
+    items = comp.render_list()
+    assert len(items) == 1
+    assert items[0].asset_id == "__builtin_color_rect__"
+    assert items[0].tint == WHITE
+    assert items[0].opacity == pytest.approx(1.0)
+
+    comp.update(0.2)
+    items_mid = comp.render_list()
+    assert len(items_mid) == 1
+    assert items_mid[0].opacity == pytest.approx(0.5)
+
+    comp.update(0.2)
+    assert len(comp.render_list()) == 0
+
+
+def test_director_fade_in_hook_parses_color() -> None:
+    """StageDirector.handle_fade_in parses optional duration and color arguments."""
+    from eager_graphics.director import StageDirector
+
+    director = StageDirector(StageCompositor(1920, 1080))
+    director.handle_fade_in("duration=0.5 color=#ff0000")
+
+    items = director.compositor.render_list()
+    assert len(items) == 1
+    assert items[0].asset_id == "__builtin_color_rect__"
+    assert items[0].tint.r == pytest.approx(1.0)
+    assert items[0].tint.g == pytest.approx(0.0)
+    assert items[0].tint.b == pytest.approx(0.0)
+
+
 def test_overlay_scale_produces_stage_sized_coverage() -> None:
     """1x1 color rect scaled by stage dimensions produces full stage coverage."""
     comp = StageCompositor(1920, 1080)

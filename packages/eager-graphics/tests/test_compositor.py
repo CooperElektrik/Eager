@@ -260,9 +260,9 @@ def test_compositor_save_state_flushes_active_fade_and_crossfade() -> None:
 
     assert comp.timeline.active_count > 0
 
-    # save_state() flushes all active tweens before taking the snapshot
+    # save_state() snapshots settled state while preserving live active animations
     snapshot = comp.save_state()
-    assert comp.timeline.active_count == 0
+    assert comp.timeline.active_count > 0
 
     # Clear and restore snapshot
     comp.clear()
@@ -277,4 +277,10 @@ def test_compositor_save_state_flushes_active_fade_and_crossfade() -> None:
 
     alice_item = next(it for it in items if it.asset_id == "alice/happy")
     assert alice_item.opacity == pytest.approx(1.0)
+
+    # finish_animations flushes active tweens on the live compositor
+    comp.fade_out(duration=0.5)
+    assert comp.timeline.active_count > 0
+    comp.finish_animations()
+    assert comp.timeline.active_count == 0
 

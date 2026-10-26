@@ -566,9 +566,15 @@ class StageCompositor:
     # Screen Transitions & Camera Effects
     # =========================================================================
 
-    def fade_in(self, *, duration: float = 1.0) -> None:
-        """Fade in from a black overlay to reveal the stage."""
+    def fade_in(
+        self,
+        *,
+        duration: float = 1.0,
+        color: Color | None = None,
+    ) -> None:
+        """Fade in from a solid color overlay (default black) to reveal the stage."""
         overlay_layer = self.stage.get_or_create_layer("overlay", z_order=400)
+        target_color = color if color is not None else BLACK
         fade_elem = overlay_layer.get_element("__screen_fade__")
         if fade_elem is None:
             state = ElementState(
@@ -577,14 +583,14 @@ class StageCompositor:
                 anchor=Anchor.TOP_LEFT,
                 scale=Vec2(float(self.virtual_width), float(self.virtual_height)),
                 opacity=1.0,
-                tint=BLACK,
+                tint=target_color,
                 z_index=100,
             )
             fade_elem = StageElement("__screen_fade__", state)
             overlay_layer.add_element(fade_elem)
         else:
             fade_elem.opacity = 1.0
-            fade_elem.state.tint = BLACK
+            fade_elem.state.tint = target_color
 
         def _cleanup() -> None:
             overlay_layer.remove_element("__screen_fade__")
@@ -1014,12 +1020,60 @@ class StageCompositor:
     def save_state(self) -> dict[str, Any]:
         """Create a complete serializable snapshot of the visual stage state.
 
-        Active animations are flushed before serialization to avoid saving
-        transitory 0.0-opacity or mid-transition states.
+        Active animations are evaluated to their settled end states in the
+        serialized snapshot so checkpoints and rollback do not store transitory
+        mid-transition states, while live animations continue undisturbed.
         """
-        self.timeline.finish_all()
+        if not self.timeline.has_tweens():
+            return {
+                "stage": self.stage.to_dict(),
+                "virtual_width": self.virtual_width,
+                "virtual_height": self.virtual_height,
+            }
+
+        # Preserve live animation state before evaluating settled tweens for snapshot
+        saved_props: list[tuple[Any, str, Any]] = []
+        for t in self.timeline._tweens:
+            val = (
+                getattr(t.target, t.property_name, None)
+                if hasattr(t.target, t.property_name)
+                else (t.target.get(t.property_name) if isinstance(t.target, dict) else None)
+            )
+            if isinstance(val, Vec2):
+                val = Vec2(val.x, val.y)
+            elif isinstance(val, Color):
+                val = Color(val.r, val.g, val.b, val.a)
+            saved_props.append((t.target, t.property_name, val))
+
+        layers_elements = {
+            layer_name: dict(layer.elements)
+            for layer_name, layer in self.stage.layers.items()
+        }
+        live_tweens = list(self.timeline._tweens)
+
+        try:
+            self.timeline.finish_all()
+            stage_dict = self.stage.to_dict()
+        finally:
+            # Restore live stage elements and property values
+            for layer_name, elems in layers_elements.items():
+                if layer_name in self.stage.layers:
+                    self.stage.layers[layer_name].elements = elems
+                    self.stage.layers[layer_name]._sorted_cache = None
+            for (target, prop, orig_val), t in zip(saved_props, live_tweens):
+                if hasattr(target, prop):
+                    setattr(target, prop, orig_val)
+                elif isinstance(target, dict):
+                    target[prop] = orig_val
+                if t.on_update is not None:
+                    t.on_update(orig_val)
+            for t in live_tweens:
+                t.finished = False
+            self.timeline._tweens = live_tweens
+            self.stage._sorted_cache = None
+
         return {
-            "stage": self.stage.to_dict(),
+            "stage": stage_dict,
             "virtual_width": self.virtual_width,
             "virtual_height": self.virtual_height,
         }

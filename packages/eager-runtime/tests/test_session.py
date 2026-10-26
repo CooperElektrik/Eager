@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import eager_script
+import pytest
 from eager_core.audio import NullAudioBackend
 from eager_core.events import DialogueEvent
 from eager_core.types import Color
@@ -123,6 +124,70 @@ Bob: I followed you here.
     assert len(char_items) == 1
     assert char_items[0].asset_id == "alice/cheerful"
     assert char_items[0].opacity == 1.0
+
+
+def test_session_fade_in_and_fade_out_live_animation_lifecycle() -> None:
+    fade_story = """
+## Scene 1 --- scene1
+~ bg garden with cut
+~ fade_in duration=1.0
+Alice: Welcome to the world!
+~ fade_out duration=0.8 color=#ffffff
+Alice: Goodbye world!
+"""
+    graph = eager_script.parse_graph(fade_story)
+    session = GameSession(graph)
+
+    # 1. Advance lands on first beat
+    session.advance()
+    assert session.director.ui_state.speaker == "Alice"
+    assert session.director.ui_state.text == "Welcome to the world!"
+
+    # Active animation must NOT be wiped by checkpoint capture
+    assert session.compositor.timeline.active_count == 1
+    overlays = [it for it in session.compositor.render_list() if it.layer == "overlay"]
+    assert len(overlays) == 1
+    assert overlays[0].opacity == pytest.approx(1.0)
+
+    # Midway through fade_in
+    session.update(0.5)
+    assert session.compositor.timeline.active_count == 1
+    overlays_mid = [it for it in session.compositor.render_list() if it.layer == "overlay"]
+    assert len(overlays_mid) == 1
+    assert overlays_mid[0].opacity == pytest.approx(0.5)
+
+    # Complete fade_in
+    session.update(0.5)
+    assert session.compositor.timeline.active_count == 0
+    overlays_done = [it for it in session.compositor.render_list() if it.layer == "overlay"]
+    assert len(overlays_done) == 0
+
+    # 2. Advance to second beat (fade_out to white)
+    session.advance()
+    assert session.director.ui_state.text == "Goodbye world!"
+    assert session.compositor.timeline.active_count == 1
+
+    # Midway through fade_out
+    session.update(0.4)
+    overlays_white = [it for it in session.compositor.render_list() if it.layer == "overlay"]
+    assert len(overlays_white) == 1
+    assert overlays_white[0].opacity == pytest.approx(0.5)
+    assert overlays_white[0].tint.r == pytest.approx(1.0)
+    assert overlays_white[0].tint.g == pytest.approx(1.0)
+    assert overlays_white[0].tint.b == pytest.approx(1.0)
+
+    # Complete fade_out
+    session.update(0.4)
+    overlays_white_done = [it for it in session.compositor.render_list() if it.layer == "overlay"]
+    assert len(overlays_white_done) == 1
+    assert overlays_white_done[0].opacity == pytest.approx(1.0)
+
+    # 3. Rollback restores settled state without transitory overlay glitches
+    ok = session.rollback()
+    assert ok is True
+    assert session.director.ui_state.text == "Welcome to the world!"
+    overlays_rb = [it for it in session.compositor.render_list() if it.layer == "overlay"]
+    assert len(overlays_rb) == 0
 
 
 
