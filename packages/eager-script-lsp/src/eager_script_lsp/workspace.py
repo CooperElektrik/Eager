@@ -17,6 +17,16 @@ from eager_script_lsp.document import ScriptDocument
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "AssetIndex",
+    "CharacterSymbol",
+    "SceneSymbol",
+    "VariableSymbol",
+    "WorkspaceIndex",
+    "path_to_uri",
+    "uri_to_path",
+]
+
 
 def uri_to_path(uri: str) -> Path:
     """Convert a file:// URI to a filesystem Path."""

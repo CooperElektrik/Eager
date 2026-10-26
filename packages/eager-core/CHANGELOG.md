@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-10-26
+
+### Added
+
+- Domain exception hierarchy in `src/eager_core/exceptions.py` defining `EagerCoreError(Exception)` and subclasses `AudioError`, `ColorParseError`, `StorageError`, and `I18nError`.
+- `{fast}` typewriter text reveal tag support in `eager_core.text` (`FormattedText.fast_index`, `TextReveal`).
+- `Vec2` arithmetic safety: operations on incompatible types return `NotImplemented` and division by zero raises `ZeroDivisionError`.
+- Hex syntax validation in `Color.from_hex` raising `ColorParseError`.
+- Sealed all 10 submodules with explicit ASCII-sorted `__all__` lists.
+
 ## [0.5.0] - 2026-10-24
 
 ### Added

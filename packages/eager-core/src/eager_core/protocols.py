@@ -10,6 +10,34 @@ import logging
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
+__all__ = [
+    "ScreenManagerFactory",
+    "ScreenManagerProtocol",
+    "StageFactory",
+    "StageProtocol",
+    "ThemeFactory",
+    "UIFactory",
+    "UIProtocol",
+    "UIStateProtocol",
+    "get_audio_backend",
+    "get_player",
+    "get_renderer",
+    "get_screen_manager_factory",
+    "get_stage_factory",
+    "get_theme_factory",
+    "get_ui_factory",
+    "list_players",
+    "load_providers",
+    "register_audio_backend",
+    "register_player",
+    "register_renderer",
+    "register_screen_manager_factory",
+    "register_stage_factory",
+    "register_theme_factory",
+    "register_ui_factory",
+    "reset_providers",
+]
+
 logger = logging.getLogger(__name__)
 
 

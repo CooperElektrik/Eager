@@ -8,9 +8,14 @@ from typing import Any
 from eager_core.events import (
     ChoicePromptEvent,
     HookEvent,
+    InputPromptEvent,
     StoryEndEvent,
     StoryEvent,
 )
+
+__all__ = [
+    "EventDispatcher",
+]
 
 
 class EventDispatcher:
@@ -73,7 +78,7 @@ class EventDispatcher:
                     handler(event.args)
 
     def run_until_pause(self, vm: Any) -> StoryEvent | None:
-        """Step the VM and dispatch events until a ChoicePromptEvent or StoryEndEvent is encountered."""
+        """Step the VM and dispatch events until a ChoicePromptEvent, InputPromptEvent, or StoryEndEvent is encountered."""
         while not vm.is_ended:
             event = vm.step()
             if event is None:
@@ -81,7 +86,7 @@ class EventDispatcher:
 
             self.dispatch(event)
 
-            if isinstance(event, (ChoicePromptEvent, StoryEndEvent)):
+            if isinstance(event, (ChoicePromptEvent, InputPromptEvent, StoryEndEvent)):
                 return event
 
         return None

@@ -18,6 +18,11 @@ if TYPE_CHECKING:
     from eager_script_lsp.document import ScriptDocument
     from eager_script_lsp.workspace import WorkspaceIndex
 
+__all__ = [
+    "compute_code_lenses",
+    "compute_inlay_hints",
+]
+
 
 def compute_code_lenses(
     doc: ScriptDocument,

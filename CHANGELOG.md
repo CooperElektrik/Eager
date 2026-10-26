@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-10-26
+
+### Added
+
+- **Track R1: Syntax & AST Lowering**:
+  - Added `{fast}` typewriter text reveal tag support in `eager_core.text` (`FormattedText.fast_index`, `TextReveal`). Dialogue preceding `{fast}` is revealed instantly on the initial frame while subsequent text animates at normal typewriter speed.
+  - Added streaming AST generator `parse_iter` and stateful `ScreenplayParser` in `eager-script`.
+  - Added `ParsedSet`, `ParsedDefault`, `ParsedCharacter`, `ParsedIf`, `ParsedElif`, `ParsedElse`, `ParsedEnd`, `ParsedCondJump`, and `ParsedLocalJump` AST node definitions.
+  - Expanded boundary tests for screenplay syntax covering empty scripts, consecutive blank lines, unclosed voice/formatting tags, bare jumps/calls/hooks, and unicode integrity across CJK and emoji.
+- **Track R2: Core Primitives & Safety**:
+  - Established custom domain exception hierarchy in `src/eager_core/exceptions.py` defining `EagerCoreError(Exception)`, `AudioError(EagerCoreError, ValueError)`, `ColorParseError(EagerCoreError, ValueError)`, `StorageError(EagerCoreError, OSError)`, and `I18nError(EagerCoreError, ValueError)` with arbitrary forensic keyword context attributes.
+  - Added `Vec2` arithmetic safety: operations on incompatible types return `NotImplemented` and division by zero raises an informative `ZeroDivisionError`.
+  - Added hex syntax validation in `Color.from_hex` raising `ColorParseError`.
+  - Sealed 100% of public submodules across `eager-core` (10 submodules) and `eager-script` (5 submodules) with explicit ASCII-sorted `__all__` lists.
+- **Track R3: Headless Runtime & Fault-Tolerant Persistence**:
+  - Stream-aware input handling in `TerminalPlayer`: caught `(EOFError, KeyboardInterrupt, OSError, ValueError)` on choice and text prompt inputs, providing graceful fallback when streams are closed or redirected.
+  - Automatic forensic save backup: `SaveManager.load_slot()` detects non-dict roots, missing checkpoints, or malformed JSON payloads and automatically creates `<slot>.json.corrupt.bak` while returning `None`.
+  - Resilient slot metadata handling: `SaveMetadata.from_dict()` and `SaveManager.list_slots()` gracefully skip corrupted save slots without aborting directory listing.
+  - Sealed all 15 submodules in `eager-runtime` with explicit ASCII-sorted `__all__` lists.
+- **Track R4: Presentation & Backends Resilience**:
+  - Structured audio error logging: added `logger.warning(...)` diagnostics to `PygletAudioBackend` and `MiniaudioAudioBackend` when encountering uninitialized audio devices, missing media assets, or streaming decode failures.
+  - Bound `InputPromptEvent` in `StageDirector.bind()` and wired `active_input_prompt` into `UIState` and `clear_dialogue()`.
+  - Added stage composition boundary tests (`test_composition_edge_cases.py`) verifying offscreen coordinates, negative scale, rotation beyond 360°, zero opacity culling, and layer z-order sorting.
+  - Sealed all 17 submodules in `eager-graphics` with explicit ASCII-sorted `__all__` lists.
+- **Track R5: Language Server Protocol Intelligence**:
+  - Partial filter autocompletion: regex-based filtering for scene targets (e.g., `> s` or `visited('s`), directives, and built-in functions.
+  - Character documentation on hover: hovering character tokens inside engine hooks (e.g., `~ show <char>`) displays character sheets with display names, colors, and asset references.
+  - Function documentation tooltips: added full parameter and return type hover docstrings for all 11 DSL expression functions.
+  - Definition lookup fallback: variable definition navigation falls back to the first mutation site when an explicit `@default` declaration is absent.
+  - Preserved indentation during AST error recovery: `_recover_ast` retains leading whitespace to prevent indentation truncation inside nested choice blocks.
+  - Buffer synchronization diagnostics clearing: publishing empty diagnostics when untracked or deleted files are closed.
+  - CLI capabilities: added `--version` flag and validated that target files end in `.es`.
+  - Expanded LSP test suite from 37 to 83 unit tests covering CLI options, AST resilience, completion filters, and multi-file project workspaces.
+- **Track R6: Monorepo Integrity & E2E Testing**:
+  - Authored comprehensive 58-test opaque-box E2E test suite in `packages/eager-runtime/tests/test_e2e_scenarios.py` across 4 systematic tiers (Feature Coverage, Boundary & Corner Cases, Cross-Feature Combinations, Real-World Application Scenarios) and published `TEST_READY.md`.
+  - Monorepo test suite expanded from 649 to 936 passing tests (+287 tests) with zero failures and zero flakiness.
+
+### Changed
+
+- **Track R1**: Removed dead code in `eager-script` (`VOICE_PATTERN`, `_strip_line_comment`, `_slugify`).
+- **Track R2**: Removed obsolete `"Programming Language :: Python :: 3.10"` classifier across all `pyproject.toml` files, aligning with Python `>=3.11` runtime requirements.
+- **Track R4**: Corrected `pyglet.py` error message to recommend `pip install 'eager-graphics[hardware]'`.
+- **Track R4**: Disambiguated `ChoiceOption`: removed re-export from `ui_state.py` and consolidated canonical imports directly to `from eager_core.events import ChoiceOption`.
+
+### Fixed
+
+- **Track R1**: Safe expression evaluator catches and wraps all runtime arithmetic, type, and value errors (`ZeroDivisionError`, `ArithmeticError`, `TypeError`, `ValueError`) into `ExprError`.
+- **Track R1**: Refactored `test_parser.py` with explicit type narrowing, resolving 922 basedpyright errors and enabling permanent removal of `ignore = ["tests/test_parser.py"]`.
+- **Track R3**: Fixed infinite loop bug on `InputPromptEvent` in `EventDispatcher.run_until_pause()` by adding `InputPromptEvent` to the pause boundary condition.
+- **Track R3**: Fixed non-canonical direct submodule import in `cli.py:405` (`from eager_core.audio import NullAudioBackend`).
+- **Track R4**: Resolved 124 basedpyright diagnostics across `packages/eager-graphics/tests/` (MockUIDrawBackend method signatures, PIL getpixel narrowing, Pyglet window fixtures).
+- **Track R4**: Fixed non-canonical import in `test_director.py:5` (`from eager_core.audio import AudioMixer, NullAudioBackend`).
+- **Track R5**: Suppressed single-file false positive diagnostics for subroutine returns, external scene labels, and entry point reachability in multi-file projects.
+
 ## [0.6.0] - 2026-10-24
 
 ### Added
@@ -153,7 +207,9 @@ Consolidates all changes after the v0.1.0 release (initial commit `97609c1`, 202
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/CooperElektrik/Eager/compare/v0.2.0...v0.3.0

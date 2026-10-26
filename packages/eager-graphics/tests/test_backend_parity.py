@@ -4,20 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-try:
-    import pyglet
-    from pyglet.window import Window
-    PYGLET_AVAILABLE = True
-except ImportError:
-    PYGLET_AVAILABLE = False
+pytest.importorskip("pyglet")
+pytest.importorskip("PIL")
 
-try:
-    from PIL import Image, ImageChops, ImageStat
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
-
+import pyglet
 from eager_core.types import BLACK, WHITE, Color
+from PIL import Image, ImageChops, ImageStat
+from pyglet.window import Window
 
 from eager_graphics.compositor import StageCompositor
 from eager_graphics.renderers.pil.renderer import PILRenderer
@@ -27,8 +20,6 @@ from eager_graphics.types import ScaleMode
 
 @pytest.fixture
 def headless_window():
-    if not PYGLET_AVAILABLE:
-        pytest.skip("Pyglet not available")
     try:
         win = Window(width=640, height=360, visible=False)
     except Exception as exc:  # noqa: BLE001
@@ -50,7 +41,6 @@ def _read_pyglet_frame(win: Window) -> Image.Image:
     )
 
 
-@pytest.mark.skipif(not (PYGLET_AVAILABLE and PIL_AVAILABLE), reason="Requires Pyglet and Pillow")
 def test_text_metrics_parity(headless_window: Window) -> None:
     """Verify measure_text yields identical typographic metrics across PIL and Pyglet."""
     py_r = PygletRenderer(width=640, height=360, window=headless_window)
@@ -74,7 +64,6 @@ def test_text_metrics_parity(headless_window: Window) -> None:
             assert abs(py_h - pil_h) <= 1.0, f"Height mismatch for '{s}' at size {size}: {py_h} vs {pil_h}"
 
 
-@pytest.mark.skipif(not (PYGLET_AVAILABLE and PIL_AVAILABLE), reason="Requires Pyglet and Pillow")
 def test_ui_primitives_render_parity(headless_window: Window) -> None:
     """Verify UI rectangle and gradient drawing primitives produce near-identical pixels."""
     w, h = 400, 300
@@ -111,7 +100,6 @@ def test_ui_primitives_render_parity(headless_window: Window) -> None:
         assert ch_mean < 0.5, f"High average channel difference in UI primitives: {stat.mean}"
 
 
-@pytest.mark.skipif(not (PYGLET_AVAILABLE and PIL_AVAILABLE), reason="Requires Pyglet and Pillow")
 def test_stage_compositor_render_parity(headless_window: Window) -> None:
     """Verify StageCompositor output renders with close parity across both engines."""
     w, h = 640, 360
@@ -132,7 +120,6 @@ def test_stage_compositor_render_parity(headless_window: Window) -> None:
         assert ch_mean < 1.5, f"High average channel difference in stage compositor: {stat.mean}"
 
 
-@pytest.mark.skipif(not (PYGLET_AVAILABLE and PIL_AVAILABLE), reason="Requires Pyglet and Pillow")
 def test_crossfade_parity(headless_window: Window) -> None:
     """Verify background crossfade blending stays linear and avoids black dip in both engines."""
     w, h = 640, 360

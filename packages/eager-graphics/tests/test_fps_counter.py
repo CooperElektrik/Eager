@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 import pytest
+from eager_core.types import BLACK
 
 from eager_graphics import FrameClock, NullRenderer, StageCompositor
 
@@ -116,7 +117,7 @@ class TestNullRendererFPS:
         backend = NullRenderer()
 
         backend.begin_frame()
-        backend.clear(comp.__class__.__module__ and __import__("eager_graphics").BLACK)
+        backend.clear(BLACK)
         backend.end_frame()
         assert backend.frame_count == 1
         assert backend.fps == 0.0  # needs ≥2 frames for instantaneous

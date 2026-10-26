@@ -25,11 +25,9 @@ from eager_graphics.renderers.pil import (
     PILRenderer,
 )
 
-pytestmark = pytest.mark.skipif(not PIL_AVAILABLE, reason="Pillow is not installed")
+pytest.importorskip("PIL")
 
-if PIL_AVAILABLE:
-    from PIL import Image
-
+from PIL import Image, ImageChops
 
 # ---------------------------------------------------------------------- #
 # PILAssetResolver Tests
@@ -161,6 +159,7 @@ def test_pil_renderer_clear() -> None:
     img = backend.get_image()
     # Check top-left pixel is red
     pixel = img.getpixel((0, 0))
+    assert isinstance(pixel, tuple)
     assert pixel[:3] == (255, 0, 0)
 
 
@@ -413,7 +412,9 @@ def test_pil_renderer_letterbox_borders() -> None:
     img = renderer.render_compositor(comp, 2560, 720)
 
     # Far-left column should be black letterbox bar
-    assert img.getpixel((0, 360))[:3] == (0, 0, 0)
+    px_letterbox = img.getpixel((0, 360))
+    assert isinstance(px_letterbox, tuple)
+    assert px_letterbox[:3] == (0, 0, 0)
 
 
 def test_pil_renderer_clear_cache() -> None:
@@ -578,7 +579,9 @@ def test_pil_renderer_lazy_clear() -> None:
     # The clear should have been bypassed because the opaque item covers the entire canvas
     assert renderer._needs_clear is False
     renderer.end_frame()
-    assert renderer.get_image().getpixel((0, 0))[:3] == (255, 255, 255)
+    px_0 = renderer.get_image().getpixel((0, 0))
+    assert isinstance(px_0, tuple)
+    assert px_0[:3] == (255, 255, 255)
 
     # 2. Clear with green and render translucent item -> clear must execute
     renderer.begin_frame()
@@ -603,7 +606,9 @@ def test_pil_renderer_lazy_clear() -> None:
     assert renderer._needs_clear is False
     renderer.end_frame()
     # Bottom-right untouched pixel must be green
-    assert renderer.get_image().getpixel((150, 150))[:3] == (0, 255, 0)
+    px_150 = renderer.get_image().getpixel((150, 150))
+    assert isinstance(px_150, tuple)
+    assert px_150[:3] == (0, 255, 0)
 
 
 def test_pil_renderer_anchor_cache_isolation() -> None:
@@ -911,6 +916,7 @@ def test_pil_renderer_draw_rect_alpha_blending() -> None:
 
     img = renderer.get_image()
     pixel = img.getpixel((20, 20))
+    assert isinstance(pixel, tuple)
     # Must NOT be solid white (255, 255, 255)
     assert pixel != (255, 255, 255)
     # Expected alpha blend: 51 + (255 - 51) * (20 / 255) = 67
@@ -929,6 +935,7 @@ def test_pil_renderer_draw_rect_outline() -> None:
     img = renderer.get_image()
     # Border pixel at (10, 10) should be blended with 50% white: ~153
     border_px = img.getpixel((10, 10))
+    assert isinstance(border_px, tuple)
     assert 140 <= border_px[0] <= 165
 
     # Center pixel at (50, 35) must be untouched (51, 51, 51)
@@ -953,6 +960,7 @@ def test_pil_quick_menu_hover_highlight() -> None:
 
     img = renderer.get_image()
     sample = img.getpixel((int(bx + 2), int(by + 2)))
+    assert isinstance(sample, tuple)
     # Before the fix, sample was (255, 255, 255), completely covering content underneath
     assert sample != (255, 255, 255)
     assert 60 <= sample[0] <= 75
@@ -1052,7 +1060,9 @@ def test_putalpha_does_not_corrupt_cached_texture():
     # Verify the cached base texture still has alpha=255
     base_tex = renderer.asset_resolver._image_cache["bg/test_bg"]
     base_pixels = list(base_tex.get_flattened_data())
-    assert base_pixels[0][3] == 255, "Base texture alpha was corrupted by putalpha!"
+    first_pixel = base_pixels[0]
+    assert isinstance(first_pixel, tuple)
+    assert first_pixel[3] == 255, "Base texture alpha was corrupted by putalpha!"
 
 
 def test_lazy_stage_cache_copy_skipped_on_scene_change():
@@ -1493,7 +1503,6 @@ def test_pil_player_shift_r_hot_reload(tmp_path: Path) -> None:
 
 def test_dirty_rectangle_tracking_single_moving_actor() -> None:
     """When a single character moves, only damaged region is restored and only moving actor redrawn."""
-    from PIL import ImageChops
 
     comp = StageCompositor(1280, 720)
     comp.set_background("bg/tavern", duration=0.0)
@@ -1503,7 +1512,8 @@ def test_dirty_rectangle_tracking_single_moving_actor() -> None:
     renderer = PILRenderer(1280, 720)
     # Frame 1: Full render populating _bg_cache
     renderer.render_compositor(comp, 1280, 720)
-    assert renderer._last_dirty_bbox is None
+    initial_dirty = renderer._last_dirty_bbox
+    assert initial_dirty is None
     assert renderer._bg_cache is not None
 
     drawn_items: list[str] = []
@@ -1538,7 +1548,6 @@ def test_dirty_rectangle_tracking_single_moving_actor() -> None:
 
 def test_dirty_rectangle_intersecting_actors_redrawn() -> None:
     """When a moving actor's bounding box intersects another actor, both are cleanly redrawn."""
-    from PIL import ImageChops
 
     comp = StageCompositor(1280, 720)
     comp.set_background("bg/tavern", duration=0.0)

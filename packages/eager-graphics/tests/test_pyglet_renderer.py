@@ -1,24 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
-try:
-    import pyglet
+pytest.importorskip("pyglet")
 
-    from eager_graphics.renderers.pyglet import (
-        PygletAssetResolver,
-        PygletAudioBackend,
-        PygletPlayer,
-        PygletRenderer,
-    )
-
-    PYGLET_AVAILABLE = True
-except ImportError:
-    PYGLET_AVAILABLE = False
-
+import pyglet
 from eager_script import parse_graph
+from pyglet.window import Window, mouse
 
 from eager_graphics import (
     Anchor,
@@ -28,14 +20,18 @@ from eager_graphics import (
     ScaleMode,
     StageCompositor,
 )
-
-pytestmark = pytest.mark.skipif(not PYGLET_AVAILABLE, reason="Pyglet not installed")
+from eager_graphics.renderers.pyglet import (
+    PygletAssetResolver,
+    PygletAudioBackend,
+    PygletPlayer,
+    PygletRenderer,
+)
 
 
 @pytest.fixture
-def invisible_window() -> pyglet.window.Window:
+def invisible_window() -> Iterator[Window]:
     """Fixture providing an invisible Pyglet window for headless test execution."""
-    win = pyglet.window.Window(width=1280, height=720, visible=False)
+    win = Window(width=1280, height=720, visible=False)
     yield win
     try:
         win.close()
@@ -67,7 +63,7 @@ def test_pyglet_asset_resolver_placeholders() -> None:
     assert guard_tex is not char_tex
 
 
-def test_pyglet_renderer_draw_items(invisible_window: pyglet.window.Window) -> None:
+def test_pyglet_renderer_draw_items(invisible_window: Window) -> None:
     renderer = PygletRenderer(scale_mode=ScaleMode.LETTERBOX, window=invisible_window)
 
     compositor = StageCompositor(1920, 1080)
@@ -103,7 +99,7 @@ def test_pyglet_renderer_draw_items(invisible_window: pyglet.window.Window) -> N
     assert bob_sprite.scale_x < 0
 
 
-def test_pyglet_renderer_draw_item_properties(invisible_window: pyglet.window.Window) -> None:
+def test_pyglet_renderer_draw_item_properties(invisible_window: Window) -> None:
     renderer = PygletRenderer(scale_mode=ScaleMode.STRETCH, window=invisible_window)
     layout = LayoutResolver(1920, 1080)
     renderer._current_transform = layout.compute_viewport_transform(
@@ -206,7 +202,7 @@ def test_pyglet_player_story_progression() -> None:
         player.close()
 
 
-def test_pyglet_renderer_anchors_and_rotation(invisible_window: pyglet.window.Window) -> None:
+def test_pyglet_renderer_anchors_and_rotation(invisible_window: Window) -> None:
     """Verify that items with various anchors and rotation are correctly transformed."""
     renderer = PygletRenderer(scale_mode=ScaleMode.LETTERBOX, window=invisible_window)
     layout = LayoutResolver(1920, 1080)
@@ -305,14 +301,14 @@ def test_pyglet_player_choice_mouse_click() -> None:
         # Opt 1 (B): by = 306 - 54 = 252. [252, 294]
         # Center x = 400
         # Click on Option B (e.g. y = 270, x = 400)
-        player.on_mouse_press(400, 270, pyglet.window.mouse.LEFT, 0)
+        player.on_mouse_press(400, 270, mouse.LEFT, 0)
         assert player.active_choice_prompt is None
         assert player.current_text == "B selected."
     finally:
         player.close()
 
 
-def test_pyglet_renderer_size_repr_and_primitives(invisible_window: pyglet.window.Window) -> None:
+def test_pyglet_renderer_size_repr_and_primitives(invisible_window: Window) -> None:
     """Verify PygletRenderer constructor dimensions, len/repr, and drawing primitives."""
     # Custom dimensions without window
     r_custom = PygletRenderer(width=1280, height=720)
@@ -402,7 +398,7 @@ def test_pyglet_player_run_and_input_handling(monkeypatch: pytest.MonkeyPatch) -
             return orig_handle_input(action, **kw)
 
         monkeypatch.setattr(session, "handle_input", spy_handle_input)
-        player.on_mouse_press(100, 100, pyglet.window.mouse.RIGHT, 0)
+        player.on_mouse_press(100, 100, mouse.RIGHT, 0)
         assert game_menu_dispatched == [True]
 
         # Mouse drag forwards pointer move and does NOT spam synthetic click events
@@ -417,14 +413,14 @@ def test_pyglet_player_run_and_input_handling(monkeypatch: pytest.MonkeyPatch) -
             return orig_handle_input(action, **kw)
 
         monkeypatch.setattr(session, "handle_input", spy_drag_events)
-        player.on_mouse_drag(150, 200, 5, 5, pyglet.window.mouse.LEFT, 0)
+        player.on_mouse_drag(150, 200, 5, 5, mouse.LEFT, 0)
         assert len(drag_moves) == 1
         assert drag_moves[0]["x"] == 150
         assert drag_moves[0]["y"] == 720 - 200
         assert len(drag_clicks) == 0
 
         # Click press dispatches click
-        player.on_mouse_press(150, 200, pyglet.window.mouse.LEFT, 0)
+        player.on_mouse_press(150, 200, mouse.LEFT, 0)
         assert len(drag_clicks) == 1
         assert drag_clicks[0]["x"] == 150
         assert drag_clicks[0]["y"] == 720 - 200
@@ -433,7 +429,7 @@ def test_pyglet_player_run_and_input_handling(monkeypatch: pytest.MonkeyPatch) -
         player.close()
 
 
-def test_pyglet_stage_sprite_pooling(invisible_window: pyglet.window.Window) -> None:
+def test_pyglet_stage_sprite_pooling(invisible_window: Window) -> None:
     """Verify stage sprites are pooled, reused across frames, and hidden when unused."""
     renderer = PygletRenderer(scale_mode=ScaleMode.LETTERBOX, window=invisible_window)
     compositor = StageCompositor(1920, 1080)
@@ -474,7 +470,7 @@ def test_pyglet_stage_sprite_pooling(invisible_window: pyglet.window.Window) -> 
     assert renderer._pooled_stage_sprites[2].visible is False
 
 
-def test_pyglet_ui_pooling_and_batching(invisible_window: pyglet.window.Window) -> None:
+def test_pyglet_ui_pooling_and_batching(invisible_window: Window) -> None:
     """Verify UI rectangles, boxes, gradient rects, labels, and sprites are pooled and batched."""
     renderer = PygletRenderer(scale_mode=ScaleMode.LETTERBOX, window=invisible_window)
 
@@ -518,12 +514,13 @@ def test_pyglet_ui_pooling_and_batching(invisible_window: pyglet.window.Window) 
     assert grad_inst.visible is False
 
 
-def test_pyglet_measure_text_caching(invisible_window: pyglet.window.Window) -> None:
+def test_pyglet_measure_text_caching(invisible_window: Window) -> None:
     """Verify that measure_text uses the LRU cache and avoids recalculations."""
     renderer = PygletRenderer(window=invisible_window)
-    renderer._cached_measure_text.cache_clear()
+    cached_func = cast(Any, renderer._cached_measure_text)
+    cached_func.cache_clear()
 
-    info_before = renderer._cached_measure_text.cache_info()
+    info_before = cached_func.cache_info()
     assert info_before.hits == 0
 
     w1, h1 = renderer.measure_text("Cached text string", font_size=16, bold=True)
@@ -534,11 +531,11 @@ def test_pyglet_measure_text_caching(invisible_window: pyglet.window.Window) -> 
     assert w1 == w2
     assert h1 == h2
 
-    info_after = renderer._cached_measure_text.cache_info()
+    info_after = cached_func.cache_info()
     assert info_after.hits >= 1
 
 
-def test_pyglet_letterbox_caching(invisible_window: pyglet.window.Window) -> None:
+def test_pyglet_letterbox_caching(invisible_window: Window) -> None:
     """Verify letterbox bars are computed and cached, avoiding recreation every frame."""
     renderer = PygletRenderer(width=1600, height=720, scale_mode=ScaleMode.LETTERBOX, window=invisible_window)
     compositor = StageCompositor(1920, 1080)

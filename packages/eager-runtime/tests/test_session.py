@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 
 import eager_script
+from eager_core.audio import NullAudioBackend
+from eager_core.events import DialogueEvent
 from eager_core.types import Color
 
 from eager_runtime import ChoicePromptEvent, GameSession, InputAction, InputPromptEvent
@@ -428,12 +430,9 @@ Alice: {voice:alice_02.ogg} Second line with voice.
     assert speaker_btns[0].voice == "alice_01.ogg"
     assert speaker_btns[1].voice == "alice_02.ogg"
 
-    class MockBackend:
-        def __init__(self):
-            self.calls = []
-
-        def play(self, channel, path, **kwargs):
-            self.calls.append((channel, str(path)))
+    class MockBackend(NullAudioBackend):
+        def play(self, channel: str, asset_path: str | Path, **kwargs: Any) -> None:
+            self.calls.append(("voice", str(asset_path)))
 
         def stop(self, channel, **kwargs):
             pass
@@ -447,11 +446,11 @@ Alice: {voice:alice_02.ogg} Second line with voice.
     # Click the first speaker button via session click input
     btn0 = speaker_btns[0]
     session.handle_input(InputAction.POINTER_CLICK, x=btn0.rect.x + 1, y=btn0.rect.y + 1)
-    assert any(c[0] == "voice" and "alice_01.ogg" in c[1] for c in mock_backend.calls)
+    assert any(c[0] == "voice" and isinstance(c[1], str) and "alice_01.ogg" in c[1] for c in mock_backend.calls)
 
     # Also test session.play_voice directly
     session.play_voice("direct_call.ogg")
-    assert any(c[0] == "voice" and "direct_call.ogg" in c[1] for c in mock_backend.calls)
+    assert any(c[0] == "voice" and isinstance(c[1], str) and "direct_call.ogg" in c[1] for c in mock_backend.calls)
 
 
 def test_session_input_prompt_handle_input_wiring() -> None:
@@ -467,6 +466,7 @@ Alice: Welcome, [hero_name]!
     session.advance()  # Alice: What is your name?
     ev = session.advance()  # input_prompt
     assert ev is not None
+    assert isinstance(ev, InputPromptEvent)
     assert ev.type == "input_prompt"
     assert ev.prompt == "Enter name:"
     assert ev.default == "Traveler"
@@ -510,7 +510,8 @@ Alice: Line 3
 
     # Advance through Line 1
     ev1 = session.advance()
-    assert ev1 is not None and getattr(ev1, "beat_id", None) is not None
+    assert isinstance(ev1, DialogueEvent)
+    assert ev1.beat_id is not None
     seen1 = session.persistent.get("seen_beats")
     assert isinstance(seen1, list)
     assert ev1.beat_id in seen1
@@ -518,7 +519,8 @@ Alice: Line 3
 
     # 2. Advance through Line 2
     ev2 = session.advance()
-    assert ev2 is not None and getattr(ev2, "beat_id", None) is not None
+    assert isinstance(ev2, DialogueEvent)
+    assert ev2.beat_id is not None
     assert ev2.beat_id in session.persistent["seen_beats"]
 
     # 3. Create a fresh session with same persistent data (playthrough 2)
@@ -741,7 +743,7 @@ Alice: Path C taken.
     ev = session.advance()
     assert ev is not None and ev.type == "dialogue"
     ev_choice = session.advance()
-    assert ev_choice is not None and ev_choice.type == "choice_prompt"
+    assert isinstance(ev_choice, ChoicePromptEvent)
     assert len(ev_choice.options) == 3
     assert ev_choice.options[0].enabled is True
     assert ev_choice.options[1].enabled is False
@@ -928,8 +930,7 @@ Alice: Hello, [player_name]!
 
     # Submit input
     diag = session.submit_input("Hero")
-    assert diag is not None
-    assert diag.type == "dialogue"
+    assert isinstance(diag, DialogueEvent)
     assert "Hello, Hero!" in diag.text
     assert session.vm.get_variable("player_name") == "Hero"
 

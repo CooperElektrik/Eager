@@ -10,6 +10,14 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from eager_script import ParsedItem
 
+__all__ = [
+    "SceneEdge",
+    "SceneGraph",
+    "SceneNode",
+    "parse_graph",
+    "to_graph",
+]
+
 
 def _anon_scene_id(scene_id: str, line_number: int) -> str:
     """Build the stable id of an anonymous scene lowered from an inline choice block."""

@@ -19,6 +19,10 @@ if TYPE_CHECKING:
     from eager_script_lsp.document import ScriptDocument
     from eager_script_lsp.workspace import WorkspaceIndex
 
+__all__ = [
+    "compute_diagnostics",
+]
+
 
 def compute_diagnostics(doc: ScriptDocument, workspace: WorkspaceIndex) -> list[Diagnostic]:
     """Compute all diagnostics for the given document within the workspace."""
@@ -69,6 +73,36 @@ def compute_diagnostics(doc: ScriptDocument, workspace: WorkspaceIndex) -> list[
             )
 
         for warn in val_result.warnings:
+            # 1. Suppress subroutine warning if workspace contains returns
+            if "Subroutine call" in warn.message:
+                workspace_has_return = any(
+                    any(s.kind == "return_keyword" for s in d.spans)
+                    for d in workspace.documents.values()
+                )
+                if workspace_has_return:
+                    continue
+
+            # 2. Suppress orphan label warning if targeted elsewhere in workspace
+            m_orphan = re.search(
+                r"Label ['\"]?([A-Za-z0-9_-]+)['\"]? is defined but never targeted",
+                warn.message,
+            )
+            if m_orphan:
+                lbl = m_orphan.group(1)
+                if lbl in workspace.references and len(workspace.references[lbl]) > 0:
+                    continue
+
+            # 3. Suppress unreachable from entry warning if predecessor exists in workspace
+            m_unreach = re.search(
+                r"Label ['\"]?([A-Za-z0-9_-]+)['\"]? is unreachable from the script entry",
+                warn.message,
+            )
+            if m_unreach:
+                lbl = m_unreach.group(1)
+                sym = workspace.get_scene(lbl)
+                if sym and len(sym.predecessors) > 0:
+                    continue
+
             line_0 = max(0, warn.line_number - 1)
             token_range = _find_best_range(doc, line_0)
             is_unreachable = "unreachable" in warn.message.lower() or "dead code" in warn.message.lower()

@@ -93,3 +93,98 @@ Narrator: Done
 
         outgoing = compute_outgoing_calls(index, item)
         assert any("Finish" in out.to.name for out in outgoing)
+
+
+def test_definition_characters_variables_and_assets():
+    """Verify Go to Definition for characters, variables, and media assets."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        (root / "assets" / "bg").mkdir(parents=True)
+        (root / "assets" / "bg" / "park.png").write_bytes(b"PNG")
+
+        f1 = root / "script.es"
+        f1.write_text("""@character kaori "Kaori"
+@default health = 100
+## Scene 1 --- s1
+Kaori: Hello
+$ health -= 10
+~ bg park
+~ bg missing_park
+UnknownSpeaker: Who am I?
+$ uninitialized_var = 5
+""", encoding="utf-8")
+
+        index = WorkspaceIndex(root)
+        index.initialize()
+        doc = index.get_document(f1.as_uri())
+        assert doc is not None
+
+        # Character speaker -> @character line
+        loc_char = compute_definition(doc, index, Position(line=3, character=2))
+        assert loc_char is not None and not isinstance(loc_char, list)
+        assert loc_char.range.start.line == 0
+
+        # Variable mutation -> @default line
+        loc_var = compute_definition(doc, index, Position(line=4, character=3))
+        assert loc_var is not None and not isinstance(loc_var, list)
+        assert loc_var.range.start.line == 1
+
+        # Existing asset -> file URI on disk
+        loc_asset = compute_definition(doc, index, Position(line=5, character=6))
+        assert loc_asset is not None and not isinstance(loc_asset, list)
+        assert loc_asset.uri.endswith("park.png")
+
+        # Missing asset -> None
+        assert compute_definition(doc, index, Position(line=6, character=6)) is None
+
+        # Speaker with no @character -> None
+        assert compute_definition(doc, index, Position(line=7, character=2)) is None
+
+        # Variable with no @default -> falls back to first mutation location (line 8)
+        loc_uninit = compute_definition(doc, index, Position(line=8, character=3))
+        assert loc_uninit is not None and not isinstance(loc_uninit, list)
+        assert loc_uninit.range.start.line == 8
+
+
+def test_references_character_and_variable_occurrences():
+    """Verify Find References locates all character and variable occurrences across workspace."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        (root / "f1.es").write_text("""@character hoshiko "Hoshiko"
+@default affinity = 10
+## Scene 1 --- s1
+Hoshiko: Hi
+~ show hoshiko smile
+$ affinity += 5
+""", encoding="utf-8")
+
+        index = WorkspaceIndex(root)
+        index.initialize()
+        doc = index.get_document((root / "f1.es").as_uri())
+        assert doc is not None
+
+        # Character references (decl, speaker, hook)
+        refs_char = compute_references(doc, index, Position(line=3, character=2))
+        assert len(refs_char) >= 3
+
+        # Variable references (default, mutation)
+        refs_var = compute_references(doc, index, Position(line=5, character=3))
+        assert len(refs_var) >= 2
+
+
+def test_document_symbols_empty_document():
+    """Verify document symbols returns empty list on empty documents without error."""
+    doc = ScriptDocument("file:///empty.es", "")
+    symbols = compute_document_symbols(doc)
+    assert symbols == []
+
+
+def test_navigation_out_of_bounds_queries():
+    """Verify definition and reference queries return None/empty when position is out of bounds."""
+    index = WorkspaceIndex(Path("."))
+    doc = ScriptDocument("file:///test.es", "## Scene 1 --- s1\nNarrator: Hello\n")
+
+    oob = Position(line=9999, character=9999)
+    assert compute_definition(doc, index, oob) is None
+    assert compute_references(doc, index, oob) == []
+

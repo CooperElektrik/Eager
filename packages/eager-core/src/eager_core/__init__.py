@@ -29,6 +29,13 @@ from eager_core.events import (
     StoryEndEvent,
     StoryEvent,
 )
+from eager_core.exceptions import (
+    AudioError,
+    ColorParseError,
+    EagerCoreError,
+    I18nError,
+    StorageError,
+)
 from eager_core.i18n import (
     TranslationCatalog,
     TranslationManager,
@@ -70,7 +77,7 @@ from eager_core.types import (
     Vec2,
 )
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     # Types & Geometry
@@ -86,13 +93,16 @@ __all__ = [
     "AppendEvent",
     # Audio
     "AudioBackend",
+    "AudioError",
     "AudioMixer",
     "BaseAudioBackend",
     "ChannelState",
     "ChoiceOption",
     "ChoicePromptEvent",
     "Color",
+    "ColorParseError",
     "DialogueEvent",
+    "EagerCoreError",
     "EasingFunc",
     # Text
     "FormattedText",
@@ -100,6 +110,7 @@ __all__ = [
     "FrameClock",
     "FreshBoxEvent",
     "HookEvent",
+    "I18nError",
     # Input
     "InputAction",
     "InputPromptEvent",
@@ -112,6 +123,7 @@ __all__ = [
     "SceneExitEvent",
     "ScreenManagerProtocol",
     "StageProtocol",
+    "StorageError",
     "StoryEndEvent",
     "StoryEvent",
     "TextReveal",

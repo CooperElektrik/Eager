@@ -9,6 +9,11 @@ from pathlib import Path
 
 import eager_script
 
+__all__ = [
+    "build_parser",
+    "main",
+]
+
 
 def _cmd_parse(args: argparse.Namespace) -> int:
     path = Path(args.file)

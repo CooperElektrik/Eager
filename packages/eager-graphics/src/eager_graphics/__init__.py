@@ -37,6 +37,7 @@ from eager_core.text import (
     TextSegment,
     parse_text_tags,
 )
+from eager_core.timing import FrameClock
 from eager_core.types import (
     BLACK,
     BLUE,
@@ -52,8 +53,11 @@ from eager_core.types import (
 from eager_graphics.compositor import StageCompositor
 from eager_graphics.director import CharacterConfig, StageDirector
 from eager_graphics.layout import LayoutResolver, ViewportTransform
+from eager_graphics.player import BasePlayer
 from eager_graphics.protocol import RenderBackend, RenderItem, UIDrawBackend
+from eager_graphics.renderers.null import NullRenderer
 from eager_graphics.stage import ElementState, Layer, Stage, StageElement
+from eager_graphics.theme import Theme
 from eager_graphics.timeline import Timeline, Tween
 from eager_graphics.types import Anchor, DebugOverlayMode, ScaleMode, TransitionKind
 from eager_graphics.ui_components import (
@@ -65,12 +69,11 @@ from eager_graphics.ui_components import (
     InputBox,
     TextAnchor,
     TextboxStyle,
-    Theme,
     UIOverlay,
 )
-from eager_graphics.ui_state import ChoiceOption, UIState
+from eager_graphics.ui_state import UIState
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     "BLACK",
@@ -80,10 +83,10 @@ __all__ = [
     "TRANSPARENT",
     "WHITE",
     "Anchor",
+    "BasePlayer",
     "CharacterConfig",
     "ChoiceMenu",
     "ChoiceMenuStyle",
-    "ChoiceOption",
     "Color",
     "DebugOverlayMode",
     "DialogueBox",
@@ -92,10 +95,18 @@ __all__ = [
     "ElementState",
     "EndNotice",
     "FormattedText",
+    "FrameClock",
     "InputBox",
     "Layer",
     "LayoutResolver",
+    "NullRenderer",
+    "PILAssetResolver",
+    "PILPlayer",
+    "PILRenderer",
     "PausePoint",
+    "PygletAssetResolver",
+    "PygletPlayer",
+    "PygletRenderer",
     "Rect",
     "RenderBackend",
     "RenderItem",
@@ -141,13 +152,8 @@ __all__ = [
     "get_easing",
     "linear",
     "parse_text_tags",
+    "register_providers",
 ]
-
-# NullRenderer is dependency-free and always available for headless rendering.
-from eager_core.timing import FrameClock  # noqa: F401
-
-from eager_graphics.player import BasePlayer  # noqa: F401
-from eager_graphics.renderers.null import NullRenderer
 
 if TYPE_CHECKING:
     from eager_graphics.renderers import (
@@ -168,23 +174,6 @@ if TYPE_CHECKING:
     from eager_graphics.renderers import (
         PygletRenderer as PygletRenderer,
     )
-
-__all__.append("NullRenderer")
-__all__.append("FrameClock")
-__all__.append("BasePlayer")
-__all__.append("register_providers")
-
-# Optional backends (Pyglet, PIL) are NOT eagerly imported here to
-# avoid side effects — e.g. Pyglet initialises GTK/EGL on Wayland.
-# They are resolved lazily via renderers.__getattr__ when accessed.
-__all__.extend([
-    "PILAssetResolver",
-    "PILPlayer",
-    "PILRenderer",
-    "PygletAssetResolver",
-    "PygletPlayer",
-    "PygletRenderer",
-])
 
 
 def register_providers() -> None:

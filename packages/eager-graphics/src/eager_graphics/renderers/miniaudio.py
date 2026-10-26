@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import array
+import logging
 import sys
 import threading
 from pathlib import Path
 from typing import Any
 
 from eager_core.audio import BaseAudioBackend
+
+logger = logging.getLogger(__name__)
 
 try:
     import miniaudio
@@ -21,6 +24,10 @@ except ImportError:
 
 _WARNED_MISSING = False
 
+__all__ = [
+    "MiniaudioAudioBackend",
+]
+
 STREAMING_CHANNELS = frozenset({"music", "ambient", "bgm", "bgs"})
 
 
@@ -28,6 +35,10 @@ def _check_miniaudio() -> bool:
     global _WARNED_MISSING
     if not MINIAUDIO_AVAILABLE or miniaudio is None:
         if not _WARNED_MISSING:
+            logger.warning(
+                "'miniaudio' is not installed; falling back to NullAudioBackend. "
+                "Install with 'pip install eager-graphics[audio]'."
+            )
             sys.stderr.write(
                 "Notice: 'miniaudio' is not installed; falling back to NullAudioBackend. "
                 "Install with 'pip install eager-graphics[audio]'.\n"
@@ -169,7 +180,12 @@ class MiniaudioAudioBackend(BaseAudioBackend):
                                                     sample_rate=track.sample_rate,
                                                     seek_frame=seek,
                                                 )
-                                            except Exception:  # noqa: BLE001
+                                            except Exception as exc:  # noqa: BLE001
+                                                logger.warning(
+                                                    "Failed to loop-stream audio from %r: %s",
+                                                    track.path_str,
+                                                    exc,
+                                                )
                                                 track.is_playing = False
                                                 break
                                         else:
@@ -184,7 +200,12 @@ class MiniaudioAudioBackend(BaseAudioBackend):
                                             chunk = track.stream.send(max(1, frames_to_fetch))
                                         except StopIteration:
                                             chunk = []
-                                        except Exception:  # noqa: BLE001
+                                        except Exception as exc:  # noqa: BLE001
+                                            logger.warning(
+                                                "Error reading audio stream chunk from %r: %s",
+                                                track.path_str,
+                                                exc,
+                                            )
                                             chunk = []
                                             track.is_playing = False
                                         finally:
@@ -205,7 +226,12 @@ class MiniaudioAudioBackend(BaseAudioBackend):
                                                         sample_rate=track.sample_rate,
                                                         seek_frame=seek,
                                                     )
-                                                except Exception:  # noqa: BLE001
+                                                except Exception as exc:  # noqa: BLE001
+                                                    logger.warning(
+                                                        "Failed to restart looped audio stream from %r on EOF: %s",
+                                                        track.path_str,
+                                                        exc,
+                                                    )
                                                     track.is_playing = False
                                                     break
                                             else:
@@ -226,7 +252,12 @@ class MiniaudioAudioBackend(BaseAudioBackend):
                                                     sample_rate=track.sample_rate,
                                                     seek_frame=seek,
                                                 )
-                                            except Exception:  # noqa: BLE001
+                                            except Exception as exc:  # noqa: BLE001
+                                                logger.warning(
+                                                    "Failed to restart looped audio stream from %r on StopIteration: %s",
+                                                    track.path_str,
+                                                    exc,
+                                                )
                                                 track.is_playing = False
                                                 break
                                         else:
@@ -262,7 +293,8 @@ class MiniaudioAudioBackend(BaseAudioBackend):
             )
             self._device.start(self._generator)
             self._active = True
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to initialize miniaudio PlaybackDevice: %s", exc)
             self._device = None
             self._active = False
 
@@ -293,7 +325,13 @@ class MiniaudioAudioBackend(BaseAudioBackend):
                     sample_rate=self.sample_rate,
                     seek_frame=start_frame or 0,
                 )
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Failed to stream audio file for channel %r from %r: %s",
+                    channel,
+                    path_str,
+                    exc,
+                )
                 return
 
             track = _ChannelTrack(
@@ -317,7 +355,13 @@ class MiniaudioAudioBackend(BaseAudioBackend):
                     nchannels=self.nchannels,
                     sample_rate=self.sample_rate,
                 )
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Failed to decode audio file for channel %r from %r: %s",
+                    channel,
+                    path_str,
+                    exc,
+                )
                 return
 
             track = _ChannelTrack(
@@ -376,7 +420,9 @@ class MiniaudioAudioBackend(BaseAudioBackend):
             try:
                 self._device.stop()
                 self._device.close()
-            except Exception:  # noqa: BLE001, S110
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Error closing miniaudio device during shutdown: %s", exc
+                )
             self._device = None
         self._active = False

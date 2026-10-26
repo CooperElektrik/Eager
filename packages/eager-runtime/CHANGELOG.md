@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-10-26
+
+### Added
+
+- Stream-aware input handling in `TerminalPlayer`: caught `(EOFError, KeyboardInterrupt, OSError, ValueError)` on choice and text prompt inputs.
+- Resilient save file recovery: `SaveManager.load_slot()` detects non-dict roots, missing checkpoints, or malformed JSON payloads and safely archives corrupted files to `<slot>.json.corrupt.bak` while returning `None`.
+- Sealed all 15 submodules with explicit ASCII-sorted `__all__` lists.
+
+### Fixed
+
+- Resolved infinite loop on `InputPromptEvent` in `EventDispatcher.run_until_pause()` by including input prompts in the pause boundary condition.
+- Direct submodule import in `cli.py:405` (`from eager_core.audio import NullAudioBackend`).
+
 ## [0.6.0] - 2026-10-24
 
 ### Added

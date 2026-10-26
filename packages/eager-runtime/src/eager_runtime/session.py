@@ -43,6 +43,10 @@ from eager_runtime.runtime import StoryVM
 from eager_runtime.saves import SaveManager
 from eager_runtime.state import Checkpoint, CheckpointHistory, StorySnapshot
 
+__all__ = [
+    "GameSession",
+]
+
 
 def _create_default_stage(
     virtual_width: int,

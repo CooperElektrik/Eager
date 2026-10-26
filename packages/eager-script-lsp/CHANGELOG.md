@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-10-26
+
+### Added
+
+- Context-aware autocompletion: identifier-aware filtering for scene targets (`> s`).
+- Hover documentation for character tokens in engine hooks and parameter/return type docstrings for built-in functions.
+- CLI capabilities: `--version` flag and `.es` file extension check.
+- Expanded test suite covering syntax recovery, diagnostics clearing on file close, and multi-file projects.
+- Sealed all 14 submodules with explicit ASCII-sorted `__all__` lists.
+
+### Fixed
+
+- Preserved leading whitespace during AST error recovery in nested choice blocks.
+- Fixed identifier completion shadowing bug in `completion.py`.
+
 ## [0.5.0] - 2026-10-24
 
 ### Added

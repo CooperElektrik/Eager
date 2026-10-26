@@ -68,6 +68,73 @@ class TestHardwareAudioBackends(unittest.TestCase):
 
         backend.shutdown()
 
+    def test_pyglet_audio_backend_error_handling(self) -> None:
+        pytest.importorskip("pyglet")
+        from eager_graphics.renderers.pyglet import PygletAudioBackend
+
+        backend = PygletAudioBackend()
+        missing_path = os.path.join(self.tmp_dir.name, "missing.wav")
+
+        # Missing audio file should log warning and not crash
+        with self.assertLogs("eager_graphics.renderers.pyglet", level="WARNING") as cm:
+            backend.play("sfx", missing_path, loop=False)
+            self.assertFalse(backend.is_playing("sfx"))
+        self.assertTrue(any("missing.wav" in msg for msg in cm.output))
+
+        # Corrupt audio file should log warning and not crash
+        corrupt_path = os.path.join(self.tmp_dir.name, "corrupt.wav")
+        with open(corrupt_path, "wb") as f:
+            f.write(b"invalid wave data")
+
+        with self.assertLogs("eager_graphics.renderers.pyglet", level="WARNING") as cm:
+            backend.play("music", corrupt_path, loop=True)
+            self.assertFalse(backend.is_playing("music"))
+        self.assertTrue(any("corrupt.wav" in msg for msg in cm.output))
+
+        backend.shutdown()
+
+    def test_miniaudio_audio_backend_error_handling(self) -> None:
+        pytest.importorskip("miniaudio")
+        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
+
+        backend = MiniaudioAudioBackend()
+        missing_path = os.path.join(self.tmp_dir.name, "missing.wav")
+
+        # Missing file on streaming channel (music)
+        with self.assertLogs("eager_graphics.renderers.miniaudio", level="WARNING") as cm:
+            backend.play("music", missing_path, loop=True)
+            self.assertFalse(backend.is_playing("music"))
+        self.assertTrue(any("missing.wav" in msg for msg in cm.output))
+
+        # Missing file on decoded channel (sfx)
+        with self.assertLogs("eager_graphics.renderers.miniaudio", level="WARNING") as cm:
+            backend.play("sfx", missing_path, loop=False)
+            self.assertFalse(backend.is_playing("sfx"))
+        self.assertTrue(any("missing.wav" in msg for msg in cm.output))
+
+        # Corrupt file on decoded channel
+        corrupt_path = os.path.join(self.tmp_dir.name, "corrupt.wav")
+        with open(corrupt_path, "wb") as f:
+            f.write(b"invalid wave data")
+
+        with self.assertLogs("eager_graphics.renderers.miniaudio", level="WARNING") as cm:
+            backend.play("sfx", corrupt_path, loop=False)
+            self.assertFalse(backend.is_playing("sfx"))
+        self.assertTrue(any("corrupt.wav" in msg for msg in cm.output))
+
+        backend.shutdown()
+
+    def test_miniaudio_device_uninitialized_fallback(self) -> None:
+        pytest.importorskip("miniaudio")
+        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
+
+        backend = MiniaudioAudioBackend()
+        backend._active = False  # Simulate hardware device unavailability
+        # Must return immediately without error
+        backend.play("music", "test.wav", loop=True)
+        self.assertFalse(backend.is_playing("music"))
+        backend.shutdown()
+
     def test_miniaudio_streaming_vs_decoding(self) -> None:
         pytest.importorskip("miniaudio")
         from unittest.mock import patch

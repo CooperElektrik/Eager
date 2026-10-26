@@ -38,8 +38,10 @@ from eager_core.types import Color
 from eager_graphics.theme import Theme
 
 if TYPE_CHECKING:
+    from eager_core.events import ChoiceOption
+
     from eager_graphics.protocol import UIDrawBackend
-    from eager_graphics.ui_state import ChoiceOption, UIState
+    from eager_graphics.ui_state import UIState
 
 __all__ = [
     "ChoiceMenu",
@@ -51,7 +53,6 @@ __all__ = [
     "QuickMenu",
     "TextAnchor",
     "TextboxStyle",
-    "Theme",
     "UIOverlay",
     "wrap_text",
 ]
@@ -339,7 +340,7 @@ class DialogueBox:
         self.side_image: str | None = None
         self.show_advance_arrow: bool = True
         self.is_read: bool = False
-        self.visible_chars: int | None = None
+        self.visible_chars: int | float | None = None
         self.speaker_color: Color | None = None
 
     def set_theme(self, theme: Theme) -> None:
@@ -361,7 +362,7 @@ class DialogueBox:
         emotion: str | None = None,
         side_image: str | None = None,
         *,
-        visible_chars: int | None = None,
+        visible_chars: float | None = None,
         speaker_color: Color | None = None,
     ) -> None:
         """Set the speaker name, dialogue text, emotion tag, optional side image and speaker color."""

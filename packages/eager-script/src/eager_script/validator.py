@@ -9,6 +9,12 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from eager_script import ParsedItem
 
+__all__ = [
+    "ValidationError",
+    "ValidationResult",
+    "validate",
+]
+
 
 @dataclass(frozen=True, slots=True)
 class ValidationError:

@@ -2,20 +2,19 @@
 
 import unittest
 
-from eager_core import AudioMixer, NullAudioBackend
+from eager_core.audio import AudioMixer, NullAudioBackend
 from eager_core.events import (
     AppendEvent,
+    ChoiceOption,
     ChoicePromptEvent,
     DialogueEvent,
     FreshBoxEvent,
     HookEvent,
+    InputPromptEvent,
     NarrationEvent,
     SceneEnterEvent,
     SceneExitEvent,
     StoryEndEvent,
-)
-from eager_core.events import (
-    ChoiceOption as EagerChoiceOption,
 )
 from eager_core.types import Color
 from eager_runtime.dispatcher import EventDispatcher
@@ -24,7 +23,6 @@ from eager_graphics.compositor import StageCompositor
 from eager_graphics.director import StageDirector
 from eager_graphics.renderers.null import NullRenderer
 from eager_graphics.ui_components import UIOverlay
-from eager_graphics.ui_state import ChoiceOption
 
 
 class MockEventDispatcher:
@@ -193,8 +191,8 @@ def test_director_ui_state_tracks_choices() -> None:
 
     choices_event = ChoicePromptEvent(
         options=(
-            EagerChoiceOption(index=0, text="Go left", target="left_path", line_number=10),
-            EagerChoiceOption(index=1, text="Go right", target="right_path", line_number=11),
+            ChoiceOption(index=0, text="Go left", target="left_path", line_number=10),
+            ChoiceOption(index=1, text="Go right", target="right_path", line_number=11),
         ),
         line_number=10,
     )
@@ -381,19 +379,24 @@ def test_scene_and_image_hooks():
 
     # Put a character sprite on the stage
     compositor.show_character("alice", "happy", position="center", transition="cut")
-    assert "alice" in compositor.stage.get_layer("characters").elements
+    char_layer0 = compositor.stage.get_layer("characters")
+    assert char_layer0 is not None
+    assert "alice" in char_layer0.elements
 
     # ~ scene clears characters and sets background
     director.handle_scene("forest with cut")
     char_layer = compositor.stage.get_layer("characters")
+    assert char_layer is not None
     assert len(char_layer.elements) == 0
     bg_layer = compositor.stage.get_layer("background")
+    assert bg_layer is not None
     assert "bg_main" in bg_layer.elements
     assert bg_layer.elements["bg_main"].asset_id == "bg/forest"
 
     # ~ image displays arbitrary foreground element
     director.handle_image("item_sword props/sword at center z=50")
     fg_layer = compositor.stage.get_layer("foreground")
+    assert fg_layer is not None
     assert "item_sword" in fg_layer.elements
     assert fg_layer.elements["item_sword"].asset_id == "props/sword"
 
@@ -673,6 +676,47 @@ class TestDirectorAudioHooks(unittest.TestCase):
         # Unbounded: grows to sound_16 instead of stealing sound_0.
         self.assertEqual(backend.calls[-1][1], "sound_16")
         self.assertEqual(mixer.channels["sound_0"].current_asset, "s0.ogg")
+
+    def test_stage_director_input_prompt_event_handling(self) -> None:
+        compositor = StageCompositor(1920, 1080)
+        director = StageDirector(compositor)
+        dispatcher = EventDispatcher()
+        director.bind(dispatcher)
+
+        # Dispatch InputPromptEvent
+        input_ev = InputPromptEvent(var_name="player_name", prompt="What is your name?", default="Hero")
+        dispatcher.dispatch(input_ev)
+
+        # Director UI state records the prompt
+        self.assertTrue(hasattr(director.ui_state, "active_input_prompt"))
+        self.assertIsNotNone(director.ui_state.active_input_prompt)
+        assert director.ui_state.active_input_prompt is not None
+        self.assertEqual(director.ui_state.active_input_prompt.var_name, "player_name")
+        self.assertEqual(director.ui_state.active_input_prompt.prompt, "What is your name?")
+        self.assertEqual(director.ui_state.active_input_prompt.default, "Hero")
+
+    def test_ui_choice_menu_zero_and_many_options(self) -> None:
+        from eager_graphics.ui_components import ChoiceMenu
+
+        # 1. Zero options (empty choice box)
+        menu_empty = ChoiceMenu(1280, 720)
+        menu_empty.set_options([])
+        backend = NullRenderer()
+        menu_empty.draw(backend)
+        self.assertEqual(len(backend.ui_calls), 0)
+
+        # 2. Large choice list (15 choices)
+        many_choices = [
+            ChoiceOption(index=i, text=f"Option {i}", target=f"target_{i}", enabled=True)
+            for i in range(15)
+        ]
+        menu_many = ChoiceMenu(1280, 720)
+        menu_many.set_options(many_choices)
+        menu_many.draw(backend)
+        self.assertGreater(len(backend.ui_calls), 0)
+        # Boundary click tests
+        self.assertIsNone(menu_many.hit_test(-100, -100))
+        self.assertIsNone(menu_many.hit_test(2000, 2000))
 
 
 

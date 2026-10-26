@@ -6,6 +6,11 @@ import logging
 from enum import Enum
 from typing import ClassVar
 
+__all__ = [
+    "InputAction",
+    "Keymap",
+]
+
 logger = logging.getLogger(__name__)
 
 

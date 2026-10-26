@@ -40,6 +40,11 @@ from eager_script_lsp.workspace import WorkspaceIndex, uri_to_path
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "EagerLanguageServer",
+    "create_server",
+]
+
 
 class EagerLanguageServer(LanguageServer):
     """Eager-Script Language Server."""
@@ -134,6 +139,9 @@ def create_server() -> EagerLanguageServer:
                 logger.debug("Failed to reload closed doc from disk for %s: %s", uri, e)
         else:
             server.workspace_index.remove_document(uri)
+            server.text_document_publish_diagnostics(
+                types.PublishDiagnosticsParams(uri=uri, diagnostics=[])
+            )
         _validate_and_publish_all()
 
     @server.feature(

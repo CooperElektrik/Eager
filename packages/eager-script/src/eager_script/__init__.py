@@ -9,11 +9,10 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, TypeAlias
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 CHOICE_PATTERN = re.compile(r"^\?\s+(.+?)\s*\(([^()]+)\)(?:\s+if\s+(.+))?\s*$")
 CHOICE_INLINE_PATTERN = re.compile(r"^\?\s+(.+?)(?:\s+if\s+(.+))?\s*$")
-VOICE_PATTERN = re.compile(r"^\{voice:([^}]+)\}\s*")
 SPEAKER_PATTERN = re.compile(
     r"^([A-Za-z_][A-Za-z0-9_\s\.\-\'\"]*?)(?:\s*\(([^)]+)\))?:(?:\s+(.*)|\s*)$"
 )
@@ -482,9 +481,6 @@ def slugify(text: str) -> str:
     return _SLUG_DASH_SPACE.sub("_", slug)
 
 
-_slugify = slugify
-
-
 def _unescape(text: str) -> str:
     """Unescape DSL reserved characters escaped with backslash."""
     if "\\" not in text:
@@ -499,20 +495,6 @@ def _leading_indent(raw_line: str) -> int:
         return 0
     leading = raw_line[: len(raw_line) - len(stripped)]
     return len(leading.expandtabs(4))
-
-
-def _strip_line_comment(line: str) -> str:
-    """Strip standalone comments or unescaped inline comments."""
-    if line.startswith("##"):
-        return line
-    if line.startswith("#"):
-        return ""
-    if "#" not in line:
-        return line.rstrip()
-    if " #" not in line and "\t#" not in line:
-        return line.rstrip()
-    # Strip trailing inline comments if preceded by whitespace and unescaped
-    return _INLINE_COMMENT_PATTERN.sub("", line).rstrip()
 
 
 def _parse_label(line: str, line_number: int) -> ParsedLabel:
@@ -530,7 +512,7 @@ def _parse_label(line: str, line_number: int) -> ParsedLabel:
             raise ParseError("Empty label identifier", line_number)
         return ParsedLabel(name=name, display_name=display, line_number=line_number)
 
-    slug = sys.intern(_slugify(rest))
+    slug = sys.intern(slugify(rest))
     if not slug:
         raise ParseError(
             f"Invalid label '{rest}' cannot be converted to a valid identifier",

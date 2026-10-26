@@ -21,6 +21,18 @@ if TYPE_CHECKING:
     from eager_script_lsp.document import ScriptDocument
     from eager_script_lsp.workspace import WorkspaceIndex
 
+__all__ = [
+    "KIND_TO_TOKEN_TYPE",
+    "LEGEND",
+    "SEMANTIC_TOKEN_MODIFIERS",
+    "SEMANTIC_TOKEN_TYPES",
+    "compute_color_presentation",
+    "compute_document_colors",
+    "compute_document_links",
+    "compute_folding_ranges",
+    "compute_semantic_tokens",
+]
+
 SEMANTIC_TOKEN_TYPES = [
     "namespace",   # 0: scene labels
     "class",       # 1: characters / speakers
@@ -63,6 +75,7 @@ KIND_TO_TOKEN_TYPE: dict[str, int] = {
     "emotion": 2,           # enumMember
     "hook_marker": 5,       # keyword
     "hook_name": 3,         # function
+    "builtin_func": 3,      # function
     "hook_keyword": 5,      # keyword
     "hook_arg": 6,          # string
     "directive": 5,         # keyword

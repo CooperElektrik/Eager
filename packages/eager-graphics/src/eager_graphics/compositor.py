@@ -16,6 +16,10 @@ from eager_graphics.stage import ElementState, Stage, StageElement
 from eager_graphics.timeline import Timeline
 from eager_graphics.types import Anchor, TransitionKind
 
+__all__ = [
+    "StageCompositor",
+]
+
 
 class StageCompositor:
     """Renderer-agnostic stage compositor managing visual layers, animations, and transitions."""

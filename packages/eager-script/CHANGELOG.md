@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-10-26
+
+### Added
+
+- Streaming AST generator `parse_iter` and stateful `ScreenplayParser`.
+- AST nodes `ParsedSet`, `ParsedDefault`, `ParsedCharacter`, `ParsedIf`, `ParsedElif`, `ParsedElse`, `ParsedEnd`, `ParsedCondJump`, and `ParsedLocalJump`.
+- Boundary test coverage covering empty scripts, unclosed tags, and unicode integrity across CJK/emoji.
+- Sealed all 5 submodules with explicit ASCII-sorted `__all__` lists.
+
+### Fixed
+
+- Safe expression evaluator catches and wraps all runtime arithmetic, type, and value errors (`ZeroDivisionError`, `ArithmeticError`, `TypeError`, `ValueError`) into `ExprError`.
+- Refactored `test_parser.py` with explicit type narrowing, resolving 922 basedpyright errors and enabling removal of `ignore = ["tests/test_parser.py"]`.
+
+### Removed
+
+- Removed dead code in `eager-script` (`VOICE_PATTERN`, `_strip_line_comment`, `_slugify`).
+
 ## [0.5.0] - 2026-10-24
 
 ### Fixed

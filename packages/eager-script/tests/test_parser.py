@@ -66,13 +66,13 @@ class TestScreenplayParser(unittest.TestCase):
         self.assertEqual(len(items), 16)
 
         # 1. ParsedLabel with explicit id
-        self.assertIsInstance(items[0], ParsedLabel)
+        assert isinstance(items[0], ParsedLabel)
         self.assertEqual(items[0].type, "label")
         self.assertEqual(items[0].display_name, "The Clearing")
         self.assertEqual(items[0].name, "clearing_label")
 
         # 2. ParsedDialogue with voice tag
-        self.assertIsInstance(items[1], ParsedDialogue)
+        assert isinstance(items[1], ParsedDialogue)
         self.assertEqual(items[1].type, "dialogue")
         self.assertEqual(items[1].speaker, "Alice")
         self.assertEqual(items[1].voice, "alice_01.ogg")
@@ -80,17 +80,17 @@ class TestScreenplayParser(unittest.TestCase):
         self.assertIsNone(items[1].emotion)
 
         # 3. ParsedAppend
-        self.assertIsInstance(items[2], ParsedAppend)
+        assert isinstance(items[2], ParsedAppend)
         self.assertEqual(items[2].type, "append")
         self.assertEqual(items[2].text, "Look at those carved pillars.")
 
         # 4. ParsedFreshBox
-        self.assertIsInstance(items[3], ParsedFreshBox)
+        assert isinstance(items[3], ParsedFreshBox)
         self.assertEqual(items[3].type, "fresh_box")
         self.assertEqual(items[3].text, "Be careful where you step.")
 
         # 5. Grouped ParsedNarration
-        self.assertIsInstance(items[4], ParsedNarration)
+        assert isinstance(items[4], ParsedNarration)
         self.assertEqual(items[4].type, "narration")
         self.assertEqual(
             items[4].text,
@@ -98,12 +98,12 @@ class TestScreenplayParser(unittest.TestCase):
         )
 
         # 6. ParsedHook
-        self.assertIsInstance(items[5], ParsedHook)
+        assert isinstance(items[5], ParsedHook)
         self.assertEqual(items[5].type, "hook")
         self.assertEqual(items[5].hook_name, "inspect_pillars")
 
         # 7. ParsedChoiceSet with multiple options
-        self.assertIsInstance(items[6], ParsedChoiceSet)
+        assert isinstance(items[6], ParsedChoiceSet)
         self.assertEqual(items[6].type, "choice_set")
         self.assertEqual(len(items[6].options), 2)
         self.assertEqual(items[6].options[0].type, "choice_option")
@@ -113,43 +113,43 @@ class TestScreenplayParser(unittest.TestCase):
         self.assertEqual(items[6].options[1].target, "exit")
 
         # 8. ParsedLabel
-        self.assertIsInstance(items[7], ParsedLabel)
+        assert isinstance(items[7], ParsedLabel)
         self.assertEqual(items[7].name, "runes")
 
         # 9. ParsedNarration
-        self.assertIsInstance(items[8], ParsedNarration)
+        assert isinstance(items[8], ParsedNarration)
         self.assertEqual(items[8].text, "The runes shimmer with blue light.")
 
         # 10. ParsedCall
-        self.assertIsInstance(items[9], ParsedCall)
+        assert isinstance(items[9], ParsedCall)
         self.assertEqual(items[9].type, "call")
         self.assertEqual(items[9].target, "secret_subroutine")
 
         # 11. ParsedJump
-        self.assertIsInstance(items[10], ParsedJump)
+        assert isinstance(items[10], ParsedJump)
         self.assertEqual(items[10].type, "jump")
         self.assertEqual(items[10].target, "clearing_label")
 
         # 12. ParsedLabel
-        self.assertIsInstance(items[11], ParsedLabel)
+        assert isinstance(items[11], ParsedLabel)
         self.assertEqual(items[11].name, "secret_subroutine")
 
         # 13. ParsedDialogue without voice tag
-        self.assertIsInstance(items[12], ParsedDialogue)
+        assert isinstance(items[12], ParsedDialogue)
         self.assertEqual(items[12].speaker, "Alice")
         self.assertIsNone(items[12].voice)
         self.assertEqual(items[12].text, "A hidden compartment opened!")
 
         # 14. ParsedReturn
-        self.assertIsInstance(items[13], ParsedReturn)
+        assert isinstance(items[13], ParsedReturn)
         self.assertEqual(items[13].type, "return")
 
         # 15. ParsedLabel
-        self.assertIsInstance(items[14], ParsedLabel)
+        assert isinstance(items[14], ParsedLabel)
         self.assertEqual(items[14].name, "exit")
 
         # 16. ParsedNarration
-        self.assertIsInstance(items[15], ParsedNarration)
+        assert isinstance(items[15], ParsedNarration)
         self.assertEqual(items[15].text, "You head back to town.")
 
     def test_parser_python_310_syntax_compatibility(self) -> None:
@@ -164,7 +164,7 @@ class TestScreenplayParser(unittest.TestCase):
         """Verify label without explicit id is automatically slugified."""
         items = parse("## Mysterious Cavern Entrance")
         self.assertEqual(len(items), 1)
-        self.assertIsInstance(items[0], ParsedLabel)
+        assert isinstance(items[0], ParsedLabel)
         self.assertEqual(items[0].display_name, "Mysterious Cavern Entrance")
         self.assertEqual(items[0].name, "mysterious_cavern_entrance")
 
@@ -206,7 +206,7 @@ class TestScreenplayParser(unittest.TestCase):
         """Verify choice text can contain parentheses and details."""
         items = parse("? Take (small) potion (take_potion)")
         self.assertEqual(len(items), 1)
-        self.assertIsInstance(items[0], ParsedChoiceSet)
+        assert isinstance(items[0], ParsedChoiceSet)
         opt = items[0].options[0]
         self.assertEqual(opt.text, "Take (small) potion")
         self.assertEqual(opt.target, "take_potion")
@@ -221,10 +221,14 @@ class TestScreenplayParser(unittest.TestCase):
         """
         items = parse(script)
         self.assertEqual(len(items), 3)
-        self.assertEqual(items[0].text, "Hello!")
-        self.assertEqual(items[1].text, "Take item #1 and color #ff0000 please.")
-        self.assertEqual(items[2].speaker, "Charlie")
-        self.assertEqual(items[2].text, "I code in C# every day.")
+        d0, d1, d2 = items[0], items[1], items[2]
+        assert isinstance(d0, ParsedDialogue)
+        assert isinstance(d1, ParsedDialogue)
+        assert isinstance(d2, ParsedDialogue)
+        self.assertEqual(d0.text, "Hello!")
+        self.assertEqual(d1.text, "Take item #1 and color #ff0000 please.")
+        self.assertEqual(d2.speaker, "Charlie")
+        self.assertEqual(d2.text, "I code in C# every day.")
 
     def test_parser_escaping(self) -> None:
         """Verify backslash escaping works for reserved symbols."""
@@ -236,9 +240,12 @@ class TestScreenplayParser(unittest.TestCase):
         """
         items = parse(script)
         self.assertEqual(len(items), 2)
-        self.assertEqual(items[0].text, "Here is a number #1 and a colon: not a speaker.")
+        e0, e1 = items[0], items[1]
+        assert isinstance(e0, ParsedDialogue)
+        assert isinstance(e1, ParsedNarration)
+        self.assertEqual(e0.text, "Here is a number #1 and a colon: not a speaker.")
         self.assertEqual(
-            items[1].text,
+            e1.text,
             "- Not an append beat, but narration starting with hyphen. "
             "? Not a choice option. > Not a jump.",
         )
@@ -247,7 +254,7 @@ class TestScreenplayParser(unittest.TestCase):
         """Verify character dialogue can have optional emotion tag."""
         items = parse("Alice (happy): Good morning, traveler!")
         self.assertEqual(len(items), 1)
-        self.assertIsInstance(items[0], ParsedDialogue)
+        assert isinstance(items[0], ParsedDialogue)
         self.assertEqual(items[0].speaker, "Alice")
         self.assertEqual(items[0].emotion, "happy")
         self.assertEqual(items[0].text, "Good morning, traveler!")
@@ -260,13 +267,13 @@ class TestScreenplayParser(unittest.TestCase):
         """
         items = parse(script)
         self.assertEqual(len(items), 1)
-        self.assertIsInstance(items[0], ParsedNarration)
+        assert isinstance(items[0], ParsedNarration)
 
     def test_parser_lines_starting_with_single_angle_bracket(self) -> None:
         """Verify lines starting with single < are not silently dropped."""
         items = parse("<tag> text </tag>")
         self.assertEqual(len(items), 1)
-        self.assertIsInstance(items[0], ParsedNarration)
+        assert isinstance(items[0], ParsedNarration)
         self.assertEqual(items[0].text, "<tag> text </tag>")
 
     def test_parse_iter_equivalence(self) -> None:
@@ -532,7 +539,7 @@ class TestInlineChoiceBlocks(unittest.TestCase):
         self.assertEqual([item.type for item in items], ["label", "dialogue", "choice_set", "dialogue"])
 
         choice_set = items[2]
-        self.assertIsInstance(choice_set, ParsedChoiceSet)
+        assert isinstance(choice_set, ParsedChoiceSet)
         self.assertEqual(len(choice_set.options), 2)
 
         first = choice_set.options[0]
@@ -540,19 +547,20 @@ class TestInlineChoiceBlocks(unittest.TestCase):
         self.assertIsNone(first.target)
         self.assertTrue(first.is_inline)
         self.assertEqual(len(first.body), 2)
-        self.assertIsInstance(first.body[0], ParsedSet)
+        assert isinstance(first.body[0], ParsedSet)
         self.assertEqual(first.body[0].target, "gold")
-        self.assertIsInstance(first.body[1], ParsedDialogue)
+        assert isinstance(first.body[1], ParsedDialogue)
         self.assertEqual(first.body[1].text, "Coming right up.")
 
         second = choice_set.options[1]
         self.assertIsNone(second.target)
         self.assertEqual(len(second.body), 1)
-        self.assertIsInstance(second.body[0], ParsedDialogue)
+        assert isinstance(second.body[0], ParsedDialogue)
 
     def test_parser_preserves_source_line_numbers(self) -> None:
         items = parse(INLINE_CHOICE_SCRIPT)
         choice_set = items[2]
+        assert isinstance(choice_set, ParsedChoiceSet)
         first = choice_set.options[0]
         self.assertEqual(first.line_number, 4)
         self.assertEqual(first.body[0].line_number, 5)
@@ -560,8 +568,7 @@ class TestInlineChoiceBlocks(unittest.TestCase):
         self.assertEqual(choice_set.options[1].line_number, 7)
 
     def test_parser_nested_inline_blocks(self) -> None:
-        script = """\
-## Outer --- outer
+        script = """## Outer --- outer
 ? Reaction
     Alice: first
     ? Nested
@@ -569,17 +576,28 @@ class TestInlineChoiceBlocks(unittest.TestCase):
     Alice: back
 """
         items = parse(script)
-        outer = items[1].options[0]
+        cs1 = items[1]
+        assert isinstance(cs1, ParsedChoiceSet)
+        outer = cs1.options[0]
         self.assertEqual([item.type for item in outer.body], ["dialogue", "choice_set", "dialogue"])
-        nested_option = outer.body[1].options[0]
+        nested_cs = outer.body[1]
+        assert isinstance(nested_cs, ParsedChoiceSet)
+        nested_option = nested_cs.options[0]
         self.assertEqual(nested_option.text, "Nested")
         self.assertIsNone(nested_option.target)
         self.assertEqual([item.type for item in nested_option.body], ["dialogue"])
-        self.assertEqual(nested_option.body[0].text, "deep")
+        nested_d = nested_option.body[0]
+        assert isinstance(nested_d, ParsedDialogue)
+        self.assertEqual(nested_d.text, "deep")
 
     def test_inline_option_with_condition(self) -> None:
-        items = parse("## S --- s\n? Sneak in if has_key\n    Narrator: You slip inside.\n")
-        opt = items[1].options[0]
+        items = parse("""## S --- s
+? Sneak in if has_key
+    Narrator: You slip inside.
+""")
+        cs = items[1]
+        assert isinstance(cs, ParsedChoiceSet)
+        opt = cs.options[0]
         self.assertEqual(opt.text, "Sneak in")
         self.assertEqual(opt.condition, "has_key")
         self.assertEqual(len(opt.body), 1)
@@ -640,6 +658,7 @@ class TestInlineChoiceBlocks(unittest.TestCase):
 """
         items = parse(script)
         choice_set = items[1]
+        assert isinstance(choice_set, ParsedChoiceSet)
         self.assertEqual(len(choice_set.options), 2)
         first = choice_set.options[0]
         self.assertEqual(len(first.body), 2)
@@ -649,12 +668,15 @@ class TestInlineChoiceBlocks(unittest.TestCase):
     def test_inline_block_with_tabs_and_spaces(self) -> None:
         script = "## A --- a\n? Choice\n    $ a = 1\n\t$ b = 2\n"
         items = parse(script)
-        opt = items[1].options[0]
+        cs = items[1]
+        assert isinstance(cs, ParsedChoiceSet)
+        opt = cs.options[0]
         self.assertEqual(len(opt.body), 2)
-        self.assertIsInstance(opt.body[0], ParsedSet)
-        self.assertEqual(opt.body[0].target, "a")
-        self.assertIsInstance(opt.body[1], ParsedSet)
-        self.assertEqual(opt.body[1].target, "b")
+        b0, b1 = opt.body[0], opt.body[1]
+        assert isinstance(b0, ParsedSet)
+        self.assertEqual(b0.target, "a")
+        assert isinstance(b1, ParsedSet)
+        self.assertEqual(b1.target, "b")
 
 
     def test_validator_rejects_unclosed_if_in_inline_block(self) -> None:
@@ -662,6 +684,263 @@ class TestInlineChoiceBlocks(unittest.TestCase):
         result = validate(items)
         self.assertFalse(result.is_valid)
         self.assertTrue(any("Unclosed @if block" in err.message for err in result.errors))
+
+
+class TestParserScreenplayBoundaries(unittest.TestCase):
+    """Test suite covering empty lines, unmatched braces, edge case jumps, and unicode."""
+
+    # 1. Empty Screenplay Lines
+    def test_parser_empty_string(self) -> None:
+        """Parsing empty string produces empty AST list."""
+        self.assertEqual(parse(""), [])
+
+    def test_parser_whitespace_lines_only(self) -> None:
+        """Parsing lines with spaces, tabs, and newlines produces empty list."""
+        self.assertEqual(parse("   \n\n\t  \n   \r\n"), [])
+
+    def test_parser_consecutive_blank_lines_flush_properly(self) -> None:
+        """Multiple consecutive empty lines between statements flush narration properly."""
+        script = """
+        Line 1 narration.
+
+
+        Line 2 narration.
+
+
+
+        Alice: Hello!
+        """
+        items = parse(script)
+        self.assertEqual(len(items), 3)
+
+        assert isinstance(items[0], ParsedNarration)
+        self.assertEqual(items[0].text, "Line 1 narration.")
+
+        assert isinstance(items[1], ParsedNarration)
+        self.assertEqual(items[1].text, "Line 2 narration.")
+
+        assert isinstance(items[2], ParsedDialogue)
+        self.assertEqual(items[2].speaker, "Alice")
+        self.assertEqual(items[2].text, "Hello!")
+
+    # 2. Unmatched Braces
+    def test_parser_unclosed_voice_tag_handled_gracefully(self) -> None:
+        """Unclosed {voice: tag does not crash parser; treated as regular text."""
+        script = "Alice: {voice:alice_01 Unclosed voice tag line"
+        items = parse(script)
+        self.assertEqual(len(items), 1)
+
+        assert isinstance(items[0], ParsedDialogue)
+        self.assertEqual(items[0].speaker, "Alice")
+        self.assertIsNone(items[0].voice)
+        self.assertEqual(items[0].text, "{voice:alice_01 Unclosed voice tag line")
+
+    def test_parser_unclosed_inline_markup_tags(self) -> None:
+        """Unclosed formatting braces in dialogue and narration parse without error."""
+        script = """
+        Alice: Hello {b bold without closing brace
+        Bob: Another {color=#ff0000 unclosed color
+        A chill {size=20 runs down the spine.
+        """
+        items = parse(script)
+        self.assertEqual(len(items), 3)
+
+        assert isinstance(items[0], ParsedDialogue)
+        self.assertEqual(items[0].text, "Hello {b bold without closing brace")
+
+        assert isinstance(items[1], ParsedDialogue)
+        self.assertEqual(items[1].text, "Another {color=#ff0000 unclosed color")
+
+        assert isinstance(items[2], ParsedNarration)
+        self.assertEqual(items[2].text, "A chill {size=20 runs down the spine.")
+
+    def test_parser_lone_closing_braces_in_dialogue(self) -> None:
+        """Dialogue with lone closing braces parses verbatim."""
+        script = "Alice: Closing brace } without open { or matched {}"
+        items = parse(script)
+        self.assertEqual(len(items), 1)
+
+        assert isinstance(items[0], ParsedDialogue)
+        self.assertEqual(items[0].text, "Closing brace } without open { or matched {}")
+
+    # 3. Edge Case Jump Tags
+    def test_parser_bare_jump_raises_parse_error(self) -> None:
+        """Bare '>' without target raises ParseError."""
+        with self.assertRaises(ParseError) as ctx:
+            parse(">")
+        self.assertIn("Empty jump target", str(ctx.exception))
+
+        with self.assertRaises(ParseError) as ctx:
+            parse(">\n")
+        self.assertIn("Empty jump target", str(ctx.exception))
+
+    def test_parser_bare_call_raises_parse_error(self) -> None:
+        """Bare '>>' without target raises ParseError."""
+        with self.assertRaises(ParseError) as ctx:
+            parse(">>")
+        self.assertIn("Empty call target", str(ctx.exception))
+
+    def test_parser_bare_hook_raises_parse_error(self) -> None:
+        """Bare '~' without hook name raises ParseError."""
+        with self.assertRaises(ParseError) as ctx:
+            parse("~")
+        self.assertIn("Empty hook name", str(ctx.exception))
+
+    def test_parser_jump_with_special_characters_and_numbers(self) -> None:
+        """Jump targets with hyphens, underscores, dots, and numbers parse cleanly."""
+        script = """
+        > scene-part-2
+        > 100_intro_scene
+        > chapter.1.sub
+        """
+        items = parse(script)
+        self.assertEqual(len(items), 3)
+
+        assert isinstance(items[0], ParsedJump)
+        self.assertEqual(items[0].target, "scene-part-2")
+
+        assert isinstance(items[1], ParsedJump)
+        self.assertEqual(items[1].target, "100_intro_scene")
+
+        assert isinstance(items[2], ParsedJump)
+        self.assertEqual(items[2].target, "chapter.1.sub")
+
+    def test_parser_jump_with_inline_comment(self) -> None:
+        """Jump statement followed by inline comment strips comment cleanly."""
+        script = "> target_scene # jump to target scene"
+        items = parse(script)
+        self.assertEqual(len(items), 1)
+
+        assert isinstance(items[0], ParsedJump)
+        self.assertEqual(items[0].target, "target_scene")
+
+    def test_parser_return_statement(self) -> None:
+        """'<<' parses as ParsedReturn node."""
+        script = "<<"
+        items = parse(script)
+        self.assertEqual(len(items), 1)
+
+        assert isinstance(items[0], ParsedReturn)
+
+    # 4. Unicode Screenplay Characters
+    def test_parser_unicode_cjk_characters(self) -> None:
+        """Parser fully supports Japanese/CJK characters across all screenplay constructs."""
+        script = """
+        ## 第一章 --- chapter_1
+        Alice: こんにちは、旅人さん。
+        Bob (smile): やあ！
+        桜の花びらが静かに風に舞っている。
+        - そして、夜が明けた。
+        / 新しい一日が始まる。
+        ~ 背景 "神社"
+        ? 探索する (explore)
+        ? 立ち去る (leave)
+        """
+        items = parse(script)
+        self.assertEqual(len(items), 8)
+
+        # Label
+        assert isinstance(items[0], ParsedLabel)
+        self.assertEqual(items[0].display_name, "第一章")
+        self.assertEqual(items[0].name, "chapter_1")
+
+        # Dialogue
+        assert isinstance(items[1], ParsedDialogue)
+        self.assertEqual(items[1].speaker, "Alice")
+        self.assertEqual(items[1].text, "こんにちは、旅人さん。")
+
+        # Dialogue with emotion
+        assert isinstance(items[2], ParsedDialogue)
+        self.assertEqual(items[2].speaker, "Bob")
+        self.assertEqual(items[2].emotion, "smile")
+        self.assertEqual(items[2].text, "やあ！")
+
+        # Narration
+        assert isinstance(items[3], ParsedNarration)
+        self.assertEqual(items[3].text, "桜の花びらが静かに風に舞っている。")
+
+        # Append & FreshBox
+        assert isinstance(items[4], ParsedAppend)
+        self.assertEqual(items[4].text, "そして、夜が明けた。")
+        assert isinstance(items[5], ParsedFreshBox)
+        self.assertEqual(items[5].text, "新しい一日が始まる。")
+
+        # Hook
+        assert isinstance(items[6], ParsedHook)
+        self.assertEqual(items[6].hook_name, '背景 "神社"')
+
+        # ChoiceSet
+        assert isinstance(items[7], ParsedChoiceSet)
+        self.assertEqual(len(items[7].options), 2)
+        self.assertEqual(items[7].options[0].text, "探索する")
+        self.assertEqual(items[7].options[0].target, "explore")
+        self.assertEqual(items[7].options[1].text, "立ち去る")
+        self.assertEqual(items[7].options[1].target, "leave")
+
+    def test_parser_unicode_european_accents(self) -> None:
+        """Accented European characters parse accurately in dialogue and narration."""
+        script = """
+        Eleonore (tres_emu): C'est magnifique, mon cher ami!
+        Muller (frohlich): Wunderbar!
+        El niño corrió hacia la cabaña.
+        """
+        items = parse(script)
+        self.assertEqual(len(items), 3)
+
+        assert isinstance(items[0], ParsedDialogue)
+        self.assertEqual(items[0].speaker, "Eleonore")
+        self.assertEqual(items[0].emotion, "tres_emu")
+        self.assertEqual(items[0].text, "C'est magnifique, mon cher ami!")
+
+        assert isinstance(items[1], ParsedDialogue)
+        self.assertEqual(items[1].speaker, "Muller")
+        self.assertEqual(items[1].emotion, "frohlich")
+        self.assertEqual(items[1].text, "Wunderbar!")
+
+        assert isinstance(items[2], ParsedNarration)
+        self.assertEqual(items[2].text, "El niño corrió hacia la cabaña.")
+
+    def test_parser_unicode_cyrillic(self) -> None:
+        """Cyrillic screenplay text parses accurately."""
+        script = "Tatyana (joy): Здравствуйте, добро пожаловать!"
+        items = parse(script)
+        self.assertEqual(len(items), 1)
+
+        assert isinstance(items[0], ParsedDialogue)
+        self.assertEqual(items[0].speaker, "Tatyana")
+        self.assertEqual(items[0].emotion, "joy")
+        self.assertEqual(items[0].text, "Здравствуйте, добро пожаловать!")
+
+    def test_parser_unicode_emoji_and_symbols(self) -> None:
+        """Emoji and unicode symbols in dialogue, choices, and narration."""
+        script = """
+        A gentle breeze 🍃 whispers through the grove ✨.
+        ? Attack with sword ⚔️ (attack)
+        ? Defend with shield 🛡️ (defend)
+        """
+        items = parse(script)
+        self.assertEqual(len(items), 2)
+
+        assert isinstance(items[0], ParsedNarration)
+        self.assertIn("🍃", items[0].text)
+        self.assertIn("✨", items[0].text)
+
+        assert isinstance(items[1], ParsedChoiceSet)
+        self.assertIn("⚔️", items[1].options[0].text)
+        self.assertIn("🛡️", items[1].options[1].text)
+
+    def test_parser_unicode_to_dict_to_json_roundtrip(self) -> None:
+        """to_dict and to_json preserve unicode strings without escape corruption."""
+        script = "Alice: こんにちは！ 🌸"
+        items = parse(script)
+        dict_data = to_dict(items)
+        self.assertEqual(dict_data[0]["speaker"], "Alice")
+        self.assertEqual(dict_data[0]["text"], "こんにちは！ 🌸")
+
+        json_str = to_json(items)
+        decoded = json.loads(json_str)
+        self.assertEqual(decoded[0]["speaker"], "Alice")
+        self.assertEqual(decoded[0]["text"], "こんにちは！ 🌸")
 
 
 if __name__ == "__main__":

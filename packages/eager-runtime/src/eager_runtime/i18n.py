@@ -21,6 +21,15 @@ from eager_script.hooks import is_input_hook, parse_input_hook
 if TYPE_CHECKING:
     from eager_script.graph import SceneGraph
 
+__all__ = [
+    "compute_beat_id",
+    "extract_catalog",
+    "get_beat_occurrence",
+    "merge_catalog",
+    "strip_explicit_id",
+    "validate_catalog",
+]
+
 
 def strip_explicit_id(text: str) -> str:
     """Strip inline {id=...} beat ID metadata tag from dialogue or narration text."""

@@ -8,6 +8,10 @@ from typing import Any
 
 from eager_core.storage import atomic_write_json, safe_read_json
 
+__all__ = [
+    "PersistentData",
+]
+
 
 class PersistentData(collections.abc.MutableMapping[str, Any]):
     """Persistent game state that survives playthroughs and saves."""

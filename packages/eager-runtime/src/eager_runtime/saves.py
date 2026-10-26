@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import datetime
 import inspect
+import logging
+import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +19,16 @@ from eager_runtime.runtime import StoryRuntimeError
 if TYPE_CHECKING:
     from eager_runtime.state import Checkpoint
 
+__all__ = [
+    "MigrationHook",
+    "SaveData",
+    "SaveManager",
+    "SaveMetadata",
+    "SaveMigrationError",
+]
+
+logger = logging.getLogger(__name__)
+
 
 class SaveMigrationError(StoryRuntimeError):
     """Raised when save data cannot be migrated to the target schema version."""
@@ -27,6 +39,16 @@ MigrationHook = (
     | Callable[[dict[str, Any], int], dict[str, Any]]
     | Callable[[dict[str, Any]], dict[str, Any]]
 )
+
+
+def _backup_corrupt_slot(path: Path) -> None:
+    """Safely copy a corrupted save file to <path>.corrupt.bak."""
+    try:
+        if path.is_file():
+            bak_path = path.with_name(path.name + ".corrupt.bak")
+            shutil.copy2(path, bak_path)
+    except OSError:
+        pass
 
 
 def _invoke_migration_hook(
@@ -93,15 +115,37 @@ class SaveMetadata:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SaveMetadata:
+        if not isinstance(data, dict):
+            raise TypeError(f"SaveMetadata data must be a dict, got {type(data).__name__}")
+
+        playtime_raw = data.get("playtime_seconds", 0.0)
+        playtime_seconds = float(0.0 if playtime_raw is None else playtime_raw)
+
+        version_raw = data.get("version", 1)
+        version = int(1 if version_raw is None else version_raw)
+
+        slot_name = data.get("slot_name", "")
+        if not isinstance(slot_name, str):
+            slot_name = str(slot_name) if slot_name is not None else ""
+
+        timestamp = data.get("timestamp", "")
+        if not isinstance(timestamp, str):
+            timestamp = str(timestamp) if timestamp is not None else ""
+
+        scene_id = data.get("scene_id")
+        scene_name = data.get("scene_name")
+        dialogue_snippet = data.get("dialogue_snippet")
+        thumbnail_path = data.get("thumbnail_path")
+
         return cls(
-            slot_name=data.get("slot_name", ""),
-            timestamp=data.get("timestamp", ""),
-            scene_id=data.get("scene_id"),
-            scene_name=data.get("scene_name"),
-            dialogue_snippet=data.get("dialogue_snippet"),
-            playtime_seconds=float(data.get("playtime_seconds", 0.0)),
-            thumbnail_path=data.get("thumbnail_path"),
-            version=int(data.get("version", 1)),
+            slot_name=slot_name,
+            timestamp=timestamp,
+            scene_id=scene_id if isinstance(scene_id, str) or scene_id is None else str(scene_id),
+            scene_name=scene_name if isinstance(scene_name, str) or scene_name is None else str(scene_name),
+            dialogue_snippet=dialogue_snippet if isinstance(dialogue_snippet, str) or dialogue_snippet is None else str(dialogue_snippet),
+            playtime_seconds=playtime_seconds,
+            thumbnail_path=thumbnail_path if isinstance(thumbnail_path, str) or thumbnail_path is None else str(thumbnail_path),
+            version=version,
         )
 
     @property
@@ -144,16 +188,38 @@ class SaveData:
     def from_dict(cls, data: dict[str, Any]) -> SaveData:
         from eager_runtime.state import Checkpoint
 
-        version = int(data.get("version", 1))
-        meta = SaveMetadata.from_dict(data.get("metadata", {}))
-        cp_data = data.get("checkpoint", {})
+        if not isinstance(data, dict):
+            raise TypeError(f"SaveData data must be a dict, got {type(data).__name__}")
+
+        version_raw = data.get("version", 1)
+        version = int(1 if version_raw is None else version_raw)
+
+        meta_raw = data.get("metadata", {})
+        if not isinstance(meta_raw, dict):
+            raise TypeError(f"SaveData 'metadata' must be a dict, got {type(meta_raw).__name__}")
+        meta = SaveMetadata.from_dict(meta_raw)
+
+        cp_raw = data.get("checkpoint")
+        if not isinstance(cp_raw, dict):
+            raise TypeError(f"SaveData 'checkpoint' must be a dict, got {type(cp_raw).__name__}")
+
+        backlog_raw = cp_raw.get("backlog_len", 0)
+        backlog_len = int(0 if backlog_raw is None else backlog_raw)
+
+        story = cp_raw.get("story")
+        visual = cp_raw.get("visual")
+        audio = cp_raw.get("audio")
+        ui = cp_raw.get("ui")
+
         cp = Checkpoint(
-            story=cp_data.get("story", {}),
-            visual=cp_data.get("visual", {}),
-            audio=cp_data.get("audio", {}),
-            backlog_len=int(cp_data.get("backlog_len", 0)),
-            ui=cp_data.get("ui", {}),
-            active_input_prompt=cp_data.get("active_input_prompt"),
+            story=story if isinstance(story, dict) else {},
+            visual=visual if isinstance(visual, dict) else {},
+            audio=audio if isinstance(audio, dict) else {},
+            backlog_len=backlog_len,
+            ui=ui if isinstance(ui, dict) else {},
+            active_input_prompt=cp_raw.get("active_input_prompt")
+            if isinstance(cp_raw.get("active_input_prompt"), dict)
+            else None,
         )
         return cls(metadata=meta, checkpoint=cp, version=version)
 
@@ -317,16 +383,26 @@ class SaveManager:
     ) -> Checkpoint | None:
         """Load checkpoint from a named slot, migrating schema if necessary."""
         path = self._slot_path(slot_name)
-        data = safe_read_json(path)
-        if not isinstance(data, dict) or "checkpoint" not in data:
+        if not path.is_file():
             return None
-        migrated_data = self.upgrade_save_data(
-            data,
-            target_version=target_version,
-            migration_hook=migration_hook,
-        )
-        save_obj = SaveData.from_dict(migrated_data)
-        return save_obj.checkpoint
+
+        data = safe_read_json(path, backup_corrupt=True)
+        if not isinstance(data, dict) or "checkpoint" not in data or not isinstance(data["checkpoint"], dict):
+            _backup_corrupt_slot(path)
+            return None
+
+        try:
+            migrated_data = self.upgrade_save_data(
+                data,
+                target_version=target_version,
+                migration_hook=migration_hook,
+            )
+            save_obj = SaveData.from_dict(migrated_data)
+            return save_obj.checkpoint
+        except (TypeError, ValueError, AttributeError, KeyError) as err:
+            logger.warning("Corrupted save slot %s (%s); backing up and returning None", path, err)
+            _backup_corrupt_slot(path)
+            return None
 
     def get_slot_metadata(self, slot_name: str) -> SaveMetadata | None:
         """Inspect metadata for a slot without parsing full checkpoint."""
@@ -337,7 +413,10 @@ class SaveManager:
         meta_data = data["metadata"]
         if not isinstance(meta_data, dict):
             return None
-        return SaveMetadata.from_dict(meta_data)
+        try:
+            return SaveMetadata.from_dict(meta_data)
+        except (TypeError, ValueError, AttributeError, KeyError):
+            return None
 
     def delete_slot(self, slot_name: str) -> bool:
         """Delete save slot file."""

@@ -19,6 +19,17 @@ if TYPE_CHECKING:
     from eager_script_lsp.document import ScriptDocument
     from eager_script_lsp.workspace import WorkspaceIndex
 
+__all__ = [
+    "BUILTIN_EXPR_FUNCS",
+    "BUILTIN_HOOKS",
+    "DIRECTIVES",
+    "HOOK_KWARGS",
+    "HOOK_POSITIONS",
+    "HOOK_TRANSITIONS",
+    "INLINE_TAGS",
+    "compute_completions",
+]
+
 BUILTIN_HOOKS = [
     ("bg", "Change background image with optional transition"),
     ("bg_clear", "Clear background image"),
@@ -104,7 +115,7 @@ def compute_completions(
     """Return context-sensitive completions at the cursor position."""
     line_0 = position.line
     char_0 = position.character
-    if line_0 >= len(doc.lines):
+    if not doc.text or line_0 >= len(doc.lines):
         return CompletionList(is_incomplete=False, items=[])
 
     line_text = doc.lines[line_0]
@@ -112,13 +123,22 @@ def compute_completions(
     items: list[CompletionItem] = []
 
     # 1. Target scene completions: '> ...', '>> ...', '? Text (<cursor>)', or inside visited('...')
-    jump_match = re.search(r"(>>|>)\s*$", line_prefix)
-    if (
-        jump_match
-        or re.search(r"\?\s*.+\(\s*$", line_prefix)
-        or re.search(r"\b(visited|seen)\s*\(\s*['\"]?$", line_prefix)
-    ):
+    jump_match = re.search(r"(>>|>)\s*([A-Za-z0-9_-]*)$", line_prefix)
+    choice_match = re.search(r"\?\s*.+\(\s*([A-Za-z0-9_-]*)$", line_prefix)
+    func_match = re.search(r"\b(visited|seen)\s*\(\s*['\"]?([A-Za-z0-9_-]*)$", line_prefix)
+    if jump_match or choice_match or func_match:
+        typed_filter = ""
+        if jump_match:
+            typed_filter = jump_match.group(2)
+        elif choice_match:
+            typed_filter = choice_match.group(1)
+        elif func_match:
+            typed_filter = func_match.group(2)
+
+        filter_len = len(typed_filter)
         for scene_id, sym in workspace.labels.items():
+            if typed_filter and not scene_id.lower().startswith(typed_filter.lower()):
+                continue
             item = CompletionItem(
                 label=scene_id,
                 kind=CompletionItemKind.Function,
@@ -132,7 +152,7 @@ def compute_completions(
                 if has_space:
                     item.text_edit = TextEdit(
                         range=Range(
-                            start=Position(line=line_0, character=char_0),
+                            start=Position(line=line_0, character=char_0 - filter_len),
                             end=Position(line=line_0, character=char_0),
                         ),
                         new_text=scene_id,
@@ -146,6 +166,14 @@ def compute_completions(
                         new_text=f"{op} {scene_id}",
                     )
                     item.filter_text = f"{op}{scene_id}"
+            else:
+                item.text_edit = TextEdit(
+                    range=Range(
+                        start=Position(line=line_0, character=char_0 - filter_len),
+                        end=Position(line=line_0, character=char_0),
+                    ),
+                    new_text=scene_id,
+                )
             items.append(item)
         return CompletionList(is_incomplete=False, items=items)
 
@@ -165,7 +193,9 @@ def compute_completions(
         return CompletionList(is_incomplete=False, items=items)
 
     # 3. Directives at line start: '@...'
-    if line_prefix.strip().startswith("@"):
+    if line_prefix.strip().startswith("@") and not (
+        line_prefix.strip().startswith(("@if ", "@elif ")) or line_prefix.endswith(" ")
+    ):
         at_col = line_text.find("@")
         for label, snippet, doc_str in DIRECTIVES:
             items.append(

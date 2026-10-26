@@ -8,9 +8,11 @@ from typing import Any
 from eager_core.audio import AudioMixer
 from eager_core.events import (
     AppendEvent,
+    ChoiceOption,
     ChoicePromptEvent,
     DialogueEvent,
     FreshBoxEvent,
+    InputPromptEvent,
     NarrationEvent,
     SceneEnterEvent,
     SceneExitEvent,
@@ -20,7 +22,12 @@ from eager_core.types import BLACK, WHITE, Color, Vec2
 from eager_script import HookArgs, parse_hook_args
 
 from eager_graphics.compositor import StageCompositor
-from eager_graphics.ui_state import ChoiceOption, NVLEntry, UIState
+from eager_graphics.ui_state import NVLEntry, UIState
+
+__all__ = [
+    "CharacterConfig",
+    "StageDirector",
+]
 
 
 def _hook_color(args: HookArgs, key: str, default: Color) -> Color:
@@ -199,6 +206,7 @@ class StageDirector:
         dispatcher.on_event(SceneEnterEvent)(self.handle_scene_enter_event)
         dispatcher.on_event(SceneExitEvent)(self.handle_scene_exit_event)
         dispatcher.on_event(ChoicePromptEvent)(self.handle_choice_prompt_event)
+        dispatcher.on_event(InputPromptEvent)(self.handle_input_prompt_event)
         dispatcher.on_event(StoryEndEvent)(self.handle_story_end_event)
 
     # =========================================================================
@@ -702,6 +710,7 @@ class StageDirector:
         """Clear dialogue and choices on scene exit and stop voice channel."""
         self.ui_state.clear_dialogue()
         self.ui_state.clear_choices()
+        self.ui_state.active_input_prompt = None
         if self.audio is not None:
             self.audio.stop("voice")
 
@@ -717,6 +726,10 @@ class StageDirector:
             )
             for opt in event.options
         ]
+
+    def handle_input_prompt_event(self, event: Any) -> None:
+        """Record active input prompt on UI state."""
+        self.ui_state.active_input_prompt = event
 
     def handle_story_end_event(self, event: Any) -> None:
         """Mark UI state as finished and stop voice channel."""

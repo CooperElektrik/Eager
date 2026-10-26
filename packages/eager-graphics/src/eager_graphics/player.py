@@ -13,6 +13,10 @@ from eager_graphics.ui_components import UIOverlay
 if TYPE_CHECKING:
     from pathlib import Path
 
+__all__ = [
+    "BasePlayer",
+]
+
 
 class BasePlayer:
     """Base interactive visual novel player driving a GameSession.

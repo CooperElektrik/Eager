@@ -7,6 +7,10 @@ from pathlib import Path
 
 from eager_core.storage import atomic_write_json, safe_read_json
 
+__all__ = [
+    "Preferences",
+]
+
 
 @dataclass
 class Preferences:

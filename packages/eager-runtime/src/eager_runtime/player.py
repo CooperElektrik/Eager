@@ -11,6 +11,7 @@ from eager_core.events import (
     DialogueEvent,
     FreshBoxEvent,
     HookEvent,
+    InputPromptEvent,
     NarrationEvent,
     SceneEnterEvent,
     SceneExitEvent,
@@ -19,6 +20,10 @@ from eager_core.events import (
 
 from eager_runtime.runtime import StoryVM
 from eager_runtime.state import Checkpoint, CheckpointHistory, StorySnapshot
+
+__all__ = [
+    "TerminalPlayer",
+]
 
 
 class TerminalPlayer:
@@ -59,7 +64,7 @@ class TerminalPlayer:
             if event is None:
                 break
 
-            if isinstance(event, (DialogueEvent, NarrationEvent, ChoicePromptEvent)):
+            if isinstance(event, (DialogueEvent, NarrationEvent, ChoicePromptEvent, InputPromptEvent)):
                 self.checkpoints.push(
                     Checkpoint(
                         story=snap_before_step.to_dict(),
@@ -104,6 +109,9 @@ class TerminalPlayer:
 
                 self._handle_choice_input(event)
 
+            elif isinstance(event, InputPromptEvent):
+                self._handle_text_input(event)
+
             elif isinstance(event, StoryEndEvent):
                 self._print(self._color(f"\n[The End: {event.reason}]", "1;32"))
                 break
@@ -121,7 +129,7 @@ class TerminalPlayer:
                     self.vm.choose(0)
                     return
                 cmd = line.strip()
-            except (EOFError, KeyboardInterrupt):
+            except (EOFError, KeyboardInterrupt, OSError, ValueError):
                 self._print("\nInterrupted.")
                 if prompt.options[0].target is not None:
                     self.vm.jump(prompt.options[0].target)
@@ -185,3 +193,36 @@ class TerminalPlayer:
 
             if not found:
                 self._print(self._color("Invalid choice or command. Type 1, 2, ... or :q to quit.", "31"))
+
+    def _handle_text_input(self, prompt: InputPromptEvent) -> None:
+        """Prompt user for textual input or fallback to default in headless/non-interactive mode."""
+        prompt_label = prompt.prompt or "Enter value"
+        default_suffix = f" [{prompt.default}]" if prompt.default else ""
+        prompt_msg = f"{prompt_label}{default_suffix}: "
+        styled_prompt = self._color(prompt_msg, "1;33")
+
+        val: str = ""
+        if self.input_stream is not sys.stdin or self.output_stream is not sys.stdout:
+            self.output_stream.write(styled_prompt)
+            self.output_stream.flush()
+            try:
+                line = self.input_stream.readline()
+                if line:
+                    val = line.strip()
+                else:
+                    # EOF or headless empty stream fallback
+                    val = prompt.default
+            except (EOFError, KeyboardInterrupt, OSError, ValueError):
+                val = prompt.default
+        else:
+            try:
+                val = input(styled_prompt).strip()
+            except (EOFError, KeyboardInterrupt, OSError, ValueError):
+                # Headless / non-interactive environment fallback
+                val = prompt.default
+
+        if not val and prompt.default:
+            val = prompt.default
+
+        self.vm.submit_input(val)
+

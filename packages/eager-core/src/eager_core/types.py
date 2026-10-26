@@ -7,6 +7,20 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from eager_core.exceptions import ColorParseError
+
+__all__ = [
+    "BLACK",
+    "BLUE",
+    "GREEN",
+    "RED",
+    "TRANSPARENT",
+    "WHITE",
+    "Color",
+    "Rect",
+    "Vec2",
+]
+
 logger = logging.getLogger(__name__)
 
 
@@ -17,23 +31,50 @@ class Vec2:
     x: float
     y: float
 
-    def __add__(self, other: Vec2 | tuple[float, float]) -> Vec2:
+    def __add__(self, other: object) -> Vec2:
         if isinstance(other, Vec2):
             return Vec2(self.x + other.x, self.y + other.y)
-        return Vec2(self.x + other[0], self.y + other[1])
+        if isinstance(other, (tuple, list)) and len(other) == 2:
+            try:
+                return Vec2(self.x + float(other[0]), self.y + float(other[1]))
+            except (TypeError, ValueError):
+                return NotImplemented
+        return NotImplemented
 
-    def __sub__(self, other: Vec2 | tuple[float, float]) -> Vec2:
+    def __radd__(self, other: object) -> Vec2:
+        return self.__add__(other)
+
+    def __sub__(self, other: object) -> Vec2:
         if isinstance(other, Vec2):
             return Vec2(self.x - other.x, self.y - other.y)
-        return Vec2(self.x - other[0], self.y - other[1])
+        if isinstance(other, (tuple, list)) and len(other) == 2:
+            try:
+                return Vec2(self.x - float(other[0]), self.y - float(other[1]))
+            except (TypeError, ValueError):
+                return NotImplemented
+        return NotImplemented
 
-    def __mul__(self, scalar: float) -> Vec2:
+    def __rsub__(self, other: object) -> Vec2:
+        if isinstance(other, (tuple, list)) and len(other) == 2:
+            try:
+                return Vec2(float(other[0]) - self.x, float(other[1]) - self.y)
+            except (TypeError, ValueError):
+                return NotImplemented
+        return NotImplemented
+
+    def __mul__(self, scalar: object) -> Vec2:
+        if not isinstance(scalar, (int, float)):
+            return NotImplemented
         return Vec2(self.x * scalar, self.y * scalar)
 
-    def __rmul__(self, scalar: float) -> Vec2:
+    def __rmul__(self, scalar: object) -> Vec2:
         return self.__mul__(scalar)
 
-    def __truediv__(self, scalar: float) -> Vec2:
+    def __truediv__(self, scalar: object) -> Vec2:
+        if not isinstance(scalar, (int, float)):
+            return NotImplemented
+        if scalar == 0:
+            raise ZeroDivisionError("Cannot divide Vec2 by zero")
         return Vec2(self.x / scalar, self.y / scalar)
 
     def __neg__(self) -> Vec2:
@@ -61,12 +102,19 @@ class Vec2:
     @classmethod
     def from_dict(cls, data: Mapping[str, object]) -> Vec2:
         """Create vector from dictionary."""
+        if not isinstance(data, Mapping):
+            raise TypeError(f"Vec2.from_dict expects a Mapping, got {type(data).__name__}")
+        if "x" not in data or "y" not in data:
+            raise KeyError(f"Vec2.from_dict requires 'x' and 'y' keys, got keys: {list(data.keys())}")
         x_val = data["x"]
         y_val = data["y"]
         if not isinstance(x_val, (int, float, str)) or not isinstance(y_val, (int, float, str)):
             logger.warning("Vec2.from_dict received non-numeric values: x=%r, y=%r", x_val, y_val)
             raise TypeError("Vec2 coordinates must be numbers or numeric strings")
-        return cls(float(x_val), float(y_val))
+        try:
+            return cls(float(x_val), float(y_val))
+        except ValueError as err:
+            raise ValueError(f"Vec2 coordinates could not be converted to float: {err}") from err
 
     @classmethod
     def from_value(cls, val: Vec2 | tuple[float, float] | list[float] | float) -> Vec2:
@@ -129,6 +177,11 @@ class Color:
     @classmethod
     def from_dict(cls, data: Mapping[str, object]) -> Color:
         """Create color from dictionary."""
+        if not isinstance(data, Mapping):
+            raise TypeError(f"Color.from_dict expects a Mapping, got {type(data).__name__}")
+        missing = [k for k in ("r", "g", "b") if k not in data]
+        if missing:
+            raise KeyError(f"Color.from_dict missing required keys {missing}, got keys: {list(data.keys())}")
         r_val = data["r"]
         g_val = data["g"]
         b_val = data["b"]
@@ -140,12 +193,15 @@ class Color:
             or not isinstance(a_val, (int, float, str))
         ):
             raise TypeError("Color channels must be numbers or numeric strings")
-        return cls(
-            r=float(r_val),
-            g=float(g_val),
-            b=float(b_val),
-            a=float(a_val),
-        )
+        try:
+            return cls(
+                r=float(r_val),
+                g=float(g_val),
+                b=float(b_val),
+                a=float(a_val),
+            )
+        except ValueError as err:
+            raise ColorParseError(f"Color channels could not be converted to float: {err}") from err
 
     @classmethod
     def from_hex(cls, hex_str: str) -> Color:
@@ -166,12 +222,12 @@ class Color:
             c = named[lower]
             return cls(c[0], c[1], c[2], c[3])
 
-        s = lower.lstrip("#")
+        s = lower.removeprefix("#")
         import string
 
         if not s or not all(ch in string.hexdigits for ch in s):
             msg = f"Invalid hex color string: '{hex_str}'"
-            raise ValueError(msg)
+            raise ColorParseError(msg)
 
         if len(s) == 3:
             r = int(s[0] * 2, 16) / 255.0
@@ -197,7 +253,7 @@ class Color:
             return cls(r, g, b, a)
 
         msg = f"Invalid hex color string: '{hex_str}'"
-        raise ValueError(msg)
+        raise ColorParseError(msg)
 
     @classmethod
     def from_bytes(cls, r: int, g: int, b: int, a: int = 255) -> Color:

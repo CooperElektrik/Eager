@@ -68,10 +68,11 @@ from eager_script import evaluate_expression         # Fails: not exported at ro
 ### Expression evaluation
 
 ```python
-# Whitelisted AST parsing
-from eager_script.expr import evaluate_safe_expression
+# Whitelisted AST parsing & compilation
+from eager_script.expr import compile_expr
 
-result = evaluate_safe_expression(expr_ast, context_variables)
+expr = compile_expr(expr_string)
+result = expr.evaluate(context_variables)
 
 # Avoid: arbitrary evaluation
 result = eval(expr_string, {}, context_variables)    # Prohibited

@@ -12,6 +12,13 @@ from typing import TYPE_CHECKING, Any, ClassVar
 if TYPE_CHECKING:
     from eager_core.audio import AudioMixerSaveState
 
+__all__ = [
+    "CallFrame",
+    "Checkpoint",
+    "CheckpointHistory",
+    "StorySnapshot",
+]
+
 
 @dataclass(frozen=True, slots=True)
 class CallFrame:

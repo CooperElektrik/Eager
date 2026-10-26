@@ -210,3 +210,133 @@ def test_server_incremental_edit_and_completion():
     assert bg_item.text_edit is not None
     assert bg_item.text_edit.new_text == "~ bg "
     assert bg_item.filter_text == "~bg"
+
+
+def test_completion_variable_interpolation_and_tags():
+    """Verify variable interpolation and inline text tag completions."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        index = WorkspaceIndex(root)
+
+        text = """@default score = 50
+## Scene 1 --- s1
+Narrator: Player has [
+Narrator: Text with {
+"""
+        doc = ScriptDocument("file:///test.es", text)
+        index.documents["file:///test.es"] = doc
+        index._rebuild_index()
+
+        # Variable interpolation '[' at line 2 col 22
+        comp_var = compute_completions(doc, index, Position(line=2, character=22))
+        labels_var = [i.label for i in comp_var.items]
+        assert "score" in labels_var
+
+        # Inline tag '{' at line 3 col 21
+        comp_tag = compute_completions(doc, index, Position(line=3, character=21))
+        labels_tag = [i.label for i in comp_tag.items]
+        assert "{b}...{/b}" in labels_tag
+        assert "{color=#...}" in labels_tag
+
+
+def test_completion_expressions_in_set_and_if():
+    """Verify variable and builtin function completions inside '$ var = <cursor>' and '@if <cursor>'."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        index = WorkspaceIndex(root)
+
+        text = """@default score = 10
+## S1 --- s1
+$ score = 
+@if 
+"""
+        doc = ScriptDocument("file:///test.es", text)
+        index.documents["file:///test.es"] = doc
+        index._rebuild_index()
+
+        # Inside '$ score = ' (line 2 col 10)
+        comp_set = compute_completions(doc, index, Position(line=2, character=10))
+        labels_set = [i.label for i in comp_set.items]
+        assert "score" in labels_set
+        assert "visited(label)" in labels_set
+        assert "chance(p)" in labels_set
+
+        # Inside '@if ' (line 3 col 4)
+        comp_if = compute_completions(doc, index, Position(line=3, character=4))
+        labels_if = [i.label for i in comp_if.items]
+        assert "score" in labels_if
+        assert "visited(label)" in labels_if
+        # Ensure directive snippets (@if, @character, etc.) are NOT offered
+        assert "@character" not in labels_if
+        assert "@if" not in labels_if
+
+
+def test_completion_partial_jump_filtering():
+    """Verify partial typing after jump operator filters scene labels and replaces correctly."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        index = WorkspaceIndex(root)
+
+        text = """## Scene Alpha --- alpha
+## Scene Beta --- beta
+> al
+"""
+        doc = ScriptDocument("file:///test.es", text)
+        index.documents["file:///test.es"] = doc
+        index._rebuild_index()
+
+        # Cursor after '> al' on line 2 col 4
+        comp = compute_completions(doc, index, Position(line=2, character=4))
+        labels = [i.label for i in comp.items]
+        assert "alpha" in labels
+        assert "beta" not in labels
+
+        alpha_item = next(i for i in comp.items if i.label == "alpha")
+        assert isinstance(alpha_item.text_edit, types.TextEdit)
+        assert alpha_item.text_edit.new_text == "alpha"
+        assert alpha_item.text_edit.range.start.character == 2
+        assert alpha_item.text_edit.range.end.character == 4
+
+
+def test_completion_visited_and_seen_functions():
+    """Verify typing inside visited('...') or seen('...') suggests scene labels."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        index = WorkspaceIndex(root)
+
+        text = """## Intro --- intro
+## Ending --- ending
+@if visited('in
+"""
+        doc = ScriptDocument("file:///test.es", text)
+        index.documents["file:///test.es"] = doc
+        index._rebuild_index()
+
+        # Cursor after "visited('in" (line 2 col 14)
+        comp = compute_completions(doc, index, Position(line=2, character=14))
+        labels = [i.label for i in comp.items]
+        assert "intro" in labels
+        assert "ending" not in labels
+
+
+def test_completion_choice_inline_target():
+    """Verify typing inside '? Option (<cursor>)' suggests scene labels."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        index = WorkspaceIndex(root)
+
+        text = """## Scene 1 --- s1
+## Scene 2 --- s2
+? Go to next (s
+"""
+        doc = ScriptDocument("file:///test.es", text)
+        index.documents["file:///test.es"] = doc
+        index._rebuild_index()
+
+        # Cursor after "? Go to next (s" (line 2 col 15)
+        comp = compute_completions(doc, index, Position(line=2, character=15))
+        labels = [i.label for i in comp.items]
+        assert "s1" in labels
+        assert "s2" in labels
+
+

@@ -8,6 +8,11 @@ from typing import Any
 from eager_core.events import ChoiceOption
 from eager_core.types import Color
 
+__all__ = [
+    "NVLEntry",
+    "UIState",
+]
+
 
 @dataclass
 class NVLEntry:
@@ -45,8 +50,9 @@ class UIState:
     side_image: str | None = None
     nvl_mode: bool = False
     nvl_entries: list[NVLEntry] = field(default_factory=list)
-    visible_chars: int | None = None
+    visible_chars: int | float | None = None
     speaker_color: Color | None = None
+    active_input_prompt: Any | None = None
 
     def clear_dialogue(self) -> None:
         """Clear active dialogue and speaker information."""
@@ -56,6 +62,7 @@ class UIState:
         self.side_image = None
         self.visible_chars = None
         self.speaker_color = None
+        self.active_input_prompt = None
 
     def clear_nvl(self) -> None:
         """Clear NVL mode accumulated text lines."""

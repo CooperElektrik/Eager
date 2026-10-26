@@ -103,17 +103,20 @@ def test_e2e_beat_by_beat_stepping() -> None:
 
     # Beat 1: SceneEnterEvent
     ev1 = vm.step()
+    assert ev1 is not None
     dispatcher.dispatch(ev1)
     assert len(compositor.render_list()) == 0
 
     # Beat 2: HookEvent (~ bg tavern with cut)
     ev2 = vm.step()
+    assert ev2 is not None
     dispatcher.dispatch(ev2)
     assert len(compositor.render_list()) == 1
     assert compositor.render_list()[0].asset_id == "bg/tavern"
 
     # Beat 3: HookEvent (~ show bob smiling at left with cut)
     ev3 = vm.step()
+    assert ev3 is not None
     dispatcher.dispatch(ev3)
     assert len(compositor.render_list()) == 2
     bob_elem = next(it for it in compositor.render_list() if it.layer == "characters")
@@ -121,6 +124,7 @@ def test_e2e_beat_by_beat_stepping() -> None:
 
     # Beat 4: DialogueEvent (Bob (worried): Are you sure?)
     ev4 = vm.step()
+    assert ev4 is not None
     dispatcher.dispatch(ev4)
     # Expression should auto-update to 'worried' without explicit ~ expr hook!
     bob_elem_updated = next(it for it in compositor.render_list() if it.layer == "characters")

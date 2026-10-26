@@ -29,6 +29,14 @@ from eager_runtime.player import TerminalPlayer
 from eager_runtime.project import load_project_graph, mask_script_includes, resolve_project_scripts
 from eager_runtime.runtime import StoryVM
 
+__all__ = [
+    "build_parser",
+    "main",
+    "run_inspect",
+    "run_play",
+    "run_test_run",
+]
+
 # ── shared helpers ────────────────────────────────────────────────────
 
 
@@ -402,7 +410,7 @@ def run_test_run(args: argparse.Namespace) -> int:
 
 def _create_audio_backend(backend: str, *, no_audio: bool = False) -> Any:
     """Instantiate the matching audio backend for the given render backend."""
-    from eager_core import NullAudioBackend
+    from eager_core.audio import NullAudioBackend
 
     if no_audio:
         return NullAudioBackend()

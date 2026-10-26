@@ -2,7 +2,7 @@
 
 import unittest
 
-from eager_core.events import ChoicePromptEvent, DialogueEvent
+from eager_core.events import ChoicePromptEvent, DialogueEvent, SceneEnterEvent
 from eager_script import parse, parse_graph, validate
 
 from eager_runtime import PersistentData, StoryRuntimeError, StoryVM
@@ -24,12 +24,15 @@ Narrator: Now named [player_name] with affinity [affinity].
         vm = StoryVM(graph)
 
         ev = vm.step()  # SceneEnter
+        assert isinstance(ev, SceneEnterEvent)
         self.assertEqual(ev.type, "scene_enter")
 
         ev = vm.step()  # Narration
+        assert isinstance(ev, DialogueEvent)
         self.assertEqual(ev.text, "Hello, Alex!")
 
         ev = vm.step()  # Narration after $ mutations
+        assert isinstance(ev, DialogueEvent)
         self.assertEqual(ev.text, "Now named Alexander with affinity 10.")
         self.assertEqual(vm.get_variable("affinity"), 10)
         self.assertEqual(vm.get_variable("player_name"), "Alexander")
@@ -53,9 +56,11 @@ Narrator: End of evaluation.
         vm.step()  # SceneEnter
 
         ev = vm.step()  # Should be Medium score!
+        assert isinstance(ev, DialogueEvent)
         self.assertEqual(ev.text, "Medium score!")
 
         ev = vm.step()  # End of evaluation.
+        assert isinstance(ev, DialogueEvent)
         self.assertEqual(ev.text, "End of evaluation.")
 
     def test_conditional_choices(self):
@@ -78,7 +83,8 @@ Guard: Farewell.
         vm.step()  # SceneEnter
         vm.step()  # Guard dialogue
 
-        prompt: ChoicePromptEvent = vm.step()  # ChoicePromptEvent
+        prompt = vm.step()  # ChoicePromptEvent
+        assert isinstance(prompt, ChoicePromptEvent)
         self.assertEqual(prompt.type, "choice_prompt")
         self.assertEqual(len(prompt.options), 2)
         # Option 0 should be disabled
@@ -107,6 +113,7 @@ a: Hello there!
         vm = StoryVM(graph)
         vm.step()  # SceneEnter
         ev = vm.step()
+        assert isinstance(ev, DialogueEvent)
         self.assertIsInstance(ev, DialogueEvent)
         self.assertEqual(ev.speaker, "Alice")
         self.assertEqual(ev.text, "Hello there!")
@@ -122,6 +129,7 @@ Narrator: Escaped [[bracket]] and value [x].
         vm = StoryVM(graph)
         vm.step()
         ev = vm.step()
+        assert isinstance(ev, DialogueEvent)
         self.assertEqual(ev.text, "Escaped [bracket] and value 5.")
 
     def test_validator_detects_unclosed_if_and_syntax_error(self):
@@ -155,6 +163,7 @@ Narrator: Secret is [persistent.__class__], [persistent._data], and [_private].
         vm.set_variable("_private", "secret_leak")
         vm.step()  # SceneEnter
         ev = vm.step()  # Narration
+        assert isinstance(ev, DialogueEvent)
         # Verify [persistent.__class__], [persistent._data], and [_private] were NOT expanded/leaked
         self.assertEqual(ev.text, "Secret is [persistent.__class__], [persistent._data], and [_private].")
 

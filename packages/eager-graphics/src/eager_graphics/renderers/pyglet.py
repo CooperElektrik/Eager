@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import hashlib
+import logging
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -16,7 +17,7 @@ try:
     from pyglet.text import Label
     from pyglet.window import Window, key, mouse
 except ImportError as err:
-    msg = "Pyglet is not installed. Install with 'pip install eager-graphics[pyglet]' or 'pip install pyglet'."
+    msg = "Pyglet is not installed. Install with 'pip install eager-graphics[hardware]' or 'pip install pyglet'."
     raise ImportError(msg) from err
 
 from eager_core.input import InputAction
@@ -32,6 +33,16 @@ from eager_graphics.types import Anchor, ScaleMode
 if TYPE_CHECKING:
 
     from eager_graphics.compositor import StageCompositor
+
+
+logger = logging.getLogger(__name__)
+
+__all__ = [
+    "PygletAssetResolver",
+    "PygletAudioBackend",
+    "PygletPlayer",
+    "PygletRenderer",
+]
 
 
 class PygletAssetResolver:
@@ -1108,8 +1119,10 @@ class PygletAudioBackend:
             try:
                 old_player.pause()
                 old_player.delete()
-            except Exception:  # noqa: BLE001, S110
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Failed to release previous player on channel %r: %s", channel, exc
+                )
 
         is_sfx = not loop or channel in ("sfx", "voice", "ui", "sound")
         source: pyglet.media.Source | None = None
@@ -1126,42 +1139,69 @@ class PygletAudioBackend:
                     )
                     self._static_sources[path_str] = static_src
                     source = static_src
-                except Exception:  # noqa: BLE001, S110
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "Failed to load static audio source for channel %r from %r: %s",
+                        channel,
+                        path_str,
+                        exc,
+                    )
 
         if source is None:
             try:
                 source = pyglet.media.load(path_str, streaming=True)
-            except Exception:  # noqa: BLE001
+            except Exception as exc_stream:  # noqa: BLE001
                 try:
                     source = pyglet.media.load(path_str, streaming=False)
-                except Exception:  # noqa: BLE001
+                except Exception as exc_static:  # noqa: BLE001
+                    logger.warning(
+                        "Failed to load or decode audio for channel %r from %r "
+                        "(streaming failed: %s; non-streaming failed: %s)",
+                        channel,
+                        path_str,
+                        exc_stream,
+                        exc_static,
+                    )
                     return
 
-        player = pyglet.media.Player()
-        player.queue(source)
-        player.volume = max(0.0, min(1.0, volume))
-        self._loop_points[channel] = (loop_start, loop_end)
+        try:
+            player = pyglet.media.Player()
+            player.queue(source)
+            player.volume = max(0.0, min(1.0, volume))
+            self._loop_points[channel] = (loop_start, loop_end)
 
-        if loop:
-            if loop_start is None and loop_end is None:
-                player.loop = True
+            if loop:
+                if loop_start is None and loop_end is None:
+                    player.loop = True
+                else:
+                    player.loop = False
+
+                    @player.event
+                    def on_player_eos() -> None:
+                        seek_pos = loop_start if loop_start is not None else 0.0
+                        try:
+                            player.seek(seek_pos)
+                            player.play()
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning(
+                                "Failed to seek/loop audio on EOS for channel %r: %s",
+                                channel,
+                                exc,
+                            )
             else:
                 player.loop = False
 
-                @player.event
-                def on_player_eos() -> None:
-                    seek_pos = loop_start if loop_start is not None else 0.0
-                    try:
-                        player.seek(seek_pos)
-                        player.play()
-                    except Exception:  # noqa: BLE001, S110
-                        pass
-        else:
-            player.loop = False
-
-        self._players[channel] = player
-        player.play()
+            self._players[channel] = player
+            player.play()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Failed to play audio on channel %r from %r: %s",
+                channel,
+                path_str,
+                exc,
+            )
+            self._players.pop(channel, None)
+            self._loop_points.pop(channel, None)
 
     def stop(self, channel: str, *, fade_out: float = 0.0) -> None:
         player = self._players.get(channel)
@@ -1169,8 +1209,10 @@ class PygletAudioBackend:
             try:
                 player.pause()
                 player.delete()
-            except Exception:  # noqa: BLE001, S110
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Error stopping player on channel %r: %s", channel, exc
+                )
             del self._players[channel]
             self._loop_points.pop(channel, None)
 
@@ -1203,16 +1245,22 @@ class PygletAudioBackend:
                 try:
                     player.seek(seek_pos)
                     player.play()
-                except Exception:  # noqa: BLE001, S110
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "Failed to seek/loop audio at loop_end on channel %r: %s",
+                        ch,
+                        exc,
+                    )
 
     def shutdown(self) -> None:
-        for player in list(self._players.values()):
+        for ch, player in list(self._players.items()):
             try:
                 player.pause()
                 player.delete()
-            except Exception:  # noqa: BLE001, S110
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Error stopping player during shutdown on channel %r: %s", ch, exc
+                )
         self._players.clear()
         self._loop_points.clear()
         self._static_sources.clear()

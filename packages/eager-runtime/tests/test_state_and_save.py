@@ -152,6 +152,7 @@ Narrator: Picked A
         vm2.load(snap)
         self.assertIsNotNone(vm2.pending_choice)
         step_evt = vm2.step()
+        assert isinstance(step_evt, ChoicePromptEvent)
         self.assertIsInstance(step_evt, ChoicePromptEvent)
         self.assertEqual(len(step_evt.options), 2)
 
@@ -175,6 +176,7 @@ Narrator: Picked A
         vm2 = StoryVM(self.graph)
         vm2.load(snap)
         enter_evt = vm2.step()
+        assert isinstance(enter_evt, SceneEnterEvent)
         self.assertIsInstance(enter_evt, SceneEnterEvent)
         self.assertEqual(enter_evt.scene_id, "scene_2")
 
@@ -190,6 +192,7 @@ Narrator: Picked A
         restored_snap = StorySnapshot.from_json(json_str)
 
         # Confirm that JSON deserialized the MT state vector as a list
+        assert restored_snap.rng_state is not None
         self.assertIsInstance(restored_snap.rng_state[1], list)
 
         # Generate expected future random stream from original VM
@@ -220,6 +223,7 @@ Alice: Hero is [hero_name]
         vm.step()  # SceneEnter
         vm.step()  # Alice: Before choices
         choice_evt = vm.step()  # ChoicePromptEvent
+        assert isinstance(choice_evt, ChoicePromptEvent)
         self.assertIsInstance(choice_evt, ChoicePromptEvent)
         orig_choice_beat_id = choice_evt.beat_id
 
@@ -227,6 +231,7 @@ Alice: Hero is [hero_name]
         snap = vm.save()
         vm2 = StoryVM(graph)
         vm2.load(snap)
+        assert vm2.pending_choice is not None
         self.assertIsNotNone(vm2.pending_choice)
         self.assertEqual(vm2.pending_choice.beat_id, orig_choice_beat_id)
 
@@ -235,6 +240,7 @@ Alice: Hero is [hero_name]
         vm.step()  # SceneEnter Scene A
         vm.step()  # Alice: Picked A
         input_evt = vm.step()  # InputPromptEvent
+        assert isinstance(input_evt, InputPromptEvent)
         self.assertIsInstance(input_evt, InputPromptEvent)
         orig_input_beat_id = input_evt.beat_id
         self.assertIsNotNone(orig_input_beat_id)
@@ -243,6 +249,7 @@ Alice: Hero is [hero_name]
         snap_input = vm.save()
         vm3 = StoryVM(graph)
         vm3.load(snap_input)
+        assert vm3.pending_input is not None
         self.assertIsNotNone(vm3.pending_input)
         self.assertEqual(vm3.pending_input.beat_id, orig_input_beat_id)
         self.assertEqual(vm3.pending_input.prompt, input_evt.prompt)
@@ -294,6 +301,7 @@ class TestSaveSystem(unittest.TestCase):
 
         # Load slot
         loaded = manager.load_slot("slot_1")
+        assert loaded is not None
         self.assertIsNotNone(loaded)
         self.assertEqual(loaded.story["variables"]["gold"], 100)
 
@@ -316,6 +324,7 @@ class TestSaveSystem(unittest.TestCase):
 
         manager.save_slot("input_slot", cp)
         loaded = manager.load_slot("input_slot")
+        assert loaded is not None
         self.assertIsNotNone(loaded)
         self.assertEqual(loaded.active_input_prompt, prompt_data)
 
@@ -348,12 +357,14 @@ class TestSaveSystem(unittest.TestCase):
         meta = manager.quicksave(cp)
         self.assertEqual(meta.slot_name, "quick_1")
         ql = manager.quickload()
+        assert ql is not None
         self.assertIsNotNone(ql)
         self.assertEqual(ql.story["current_scene"], "checkpoint")
 
         meta_auto = manager.autosave(cp)
         self.assertEqual(meta_auto.slot_name, "auto_1")
         al = manager.autoload()
+        assert al is not None
         self.assertIsNotNone(al)
         self.assertEqual(al.story["current_scene"], "checkpoint")
 
@@ -380,6 +391,7 @@ class TestSaveSystem(unittest.TestCase):
 
         # Quickload should load latest (scene_3)
         ql = manager.quickload()
+        assert ql is not None
         self.assertIsNotNone(ql)
         self.assertEqual(ql.story["current_scene"], "scene_3")
 
@@ -388,6 +400,7 @@ class TestSaveSystem(unittest.TestCase):
         time.sleep(0.005)
         self.assertEqual(m4.slot_name, "quick_1")
         ql = manager.quickload()
+        assert ql is not None
         self.assertIsNotNone(ql)
         self.assertEqual(ql.story["current_scene"], "scene_4")
 
@@ -396,6 +409,7 @@ class TestSaveSystem(unittest.TestCase):
         time.sleep(0.005)
         self.assertEqual(m5.slot_name, "quick_2")
         ql = manager.quickload()
+        assert ql is not None
         self.assertIsNotNone(ql)
         self.assertEqual(ql.story["current_scene"], "scene_5")
 
@@ -415,6 +429,7 @@ class TestSaveSystem(unittest.TestCase):
         self.assertEqual(m2.slot_name, "auto_2")
 
         al = manager.autoload()
+        assert al is not None
         self.assertIsNotNone(al)
         self.assertEqual(al.story["current_scene"], "auto_scene_2")
 
@@ -422,6 +437,7 @@ class TestSaveSystem(unittest.TestCase):
         m3 = manager.autosave(cp3)
         self.assertEqual(m3.slot_name, "auto_1")
         al = manager.autoload()
+        assert al is not None
         self.assertIsNotNone(al)
         self.assertEqual(al.story["current_scene"], "auto_scene_3")
 
@@ -429,16 +445,22 @@ class TestSaveSystem(unittest.TestCase):
         manager = SaveManager(self.save_dir)
         cp = Checkpoint(story={"current_scene": "legacy_quick"}, visual={}, audio={}, backlog_len=0, ui={})
         manager.save_slot("quick", cp)
-        self.assertEqual(manager.quickload().story["current_scene"], "legacy_quick")
+        ql_legacy = manager.quickload()
+        assert ql_legacy is not None
+        self.assertEqual(ql_legacy.story["current_scene"], "legacy_quick")
 
         cp_auto = Checkpoint(story={"current_scene": "legacy_auto"}, visual={}, audio={}, backlog_len=0, ui={})
         manager.save_slot("auto", cp_auto)
-        self.assertEqual(manager.autoload().story["current_scene"], "legacy_auto")
+        al_legacy = manager.autoload()
+        assert al_legacy is not None
+        self.assertEqual(al_legacy.story["current_scene"], "legacy_auto")
 
         # Quicksaving now should write to quick_1 and become the latest
         cp_new = Checkpoint(story={"current_scene": "new_quick_1"}, visual={}, audio={}, backlog_len=0, ui={})
         manager.quicksave(cp_new)
-        self.assertEqual(manager.quickload().story["current_scene"], "new_quick_1")
+        ql_new = manager.quickload()
+        assert ql_new is not None
+        self.assertEqual(ql_new.story["current_scene"], "new_quick_1")
 
     def test_corrupted_persistent_data_backup(self):
         p_path = self.save_dir / "persistent.json"
@@ -457,6 +479,60 @@ class TestSaveSystem(unittest.TestCase):
         p.save()
         p2 = PersistentData(p_path)
         self.assertEqual(p2["recovered"], True)
+
+    def test_load_slot_corrupted_json_creates_backup(self) -> None:
+        """Verify SaveManager.load_slot generates slot.json.corrupt.bak on corrupt JSON."""
+        manager = SaveManager(self.save_dir)
+        slot_path = self.save_dir / "slot_corrupt.json"
+        corrupt_content = '{"version": 1, "checkpoint": {broken json content...'
+        slot_path.write_text(corrupt_content, encoding="utf-8")
+
+        # Loading corrupt slot must return None without raising unhandled JSONDecodeError
+        loaded = manager.load_slot("slot_corrupt")
+        self.assertIsNone(loaded)
+
+        # Must generate .corrupt.bak backup with exact content
+        bak_path = self.save_dir / "slot_corrupt.json.corrupt.bak"
+        self.assertTrue(bak_path.exists())
+        self.assertEqual(bak_path.read_text(encoding="utf-8"), corrupt_content)
+
+    def test_load_slot_binary_garbage_creates_backup(self) -> None:
+        """Verify SaveManager.load_slot handles non-UTF8 binary corruption."""
+        manager = SaveManager(self.save_dir)
+        slot_path = self.save_dir / "slot_bin.json"
+        raw_garbage = b"\x00\xff\xfe\x00\xaa\xbb\xcc\xdd"
+        slot_path.write_bytes(raw_garbage)
+
+        loaded = manager.load_slot("slot_bin")
+        self.assertIsNone(loaded)
+
+        bak_path = self.save_dir / "slot_bin.json.corrupt.bak"
+        self.assertTrue(bak_path.exists())
+        self.assertEqual(bak_path.read_bytes(), raw_garbage)
+
+    def test_save_slot_overwrites_corrupt_slot_retaining_backup(self) -> None:
+        """Verify player can overwrite a corrupted slot while retaining the backup for diagnostics."""
+        manager = SaveManager(self.save_dir)
+        slot_path = self.save_dir / "slot_overwrite.json"
+        slot_path.write_text("{corrupt garbage", encoding="utf-8")
+
+        # Trigger backup via load_slot
+        self.assertIsNone(manager.load_slot("slot_overwrite"))
+        bak_path = self.save_dir / "slot_overwrite.json.corrupt.bak"
+        self.assertTrue(bak_path.exists())
+
+        # Now save valid checkpoint into the same slot
+        cp = Checkpoint(story={"current_scene": "recovered"}, visual={}, audio={}, backlog_len=0, ui={})
+        manager.save_slot("slot_overwrite", cp)
+
+        # Valid slot can be reloaded
+        reloaded = manager.load_slot("slot_overwrite")
+        assert reloaded is not None
+        self.assertEqual(reloaded.story["current_scene"], "recovered")
+
+        # Backup remains on disk
+        self.assertTrue(bak_path.exists())
+        self.assertEqual(bak_path.read_text(encoding="utf-8"), "{corrupt garbage")
 
     def test_persistent_data(self):
         p_path = self.save_dir / "persistent.json"
@@ -704,6 +780,7 @@ class TestSaveSchemaMigration(unittest.TestCase):
 
         # Loading legacy save should succeed and auto-upgrade to version 1
         cp = manager.load_slot("legacy")
+        assert cp is not None
         self.assertIsNotNone(cp)
         self.assertEqual(cp.story.get("current_scene"), "intro")
         self.assertEqual(cp.visual.get("layer"), "bg")
@@ -731,6 +808,7 @@ class TestSaveSchemaMigration(unittest.TestCase):
 
         # Load with target_version=2
         loaded = manager.load_slot("slot_1", target_version=2)
+        assert loaded is not None
         self.assertIsNotNone(loaded)
         entities = loaded.visual.get("entities")
         self.assertEqual(entities, [{"name": "hero", "scale": 1.0}])
@@ -755,6 +833,7 @@ class TestSaveSchemaMigration(unittest.TestCase):
             return data
 
         loaded = manager.load_slot("slot_hook", target_version=2, migration_hook=custom_hook)
+        assert loaded is not None
         self.assertIsNotNone(loaded)
         self.assertEqual(loaded.visual.get("lighting"), "ambient")
 
@@ -780,6 +859,7 @@ class TestSaveSchemaMigration(unittest.TestCase):
         SaveManager(self.save_dir, target_version=1).save_slot("slot_mgr", cp)
 
         loaded = manager.load_slot("slot_mgr")
+        assert loaded is not None
         self.assertIsNotNone(loaded)
         self.assertEqual(loaded.ui.get("theme"), "dark")
 
@@ -834,6 +914,7 @@ class TestSaveSchemaMigration(unittest.TestCase):
 
         # quickload & autoload through manager (target_version=2)
         loaded_quick = manager.quickload()
+        assert loaded_quick is not None
         self.assertIsNotNone(loaded_quick)
         self.assertTrue(loaded_quick.story is not None)
 

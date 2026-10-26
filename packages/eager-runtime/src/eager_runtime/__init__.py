@@ -42,6 +42,12 @@ if TYPE_CHECKING:
     from eager_runtime.backlog import Backlog, BacklogEntry
     from eager_runtime.persistent import PersistentData
     from eager_runtime.preferences import Preferences
+    from eager_runtime.project import (
+        ProjectConfig,
+        load_project_graph,
+        merge_graphs,
+        resolve_project_scripts,
+    )
     from eager_runtime.saves import (
         SaveData,
         SaveManager,
@@ -51,7 +57,7 @@ if TYPE_CHECKING:
     from eager_runtime.session import GameSession
     from eager_runtime.watcher import FileWatcher
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     "AppendEvent",
@@ -77,6 +83,7 @@ __all__ = [
     "NarrationEvent",
     "PersistentData",
     "Preferences",
+    "ProjectConfig",
     "SaveData",
     "SaveManager",
     "SaveMetadata",
@@ -90,6 +97,9 @@ __all__ = [
     "StoryVM",
     "TerminalPlayer",
     "check_assets",
+    "load_project_graph",
+    "merge_graphs",
+    "resolve_project_scripts",
 ]
 
 
@@ -99,8 +109,6 @@ _LAZY_EXPORTS = {
     "MissingAssetIssue": "eager_runtime.assets",
     "check_assets": "eager_runtime.assets",
     "GameSession": "eager_runtime.session",
-    "Checkpoint": "eager_runtime.state",
-    "CheckpointHistory": "eager_runtime.state",
     "SaveManager": "eager_runtime.saves",
     "SaveMetadata": "eager_runtime.saves",
     "SaveData": "eager_runtime.saves",
@@ -110,6 +118,10 @@ _LAZY_EXPORTS = {
     "Backlog": "eager_runtime.backlog",
     "BacklogEntry": "eager_runtime.backlog",
     "FileWatcher": "eager_runtime.watcher",
+    "ProjectConfig": "eager_runtime.project",
+    "load_project_graph": "eager_runtime.project",
+    "merge_graphs": "eager_runtime.project",
+    "resolve_project_scripts": "eager_runtime.project",
 }
 
 

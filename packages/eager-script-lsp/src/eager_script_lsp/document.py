@@ -36,6 +36,13 @@ _COLOR_TAG_PATTERN = re.compile(r"\{color=(#[0-9a-fA-F]{3,8})\}")
 _BEAT_ID_TAG_PATTERN = re.compile(r"\{id=([a-zA-Z0-9_-]+)\}")
 _TOKEN_PATTERN = re.compile(r'"([^"]*)"|\'([^\']*)\'|(\S+)')
 
+__all__ = [
+    "ScriptDocument",
+    "SymbolOccurrence",
+    "SyntaxIssue",
+    "TokenSpan",
+]
+
 
 @dataclass(frozen=True, slots=True)
 class TokenSpan:
@@ -93,7 +100,7 @@ class ScriptDocument:
     def __init__(self, uri: str, text: str) -> None:
         self.uri = uri
         self.text = text
-        self.lines: list[str] = text.splitlines(keepends=False)
+        self.lines: list[str] = text.splitlines(keepends=False) or [""]
         self.spans: list[TokenSpan] = []
         self.occurrences: list[SymbolOccurrence] = []
         self.syntax_errors: list[SyntaxIssue] = []
@@ -1449,14 +1456,31 @@ class ScriptDocument:
         # Mask out string literals with spaces of equal length to prevent matching inside strings
         clean_expr = re.sub(r"(\"[^\"]*\"|'[^']*')", lambda m: " " * len(m.group(0)), expr_str)
 
-        # Extract identifier tokens that are variable references
+        # Extract identifier tokens that are variable references or builtin functions
         for m in re.finditer(r"\b([A-Za-z_][A-Za-z0-9_]*)\b", clean_expr):
             ident = m.group(1)
-            # Skip python/DSL built-in keywords
+            # Emit token span for built-in functions to support hover docs
             if ident in (
                 "visited", "seen", "random", "chance", "min", "max",
-                "abs", "len", "int", "str", "round", "True", "False",
-                "None", "and", "or", "not", "is", "in", "persistent"
+                "abs", "len", "int", "str", "round"
+            ):
+                i_start = expr_start_col + m.start(1)
+                i_end = expr_start_col + m.end(1)
+                self.spans.append(
+                    TokenSpan(
+                        kind="builtin_func",
+                        start_line=line_idx,
+                        start_col=i_start,
+                        end_line=line_idx,
+                        end_col=i_end,
+                        value=ident,
+                    )
+                )
+                continue
+
+            # Skip python/DSL built-in keywords
+            if ident in (
+                "True", "False", "None", "and", "or", "not", "is", "in", "persistent"
             ):
                 continue
             i_start = expr_start_col + m.start(1)
@@ -1503,7 +1527,9 @@ class ScriptDocument:
                     )
                 # Neutralize problematic line and retry
                 if err_line_0 < len(current_lines):
-                    current_lines[err_line_0] = "# <parse error recovery>"
+                    line_raw = current_lines[err_line_0]
+                    indent_prefix = line_raw[: len(line_raw) - len(line_raw.lstrip(" \t"))]
+                    current_lines[err_line_0] = f"{indent_prefix}# <parse error recovery>"
                 else:
                     break
             except Exception:  # noqa: BLE001

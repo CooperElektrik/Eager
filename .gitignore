@@ -44,3 +44,7 @@ node_modules/
 out/
 .vscode-test/
 concat_output.txt
+
+# Misc.
+
+.agents/

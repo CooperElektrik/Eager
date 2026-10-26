@@ -9,6 +9,11 @@ from typing import Any
 from eager_core.easing import EasingFunc, linear
 from eager_core.types import Color, Vec2
 
+__all__ = [
+    "Timeline",
+    "Tween",
+]
+
 
 @dataclass
 class Tween:

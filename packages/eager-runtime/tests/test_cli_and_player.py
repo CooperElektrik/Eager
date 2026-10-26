@@ -1,6 +1,7 @@
 """Unit tests for Eager CLI commands and TerminalPlayer runner."""
 
 import io
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -24,6 +25,13 @@ Guard: Welcome traveler.
 
 ## Fight --- fight
 Guard: En garde!
+"""
+
+INPUT_TEST_SCRIPT = """
+## Welcome --- welcome
+Guard: Who goes there?
+~ input traveler_name "State your name:" default="Traveler"
+Guard: Welcome, [traveler_name]!
 """
 
 
@@ -68,6 +76,64 @@ class TestCLIAndPlayer(unittest.TestCase):
         out = fake_output.getvalue()
         self.assertIn("Game state saved to memory slot.", out)
         self.assertIn("Guard: En garde!", out)
+
+    def test_terminal_player_input_prompt_stream(self) -> None:
+        graph = eager_script.parse_graph(INPUT_TEST_SCRIPT)
+        vm = StoryVM(graph)
+
+        fake_input = io.StringIO("Sir Robin\n")
+        fake_output = io.StringIO()
+
+        player = TerminalPlayer(
+            vm,
+            input_stream=fake_input,
+            output_stream=fake_output,
+            use_colors=False,
+        )
+        player.play()
+
+        out = fake_output.getvalue()
+        self.assertIn("Guard: Who goes there?", out)
+        self.assertIn("Guard: Welcome, Sir Robin!", out)
+        self.assertEqual(vm.get_variable("traveler_name"), "Sir Robin")
+
+    def test_terminal_player_input_prompt_default_fallback(self) -> None:
+        graph = eager_script.parse_graph(INPUT_TEST_SCRIPT)
+        vm = StoryVM(graph)
+
+        # Empty line should trigger fallback to default "Traveler"
+        fake_input = io.StringIO("\n")
+        fake_output = io.StringIO()
+
+        player = TerminalPlayer(
+            vm,
+            input_stream=fake_input,
+            output_stream=fake_output,
+            use_colors=False,
+        )
+        player.play()
+
+        out = fake_output.getvalue()
+        self.assertIn("Guard: Welcome, Traveler!", out)
+        self.assertEqual(vm.get_variable("traveler_name"), "Traveler")
+
+    def test_terminal_player_input_prompt_eof_fallback(self) -> None:
+        graph = eager_script.parse_graph(INPUT_TEST_SCRIPT)
+        vm = StoryVM(graph)
+
+        # EOF (empty stream) triggers fallback to default
+        fake_input = io.StringIO("")
+        fake_output = io.StringIO()
+
+        player = TerminalPlayer(
+            vm,
+            input_stream=fake_input,
+            output_stream=fake_output,
+            use_colors=False,
+        )
+        player.play()
+
+        self.assertEqual(vm.get_variable("traveler_name"), "Traveler")
 
     def test_cli_inspect_command(self) -> None:
         with tempfile.NamedTemporaryFile("w+", suffix=".es", delete=False) as f:
@@ -180,6 +246,99 @@ accent_color = "#ff8800"
                 self.assertEqual(cfg.title, "Themed Story")
                 self.assertEqual(cfg.theme, "slate")
                 self.assertIn("accent_color", cfg.theme_overrides)
+
+    def test_terminal_player_choice_input_closed_stream(self) -> None:
+        graph = eager_script.parse_graph(TEST_SCRIPT)
+        vm = StoryVM(graph)
+
+        closed_input = io.StringIO("1\n")
+        closed_input.close()
+        fake_output = io.StringIO()
+
+        player = TerminalPlayer(
+            vm,
+            input_stream=closed_input,
+            output_stream=fake_output,
+            use_colors=False,
+        )
+        player.play()
+
+        out = fake_output.getvalue()
+        self.assertIn("Interrupted.", out)
+        self.assertIn("Guard: Welcome traveler.", out)
+
+    def test_terminal_player_choice_input_os_error_stream(self) -> None:
+        class ErrorStream(io.StringIO):
+            def readline(self, size: int = -1, /) -> str:
+                raise OSError("Stream I/O error")
+
+        graph = eager_script.parse_graph(TEST_SCRIPT)
+        vm = StoryVM(graph)
+        fake_output = io.StringIO()
+
+        player = TerminalPlayer(
+            vm,
+            input_stream=ErrorStream(),
+            output_stream=fake_output,
+            use_colors=False,
+        )
+        player.play()
+
+        out = fake_output.getvalue()
+        self.assertIn("Interrupted.", out)
+        self.assertIn("Guard: Welcome traveler.", out)
+
+    def test_terminal_player_text_input_closed_stream(self) -> None:
+        graph = eager_script.parse_graph(INPUT_TEST_SCRIPT)
+        vm = StoryVM(graph)
+
+        closed_input = io.StringIO("Sir Gawain\n")
+        closed_input.close()
+        fake_output = io.StringIO()
+
+        player = TerminalPlayer(
+            vm,
+            input_stream=closed_input,
+            output_stream=fake_output,
+            use_colors=False,
+        )
+        player.play()
+
+        self.assertEqual(vm.get_variable("traveler_name"), "Traveler")
+
+    def test_terminal_player_text_input_os_error_stream(self) -> None:
+        class ErrorStream(io.StringIO):
+            def readline(self, size: int = -1, /) -> str:
+                raise OSError("Custom pipe broken")
+
+        graph = eager_script.parse_graph(INPUT_TEST_SCRIPT)
+        vm = StoryVM(graph)
+        fake_output = io.StringIO()
+
+        player = TerminalPlayer(
+            vm,
+            input_stream=ErrorStream(),
+            output_stream=fake_output,
+            use_colors=False,
+        )
+        player.play()
+
+        self.assertEqual(vm.get_variable("traveler_name"), "Traveler")
+
+    def test_terminal_player_text_input_stdin_value_error(self) -> None:
+        graph = eager_script.parse_graph(INPUT_TEST_SCRIPT)
+        vm = StoryVM(graph)
+
+        player = TerminalPlayer(
+            vm,
+            input_stream=sys.stdin,
+            output_stream=sys.stdout,
+            use_colors=False,
+        )
+        with patch("builtins.input", side_effect=ValueError("I/O operation on closed file")):
+            player.play()
+
+        self.assertEqual(vm.get_variable("traveler_name"), "Traveler")
 
 
 def test_cli_check_valid_script(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

@@ -3,8 +3,9 @@
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
-from eager_core.types import Color, Rect
+from eager_core.types import WHITE, Color, Rect
 from eager_runtime.project import ProjectConfig, merge_graphs
 from eager_script import parse_graph
 
@@ -15,24 +16,27 @@ class MockUIDrawBackend:
     """Mock UIDrawBackend recording draw calls for testing."""
 
     def __init__(self) -> None:
-        self.rects = []
-        self.texts = []
+        self.rects: list[Any] = []
+        self.texts: list[Any] = []
+        self.images: list[Any] = []
 
     def draw_rect(
         self,
         x: float,
         y: float,
-        w: float,
-        h: float,
+        width: float,
+        height: float,
         color: Color,
         *,
         border_color: Color | None = None,
         border_width: float = 0.0,
     ) -> None:
-        self.rects.append((x, y, w, h, color, border_color, border_width))
+        self.rects.append((x, y, width, height, color, border_color, border_width))
 
-    def draw_rect_outline(self, x: float, y: float, w: float, h: float, color: Color, line_width: float = 1.0) -> None:
-        self.rects.append(("outline", x, y, w, h, color))
+    def draw_rect_outline(
+        self, x: float, y: float, width: float, height: float, color: Color, line_width: float = 1.0
+    ) -> None:
+        self.rects.append(("outline", x, y, width, height, color))
 
     def draw_gradient_rect(
         self,
@@ -45,8 +49,58 @@ class MockUIDrawBackend:
     ) -> None:
         self.rects.append(("gradient", x, y, width, height, top_color, bottom_color))
 
-    def draw_text(self, x: float, y: float, text: str, **kwargs) -> None:
-        self.texts.append((text, x, y, kwargs))
+    def draw_text(
+        self,
+        x: float,
+        y: float,
+        text: str,
+        *,
+        font_size: int = 14,
+        color: Color = WHITE,
+        bold: bool = False,
+        italic: bool = False,
+        anchor_x: str = "left",
+        anchor_y: str = "top",
+        cache: bool = True,
+        **kwargs: Any,
+    ) -> None:
+        kw = {
+            "font_size": font_size,
+            "color": color,
+            "bold": bold,
+            "italic": italic,
+            "anchor_x": anchor_x,
+            "anchor_y": anchor_y,
+            "cache": cache,
+        }
+        kw.update(kwargs)
+        self.texts.append((text, x, y, kw))
+
+    def draw_image(
+        self,
+        asset_id: str,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        *,
+        tint: Color = WHITE,
+        anchor_x: str = "left",
+        anchor_y: str = "top",
+    ) -> None:
+        self.images.append((asset_id, x, y, width, height, tint, anchor_x, anchor_y))
+
+    def measure_text(
+        self,
+        text: str,
+        *,
+        font_size: int = 14,
+        bold: bool = False,
+        italic: bool = False,
+        cache: bool = True,
+    ) -> tuple[float, float]:
+        longest = max((len(line) for line in text.splitlines()), default=0)
+        return (longest * font_size * 0.5, float(font_size) * 1.2)
 
 
 class TestScreensAndProject(unittest.TestCase):
@@ -69,6 +123,7 @@ class TestScreensAndProject(unittest.TestCase):
             def advance(self): pass
 
         mgr.show("title", DummySession())
+        assert mgr.active_screen is not None
         self.assertEqual(mgr.active_screen.name, "title")
 
         # Click first button (Start Game)
@@ -268,13 +323,16 @@ height = 720
 
         mgr.show("s1", None)
         self.assertTrue(mgr.is_active)
+        assert mgr.active_screen is not None
         self.assertEqual(mgr.active_screen.name, "s1")
 
         mgr.show("s2", None)
+        assert mgr.active_screen is not None
         self.assertEqual(mgr.active_screen.name, "s2")
 
         # Esc dismisses to previous
         self.assertTrue(mgr.handle_key("escape", None))
+        assert mgr.active_screen is not None
         self.assertEqual(mgr.active_screen.name, "s1")
 
         # Esc dismisses final
@@ -356,6 +414,8 @@ height = 720
                 self.backlog = DummyBacklog(entries)
                 self.screens = ScreenManager()
                 self.audio = MockAudio()
+                self.play_voice_calls: list[str] = []
+                self.play_voice: Any = None
 
         entries = [
             DummyEntry("Alice", "Hello without voice", voice=None),

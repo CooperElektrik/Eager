@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 
 import pytest
+from eager_core.events import ChoiceOption
 
 from eager_graphics.renderers.null import NullRenderer
 from eager_graphics.ui_components import (
@@ -19,7 +20,7 @@ from eager_graphics.ui_components import (
     TextboxStyle,
     UIOverlay,
 )
-from eager_graphics.ui_state import ChoiceOption, UIState
+from eager_graphics.ui_state import UIState
 
 # ── DialogueBox ────────────────────────────────────────────────────────────
 
@@ -625,7 +626,7 @@ def test_pil_draw_rect_repaints_frame_buffer() -> None:
 
     renderer.draw_rect(0, 0, 64, 64, WHITE)
     after = renderer.image.convert("RGB").getpixel((32, 32))
-
+    assert isinstance(after, tuple)
     assert after != before
     assert after[0] > 200
 

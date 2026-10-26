@@ -2,7 +2,7 @@ import argparse
 from pathlib import Path
 
 import pytest
-from eager_core.events import AppendEvent
+from eager_core.events import AppendEvent, ChoiceOption, DialogueEvent, SceneEnterEvent
 from eager_script import parse_graph
 
 from eager_runtime.cli import _cmd_build
@@ -35,8 +35,10 @@ Narrator: Coins: [persistent.coins] and normal: [normal_coins]
 
     # Step past scene enter and sets to dialogue
     enter_ev = vm.step()
+    assert isinstance(enter_ev, SceneEnterEvent)
     assert enter_ev.type == "scene_enter"
     ev = vm.step()
+    assert isinstance(ev, DialogueEvent)
     assert ev.text == "Coins: 15 and normal: 100"
 
     # Verify persistent object directly mutated
@@ -53,6 +55,7 @@ Narrator: Coins: [persistent.coins] and normal: [normal_coins]
 
     # Step to next beat inside if branch
     ev2 = vm.step()
+    assert isinstance(ev2, DialogueEvent)
     assert ev2.text == "Rich!"
 
     # Now mutate persistent and mutate normal_coins
@@ -88,6 +91,7 @@ Narrator: Bonus is [bonus].
 
     session = GameSession(proj_dir / "main.es", save_dir=proj_dir)
     ev = session.advance()
+    assert isinstance(ev, DialogueEvent)
     assert ev.text == "Bonus is 100."
 
 
@@ -152,7 +156,7 @@ def test_story_snapshot_non_monotonic_migration():
 def test_null_stage_on_append():
     stage = NullStage()
     stage.ui_state.text = "Hello"
-    stage.ui_state.choices = ["Option A", "Option B"]
+    stage.ui_state.choices = [ChoiceOption(index=0, text="Option A"), ChoiceOption(index=1, text="Option B")]
 
     stage._on_append(AppendEvent(text="world!", line_number=1))
     assert stage.ui_state.text == "Hello world!"

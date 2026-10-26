@@ -8,6 +8,12 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+__all__ = [
+    "CompiledExpr",
+    "ExprError",
+    "compile_expr",
+]
+
 
 class ExprError(Exception):
     """Raised when an expression fails to compile or evaluate safely."""
@@ -190,13 +196,21 @@ def _eval_node(node: ast.AST, env: dict[str, Any]) -> Any:
     if isinstance(node, ast.UnaryOp):
         op_fn = _ALLOWED_OPERATORS[type(node.op)]
         val = _eval_node(node.operand, env)
-        return op_fn(val)
+        try:
+            return op_fn(val)
+        except (ArithmeticError, TypeError, ValueError) as exc:
+            raise ExprError(f"Unary operation failed: {exc}") from exc
 
     if isinstance(node, ast.BinOp):
         op_fn = _ALLOWED_OPERATORS[type(node.op)]
         left = _eval_node(node.left, env)
         right = _eval_node(node.right, env)
-        return op_fn(left, right)
+        try:
+            return op_fn(left, right)
+        except ZeroDivisionError as exc:
+            raise ExprError(f"Division by zero: {exc}") from exc
+        except (ArithmeticError, TypeError, ValueError) as exc:
+            raise ExprError(f"Binary operation failed: {exc}") from exc
 
     if isinstance(node, ast.BoolOp):
         if isinstance(node.op, ast.And):
@@ -219,8 +233,11 @@ def _eval_node(node: ast.AST, env: dict[str, Any]) -> Any:
         for op, comp in zip(node.ops, node.comparators):
             comp_val = _eval_node(comp, env)
             op_fn = _ALLOWED_OPERATORS[type(op)]
-            if not op_fn(left_val, comp_val):
-                return False
+            try:
+                if not op_fn(left_val, comp_val):
+                    return False
+            except (ArithmeticError, TypeError, ValueError) as exc:
+                raise ExprError(f"Comparison operation failed: {exc}") from exc
             left_val = comp_val
         return True
 
@@ -254,7 +271,10 @@ def _eval_node(node: ast.AST, env: dict[str, Any]) -> Any:
 
         args = [_eval_node(arg, env) for arg in node.args]
         kwargs = {kw.arg: _eval_node(kw.value, env) for kw in node.keywords if kw.arg is not None}
-        return fn(*args, **kwargs)
+        try:
+            return fn(*args, **kwargs)
+        except (ArithmeticError, TypeError, ValueError) as exc:
+            raise ExprError(f"Function call '{fn_name}' failed: {exc}") from exc
 
     if isinstance(node, ast.List):
         return [_eval_node(el, env) for el in node.elts]

@@ -16,6 +16,12 @@ if TYPE_CHECKING:
     from eager_script_lsp.document import ScriptDocument
     from eager_script_lsp.workspace import WorkspaceIndex
 
+__all__ = [
+    "FUNCTION_DOCS",
+    "HOOK_DOCS",
+    "compute_hover",
+]
+
 HOOK_DOCS: dict[str, str] = {
     "bg": "**Engine Hook: `~ bg`**\n\nChanges the background image.\n\n*Usage:* `~ bg <image_id> [with <transition>] [duration=<seconds>]`",
     "bg_clear": "**Engine Hook: `~ bg_clear`**\n\nClears the active background.\n\n*Usage:* `~ bg_clear [with <transition>] [duration=<seconds>]`",
@@ -38,6 +44,13 @@ FUNCTION_DOCS: dict[str, str] = {
     "seen": "**Built-in Function: `seen(scene_id)`**\n\nReturns `True` if `scene_id` was ever visited across all playthroughs (persistent).",
     "random": "**Built-in Function: `random(a, b)`**\n\nReturns a pseudo-random integer between `a` and `b` inclusive.",
     "chance": "**Built-in Function: `chance(probability)`**\n\nReturns `True` with probability `p` (from `0.0` to `1.0`).",
+    "min": "**Built-in Function: `min(a, b)`**\n\nReturns the smaller of two numbers.",
+    "max": "**Built-in Function: `max(a, b)`**\n\nReturns the larger of two numbers.",
+    "abs": "**Built-in Function: `abs(x)`**\n\nReturns the absolute value of `x`.",
+    "len": "**Built-in Function: `len(x)`**\n\nReturns the length of a string.",
+    "int": "**Built-in Function: `int(x)`**\n\nConverts `x` to an integer.",
+    "str": "**Built-in Function: `str(x)`**\n\nConverts `x` to a string.",
+    "round": "**Built-in Function: `round(x)`**\n\nReturns `x` rounded to the nearest integer.",
 }
 
 
@@ -78,8 +91,10 @@ def compute_hover(
             )
 
     # 2. Character definition or speaker
-    if token.kind in ("character_id", "character_name", "speaker"):
-        char_id = token.value.lower()
+    if token.kind in ("character_id", "character_name", "speaker") or (
+        token.kind == "hook_arg" and token.metadata.get("character")
+    ):
+        char_id = (token.metadata.get("character") or token.value).lower()
         char_sym = workspace.get_character(char_id)
         if char_sym is not None:
             md_lines = [

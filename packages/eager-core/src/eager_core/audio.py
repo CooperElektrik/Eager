@@ -11,6 +11,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, TypedDict, cast
 
+from eager_core.exceptions import AudioError
+
+__all__ = [
+    "AudioBackend",
+    "AudioMixer",
+    "AudioMixerSaveState",
+    "BaseAudioBackend",
+    "ChannelState",
+    "NullAudioBackend",
+]
+
 logger = logging.getLogger(__name__)
 
 _POOL_SUFFIX_RE = re.compile(r"^(.*)_(\d+)$")
@@ -227,12 +238,12 @@ class AudioMixer:
             resolved_base = self.asset_dir.resolve()
             cand = (self.asset_dir / asset_path).resolve()
             if not cand.is_relative_to(resolved_base):
-                raise ValueError(f"Path traversal detected in audio asset path: {asset_path}")
+                raise AudioError(f"Path traversal detected in audio asset path: {asset_path}")
             if cand.exists():
                 return cand
             audio_cand = (self.asset_dir / "audio" / asset_path).resolve()
             if not audio_cand.is_relative_to(resolved_base):
-                raise ValueError(f"Path traversal detected in audio asset path: {asset_path}")
+                raise AudioError(f"Path traversal detected in audio asset path: {asset_path}")
             if audio_cand.exists():
                 return audio_cand
         return asset_path

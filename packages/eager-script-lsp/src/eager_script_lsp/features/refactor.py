@@ -20,6 +20,12 @@ if TYPE_CHECKING:
     from eager_script_lsp.document import ScriptDocument
     from eager_script_lsp.workspace import WorkspaceIndex
 
+__all__ = [
+    "compute_code_actions",
+    "compute_rename",
+    "prepare_rename",
+]
+
 
 def prepare_rename(
     doc: ScriptDocument,

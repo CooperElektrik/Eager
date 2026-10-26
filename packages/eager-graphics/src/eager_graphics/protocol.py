@@ -9,6 +9,12 @@ from eager_core.types import WHITE, Color
 
 from eager_graphics.types import Anchor
 
+__all__ = [
+    "RenderBackend",
+    "RenderItem",
+    "UIDrawBackend",
+]
+
 
 @dataclass(frozen=True, slots=True)
 class RenderItem:

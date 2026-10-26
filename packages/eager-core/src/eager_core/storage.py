@@ -8,6 +8,14 @@ import os
 from pathlib import Path
 from typing import cast
 
+from eager_core.exceptions import StorageError
+
+__all__ = [
+    "atomic_write_json",
+    "get_default_save_dir",
+    "safe_read_json",
+]
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,12 +33,27 @@ def get_default_save_dir(game_name: str = "default") -> Path:
 
 def atomic_write_json(file_path: Path, data: object) -> None:
     """Write JSON data atomically using a temporary file in the same directory."""
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
-    text = json.dumps(data, indent=2)
-    _ = temp_path.write_text(text, encoding="utf-8")
-    _ = temp_path.replace(file_path)
-    logger.debug("Atomically wrote JSON to %s", file_path)
+    temp_path: Path | None = None
+    try:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
+        try:
+            text = json.dumps(data, indent=2)
+        except (TypeError, ValueError) as err:
+            raise StorageError(f"Failed to serialize data to JSON for {file_path}: {err}") from err
+        _ = temp_path.write_text(text, encoding="utf-8")
+        _ = temp_path.replace(file_path)
+        logger.debug("Atomically wrote JSON to %s", file_path)
+    except OSError as err:
+        if not isinstance(err, StorageError):
+            raise StorageError(f"I/O error writing JSON to {file_path}: {err}") from err
+        raise
+    finally:
+        if temp_path is not None and temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
 
 
 def safe_read_json(file_path: Path, default: object = None, *, backup_corrupt: bool = False) -> object:

@@ -8,6 +8,14 @@ from dataclasses import dataclass
 
 from eager_core.types import Color
 
+__all__ = [
+    "FormattedText",
+    "PausePoint",
+    "TextReveal",
+    "TextSegment",
+    "parse_text_tags",
+]
+
 logger = logging.getLogger(__name__)
 
 
@@ -37,6 +45,7 @@ class FormattedText:
     plain_text: str
     segments: tuple[TextSegment, ...]
     pauses: tuple[PausePoint, ...]
+    fast_index: int = 0
 
 
 _TAG_RE = re.compile(r"\{(/?[a-zA-Z0-9_#:=.]+)\}")
@@ -47,6 +56,7 @@ def parse_text_tags(raw: str) -> FormattedText:
     plain_parts: list[str] = []
     segments: list[TextSegment] = []
     pauses: list[PausePoint] = []
+    fast_index = 0
 
     bold_depth = 0
     italic_depth = 0
@@ -85,6 +95,8 @@ def parse_text_tags(raw: str) -> FormattedText:
             italic_depth += 1
         elif tag_content == "/i":
             italic_depth = max(0, italic_depth - 1)
+        elif tag_content == "fast":
+            fast_index = current_char_offset
         elif tag_content.startswith("color="):
             hex_val = tag_content.split("=", 1)[1]
             try:
@@ -125,6 +137,20 @@ def parse_text_tags(raw: str) -> FormattedText:
                     logger.debug("Invalid paragraph tag {p=%s}, using default 1.0s", tag_content)
                     dur = 1.0
             pauses.append(PausePoint(char_index=current_char_offset, duration=dur))
+        else:
+            tag_text = match.group(0)
+            plain_parts.append(tag_text)
+            cur_color = color_stack[-1] if color_stack else None
+            segments.append(
+                TextSegment(
+                    text=tag_text,
+                    color=cur_color,
+                    bold=(bold_depth > 0),
+                    italic=(italic_depth > 0),
+                    size_mult=size_stack[-1],
+                )
+            )
+            current_char_offset += len(tag_text)
 
     # Remaining text after last tag
     if last_idx < len(raw):
@@ -146,6 +172,7 @@ def parse_text_tags(raw: str) -> FormattedText:
         plain_text=full_plain,
         segments=tuple(segments),
         pauses=tuple(pauses),
+        fast_index=fast_index,
     )
 
 
@@ -165,7 +192,8 @@ class TextReveal:
         if chars_per_second <= 0:
             self.visible_chars: float = float(self.total_chars)
         else:
-            self.visible_chars = float(min(self.total_chars, max(0, initial_visible_chars)))
+            start_chars = max(0, initial_visible_chars, getattr(formatted, "fast_index", 0))
+            self.visible_chars = float(min(self.total_chars, start_chars))
         self.is_complete: bool = (self.visible_chars >= self.total_chars)
 
         self._elapsed_time: float = 0.0

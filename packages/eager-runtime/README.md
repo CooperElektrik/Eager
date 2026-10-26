@@ -1,29 +1,43 @@
-# Eager
+# Eager-Runtime
 
-Lightweight, headless narrative runtime and state machine for [Eager-Script](https://github.com/CooperElektrik/Eager) screenplays.
+Lightweight, headless narrative runtime, story virtual machine, and session controller for [Eager-Script](https://github.com/CooperElektrik/Eager) screenplays.
 
-Eager is a render-agnostic story virtual machine (VM). It handles execution flow, choice branching, subroutine call stacks (`>>` and `<<`), engine hooks (`~`), save/load snapshots, and time-travel rollbacks.
+`eager-runtime` is completely headless: it contains zero GUI or graphics dependencies and executes story state machines, branching choices, subroutines, saves, rollbacks, and event dispatching. It powers headless automated tests, terminal playthroughs, and GUI frontends (via `eager-graphics`).
+
+---
 
 ## Features
 
-- **Headless Runtime**: Render-agnostic story VM designed to drive any frontend (e.g. the built-in terminal player, or the graphics backends in eager-graphics).
-- **Deterministic State & Save/Load**: Serializable snapshot model for instant JSON save states.
-- **Time-Travel Rollback**: Effortless step-by-step history rewind.
-- **Engine Hooks**: Typed dispatcher connecting screenplay `~` markup to arbitrary game callbacks.
-- **Subroutines**: Call-stack execution for reusable narrative sequences (`>>` and `<<`).
-- **Interactive CLI Player**: Built-in terminal player for testing and playing stories.
+- **Headless StoryVM**: Render-agnostic story virtual machine executing beats, choice branching, subroutine call stacks (`>>` and `<<`), and variable mutations.
+- **Session Management (`GameSession`)**: High-level coordinator unifying narrative VM state, audio routing, dialogue backlog, player preferences, and persistent unlock variables.
+- **Event Dispatching (`EventDispatcher`)**: Event-driven architecture with `run_until_pause()`, cleanly pausing execution at interaction boundaries (`ChoicePromptEvent`, `InputPromptEvent`, and `StoryEndEvent`).
+- **Resilient Save Management (`SaveManager`)**: Slot-based persistence with atomic JSON writes, schema migrations, and automatic forensic `.corrupt.bak` backups upon encountering malformed or corrupted save files.
+- **Time-Travel Rollback**: Checkpoint-based state rewind restoring story variables, call frames, and dialogue UI states in tandem without reverting global persistent data.
+- **Interactive Terminal Player & CLI**: Stream-aware terminal player with readline fallback, command-line inspection, test runners, and developer tooling (`eager` CLI).
 
-## Installation
+---
 
-```bash
-pip install eager-runtime
-```
+## Direct Submodule Import Convention
 
-## Quickstart
+In accordance with Eager monorepo architecture, import core event types directly from `eager_core.events`:
 
 ```python
-import eager_script
-from eager_runtime import StoryVM, DialogueEvent, ChoicePromptEvent
+from eager_core.events import DialogueEvent, ChoicePromptEvent, InputPromptEvent
+from eager_core.audio import NullAudioBackend
+from eager_runtime.runtime import StoryVM
+from eager_runtime.session import GameSession
+from eager_runtime.dispatcher import EventDispatcher
+from eager_runtime.saves import SaveManager
+```
+
+---
+
+## Quickstart: Headless StoryVM
+
+```python
+from eager_core.events import DialogueEvent, ChoicePromptEvent, NarrationEvent
+from eager_script import parse_graph
+from eager_runtime.runtime import StoryVM
 
 script = """
 ## Courtyard --- courtyard
@@ -38,101 +52,150 @@ Guard: Welcome traveler. Enter freely.
 Guard (angry): You will regret this!
 """
 
-# 1. Parse screenplay into a scene graph
-graph = eager_script.parse_graph(script)
+# 1. Parse screenplay into a directed scene graph
+graph = parse_graph(script)
 
-# 2. Initialize the virtual machine
+# 2. Instantiate the headless StoryVM
 vm = StoryVM(graph)
 
-# 3. Advance through beats
+# 3. Step beat-by-beat through narrative events
 while not vm.is_ended:
     event = vm.step()
     
     if isinstance(event, DialogueEvent):
         print(f"{event.speaker}: {event.text}")
+    elif isinstance(event, NarrationEvent):
+        print(f"Narrator: {event.text}")
     elif isinstance(event, ChoicePromptEvent):
         for opt in event.options:
             print(f"[{opt.index + 1}] {opt.text}")
-        vm.choose(0)  # Choose first branch
+        vm.choose(0)  # Select first option
 ```
 
-## Event & Hook Dispatcher
+---
+
+## Event Dispatcher & Interaction Pausing
+
+`EventDispatcher.run_until_pause()` advances the story until player interaction is required:
 
 ```python
-from eager_runtime import EventDispatcher, StoryVM, DialogueEvent
+from eager_core.events import DialogueEvent, ChoicePromptEvent, InputPromptEvent, StoryEndEvent
+from eager_runtime.dispatcher import EventDispatcher
+from eager_runtime.runtime import StoryVM
 
 dispatcher = EventDispatcher()
 
-# Register custom game callbacks for script hooks (~ play_sfx thunder.ogg)
-@dispatcher.on_hook("play_sfx")
-def handle_sfx(clip: str):
-    print(f"Playing sound: {clip}")
-
-# Register listeners for specific narrative events
+# Register event callbacks
 @dispatcher.on_event(DialogueEvent)
 def handle_dialogue(event: DialogueEvent):
     print(f"{event.speaker}: {event.text}")
 
+@dispatcher.on_hook("play_sfx")
+def handle_sfx(clip: str):
+    print(f"Playing SFX: {clip}")
+
 vm = StoryVM(graph)
-dispatcher.run_until_pause(vm)
+
+# Runs until ChoicePromptEvent, InputPromptEvent, or StoryEndEvent
+pause_event = dispatcher.run_until_pause(vm)
+
+if isinstance(pause_event, ChoicePromptEvent):
+    print(f"Awaiting choice among {len(pause_event.options)} options...")
+    vm.choose(0)
+elif isinstance(pause_event, InputPromptEvent):
+    print(f"Awaiting player input for variable '{pause_event.variable}'...")
+    vm.set_variable(pause_event.variable, "Player1")
 ```
 
-## Save, Load & Rollback
+---
+
+## Save Management & Fault-Tolerant Backups
+
+`SaveManager` handles slot persistence with automatic corruption resilience:
 
 ```python
-# Create an immutable snapshot
-snapshot = vm.save()
-json_data = snapshot.to_json(indent=2)
+from pathlib import Path
+from eager_runtime.saves import SaveManager
+from eager_runtime.session import GameSession
 
-# Restore state at any time
-vm.load(snapshot)
+save_mgr = SaveManager(Path("./saves"))
 
-# Rollback is managed at narrative interaction points via GameSession
+# Save active session to slot 1
+save_mgr.save_slot("slot_1", session)
+
+# Load slot; if corrupted or malformed, safe_read_json automatically
+# backs up the bad file to slot_1.json.corrupt.bak and returns None
+data = save_mgr.load_slot("slot_1")
+if data is not None:
+    session.restore_from_save(data)
+else:
+    print("Slot was corrupted; forensic backup created.")
+
+# List valid slots (corrupted slot metadata is safely skipped)
+slots = save_mgr.list_slots()
+```
+
+---
+
+## Unified Session Management (`GameSession`)
+
+`GameSession` serves as the central runtime controller:
+
+```python
+from eager_core.audio import NullAudioBackend
+from eager_runtime.session import GameSession
+
+# Create session with headless audio backend
+session = GameSession(graph, audio_backend=NullAudioBackend())
+
+# Advance narrative
+event = session.advance()
+
+# Submit text for active input prompts
+if session.is_waiting_input:
+    session.submit_input("Hero")
+
+# Rollback state to prior interaction checkpoint
 if session.can_rollback:
     session.rollback()
 ```
 
-## GameSession & Audio Wiring
+---
 
-For full interactive games, `GameSession` serves as the central controller connecting narrative VM state, audio, visuals, screens, backlog, and preferences:
+## CLI Runner
 
-```python
-from eager_core import NullAudioBackend
-from eager_runtime import GameSession
-
-# Create session with a custom audio backend (or headless default)
-session = GameSession(
-    graph,
-    audio_backend=NullAudioBackend(),
-)
-session.advance()
-```
-
-## CLI Usage
-
-Eager provides a unified command-line tool `eager` (terminal play plus graphical visual novel runner):
+The `eager` command-line suite provides terminal play, verification, and tooling:
 
 ```bash
-# Play a screenplay interactively in the terminal
-eager play ../../examples/demo_story.es
-
-# Inspect screenplay scene topology, hubs, dead-ends
-eager inspect ../../examples/demo_story.es
+# Play a story interactively in the terminal
+eager play examples/demo_story.es
 
 # Perform an automated headless dry-run
-eager test-run ../../examples/demo_story.es
+eager test-run examples/demo_story.es
 
-# Launch interactive visual novel player with selected backend (and optional --no-audio)
-eager play ../../examples/demo_story.es --backend pyglet
-eager play ../../examples/demo_story.es --backend pil --no-audio
+# Inspect scene topology, branching hubs, and terminal scenes
+eager inspect examples/demo_story.es
+
+# Run language server protocol in stdio mode
+eager lsp --stdio
 ```
 
-During interactive terminal play, the following built-in commands are available:
-- `:save` — Save current state to in-memory slot
+Interactive terminal commands during playback:
+- `:save` — Save state to in-memory slot
 - `:load` — Restore state from slot
-- `:undo` (or `:rollback`) — Rewind to previous beat or choice
-- `:vars` — Inspect narrative state variables
-- `:q` — Quit playthrough
+- `:undo` (or `:rollback`) — Rewind to previous interaction beat
+- `:vars` — Inspect active state variables
+- `:q` — Exit player
+
+---
+
+## Installation
+
+```bash
+pip install eager-runtime
+```
+
+---
 
 ## License
 

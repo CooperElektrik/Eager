@@ -8,6 +8,11 @@ from eager_graphics.protocol import UIDrawBackend
 from eager_graphics.screens.widgets import Button, Label, Slider
 from eager_graphics.theme import Theme
 
+__all__ = [
+    "Screen",
+    "ScreenManager",
+]
+
 
 class Screen:
     """Base class for visual novel modal/full-screen UI menus."""

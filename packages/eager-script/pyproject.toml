@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eager-script"
-version = "0.6.0"
+version = "0.7.0"
 description = "Fast, zero-dependency screenplay DSL parser for interactive narrative and visual novels."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -17,7 +17,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -25,6 +24,8 @@ classifiers = [
     "Topic :: Text Processing :: Markup",
 ]
 keywords = ["screenplay", "dsl", "visual-novel", "interactive-fiction", "parser"]
+
+dependencies = []
 
 [project.scripts]
 eager-script = "eager_script.cli:main"
@@ -49,6 +50,5 @@ pythonpath = ["src"]
 [tool.basedpyright]
 typeCheckingMode = "standard"
 include = ["src", "benchmarks", "tests"]
-ignore = ["tests/test_parser.py"]
 venvPath = "../.."
 venv = ".venv"

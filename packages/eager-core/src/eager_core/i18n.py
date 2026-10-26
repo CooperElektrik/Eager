@@ -8,7 +8,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
+from eager_core.exceptions import I18nError
 from eager_core.storage import atomic_write_json, safe_read_json
+
+__all__ = [
+    "TranslationCatalog",
+    "TranslationManager",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +55,8 @@ class TranslationCatalog:
     @classmethod
     def from_dict(cls, data: Mapping[str, object]) -> TranslationCatalog:
         """Create catalog from dictionary."""
+        if not isinstance(data, Mapping):
+            raise I18nError(f"Expected mapping for TranslationCatalog.from_dict, got {type(data).__name__}")
         locale = str(data.get("locale", "default"))
         meta_raw = data.get("metadata")
         meta = {str(k): str(v) for k, v in cast(Mapping[object, object], meta_raw).items()} if isinstance(meta_raw, Mapping) else {}
@@ -107,6 +115,8 @@ class TranslationManager:
 
     def set_locale(self, locale: str) -> None:
         """Set active locale for translations."""
+        if not locale or not locale.strip():
+            raise I18nError("Locale cannot be empty")
         self.active_locale = locale.lower()
 
     def translate(self, key: str, default: str) -> str:

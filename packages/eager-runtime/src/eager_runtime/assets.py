@@ -22,6 +22,17 @@ from eager_script import (
 if TYPE_CHECKING:
     from eager_script.graph import SceneGraph
 
+__all__ = [  # noqa: RUF022
+    "AUDIO_EXTENSIONS",
+    "AssetCheckReport",
+    "AssetReference",
+    "IMAGE_EXTENSIONS",
+    "MissingAssetIssue",
+    "check_assets",
+    "extract_asset_references",
+    "resolve_candidate_paths",
+]
+
 IMAGE_EXTENSIONS = ("", ".png", ".jpg", ".jpeg", ".webp", ".bmp")
 AUDIO_EXTENSIONS = ("", ".ogg", ".wav", ".mp3", ".flac", ".opus", ".m4a")
 

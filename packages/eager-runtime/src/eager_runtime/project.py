@@ -14,6 +14,14 @@ from eager_script import ParseError, SceneGraph, parse_graph, to_graph
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "ProjectConfig",
+    "load_project_graph",
+    "mask_script_includes",
+    "merge_graphs",
+    "resolve_project_scripts",
+]
+
 
 @dataclass
 class ProjectConfig:

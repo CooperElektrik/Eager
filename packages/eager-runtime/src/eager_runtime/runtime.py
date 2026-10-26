@@ -56,6 +56,11 @@ from eager_runtime.state import CallFrame, StorySnapshot
 if TYPE_CHECKING:
     from eager_script.graph import SceneGraph
 
+__all__ = [
+    "StoryRuntimeError",
+    "StoryVM",
+]
+
 
 class StoryRuntimeError(Exception):
     """Raised when an illegal operation or invalid state occurs during story execution."""

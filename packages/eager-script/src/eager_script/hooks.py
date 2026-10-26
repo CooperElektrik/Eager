@@ -14,6 +14,15 @@ import shlex
 from dataclasses import dataclass, field
 from typing import Any
 
+__all__ = [
+    "HookArgs",
+    "InputHookArgs",
+    "is_input_hook",
+    "parse_hook_args",
+    "parse_input_args",
+    "parse_input_hook",
+]
+
 
 @dataclass(frozen=True, slots=True)
 class HookArgs:

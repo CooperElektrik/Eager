@@ -6,6 +6,10 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+__all__ = [
+    "FileWatcher",
+]
+
 
 class FileWatcher:
     """Watches a file for changes using filesystem modification timestamps.

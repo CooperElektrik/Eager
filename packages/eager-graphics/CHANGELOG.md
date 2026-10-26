@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-10-26
+
+### Added
+
+- Structured audio error logging: added `logger.warning(...)` diagnostics to `PygletAudioBackend` and `MiniaudioAudioBackend` when encountering uninitialized audio devices, missing media assets, or streaming decode failures.
+- Bound `InputPromptEvent` in `StageDirector.bind()` and wired `active_input_prompt` into `UIState` and `clear_dialogue()`.
+- Added stage composition boundary tests (`test_composition_edge_cases.py`).
+- Sealed all 17 submodules with explicit ASCII-sorted `__all__` lists.
+
+### Changed
+
+- Disambiguated `ChoiceOption`: removed re-export from `ui_state.py` and consolidated canonical imports to `eager_core.events.ChoiceOption`.
+- Corrected `pyglet.py` error message to recommend `pip install 'eager-graphics[hardware]'`.
+
+### Fixed
+
+- Resolved 124 basedpyright diagnostics across `packages/eager-graphics/tests/`.
+- Fixed non-canonical import in `test_director.py:5`.
+
 ## [0.6.0] - 2026-10-24
 
 ### Added

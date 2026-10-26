@@ -2,20 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from eager_core.types import BLACK, WHITE
 
 from eager_graphics import Anchor, ScaleMode, StageCompositor
 from eager_graphics.renderers.pil import PIL_AVAILABLE, PILAssetResolver, PILRenderer
-
-try:
-    import pyglet
-
-    from eager_graphics.renderers.pyglet import PygletAssetResolver
-
-    PYGLET_AVAILABLE = True
-except ImportError:
-    PYGLET_AVAILABLE = False
 
 
 def test_pil_builtin_color_rect_is_1x1_white() -> None:
@@ -35,18 +28,18 @@ def test_pil_builtin_color_rect_is_1x1_white() -> None:
 
 def test_pyglet_builtin_color_rect_is_1x1_white() -> None:
     """PygletAssetResolver should return a 1x1 RGBA ImageData with white bytes."""
-    if not PYGLET_AVAILABLE:
-        pytest.skip("Pyglet is not available")
+    pytest.importorskip("pyglet")
+    from eager_graphics.renderers.pyglet import PygletAssetResolver
 
     resolver = PygletAssetResolver(asset_dir=None)
     tex = resolver.get_texture("__builtin_color_rect__")
 
     assert tex.width == 1
     assert tex.height == 1
-    assert isinstance(tex, pyglet.image.ImageData)
-    assert tex.format == "RGBA"
+    image_data: Any = tex
+    assert image_data.format == "RGBA"
 
-    data = tex.get_data("RGBA", 4)
+    data = image_data.get_data("RGBA", 4)
     assert bytes(data) == bytes([255, 255, 255, 255])
 
     # Cache check
@@ -57,8 +50,6 @@ def test_pil_flash_renders_white_not_pastel() -> None:
     """PILRenderer should render a default flash as pure white, not a tinted pastel."""
     assert PIL_AVAILABLE, "Pillow is required for this test"
     comp = StageCompositor(1920, 1080)
-    # Background is black
-    comp.clear_color = BLACK
     # Flash is default white
     comp.flash(duration=0.5, color=WHITE)
 
@@ -69,6 +60,7 @@ def test_pil_flash_renders_white_not_pastel() -> None:
     coords = [(0, 0), (960, 540), (1919, 1079), (100, 100)]
     for coord in coords:
         pixel = rendered_img.getpixel(coord)
+        assert isinstance(pixel, tuple)
         assert pixel[:3] == (255, 255, 255), f"Expected white at {coord}, got {pixel}"
 
 
@@ -91,7 +83,9 @@ def test_pil_fade_out_does_not_hang() -> None:
     if PIL_AVAILABLE:
         renderer = PILRenderer(1920, 1080, scale_mode=ScaleMode.STRETCH)
         rendered_img = renderer.render_compositor(comp, 1920, 1080)
-        assert rendered_img.getpixel((960, 540))[:3] == (0, 0, 0)
+        px = rendered_img.getpixel((960, 540))
+        assert isinstance(px, tuple)
+        assert px[:3] == (0, 0, 0)
 
 
 def test_overlay_scale_produces_stage_sized_coverage() -> None:

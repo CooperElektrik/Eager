@@ -9,13 +9,27 @@ from pathlib import Path
 
 from lsprotocol.types import DiagnosticSeverity
 
+from eager_script_lsp import __version__
 from eager_script_lsp.features.diagnostics import compute_diagnostics
 from eager_script_lsp.server import create_server
 from eager_script_lsp.workspace import WorkspaceIndex, path_to_uri, uri_to_path
 
+__all__ = [
+    "add_arguments",
+    "build_parser",
+    "main",
+    "run_check",
+    "run_cli",
+]
+
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     """Register LSP command line flags on an argument parser."""
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
     parser.add_argument(
         "--stdio",
         action="store_true",
@@ -65,6 +79,10 @@ def run_check(target_path_str: str) -> int:
     target_path = Path(target_path_str).resolve()
     if not target_path.exists():
         sys.stderr.write(f"Error: Path '{target_path}' not found.\n")
+        return 1
+
+    if target_path.is_file() and target_path.suffix != ".es":
+        sys.stderr.write(f"Error: Target path '{target_path.name}' is not an .es screenplay file.\n")
         return 1
 
     root = target_path if target_path.is_dir() else target_path.parent

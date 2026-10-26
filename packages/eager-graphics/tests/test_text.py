@@ -68,6 +68,7 @@ class TestTextPresentation(unittest.TestCase):
 
             # Initial state
             ev = session.advance()
+            assert ev is not None
             self.assertEqual(ev.type, "dialogue")
             self.assertEqual(len(session.backlog), 1)
 

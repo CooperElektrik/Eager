@@ -20,6 +20,16 @@ if TYPE_CHECKING:
     from eager_script_lsp.document import ScriptDocument
     from eager_script_lsp.workspace import WorkspaceIndex
 
+__all__ = [
+    "compute_definition",
+    "compute_document_symbols",
+    "compute_incoming_calls",
+    "compute_outgoing_calls",
+    "compute_references",
+    "compute_workspace_symbols",
+    "prepare_call_hierarchy",
+]
+
 
 def compute_definition(
     doc: ScriptDocument,
@@ -51,8 +61,11 @@ def compute_definition(
     if token.kind == "variable":
         var_name = token.value
         var_sym = workspace.get_variable(var_name)
-        if var_sym is not None and var_sym.default_uri and var_sym.default_range:
-            return Location(uri=var_sym.default_uri, range=var_sym.default_range)
+        if var_sym is not None:
+            if var_sym.default_uri and var_sym.default_range:
+                return Location(uri=var_sym.default_uri, range=var_sym.default_range)
+            if var_sym.mutations:
+                return Location(uri=var_sym.mutations[0][0], range=var_sym.mutations[0][1])
 
     # 4. Asset reference -> media file on disk
     if token.kind in ("hook_arg", "emotion", "voice_path"):
@@ -167,7 +180,7 @@ def compute_document_symbols(doc: ScriptDocument) -> list[DocumentSymbol]:
                 current_scene_sym.children = current_scene_children
                 symbols.append(current_scene_sym)
 
-            label_span = doc.scene_spans.get(slug_for_title(span.value, doc, span.start_line)) or span
+            label_span = doc.scene_spans.get(_slug_for_title(span.value, doc, span.start_line)) or span
             whole_scene_range = Range(
                 start=Position(line=span.start_line, character=0),
                 end=Position(line=len(doc.lines) - 1, character=len(doc.lines[-1]) if doc.lines else 0),
@@ -240,7 +253,7 @@ def compute_document_symbols(doc: ScriptDocument) -> list[DocumentSymbol]:
     return symbols
 
 
-def slug_for_title(title: str, doc: ScriptDocument, line_0: int) -> str:
+def _slug_for_title(title: str, doc: ScriptDocument, line_0: int) -> str:
     """Helper to find the matching scene ID for a title span."""
     for s in doc.spans:
         if s.kind == "label_id" and s.start_line == line_0:

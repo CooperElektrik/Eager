@@ -34,6 +34,10 @@ from eager_core.types import BLACK, WHITE, Color
 
 from eager_graphics.protocol import RenderBackend, RenderItem
 
+__all__ = [
+    "NullRenderer",
+]
+
 
 class NullRenderer(RenderBackend):
     """A no-op renderer that records draw calls instead of issuing GPU commands.
