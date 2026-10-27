@@ -35,15 +35,15 @@ keywords = [
 ]
 
 dependencies = [
-    "eager-core >= 0.4.0",
-    "eager-script >= 0.4.0",
+    "eager-core >= 0.7.0",
+    "eager-script >= 0.7.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "ruff>=0.4.0",
-    "eager-runtime >= 0.4.0",
+    "eager-runtime >= 0.7.0",
     "miniaudio>=0.12.4",
 ]
 hardware = [

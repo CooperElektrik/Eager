@@ -15,8 +15,8 @@ dependencies = [
     "eager-script-lsp",
 ]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=8.0",
     "ruff>=0.4.0",
     "pyglet>=2.0",

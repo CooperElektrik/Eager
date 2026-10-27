@@ -13,6 +13,7 @@ from eager_runtime.project import (
     load_project_graph,
     mask_script_includes,
     merge_graphs,
+    resolve_project_scripts,
 )
 
 
@@ -223,6 +224,49 @@ Narrator: Beginning.
     assert len(graph.edges) == 1
     assert graph.edges[0].source == "prologue"
     assert graph.edges[0].target == "ch1"
+
+
+def test_resolve_project_scripts_include_traversal(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.es"
+    outside.write_text("## Secret --- secret\nNarrator: secret.\n", encoding="utf-8")
+
+    proj_dir = tmp_path / "proj"
+    proj_dir.mkdir()
+    main = proj_dir / "main.es"
+    main.write_text('@include "../outside.es"\n## Main --- main\nNarrator: Hello.\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Path traversal detected"):
+        resolve_project_scripts(main)
+
+
+def test_resolve_project_scripts_deterministic_and_entry_script(tmp_path: Path) -> None:
+    proj_dir = tmp_path / "proj"
+    proj_dir.mkdir()
+    (proj_dir / "game.toml").write_text('[game]\nentry_script = "ch1.es"\n', encoding="utf-8")
+    (proj_dir / "ch2.es").write_text("## SceneB --- scene_b\nNarrator: B.\n", encoding="utf-8")
+    (proj_dir / "ch1.es").write_text("## SceneA --- scene_a\nNarrator: A.\n", encoding="utf-8")
+    (proj_dir / "ch3.es").write_text("## SceneC --- scene_c\nNarrator: C.\n", encoding="utf-8")
+
+    scripts = resolve_project_scripts(proj_dir)
+    # ch1.es must be first (configured entry_script), followed by ch2.es and ch3.es sorted
+    assert [s.name for s in scripts] == ["ch1.es", "ch2.es", "ch3.es"]
+
+
+def test_resolve_project_scripts_symlink_traversal(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.es"
+    outside.write_text("## Secret --- secret\nNarrator: secret.\n", encoding="utf-8")
+
+    proj_dir = tmp_path / "proj"
+    proj_dir.mkdir()
+    symlink = proj_dir / "symlink.es"
+    try:
+        symlink.symlink_to(outside)
+    except OSError:
+        pytest.skip("Symlinks not supported in environment")
+
+    with pytest.raises(ValueError, match="Path traversal detected"):
+        resolve_project_scripts(proj_dir)
+
 
 
 

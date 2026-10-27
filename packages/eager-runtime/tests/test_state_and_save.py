@@ -585,6 +585,7 @@ class TestSaveSystem(unittest.TestCase):
         # get_slot_metadata returns SaveMetadata for valid slots
         valid_meta = manager.get_slot_metadata("valid_1")
         self.assertIsNotNone(valid_meta)
+        assert valid_meta is not None
         self.assertIsInstance(valid_meta, SaveMetadata)
         self.assertEqual(valid_meta.slot_name, "valid_1")
 
@@ -789,6 +790,22 @@ class TestSaveSchemaMigration(unittest.TestCase):
             self.assertNotIn("coins", snap.variables)
         finally:
             StorySnapshot.clear_migrations()
+
+    def test_story_snapshot_non_monotonic_migration(self) -> None:
+        StorySnapshot.clear_migrations()
+
+        # Register buggy migration that doesn't advance version
+        def bad_migration(data):
+            return data  # version remains 1
+
+        StorySnapshot.register_migration(1, bad_migration)
+
+        with self.assertRaises(ValueError) as ctx:
+            StorySnapshot.from_dict({"version": 1}, target_version=2)
+        self.assertIn("monotonically", str(ctx.exception))
+
+        StorySnapshot.clear_migrations()
+
 
     def test_save_data_version_declaration(self) -> None:
         cp = Checkpoint(

@@ -1,5 +1,6 @@
 """Unit tests for Eager CLI commands and TerminalPlayer runner."""
 
+import argparse
 import io
 import sys
 import tempfile
@@ -12,7 +13,7 @@ import eager_script
 import pytest
 
 from eager_runtime import StoryVM, TerminalPlayer
-from eager_runtime.cli import main
+from eager_runtime.cli import _cmd_build, main
 
 TEST_SCRIPT = """
 ## Courtyard --- courtyard
@@ -442,4 +443,24 @@ Narrator: At next scene.
     assert code == 0
     captured = capsys.readouterr()
     assert "Warped directly to scene 'next_scene'" in captured.err
+
+
+def test_cmd_build_excludes_output_zip(tmp_path: Path) -> None:
+    proj_dir = tmp_path / "my_project"
+    proj_dir.mkdir()
+    (proj_dir / "game.toml").write_text('[game]\ntitle = "Test"\n', encoding="utf-8")
+    (proj_dir / "main.es").write_text("## Start --- start\nNarrator: Test.\n", encoding="utf-8")
+
+    out_zip = proj_dir / "dist.zip"
+    args = argparse.Namespace(project_dir=str(proj_dir), output=str(out_zip))
+    res = _cmd_build(args)
+    assert res == 0
+    assert out_zip.exists()
+
+    with zipfile.ZipFile(out_zip, "r") as zf:
+        names = zf.namelist()
+        assert "dist.zip" not in names
+        assert "main.es" in names
+        assert "game.toml" in names
+
 

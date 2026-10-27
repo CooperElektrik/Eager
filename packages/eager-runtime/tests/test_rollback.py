@@ -1,8 +1,10 @@
 """Unit tests for CheckpointHistory, interaction checkpoints, and narrative rollback."""
 
 import unittest
+from pathlib import Path
 
 import eager_script
+from eager_core.events import SceneEnterEvent
 
 from eager_runtime import (
     ChoicePromptEvent,
@@ -11,6 +13,7 @@ from eager_runtime import (
     NarrationEvent,
     StoryVM,
 )
+from eager_runtime.persistent import PersistentData
 from eager_runtime.state import Checkpoint, CheckpointHistory
 
 SAMPLE_SCRIPT = """
@@ -145,3 +148,62 @@ class TestStoryVMLightweight(unittest.TestCase):
         self.assertFalse(hasattr(vm, "disable_history"))
         self.assertFalse(hasattr(vm, "can_rollback"))
         self.assertFalse(hasattr(vm, "rollback"))
+
+
+def test_persistent_variable_mutation_and_rollback_isolation(tmp_path: Path) -> None:
+    script = """
+## Start --- start
+$ persistent.coins = 10
+$ persistent.coins += 5
+$ normal_coins = 100
+Narrator: Coins: [persistent.coins] and normal: [normal_coins]
+@if persistent.coins > 10
+    Narrator: Rich!
+@else
+    Narrator: Poor!
+@end
+"""
+    p_file = tmp_path / "persistent.json"
+    p_data = PersistentData(p_file)
+
+    graph = eager_script.parse_graph(script)
+    vm = StoryVM(graph, persistent=p_data)
+
+    # Step past scene enter and sets to dialogue
+    enter_ev = vm.step()
+    assert isinstance(enter_ev, SceneEnterEvent)
+    assert enter_ev.type == "scene_enter"
+    ev = vm.step()
+    assert isinstance(ev, DialogueEvent)
+    assert ev.text == "Coins: 15 and normal: 100"
+
+    # Verify persistent object directly mutated
+    assert p_data["coins"] == 15
+    assert p_data.coins == 15
+    assert "persistent.coins" not in vm.variables
+    assert vm.get_variable("persistent.coins") == 15
+
+    # Checkpoint save
+    snap = vm.save()
+    assert "persistent" not in snap.variables
+    assert "persistent.coins" not in snap.variables
+    assert snap.variables.get("normal_coins") == 100
+
+    # Step to next beat inside if branch
+    ev2 = vm.step()
+    assert isinstance(ev2, DialogueEvent)
+    assert ev2.text == "Rich!"
+
+    # Now mutate persistent and mutate normal_coins
+    vm.set_variable("persistent.coins", 999)
+    vm.set_variable("normal_coins", 0)
+    assert p_data.coins == 999
+    assert vm.get_variable("normal_coins") == 0
+
+    # Restore snapshot (rollback)
+    vm.load(snap)
+    # normal_coins should be restored, but persistent.coins must NOT be rolled back
+    assert vm.get_variable("normal_coins") == 100
+    assert vm.get_variable("persistent.coins") == 999
+    assert p_data.coins == 999
+

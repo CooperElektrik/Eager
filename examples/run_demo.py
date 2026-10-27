@@ -26,9 +26,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from eager_graphics import StageCompositor, StageDirector
-from eager_graphics.renderers.null import NullRenderer
-from eager_runtime import EventDispatcher, StoryVM
 from eager_core.events import (
     AppendEvent,
     ChoicePromptEvent,
@@ -41,8 +38,13 @@ from eager_core.events import (
     StoryEndEvent,
     StoryEvent,
 )
+from eager_graphics.compositor import StageCompositor
+from eager_graphics.director import StageDirector
+from eager_graphics.renderers.null import NullRenderer
+from eager_runtime.dispatcher import EventDispatcher
+from eager_runtime.runtime import StoryVM
 from eager_runtime.state import StorySnapshot
-from eager_script import parse_graph
+from eager_script.graph import parse_graph
 
 DEFAULT_SCRIPT = Path(__file__).resolve().parent / "demo_story.es"
 DT = 1.0 / 60.0

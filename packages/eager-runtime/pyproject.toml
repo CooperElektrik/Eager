@@ -27,21 +27,21 @@ classifiers = [
 keywords = ["screenplay", "narrative-engine", "visual-novel", "interactive-fiction", "runtime", "eager"]
 
 dependencies = [
-    "eager-script >= 0.4.0",
-    "eager-core >= 0.4.0",
+    "eager-script >= 0.7.0",
+    "eager-core >= 0.7.0",
 ]
 
 [project.optional-dependencies]
 graphics = [
-    "eager-graphics >= 0.4.0",
+    "eager-graphics >= 0.7.0",
 ]
 lsp = [
-    "eager-script-lsp >= 0.4.0",
+    "eager-script-lsp >= 0.7.0",
 ]
 dev = [
     "pytest>=8.0",
     "ruff>=0.4.0",
-    "eager-graphics >= 0.4.0",
+    "eager-graphics >= 0.7.0",
     "pyglet>=2.0",
 ]
 

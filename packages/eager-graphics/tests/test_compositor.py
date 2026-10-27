@@ -4,6 +4,8 @@ import pytest
 from eager_core.types import BLACK, Vec2
 
 from eager_graphics.compositor import StageCompositor
+from eager_graphics.renderers.null import NullRenderer
+from eager_graphics.renderers.pil import PIL_AVAILABLE, PILRenderer
 
 
 def test_compositor_background_instant_and_crossfade() -> None:
@@ -283,4 +285,97 @@ def test_compositor_save_state_flushes_active_fade_and_crossfade() -> None:
     assert comp.timeline.active_count > 0
     comp.finish_animations()
     assert comp.timeline.active_count == 0
+
+
+def test_extreme_coordinates_and_negative_scales_rendering() -> None:
+    """Verify rendering handles extreme offscreen coordinates and negative/zero scales."""
+    comp = StageCompositor(1920, 1080)
+    null_backend = NullRenderer()
+
+    test_configs = [
+        ("offscreen_tl", Vec2(-9999.0, 50000.0), Vec2(-2.0, 0.0), 1440.5),
+        ("offscreen_br", Vec2(100000.0, -80000.0), Vec2(0.0, -2.0), -2880.0),
+        ("center_zero", Vec2(960.0, 540.0), Vec2(0.0, 0.0), 36000.0),
+        ("flipped_xy", Vec2(100.0, 100.0), Vec2(-1.5, -1.5), 720.25),
+    ]
+
+    for char_id, pos, scale, rot in test_configs:
+        comp.show_character(char_id, "idle", position="center", transition="cut")
+        elem = comp.stage.get_element("characters", char_id)
+        assert elem is not None
+        elem.state.position = pos
+        elem.state.scale = scale
+        elem.state.rotation = rot
+
+    # Render with NullRenderer
+    null_backend.render_compositor(comp, 1280, 720)
+    assert null_backend.frame_count == 1
+
+    frame_items = {it.asset_id: it for it in null_backend.last_frame}
+    assert frame_items["offscreen_tl/idle"].x == -9999.0
+    assert frame_items["offscreen_tl/idle"].y == 50000.0
+    assert frame_items["offscreen_tl/idle"].scale_x == -2.0
+    assert frame_items["offscreen_tl/idle"].scale_y == 0.0
+    assert frame_items["offscreen_tl/idle"].rotation == 1440.5
+
+    # Render with PILRenderer
+    if PIL_AVAILABLE:
+        pil_backend = PILRenderer(1280, 720)
+        img = pil_backend.render_compositor(comp, 1280, 720)
+        assert img.size == (1280, 720)
+
+
+def test_opacity_culling_boundaries() -> None:
+    """Verify strict opacity culling: opacity <= 0 is culled, > 0 is preserved."""
+    comp = StageCompositor(1920, 1080)
+    backend = NullRenderer()
+
+    comp.show_character("actor_zero", "idle", position="center", transition="cut")
+    comp.show_character("actor_tiny", "idle", position="center", transition="cut")
+    comp.show_character("actor_full", "idle", position="center", transition="cut")
+
+    e_zero = comp.stage.get_element("characters", "actor_zero")
+    e_tiny = comp.stage.get_element("characters", "actor_tiny")
+    e_full = comp.stage.get_element("characters", "actor_full")
+
+    assert e_zero is not None and e_tiny is not None and e_full is not None
+    e_zero.state.opacity = 0.0
+    e_tiny.state.opacity = 0.001
+    e_full.state.opacity = 1.0
+
+    backend.render_compositor(comp, 1280, 720)
+    rendered_assets = [it.asset_id for it in backend.last_frame]
+
+    assert not any("actor_zero" in a for a in rendered_assets)
+    assert any("actor_tiny" in a for a in rendered_assets)
+    assert any("actor_full" in a for a in rendered_assets)
+
+    if PIL_AVAILABLE:
+        pil_backend = PILRenderer(1280, 720)
+        img = pil_backend.render_compositor(comp, 1280, 720)
+        assert img.size == (1280, 720)
+
+
+def test_snapshot_serialization_with_extreme_values() -> None:
+    """Verify compositor state serialization preserves extreme values accurately."""
+    comp = StageCompositor(1920, 1080)
+    comp.show_character("extreme_char", "idle", position="center", transition="cut")
+    elem = comp.stage.get_element("characters", "extreme_char")
+    assert elem is not None
+    elem.state.position = Vec2(-9999.0, 50000.0)
+    elem.state.scale = Vec2(-2.0, 0.0)
+    elem.state.rotation = 1440.5
+
+    state = comp.save_state()
+    new_comp = StageCompositor(1920, 1080)
+    new_comp.load_state(state)
+
+    restored_elem = new_comp.stage.get_element("characters", "extreme_char")
+    assert restored_elem is not None
+    assert restored_elem.state.position.x == -9999.0
+    assert restored_elem.state.position.y == 50000.0
+    assert restored_elem.state.scale.x == -2.0
+    assert restored_elem.state.scale.y == 0.0
+    assert restored_elem.state.rotation == 1440.5
+
 

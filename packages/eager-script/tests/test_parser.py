@@ -9,6 +9,7 @@ from pathlib import Path
 from eager_script import (
     ParsedAppend,
     ParsedCall,
+    ParsedCharacter,
     ParsedChoiceSet,
     ParsedDialogue,
     ParsedFreshBox,
@@ -282,6 +283,20 @@ class TestScreenplayParser(unittest.TestCase):
         parsed_list = parse(SAMPLE_SCRIPT)
         iter_list = list(parse_iter(SAMPLE_SCRIPT))
         self.assertEqual(to_dict(parsed_list), to_dict(iter_list))
+
+    def test_character_quoted_attributes_with_spaces(self) -> None:
+        script = '@character hero "Hero" title="The Great Magician" color="#ff0000" role="Protagonist and Leader"'
+        items = list(parse_iter(script))
+        self.assertEqual(len(items), 1)
+        char = items[0]
+        assert isinstance(char, ParsedCharacter)
+        self.assertEqual(char.id, "hero")
+        self.assertEqual(char.name, "Hero")
+        attr_dict = dict(char.attrs)
+        self.assertEqual(attr_dict.get("title"), "The Great Magician")
+        self.assertEqual(attr_dict.get("color"), "#ff0000")
+        self.assertEqual(attr_dict.get("role"), "Protagonist and Leader")
+
 
 
 

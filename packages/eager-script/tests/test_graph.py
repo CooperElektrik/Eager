@@ -431,6 +431,28 @@ Narrator: Branch B.
         # intro has no predecessors
         self.assertIsNone(graph.find_root_ancestor("intro"))
 
+    def test_graph_elif_else_cumulative_condition_accumulation(self) -> None:
+        script = """
+## Main --- main
+@if a
+    > scene_a
+@elif b
+    > scene_b
+@elif c
+    > scene_c
+@else
+    > scene_d
+@end
+"""
+        graph = parse_graph(script)
+        edges = {e.target: e.condition for e in graph.edges if e.kind == "jump"}
+
+        self.assertEqual(edges["scene_a"], "a")
+        self.assertEqual(edges["scene_b"], "(not (a)) and (b)")
+        self.assertEqual(edges["scene_c"], "(not (a)) and (not (b)) and (c)")
+        self.assertEqual(edges["scene_d"], "(not (a)) and (not (b)) and (not (c))")
+
+
 
 
 if __name__ == "__main__":

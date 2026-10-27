@@ -2,7 +2,7 @@
   "name": "eager-script-vscode",
   "displayName": "Eager-Script",
   "description": "Rich IDE language support, diagnostics, and tools for Eager-Script screenplays",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "publisher": "eager-engine",
   "repository": {
     "type": "git",

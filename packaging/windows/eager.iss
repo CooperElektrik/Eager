@@ -2,7 +2,7 @@
 ; Compile with: iscc packaging/windows/eager.iss
 
 #define AppName "Eager"
-#define AppVersion "0.5.0"
+#define AppVersion "0.7.0"
 #define AppPublisher "Cooper"
 #define AppURL "https://github.com/CooperElektrik/Eager"
 #define AppSourceDir "..\..\dist\windows"

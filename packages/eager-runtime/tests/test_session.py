@@ -8,10 +8,12 @@ from typing import Any
 import eager_script
 import pytest
 from eager_core.audio import NullAudioBackend
-from eager_core.events import DialogueEvent
+from eager_core.events import AppendEvent, ChoiceOption, DialogueEvent
 from eager_core.types import Color
 
 from eager_runtime import ChoicePromptEvent, GameSession, InputAction, InputPromptEvent
+from eager_runtime.headless import NullStage
+from eager_runtime.persistent import PersistentData
 
 SAMPLE_STORY = """
 ## Intro --- intro
@@ -971,6 +973,40 @@ Alice: Chosen 2.
     # Confirm choice
     session.handle_input(InputAction.CONFIRM)
     assert session.director.ui_state.text == "Chosen 2."
+
+
+def test_default_expression_with_persistent(tmp_path: Path) -> None:
+    script = """
+@default bonus = persistent.starting_bonus or 42
+
+## Start --- start
+Narrator: Bonus is [bonus].
+"""
+    proj_dir = tmp_path / "game"
+    proj_dir.mkdir()
+    (proj_dir / "main.es").write_text(script, encoding="utf-8")
+
+    # Persistent has starting_bonus = 100
+    p_file = proj_dir / "persistent.json"
+    p = PersistentData(p_file)
+    p.starting_bonus = 100
+    p.save()
+
+    session = GameSession(proj_dir / "main.es", save_dir=proj_dir)
+    ev = session.advance()
+    assert isinstance(ev, DialogueEvent)
+    assert ev.text == "Bonus is 100."
+
+
+def test_null_stage_on_append() -> None:
+    stage = NullStage()
+    stage.ui_state.text = "Hello"
+    stage.ui_state.choices = [ChoiceOption(index=0, text="Option A"), ChoiceOption(index=1, text="Option B")]
+
+    stage._on_append(AppendEvent(text="world!", line_number=1))
+    assert stage.ui_state.text == "Hello world!"
+    assert stage.ui_state.choices == []
+
 
 
 

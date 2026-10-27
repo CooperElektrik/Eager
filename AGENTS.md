@@ -97,16 +97,18 @@ A task is complete only when all steps pass:
 
 1. **Focused tests:**
    ```bash
-   uv run pytest packages/eager-script/tests -q --tb=short -x
+   uv run pytest packages/ -q --tb=short -x
    ```
-2. **Linting:**
+2. **Linting and contracts:**
    ```bash
    uv run ruff check packages/
+   uv run lint-imports
    ```
 3. **Type checking:**
    ```bash
+   (cd packages/eager-core && uv run basedpyright)
    (cd packages/eager-script && uv run basedpyright)
-   (cd packages/eager-runtime && uv run basedpyright src)
+   (cd packages/eager-runtime && uv run basedpyright)
    (cd packages/eager-graphics && uv run basedpyright src)
    (cd packages/eager-script-lsp && uv run basedpyright)
    ```

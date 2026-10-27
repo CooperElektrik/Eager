@@ -105,3 +105,44 @@ def test_stage_layers_and_serialization() -> None:
     restored_bg = restored_stage.get_element("background", "bg")
     assert restored_bg is not None
     assert restored_bg.asset_id == "bg/sky"
+
+
+def test_layer_z_ordering_and_element_lookup_edge_cases() -> None:
+    """Verify custom layer sorting with negative, zero, and high z-orders and element lookups."""
+    stage = Stage()
+    # Default layers: background(0), characters(100), foreground(200), ui(300), overlay(400)
+    layer_sub = Layer("sub_underworld", z_order=-999)
+    layer_zero = Layer("zero_layer", z_order=0)
+    layer_mid = Layer("mid_layer", z_order=150)
+    layer_sky = Layer("sky_layer", z_order=9999)
+
+    stage.add_layer(layer_sub)
+    stage.add_layer(layer_zero)
+    stage.add_layer(layer_mid)
+    stage.add_layer(layer_sky)
+
+    sorted_layers = stage.get_sorted_layers()
+    names = [l.name for l in sorted_layers]
+    assert names[0] == "sub_underworld"
+    assert names[-1] == "sky_layer"
+    assert "mid_layer" in names
+
+    # Lookup and removal edge cases
+    assert stage.get_element("sub_underworld", "phantom") is None
+    assert stage.get_element("nonexistent_layer", "any") is None
+    assert stage.find_element("phantom") is None
+
+    elem = StageElement("phantom_item", ElementState(asset_id="test_asset"))
+    stage.layers["sub_underworld"].add_element(elem)
+
+    found = stage.find_element("phantom_item")
+    assert found is not None
+    assert found[0] == "sub_underworld"
+    assert found[1].element_id == "phantom_item"
+
+    # Layer removal
+    removed_layer = stage.remove_layer("sub_underworld")
+    assert removed_layer is not None
+    assert stage.get_layer("sub_underworld") is None
+    assert stage.find_element("phantom_item") is None
+

@@ -84,6 +84,16 @@ def test_pil_asset_resolver_disk_load(tmp_path: Path) -> None:
     assert land_img.mode == "RGBA"
     assert resolver.is_asset_opaque("landscape") is True
 
+
+def test_pil_asset_resolver_path_traversal(tmp_path: Path) -> None:
+    asset_dir = tmp_path / "assets"
+    asset_dir.mkdir()
+    resolver = PILAssetResolver(asset_dir=asset_dir)
+
+    with pytest.raises(ValueError, match="Path traversal detected"):
+        resolver.get_image("../../../secret")
+
+
     # Test candidate path resolution: characters/ and backgrounds/
     char_sub = asset_dir / "characters" / "guide"
     char_sub.mkdir(parents=True)
@@ -998,8 +1008,7 @@ def test_putalpha_fastpath_produces_correct_alpha():
     for transformed_img, is_opaque, _, _ in cache.values():
         # 0.5 * 255 = 127.5 → 128
         # With putalpha on an opaque asset, all pixels should have alpha=128
-        pixels = list(transformed_img.get_flattened_data())
-        assert pixels[0][3] == 128, f"Expected alpha=128, got {pixels[0]}"
+        assert transformed_img.getpixel((0, 0))[3] == 128
         assert not is_opaque, "Sprite with opacity 0.5 should not be opaque"
 
 
@@ -1028,8 +1037,7 @@ def test_putalpha_fastpath_full_opacity_unchanged():
 
     cache = renderer._sprite_cache
     for transformed_img, is_opaque, _, _ in cache.values():
-        pixels = list(transformed_img.get_flattened_data())
-        assert pixels[0][3] == 255, f"Expected alpha=255, got {pixels[0]}"
+        assert transformed_img.getpixel((0, 0))[3] == 255
         assert is_opaque, "Full-opacity opaque sprite should be opaque"
 
 
@@ -1059,10 +1067,8 @@ def test_putalpha_does_not_corrupt_cached_texture():
 
     # Verify the cached base texture still has alpha=255
     base_tex = renderer.asset_resolver._image_cache["bg/test_bg"]
-    base_pixels = list(base_tex.get_flattened_data())
-    first_pixel = base_pixels[0]
-    assert isinstance(first_pixel, tuple)
-    assert first_pixel[3] == 255, "Base texture alpha was corrupted by putalpha!"
+    assert base_tex.getpixel((0, 0))[3] == 255, "Base texture alpha was corrupted by putalpha!"
+
 
 
 def test_lazy_stage_cache_copy_skipped_on_scene_change():
