@@ -1,9 +1,13 @@
 """Tests for PygletAudioBackend and MiniaudioAudioBackend."""
 
+from __future__ import annotations
+
 import os
 import tempfile
 import unittest
 import wave
+from typing import Any
+from unittest import mock
 
 import pytest
 
@@ -260,6 +264,70 @@ class TestHardwareAudioBackends(unittest.TestCase):
         self.assertTrue(track2.is_playing)
         backend.shutdown()
         self.assertFalse(track2.is_playing)
+
+    def test_miniaudio_stream_mid_playback_read_error(self) -> None:
+        """A stream raising an unhandled read error mid-playback must log WARNING and stop playing."""
+        pytest.importorskip("miniaudio")
+        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend, _ChannelTrack
+
+        backend = MiniaudioAudioBackend()
+
+        class FaultyStream:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def send(self, n: int) -> list[int]:
+                self.calls += 1
+                if self.calls > 1:
+                    raise RuntimeError("Simulated mid-playback I/O fault")
+                return [0] * (n * 2)
+
+        track = _ChannelTrack(
+            samples=None,
+            sample_rate=44100,
+            nchannels=2,
+            volume=1.0,
+            loop=False,
+            path_str="faulty_stream.wav",
+            stream=FaultyStream(),
+        )
+        backend._tracks["ambient"] = track
+        self.assertTrue(track.is_playing)
+
+        generator: Any = backend._generator
+        if generator is not None:
+            # First send consumes initial valid chunk
+            _ = generator.send(50)
+            self.assertTrue(track.is_playing)
+
+            # Second send triggers FaultyStream error and logs WARNING
+            with self.assertLogs("eager_graphics.renderers.miniaudio", level="WARNING") as cm:
+                _ = generator.send(50)
+                self.assertFalse(track.is_playing)
+
+            self.assertTrue(any("faulty_stream.wav" in msg for msg in cm.output))
+
+        backend.shutdown()
+
+    def test_miniaudio_missing_library_fallback(self) -> None:
+        """When miniaudio is not installed, MiniaudioAudioBackend must log warning and not crash."""
+        import eager_graphics.renderers.miniaudio as ma_mod
+
+        with (
+            mock.patch.object(ma_mod, "MINIAUDIO_AVAILABLE", False),
+            mock.patch.object(ma_mod, "miniaudio", None),
+        ):
+            ma_mod._WARNED_MISSING = False
+            with self.assertLogs("eager_graphics.renderers.miniaudio", level="WARNING") as cm:
+                backend = ma_mod.MiniaudioAudioBackend()
+                self.assertFalse(backend._active)
+                backend.play("music", self.wav_path, loop=True)
+                self.assertFalse(backend.is_playing("music"))
+                backend.stop("music")
+                backend.shutdown()
+
+            self.assertTrue(any("is not installed" in msg for msg in cm.output))
+
 
 
 

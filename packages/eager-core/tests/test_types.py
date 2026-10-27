@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from eager_core.types import (
@@ -175,3 +177,72 @@ def test_color_advanced_features():
     assert c.to_rgba_bytes() == (51, 102, 153, 204)
     assert Color.from_bytes(51, 102, 153, 204).to_rgba_bytes() == (51, 102, 153, 204)
     assert Color.from_hex("#12345678").to_hex(include_alpha=True) == "#12345678"
+
+
+def test_vec2_arithmetic_extremes() -> None:
+    """Vec2 must handle zero, negative, extreme magnitudes, and inf/nan without crashing."""
+    extremes = [
+        0.0,
+        -0.0,
+        1.0,
+        -1.0,
+        1e-300,
+        1e308,
+        -1e308,
+        float("inf"),
+        float("-inf"),
+        float("nan"),
+    ]
+
+    for x in extremes:
+        for y in extremes:
+            v = Vec2(x, y)
+            neg_v = -v
+            if not math.isnan(x):
+                assert neg_v.x == -x
+            if not math.isnan(y):
+                assert neg_v.y == -y
+
+            # Addition with Vec2
+            v2 = v + Vec2(1.0, -1.0)
+            assert isinstance(v2, Vec2)
+
+            # Subtraction with Vec2
+            v3 = v - Vec2(1.0, -1.0)
+            assert isinstance(v3, Vec2)
+
+            # Scalar multiplication (both orders)
+            v_mul = v * 2.0
+            v_rmul = 2.0 * v
+            assert isinstance(v_mul, Vec2)
+            assert isinstance(v_rmul, Vec2)
+
+            # Lerp towards origin
+            v_lerp = v.lerp(Vec2(0.0, 0.0), 0.5)
+            assert isinstance(v_lerp, Vec2)
+
+            # Serialization
+            t = v.to_tuple()
+            d = v.to_dict()
+            assert len(t) == 2
+            assert "x" in d and "y" in d
+
+
+def test_vec2_geometry_invariants() -> None:
+    """Verify Euclidean distance invariants and lerp stability."""
+    a = Vec2(0.0, 0.0)
+    b = Vec2(3.0, 4.0)
+    c = Vec2(6.0, 0.0)
+
+    assert math.isclose(a.distance_to(b), 5.0)
+    # Triangle inequality: d(a, c) <= d(a, b) + d(b, c)
+    assert a.distance_to(c) <= a.distance_to(b) + b.distance_to(c)
+
+    # Distance to self is 0.0
+    assert b.distance_to(b) == 0.0
+
+    # Extreme magnitude distance avoids intermediate float overflow
+    large1 = Vec2(1e300, 0.0)
+    large2 = Vec2(-1e300, 0.0)
+    assert not math.isinf(large1.distance_to(large2))
+

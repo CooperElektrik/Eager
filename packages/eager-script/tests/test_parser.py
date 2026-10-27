@@ -22,6 +22,7 @@ from eager_script import (
     parse,
     parse_iter,
     to_dict,
+    to_graph,
     to_json,
     validate,
 )
@@ -684,6 +685,25 @@ class TestInlineChoiceBlocks(unittest.TestCase):
         result = validate(items)
         self.assertFalse(result.is_valid)
         self.assertTrue(any("Unclosed @if block" in err.message for err in result.errors))
+
+    def test_deeply_nested_inline_choices(self) -> None:
+        """Parser and scene lowering must cleanly handle deeply nested choice trees (up to depth 50)."""
+        depth = 50
+        lines = ["## start"]
+        for d in range(depth):
+            indent = "    " * d
+            lines.append(f"{indent}? Option depth {d}")
+            lines.append(f"{indent}    Alice: Dialogue at level {d}")
+
+        script = "\n".join(lines)
+        items = parse(script)
+        self.assertEqual(len(items), 2)  # ParsedLabel + ParsedChoiceSet
+        self.assertIsInstance(items[1], ParsedChoiceSet)
+
+        graph = to_graph(items)
+        self.assertEqual(len(graph.anonymous_scenes()), depth)
+        self.assertEqual(graph.entry, "start")
+
 
 
 class TestParserScreenplayBoundaries(unittest.TestCase):

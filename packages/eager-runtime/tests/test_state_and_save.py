@@ -1,5 +1,6 @@
 """Unit tests for state management, variable storage, snapshot serialization, and save system."""
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -533,6 +534,67 @@ class TestSaveSystem(unittest.TestCase):
         # Backup remains on disk
         self.assertTrue(bak_path.exists())
         self.assertEqual(bak_path.read_text(encoding="utf-8"), "{corrupt garbage")
+
+    def test_non_dict_json_root(self) -> None:
+        """Non-dict JSON roots (list, str, int) must safely return None and create .corrupt.bak."""
+        test_cases: list[tuple[str, str]] = [
+            ("slot_array", "[1, 2, 3]"),
+            ("slot_string", '"plain string root"'),
+            ("slot_number", "42"),
+        ]
+        manager = SaveManager(self.save_dir)
+        for slot_name, payload in test_cases:
+            slot_path = self.save_dir / f"{slot_name}.json"
+            slot_path.write_text(payload, encoding="utf-8")
+
+            res = manager.load_slot(slot_name)
+            self.assertIsNone(res)
+
+            bak_path = self.save_dir / f"{slot_name}.json.corrupt.bak"
+            self.assertTrue(bak_path.exists(), f"Backup missing for non-dict root: {slot_name}")
+            self.assertEqual(bak_path.read_text(encoding="utf-8"), payload)
+
+    def test_list_slots_skips_corrupted_metadata_cleanly(self) -> None:
+        """list_slots() and get_slot_metadata() must cleanly handle corrupt metadata without crashing."""
+        manager = SaveManager(self.save_dir)
+
+        # Populate valid slots
+        cp1 = Checkpoint(story={"current_scene": "scene_1"}, visual={}, audio={}, backlog_len=0, ui={})
+        cp2 = Checkpoint(story={"current_scene": "scene_2"}, visual={}, audio={}, backlog_len=0, ui={})
+        _ = manager.save_slot("valid_1", cp1)
+        _ = manager.save_slot("valid_2", cp2)
+
+        # Populate corrupted metadata slots
+        corrupt_cases: list[tuple[str, str]] = [
+            ("slot_broken_ver", json.dumps({"metadata": {"version": "corrupted"}, "checkpoint": {}})),
+            ("slot_broken_playtime", json.dumps({"metadata": {"playtime_seconds": "not_float"}, "checkpoint": {}})),
+            ("slot_int_meta", json.dumps({"metadata": 123, "checkpoint": {}})),
+            ("slot_str_meta", json.dumps({"metadata": "not_a_dict", "checkpoint": {}})),
+            ("slot_syntax_err", '{"metadata": {"incomplete'),
+            ("slot_root_array", "[1, 2, 3]"),
+        ]
+        for slot_name, payload in corrupt_cases:
+            slot_path = self.save_dir / f"{slot_name}.json"
+            slot_path.write_text(payload, encoding="utf-8")
+
+        # get_slot_metadata returns None for corrupted slots without crashing
+        for slot_name, _ in corrupt_cases:
+            meta = manager.get_slot_metadata(slot_name)
+            self.assertIsNone(meta, f"Expected None for get_slot_metadata({slot_name})")
+
+        # get_slot_metadata returns SaveMetadata for valid slots
+        valid_meta = manager.get_slot_metadata("valid_1")
+        self.assertIsNotNone(valid_meta)
+        self.assertIsInstance(valid_meta, SaveMetadata)
+        self.assertEqual(valid_meta.slot_name, "valid_1")
+
+        # list_slots() returns only valid slots, cleanly skipping corrupt ones
+        slots = manager.list_slots()
+        self.assertEqual(len(slots), 2)
+        slot_names = {s.slot_name for s in slots}
+        self.assertEqual(slot_names, {"valid_1", "valid_2"})
+        self.assertTrue(all(isinstance(s, SaveMetadata) for s in slots))
+
 
     def test_persistent_data(self):
         p_path = self.save_dir / "persistent.json"
