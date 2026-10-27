@@ -1,7 +1,6 @@
 """Tests for StageDirector event and hook dispatching."""
 
-import unittest
-
+import pytest
 from eager_core.audio import AudioMixer, NullAudioBackend
 from eager_core.events import (
     AppendEvent,
@@ -470,8 +469,8 @@ def test_nvl_mode_and_overlay():
 # ---------------------------------------------------------------------- #
 
 
-class TestDirectorAudioHooks(unittest.TestCase):
-    def test_stage_director_audio_hooks(self):
+class TestDirectorAudioHooks:
+    def test_stage_director_audio_hooks(self) -> None:
         backend = NullAudioBackend()
         mixer = AudioMixer(backend=backend)
         compositor = StageCompositor()
@@ -481,19 +480,19 @@ class TestDirectorAudioHooks(unittest.TestCase):
 
         # Trigger ~ play music title.ogg
         dispatcher.dispatch(HookEvent(hook_name="play", args="music title.ogg fade=1.0 volume=0.9", line_number=10))
-        self.assertTrue(mixer.channels["music"].is_playing)
-        self.assertEqual(backend.calls[-1][0], "play")
-        self.assertEqual(backend.calls[-1][1], "music")
+        assert mixer.channels["music"].is_playing
+        assert backend.calls[-1][0] == "play"
+        assert backend.calls[-1][1] == "music"
 
         # Trigger ~ volume music 0.5
         dispatcher.dispatch(HookEvent(hook_name="volume", args="music 0.5", line_number=11))
-        self.assertAlmostEqual(mixer.channels["music"].volume, 0.5)
+        assert mixer.channels["music"].volume == pytest.approx(0.5)
 
         # Trigger ~ stop music fade=0.5
         dispatcher.dispatch(HookEvent(hook_name="stop", args="music fade=0.5", line_number=12))
-        self.assertEqual(mixer.channels["music"].fade_duration, 0.5)
+        assert mixer.channels["music"].fade_duration == 0.5
 
-    def test_stage_director_audio_loop_points(self):
+    def test_stage_director_audio_loop_points(self) -> None:
         backend = NullAudioBackend()
         mixer = AudioMixer(backend=backend)
         compositor = StageCompositor()
@@ -508,13 +507,13 @@ class TestDirectorAudioHooks(unittest.TestCase):
                 line_number=10,
             )
         )
-        self.assertEqual(backend.calls[-1][0], "play")
-        self.assertEqual(backend.calls[-1][1], "music")
-        self.assertTrue(backend.calls[-1][3])  # loop
-        self.assertEqual(backend.calls[-1][6], 12.5)  # loop_start
-        self.assertEqual(backend.calls[-1][7], 95.0)  # loop_end
+        assert backend.calls[-1][0] == "play"
+        assert backend.calls[-1][1] == "music"
+        assert backend.calls[-1][3] is True  # loop
+        assert backend.calls[-1][6] == 12.5  # loop_start
+        assert backend.calls[-1][7] == 95.0  # loop_end
 
-    def test_stage_director_voice_playback_and_auto_stop(self):
+    def test_stage_director_voice_playback_and_auto_stop(self) -> None:
         backend = NullAudioBackend()
         mixer = AudioMixer(backend=backend)
         compositor = StageCompositor()
@@ -524,36 +523,36 @@ class TestDirectorAudioHooks(unittest.TestCase):
 
         # Dialogue with voice clip
         dispatcher.dispatch(DialogueEvent(speaker="Alice", text="Hello!", voice="alice_01.ogg", emotion=None, line_number=1))
-        self.assertTrue(mixer.channels["voice"].is_playing)
-        self.assertEqual(backend.calls[-1][0], "play")
-        self.assertEqual(backend.calls[-1][1], "voice")
-        self.assertEqual(backend.calls[-1][2], "alice_01.ogg")
+        assert mixer.channels["voice"].is_playing
+        assert backend.calls[-1][0] == "play"
+        assert backend.calls[-1][1] == "voice"
+        assert backend.calls[-1][2] == "alice_01.ogg"
 
         # Dialogue without voice clip stops voice channel
         dispatcher.dispatch(DialogueEvent(speaker="Alice", text="Second line without voice.", voice=None, emotion=None, line_number=2))
-        self.assertFalse(mixer.channels["voice"].is_playing)
-        self.assertEqual(backend.calls[-1][0], "stop")
-        self.assertEqual(backend.calls[-1][1], "voice")
+        assert not mixer.channels["voice"].is_playing
+        assert backend.calls[-1][0] == "stop"
+        assert backend.calls[-1][1] == "voice"
 
         # Narration also stops voice channel
         dispatcher.dispatch(DialogueEvent(speaker="Alice", text="Third line.", voice="alice_02.ogg", emotion=None, line_number=3))
-        self.assertTrue(mixer.channels["voice"].is_playing)
+        assert mixer.channels["voice"].is_playing
         dispatcher.dispatch(NarrationEvent(text="A quiet pause.", line_number=4))
-        self.assertFalse(mixer.channels["voice"].is_playing)
+        assert not mixer.channels["voice"].is_playing
 
         # SceneExitEvent stops voice channel
         dispatcher.dispatch(DialogueEvent(speaker="Alice", text="Fourth line.", voice="alice_03.ogg", emotion=None, line_number=5))
-        self.assertTrue(mixer.channels["voice"].is_playing)
+        assert mixer.channels["voice"].is_playing
         dispatcher.dispatch(SceneExitEvent(scene_id="intro", transition_kind="jump", target=None, line_number=6))
-        self.assertFalse(mixer.channels["voice"].is_playing)
+        assert not mixer.channels["voice"].is_playing
 
         # StoryEndEvent stops voice channel
         dispatcher.dispatch(DialogueEvent(speaker="Alice", text="Fifth line.", voice="alice_04.ogg", emotion=None, line_number=7))
-        self.assertTrue(mixer.channels["voice"].is_playing)
+        assert mixer.channels["voice"].is_playing
         dispatcher.dispatch(StoryEndEvent(scene_id="intro", reason="completed"))
-        self.assertFalse(mixer.channels["voice"].is_playing)
+        assert not mixer.channels["voice"].is_playing
 
-    def test_stage_director_skip_mode_suppression(self):
+    def test_stage_director_skip_mode_suppression(self) -> None:
         backend = NullAudioBackend()
         mixer = AudioMixer(backend=backend)
         compositor = StageCompositor()
@@ -565,10 +564,10 @@ class TestDirectorAudioHooks(unittest.TestCase):
         # When skip is not active, sound and voice play
         # (sound effects are polyphonic by default -> sound_0 pool slot)
         dispatcher.dispatch(HookEvent(hook_name="play", args="sound click.ogg", line_number=1))
-        self.assertEqual(backend.calls[-1][1], "sound_0")
+        assert backend.calls[-1][1] == "sound_0"
 
         dispatcher.dispatch(DialogueEvent(speaker="Alice", text="Voice line", voice="alice_v.ogg", emotion=None, line_number=2))
-        self.assertEqual(backend.calls[-1][1], "voice")
+        assert backend.calls[-1][1] == "voice"
 
         # When skip is active, sound/voice hook and dialogue voice are dropped
         is_skipping = True
@@ -580,14 +579,14 @@ class TestDirectorAudioHooks(unittest.TestCase):
 
         # Only the auto-stop call on voice from dialogue occurs, no play calls for sound/voice
         play_calls = [c for c in backend.calls if c[0] == "play"]
-        self.assertEqual(play_calls, [])
+        assert play_calls == []
 
         # But music/ambient still play during skip mode!
         dispatcher.dispatch(HookEvent(hook_name="play", args="music bgm.ogg", line_number=6))
-        self.assertEqual(backend.calls[-1][0], "play")
-        self.assertEqual(backend.calls[-1][1], "music")
+        assert backend.calls[-1][0] == "play"
+        assert backend.calls[-1][1] == "music"
 
-    def test_stage_director_sound_polyphony_by_default(self):
+    def test_stage_director_sound_polyphony_by_default(self) -> None:
         backend = NullAudioBackend()
         mixer = AudioMixer(backend=backend)
         compositor = StageCompositor()
@@ -599,17 +598,17 @@ class TestDirectorAudioHooks(unittest.TestCase):
         dispatcher.dispatch(HookEvent(hook_name="play", args="sound thunder.ogg", line_number=1))
         dispatcher.dispatch(HookEvent(hook_name="play", args="sound click.ogg", line_number=2))
         plays = [c for c in backend.calls if c[0] == "play"]
-        self.assertEqual([p[1] for p in plays], ["sound_0", "sound_1"])
-        self.assertTrue(mixer.channels["sound_0"].is_playing)
-        self.assertTrue(mixer.channels["sound_1"].is_playing)
-        self.assertEqual(mixer.channels["sound_0"].current_asset, "thunder.ogg")
-        self.assertEqual(mixer.channels["sound_1"].current_asset, "click.ogg")
+        assert [p[1] for p in plays] == ["sound_0", "sound_1"]
+        assert mixer.channels["sound_0"].is_playing
+        assert mixer.channels["sound_1"].is_playing
+        assert mixer.channels["sound_0"].current_asset == "thunder.ogg"
+        assert mixer.channels["sound_1"].current_asset == "click.ogg"
 
         # ~ stop sound fans out to the whole pool
         dispatcher.dispatch(HookEvent(hook_name="stop", args="sound", line_number=3))
-        self.assertFalse(mixer.is_playing("sound"))
+        assert not mixer.is_playing("sound")
 
-    def test_stage_director_sound_polyphony_opt_out_and_opt_in(self):
+    def test_stage_director_sound_polyphony_opt_out_and_opt_in(self) -> None:
         backend = NullAudioBackend()
         mixer = AudioMixer(backend=backend)
         compositor = StageCompositor()
@@ -621,15 +620,15 @@ class TestDirectorAudioHooks(unittest.TestCase):
         dispatcher.dispatch(HookEvent(hook_name="play", args="sound a.ogg auto_channels=false", line_number=1))
         dispatcher.dispatch(HookEvent(hook_name="play", args="sound b.ogg auto_channels=false", line_number=2))
         plays = [c for c in backend.calls if c[0] == "play"]
-        self.assertTrue(all(p[1] == "sound" for p in plays))
-        self.assertEqual(mixer.channels["sound"].current_asset, "b.ogg")
+        assert all(p[1] == "sound" for p in plays)
+        assert mixer.channels["sound"].current_asset == "b.ogg"
 
         # Other channels stay single by default but can opt in
         backend.calls.clear()
         dispatcher.dispatch(HookEvent(hook_name="play", args="music sting.ogg auto_channels=true", line_number=3))
-        self.assertEqual(backend.calls[-1][1], "music_0")
+        assert backend.calls[-1][1] == "music_0"
 
-    def test_stage_director_sound_volume_inheritance(self):
+    def test_stage_director_sound_volume_inheritance(self) -> None:
         backend = NullAudioBackend()
         mixer = AudioMixer(backend=backend)
         compositor = StageCompositor()
@@ -640,13 +639,13 @@ class TestDirectorAudioHooks(unittest.TestCase):
         # Track volume configured before playback carries into pool slots.
         dispatcher.dispatch(HookEvent(hook_name="volume", args="sound 0.5", line_number=1))
         dispatcher.dispatch(HookEvent(hook_name="play", args="sound click.ogg", line_number=2))
-        self.assertAlmostEqual(mixer.channels["sound_0"].volume, 0.5)
+        assert mixer.channels["sound_0"].volume == pytest.approx(0.5)
 
         # An explicit hook volume overrides the inherited one.
         dispatcher.dispatch(HookEvent(hook_name="play", args="sound bang.ogg volume=0.9", line_number=3))
-        self.assertAlmostEqual(mixer.channels["sound_1"].volume, 0.9)
+        assert mixer.channels["sound_1"].volume == pytest.approx(0.9)
 
-    def test_stage_director_explicit_slot_inherits_base_volume(self):
+    def test_stage_director_explicit_slot_inherits_base_volume(self) -> None:
         backend = NullAudioBackend()
         mixer = AudioMixer(backend=backend)
         compositor = StageCompositor()
@@ -656,9 +655,9 @@ class TestDirectorAudioHooks(unittest.TestCase):
 
         dispatcher.dispatch(HookEvent(hook_name="volume", args="sound 0.5", line_number=1))
         dispatcher.dispatch(HookEvent(hook_name="play", args="sound_0 click.ogg", line_number=2))
-        self.assertAlmostEqual(mixer.channels["sound_0"].volume, 0.5)
+        assert mixer.channels["sound_0"].volume == pytest.approx(0.5)
 
-    def test_stage_director_max_polyphony_zero_is_unbounded(self):
+    def test_stage_director_max_polyphony_zero_is_unbounded(self) -> None:
         backend = NullAudioBackend()
         mixer = AudioMixer(backend=backend)
         compositor = StageCompositor()
@@ -674,8 +673,8 @@ class TestDirectorAudioHooks(unittest.TestCase):
             HookEvent(hook_name="play", args="sound extra.ogg auto_channels=true max_polyphony=0", line_number=100)
         )
         # Unbounded: grows to sound_16 instead of stealing sound_0.
-        self.assertEqual(backend.calls[-1][1], "sound_16")
-        self.assertEqual(mixer.channels["sound_0"].current_asset, "s0.ogg")
+        assert backend.calls[-1][1] == "sound_16"
+        assert mixer.channels["sound_0"].current_asset == "s0.ogg"
 
     def test_stage_director_input_prompt_event_handling(self) -> None:
         compositor = StageCompositor(1920, 1080)
@@ -688,12 +687,11 @@ class TestDirectorAudioHooks(unittest.TestCase):
         dispatcher.dispatch(input_ev)
 
         # Director UI state records the prompt
-        self.assertTrue(hasattr(director.ui_state, "active_input_prompt"))
-        self.assertIsNotNone(director.ui_state.active_input_prompt)
+        assert hasattr(director.ui_state, "active_input_prompt")
         assert director.ui_state.active_input_prompt is not None
-        self.assertEqual(director.ui_state.active_input_prompt.var_name, "player_name")
-        self.assertEqual(director.ui_state.active_input_prompt.prompt, "What is your name?")
-        self.assertEqual(director.ui_state.active_input_prompt.default, "Hero")
+        assert director.ui_state.active_input_prompt.var_name == "player_name"
+        assert director.ui_state.active_input_prompt.prompt == "What is your name?"
+        assert director.ui_state.active_input_prompt.default == "Hero"
 
     def test_ui_choice_menu_zero_and_many_options(self) -> None:
         from eager_graphics.ui_components import ChoiceMenu
@@ -703,7 +701,7 @@ class TestDirectorAudioHooks(unittest.TestCase):
         menu_empty.set_options([])
         backend = NullRenderer()
         menu_empty.draw(backend)
-        self.assertEqual(len(backend.ui_calls), 0)
+        assert len(backend.ui_calls) == 0
 
         # 2. Large choice list (15 choices)
         many_choices = [
@@ -713,10 +711,10 @@ class TestDirectorAudioHooks(unittest.TestCase):
         menu_many = ChoiceMenu(1280, 720)
         menu_many.set_options(many_choices)
         menu_many.draw(backend)
-        self.assertGreater(len(backend.ui_calls), 0)
+        assert len(backend.ui_calls) > 0
         # Boundary click tests
-        self.assertIsNone(menu_many.hit_test(-100, -100))
-        self.assertIsNone(menu_many.hit_test(2000, 2000))
+        assert menu_many.hit_test(-100, -100) is None
+        assert menu_many.hit_test(2000, 2000) is None
 
 
 

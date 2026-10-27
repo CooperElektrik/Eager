@@ -1,7 +1,6 @@
 """Tests for Phase 6 screens, menus, theme, and project config."""
 
 import tempfile
-import unittest
 from pathlib import Path
 from typing import Any
 
@@ -103,7 +102,7 @@ class MockUIDrawBackend:
         return (longest * font_size * 0.5, float(font_size) * 1.2)
 
 
-class TestScreensAndProject(unittest.TestCase):
+class TestScreensAndProject:
     def test_button_and_screen_interaction(self):
         btn_clicked = False
 
@@ -112,36 +111,38 @@ class TestScreensAndProject(unittest.TestCase):
             btn_clicked = True
 
         btn = Button(Rect(10, 10, 100, 40), "Click Me", action=on_click)
-        self.assertTrue(btn.hit_test(50, 20))
-        self.assertFalse(btn.hit_test(200, 200))
+        assert btn.hit_test(50, 20)
+        assert not (btn.hit_test(200, 200))
 
         screen = TitleScreen("My Novel")
         mgr = ScreenManager()
         mgr.register(screen)
 
         class DummySession:
-            def advance(self): pass
+            def advance(self):
+                pass
 
         mgr.show("title", DummySession())
         assert mgr.active_screen is not None
-        self.assertEqual(mgr.active_screen.name, "title")
+        assert mgr.active_screen.name == "title"
 
         # Click first button (Start Game)
         mgr.active_screen.handle_mouse_move(150, 320)
-        self.assertTrue(mgr.active_screen.handle_mouse_click(150, 320))
+        assert mgr.active_screen.handle_mouse_click(150, 320)
 
     def test_screen_draw(self):
         screen = TitleScreen("Awesome Game")
         backend = MockUIDrawBackend()
 
         class DummySession:
-            def advance(self): pass
+            def advance(self):
+                pass
 
         screen.on_enter(DummySession())
         screen.draw(backend, 1280, 720)
 
-        self.assertTrue(len(backend.rects) > 0)
-        self.assertTrue(any("Awesome Game" in t[0] for t in backend.texts))
+        assert len(backend.rects) > 0
+        assert any("Awesome Game" in t[0] for t in backend.texts)
 
     def test_project_config_and_graph_merge(self):
         with tempfile.TemporaryDirectory() as td:
@@ -156,16 +157,16 @@ width = 1280
 height = 720
 """)
             cfg = ProjectConfig.load(toml_path)
-            self.assertEqual(cfg.title, "Merged Novel")
-            self.assertEqual(cfg.virtual_width, 1280)
+            assert cfg.title == "Merged Novel"
+            assert cfg.virtual_width == 1280
 
         # Merge graphs
         g1 = parse_graph("## Part 1 --- p1\nNarrator: Chapter 1")
         g2 = parse_graph("## Part 2 --- p2\nNarrator: Chapter 2")
         merged = merge_graphs([g1, g2])
-        self.assertEqual(len(merged.nodes), 2)
-        self.assertIn("p1", merged.nodes)
-        self.assertIn("p2", merged.nodes)
+        assert len(merged.nodes) == 2
+        assert "p1" in merged.nodes
+        assert "p2" in merged.nodes
 
     def test_widgets_bar_and_grid(self):
         from eager_core.types import Color, Rect
@@ -174,14 +175,19 @@ height = 720
 
         bar = Bar(Rect(10, 10, 100, 20), value=0.5, max_value=1.0)
         backend = MockUIDrawBackend()
-        bar.draw(backend, Color(0.1, 0.1, 0.1, 1.0), Color(0.8, 0.2, 0.2, 1.0), border_color=Color(1, 1, 1, 1))
-        self.assertTrue(len(backend.rects) >= 2)
+        bar.draw(
+            backend,
+            Color(0.1, 0.1, 0.1, 1.0),
+            Color(0.8, 0.2, 0.2, 1.0),
+            border_color=Color(1, 1, 1, 1),
+        )
+        assert len(backend.rects) >= 2
 
         grid = Grid(Rect(0, 0, 300, 200), rows=2, cols=3, padding=0.0, spacing_x=0.0, spacing_y=0.0)
         c0 = grid.cell_rect(0, 0)
-        self.assertEqual((c0.x, c0.y, c0.width, c0.height), (0, 0, 100, 100))
+        assert (c0.x, c0.y, c0.width, c0.height) == (0, 0, 100, 100)
         c4 = grid.cell_rect_by_index(4)
-        self.assertEqual((c4.x, c4.y, c4.width, c4.height), (100, 100, 100, 100))
+        assert (c4.x, c4.y, c4.width, c4.height) == (100, 100, 100, 100)
 
     def test_preferences_screen(self):
         from eager_graphics.screens import PreferencesScreen
@@ -211,12 +217,12 @@ height = 720
         # Hit test slider
         slider = pref_screen.sliders[0]
         pref_screen.handle_mouse_click(slider.rect.x + slider.rect.width * 0.5, slider.rect.y + 5)
-        self.assertTrue(session.applied)
+        assert session.applied
 
         # Back button
         back_btn = pref_screen.buttons[0]
-        self.assertTrue(pref_screen.handle_mouse_click(back_btn.rect.x + 5, back_btn.rect.y + 5))
-        self.assertFalse(session.screens.is_active)
+        assert pref_screen.handle_mouse_click(back_btn.rect.x + 5, back_btn.rect.y + 5)
+        assert not session.screens.is_active
 
     def test_preferences_screen_language_selection(self):
         from eager_graphics.screens import PreferencesScreen
@@ -254,19 +260,19 @@ height = 720
         session.screens.show("preferences", session)
 
         # Button 0 is Back, Buttons 1..3 are languages: default, es, ja
-        self.assertEqual(len(pref_screen.buttons), 4)
-        self.assertIn("DEFAULT", pref_screen.buttons[1].text)
-        self.assertIn("ES", pref_screen.buttons[2].text)
-        self.assertIn("JA", pref_screen.buttons[3].text)
+        assert len(pref_screen.buttons) == 4
+        assert "DEFAULT" in pref_screen.buttons[1].text
+        assert "ES" in pref_screen.buttons[2].text
+        assert "JA" in pref_screen.buttons[3].text
 
         # Click Spanish (buttons[2])
         es_btn = pref_screen.buttons[2]
-        self.assertTrue(pref_screen.handle_mouse_click(es_btn.rect.x + 5, es_btn.rect.y + 5))
-        self.assertEqual(session.chosen_locale, "es")
-        self.assertEqual(session.preferences.language, "es")
+        assert pref_screen.handle_mouse_click(es_btn.rect.x + 5, es_btn.rect.y + 5)
+        assert session.chosen_locale == "es"
+        assert session.preferences.language == "es"
 
         # After clicking, screen re-initializes on_enter, so active marker updates
-        self.assertIn("[ ES ]", pref_screen.buttons[2].text)
+        assert "[ ES ]" in pref_screen.buttons[2].text
 
     def test_history_screen(self):
         from eager_graphics.screens import HistoryScreen
@@ -290,13 +296,13 @@ height = 720
         session.screens.show("history", session)
 
         history_screen.scroll_up()
-        self.assertGreater(history_screen.scroll_offset, 0)
+        assert history_screen.scroll_offset > 0
         history_screen.scroll_down()
-        self.assertEqual(history_screen.scroll_offset, 0)
+        assert history_screen.scroll_offset == 0
 
         backend = MockUIDrawBackend()
         history_screen.draw(backend, 1280, 720)
-        self.assertTrue(any("Dialogue History" in t[0] for t in backend.texts))
+        assert any("Dialogue History" in t[0] for t in backend.texts)
 
     def test_history_screen_draw_before_on_enter(self):
         from eager_graphics.screens import HistoryScreen
@@ -305,8 +311,8 @@ height = 720
         backend = MockUIDrawBackend()
         # Draw without session / before on_enter
         history_screen.draw(backend, 1280, 720)
-        self.assertTrue(any("Dialogue History" in t[0] for t in backend.texts))
-        self.assertTrue(any("No dialogue recorded yet." in t[0] for t in backend.texts))
+        assert any("Dialogue History" in t[0] for t in backend.texts)
+        assert any("No dialogue recorded yet." in t[0] for t in backend.texts)
         # Back button action should be safe to call even without session
         for btn in history_screen.buttons:
             if btn.text == "Back" and btn.action:
@@ -322,22 +328,22 @@ height = 720
         mgr.register(s2)
 
         mgr.show("s1", None)
-        self.assertTrue(mgr.is_active)
+        assert mgr.is_active
         assert mgr.active_screen is not None
-        self.assertEqual(mgr.active_screen.name, "s1")
+        assert mgr.active_screen.name == "s1"
 
         mgr.show("s2", None)
         assert mgr.active_screen is not None
-        self.assertEqual(mgr.active_screen.name, "s2")
+        assert mgr.active_screen.name == "s2"
 
         # Esc dismisses to previous
-        self.assertTrue(mgr.handle_key("escape", None))
+        assert mgr.handle_key("escape", None)
         assert mgr.active_screen is not None
-        self.assertEqual(mgr.active_screen.name, "s1")
+        assert mgr.active_screen.name == "s1"
 
         # Esc dismisses final
-        self.assertTrue(mgr.handle_key("escape", None))
-        self.assertFalse(mgr.is_active)
+        assert mgr.handle_key("escape", None)
+        assert not mgr.is_active
 
     def test_saveload_screen_renders_slot_metadata(self):
         from eager_graphics.screens import SaveLoadScreen
@@ -366,28 +372,30 @@ height = 720
 
         # Slot 1 button should contain title, timestamp, and snippet
         slot1_btn = screen.buttons[0]
-        self.assertIn("Slot 1: The Throne Room", slot1_btn.text)
-        self.assertIn("2026-10-13 15:30", slot1_btn.text)
-        self.assertIn("Welcome traveler to the kingdom.", slot1_btn.text)
+        assert "Slot 1: The Throne Room" in slot1_btn.text
+        assert "2026-10-13 15:30" in slot1_btn.text
+        assert "Welcome traveler to the kingdom." in slot1_btn.text
 
         # Slot 2 should show empty
         slot2_btn = screen.buttons[1]
-        self.assertIn("[Empty Slot]", slot2_btn.text)
+        assert "[Empty Slot]" in slot2_btn.text
 
         # Draw screen
         backend = MockUIDrawBackend()
         screen.draw(backend, 1280, 720)
-        self.assertTrue(any("Slot 1: The Throne Room" in t[0] for t in backend.texts))
+        assert any("Slot 1: The Throne Room" in t[0] for t in backend.texts)
 
     def test_button_multiline_card_draw(self):
         btn = Button(Rect(10, 10, 200, 100), "Title Line\nSubtitle Line\nSnippet Line")
         backend = MockUIDrawBackend()
-        btn.draw(backend, Color(0, 0, 0, 1), Color(1, 1, 1, 1), Color(1, 1, 1, 1), Color(1, 1, 1, 1))
+        btn.draw(
+            backend, Color(0, 0, 0, 1), Color(1, 1, 1, 1), Color(1, 1, 1, 1), Color(1, 1, 1, 1)
+        )
 
         drawn_texts = [t[0] for t in backend.texts]
-        self.assertIn("Title Line", drawn_texts)
-        self.assertIn("Subtitle Line", drawn_texts)
-        self.assertIn("Snippet Line", drawn_texts)
+        assert "Title Line" in drawn_texts
+        assert "Subtitle Line" in drawn_texts
+        assert "Snippet Line" in drawn_texts
 
     def test_history_screen_voice_replay_speaker_buttons(self):
         from eager_graphics.screens import HistoryScreen
@@ -430,36 +438,42 @@ height = 720
 
         # Check buttons: Up, Down, Back + 3 speaker buttons for the 3 entries with voice
         speaker_buttons = [b for b in history_screen.buttons if b.text == "🔊"]
-        self.assertEqual(len(speaker_buttons), 3)
-        self.assertEqual(speaker_buttons[0].voice, "bob_01.ogg")
-        self.assertEqual(speaker_buttons[1].voice, "alice_02.ogg")
-        self.assertEqual(speaker_buttons[2].voice, "narrator_01.ogg")
+        assert len(speaker_buttons) == 3
+        assert speaker_buttons[0].voice == "bob_01.ogg"
+        assert speaker_buttons[1].voice == "alice_02.ogg"
+        assert speaker_buttons[2].voice == "narrator_01.ogg"
 
         # Test hover state
-        history_screen.handle_mouse_move(speaker_buttons[0].rect.x + 2, speaker_buttons[0].rect.y + 2)
-        self.assertTrue(speaker_buttons[0].hovered)
+        history_screen.handle_mouse_move(
+            speaker_buttons[0].rect.x + 2, speaker_buttons[0].rect.y + 2
+        )
+        assert speaker_buttons[0].hovered
 
         # Click the first speaker button to replay voice
-        clicked = history_screen.handle_mouse_click(speaker_buttons[0].rect.x + 2, speaker_buttons[0].rect.y + 2)
-        self.assertTrue(clicked)
-        self.assertEqual(session.audio.played, [("voice", "bob_01.ogg", False)])
+        clicked = history_screen.handle_mouse_click(
+            speaker_buttons[0].rect.x + 2, speaker_buttons[0].rect.y + 2
+        )
+        assert clicked
+        assert session.audio.played == [("voice", "bob_01.ogg", False)]
 
         # Click the second speaker button
-        clicked2 = history_screen.handle_mouse_click(speaker_buttons[1].rect.x + 2, speaker_buttons[1].rect.y + 2)
-        self.assertTrue(clicked2)
-        self.assertEqual(session.audio.played[-1], ("voice", "alice_02.ogg", False))
+        clicked2 = history_screen.handle_mouse_click(
+            speaker_buttons[1].rect.x + 2, speaker_buttons[1].rect.y + 2
+        )
+        assert clicked2
+        assert session.audio.played[-1] == ("voice", "alice_02.ogg", False)
 
         # Test draw with mock backend
         backend = MockUIDrawBackend()
         history_screen.draw(backend, 1280, 720)
         speaker_draws = [t for t in backend.texts if t[0] == "🔊"]
-        self.assertEqual(len(speaker_draws), 3)
+        assert len(speaker_draws) == 3
 
         # Test session.play_voice delegation if play_voice is provided on session
         session.play_voice_calls = []
         session.play_voice = lambda v: session.play_voice_calls.append(v)
         history_screen.replay_voice("custom_voice.ogg")
-        self.assertEqual(session.play_voice_calls, ["custom_voice.ogg"])
+        assert session.play_voice_calls == ["custom_voice.ogg"]
 
         # Scrolling test with voice buttons
         many_entries = [
@@ -474,13 +488,13 @@ height = 720
         # Offset 0: displays slice 8..15 (7 entries: indices 8, 9, 10, 11, 12, 13, 14)
         # Even indices in 8..14 are 8, 10, 12, 14 -> 4 speaker buttons
         btn_voices = [b.voice for b in history_screen2.buttons if b.voice]
-        self.assertEqual(btn_voices, ["voice_8.ogg", "voice_10.ogg", "voice_12.ogg", "voice_14.ogg"])
+        assert btn_voices == ["voice_8.ogg", "voice_10.ogg", "voice_12.ogg", "voice_14.ogg"]
 
         history_screen2.scroll_up()
         # After scroll_up (offset 1): displays slice 7..14 (indices 7, 8, 9, 10, 11, 12, 13)
         # Even indices: 8, 10, 12 -> 3 speaker buttons
         btn_voices2 = [b.voice for b in history_screen2.buttons if b.voice]
-        self.assertEqual(btn_voices2, ["voice_8.ogg", "voice_10.ogg", "voice_12.ogg"])
+        assert btn_voices2 == ["voice_8.ogg", "voice_10.ogg", "voice_12.ogg"]
 
     def test_proportional_layout_800x600_no_clipping(self):
         """Screens rendered at 800x600 must keep all widgets within bounds without clipping."""
@@ -498,33 +512,33 @@ height = 720
         back_btn = history.buttons[2]
 
         # In 800x600, all buttons must fit completely inside [0, 800] x [0, 600]
-        self.assertLess(up_btn.rect.x + up_btn.rect.width, 800.0)
-        self.assertLess(down_btn.rect.x + down_btn.rect.width, 800.0)
-        self.assertLess(back_btn.rect.y + back_btn.rect.height, 600.0)
-        self.assertGreater(up_btn.rect.x, 0.0)
-        self.assertGreater(back_btn.rect.y, 0.0)
+        assert up_btn.rect.x + up_btn.rect.width < 800.0
+        assert down_btn.rect.x + down_btn.rect.width < 800.0
+        assert back_btn.rect.y + back_btn.rect.height < 600.0
+        assert up_btn.rect.x > 0.0
+        assert back_btn.rect.y > 0.0
 
         # 2. SaveLoadScreen at 800x600: Grid and Back button must be within bounds
         save_screen = SaveLoadScreen("save", viewport_width=800, viewport_height=600)
         save_back = save_screen.buttons[-1]
-        self.assertLess(save_back.rect.y + save_back.rect.height, 600.0)
+        assert save_back.rect.y + save_back.rect.height < 600.0
         for b in save_screen.buttons:
-            self.assertLess(b.rect.x + b.rect.width, 800.0)
-            self.assertLess(b.rect.y + b.rect.height, 600.0)
+            assert b.rect.x + b.rect.width < 800.0
+            assert b.rect.y + b.rect.height < 600.0
 
         # 3. PreferencesScreen at 800x600: Sliders, labels, and buttons within bounds
         pref_screen = PreferencesScreen(viewport_width=800, viewport_height=600)
         pref_back = pref_screen.buttons[0]
-        self.assertLess(pref_back.rect.y + pref_back.rect.height, 600.0)
+        assert pref_back.rect.y + pref_back.rect.height < 600.0
         for s in pref_screen.sliders:
-            self.assertLess(s.rect.x + s.rect.width, 800.0)
-            self.assertLess(s.rect.y + s.rect.height, 600.0)
+            assert s.rect.x + s.rect.width < 800.0
+            assert s.rect.y + s.rect.height < 600.0
 
         # 4. TitleScreen at 800x600: Buttons within bounds
         title_screen = TitleScreen("Test Game", viewport_width=800, viewport_height=600)
         for b in title_screen.buttons:
-            self.assertLess(b.rect.x + b.rect.width, 800.0)
-            self.assertLess(b.rect.y + b.rect.height, 600.0)
+            assert b.rect.x + b.rect.width < 800.0
+            assert b.rect.y + b.rect.height < 600.0
 
     def test_proportional_layout_1920x1080_scales_beyond_1280x720(self):
         """Screens rendered at 1920x1080 must expand beyond the 1280x720 bounding area."""
@@ -539,22 +553,22 @@ height = 720
         history = HistoryScreen(viewport_width=1920, viewport_height=1080)
         up_btn = history.buttons[0]
         back_btn = history.buttons[2]
-        self.assertGreater(up_btn.rect.x, 1280.0)
-        self.assertGreater(back_btn.rect.y, 720.0)
+        assert up_btn.rect.x > 1280.0
+        assert back_btn.rect.y > 720.0
 
         # SaveLoadScreen: Grid slot buttons and back button should scale into 1080p space
         save_screen = SaveLoadScreen("save", viewport_width=1920, viewport_height=1080)
         save_back = save_screen.buttons[-1]
-        self.assertGreater(save_back.rect.y, 720.0)
+        assert save_back.rect.y > 720.0
 
         # PreferencesScreen: language buttons should extend past 1280 or sliders scale
         pref_screen = PreferencesScreen(viewport_width=1920, viewport_height=1080)
-        self.assertGreater(pref_screen.sliders[0].rect.width, 300.0)
+        assert pref_screen.sliders[0].rect.width > 300.0
 
         # TitleScreen: Buttons are wider and positioned lower than in 720p
         title_screen = TitleScreen("Test Game", viewport_width=1920, viewport_height=1080)
-        self.assertGreater(title_screen.buttons[0].rect.y, 300.0)
-        self.assertGreater(title_screen.buttons[0].rect.width, 240.0)
+        assert title_screen.buttons[0].rect.y > 300.0
+        assert title_screen.buttons[0].rect.width > 240.0
 
     def test_dynamic_viewport_resize(self):
         """ScreenManager and Screens should recompute layouts dynamically on resize."""
@@ -564,16 +578,16 @@ height = 720
         # Resize to 800x600 via set_viewport
         screen.set_viewport(800, 600)
         resized_rect = screen.buttons[0].rect
-        self.assertNotEqual(orig_btn_rect, resized_rect)
-        self.assertLess(resized_rect.width, orig_btn_rect.width)
-        self.assertLess(resized_rect.y, orig_btn_rect.y)
+        assert orig_btn_rect != resized_rect
+        assert resized_rect.width < orig_btn_rect.width
+        assert resized_rect.y < orig_btn_rect.y
 
         # Resize to 1920x1080 via draw
         backend = MockUIDrawBackend()
         screen.draw(backend, 1920, 1080)
         fhd_rect = screen.buttons[0].rect
-        self.assertGreater(fhd_rect.width, orig_btn_rect.width)
-        self.assertGreater(fhd_rect.y, orig_btn_rect.y)
+        assert fhd_rect.width > orig_btn_rect.width
+        assert fhd_rect.y > orig_btn_rect.y
 
     def test_font_size_scaling_with_viewport_height(self):
         """Screen font_size values must scale proportionally with viewport height relative to 720p."""
@@ -591,14 +605,14 @@ height = 720
         title_720 = TitleScreen("Title Test", viewport_width=1280, viewport_height=720)
         title_720.draw(backend_720, 1280, 720)
         texts_720 = {t[0]: t[3].get("font_size") for t in backend_720.texts}
-        self.assertEqual(texts_720["Title Test"], 32)
-        self.assertEqual(texts_720["Start Game"], 16)
+        assert texts_720["Title Test"] == 32
+        assert texts_720["Start Game"] == 16
 
         title_1080 = TitleScreen("Title Test", viewport_width=1920, viewport_height=1080)
         title_1080.draw(backend_1080, 1920, 1080)
         texts_1080 = {t[0]: t[3].get("font_size") for t in backend_1080.texts}
-        self.assertEqual(texts_1080["Title Test"], 48)  # 32 * 1.5
-        self.assertEqual(texts_1080["Start Game"], 24)  # 16 * 1.5
+        assert texts_1080["Title Test"] == 48  # 32 * 1.5
+        assert texts_1080["Start Game"] == 24  # 16 * 1.5
 
         # 2. SaveLoadScreen: header (28) and back button (16)
         backend_720.texts.clear()
@@ -606,14 +620,14 @@ height = 720
         save_720 = SaveLoadScreen("save", viewport_width=1280, viewport_height=720)
         save_720.draw(backend_720, 1280, 720)
         texts_720 = {t[0]: t[3].get("font_size") for t in backend_720.texts}
-        self.assertEqual(texts_720["Save Game"], 28)
-        self.assertEqual(texts_720["Back"], 16)
+        assert texts_720["Save Game"] == 28
+        assert texts_720["Back"] == 16
 
         save_1080 = SaveLoadScreen("save", viewport_width=1920, viewport_height=1080)
         save_1080.draw(backend_1080, 1920, 1080)
         texts_1080 = {t[0]: t[3].get("font_size") for t in backend_1080.texts}
-        self.assertEqual(texts_1080["Save Game"], 42)  # 28 * 1.5
-        self.assertEqual(texts_1080["Back"], 24)  # 16 * 1.5
+        assert texts_1080["Save Game"] == 42  # 28 * 1.5
+        assert texts_1080["Back"] == 24  # 16 * 1.5
 
         # 3. PreferencesScreen: header (28), labels (16, 18), back button (16)
         backend_720.texts.clear()
@@ -621,18 +635,18 @@ height = 720
         pref_720 = PreferencesScreen(viewport_width=1280, viewport_height=720)
         pref_720.draw(backend_720, 1280, 720)
         texts_720 = {t[0]: t[3].get("font_size") for t in backend_720.texts}
-        self.assertEqual(texts_720["Preferences"], 28)
-        self.assertEqual(texts_720["Master Volume"], 16)
-        self.assertEqual(texts_720["Language"], 18)
-        self.assertEqual(texts_720["Back"], 16)
+        assert texts_720["Preferences"] == 28
+        assert texts_720["Master Volume"] == 16
+        assert texts_720["Language"] == 18
+        assert texts_720["Back"] == 16
 
         pref_1080 = PreferencesScreen(viewport_width=1920, viewport_height=1080)
         pref_1080.draw(backend_1080, 1920, 1080)
         texts_1080 = {t[0]: t[3].get("font_size") for t in backend_1080.texts}
-        self.assertEqual(texts_1080["Preferences"], 42)  # 28 * 1.5
-        self.assertEqual(texts_1080["Master Volume"], 24)  # 16 * 1.5
-        self.assertEqual(texts_1080["Language"], 27)  # 18 * 1.5
-        self.assertEqual(texts_1080["Back"], 24)  # 16 * 1.5
+        assert texts_1080["Preferences"] == 42  # 28 * 1.5
+        assert texts_1080["Master Volume"] == 24  # 16 * 1.5
+        assert texts_1080["Language"] == 27  # 18 * 1.5
+        assert texts_1080["Back"] == 24  # 16 * 1.5
 
         # 4. HistoryScreen: header (28), empty (16), entry (14)
         backend_720.texts.clear()
@@ -640,14 +654,14 @@ height = 720
         hist_720 = HistoryScreen(viewport_width=1280, viewport_height=720)
         hist_720.draw(backend_720, 1280, 720)
         texts_720 = {t[0]: t[3].get("font_size") for t in backend_720.texts}
-        self.assertEqual(texts_720["Dialogue History"], 28)
-        self.assertEqual(texts_720["No dialogue recorded yet."], 16)
+        assert texts_720["Dialogue History"] == 28
+        assert texts_720["No dialogue recorded yet."] == 16
 
         hist_1080 = HistoryScreen(viewport_width=1920, viewport_height=1080)
         hist_1080.draw(backend_1080, 1920, 1080)
         texts_1080 = {t[0]: t[3].get("font_size") for t in backend_1080.texts}
-        self.assertEqual(texts_1080["Dialogue History"], 42)  # 28 * 1.5
-        self.assertEqual(texts_1080["No dialogue recorded yet."], 24)  # 16 * 1.5
+        assert texts_1080["Dialogue History"] == 42  # 28 * 1.5
+        assert texts_1080["No dialogue recorded yet."] == 24  # 16 * 1.5
 
     def test_screen_manager_and_screen_theme_propagation(self):
         """ScreenManager theme updates must propagate to registered screens."""
@@ -658,12 +672,8 @@ height = 720
         mgr = ScreenManager(theme=custom_theme)
         title = TitleScreen("Themed Title")
         mgr.register(title)
-        self.assertEqual(title.theme.name, "custom_dark")
+        assert title.theme.name == "custom_dark"
 
         new_theme = Theme(name="new_theme", font_size=18, title_font_size=36)
         mgr.set_theme(new_theme)
-        self.assertEqual(title.theme.name, "new_theme")
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert title.theme.name == "new_theme"

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
-import unittest
 import wave
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest import mock
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 
 def _create_dummy_wav(path: str, duration_sec: float = 0.5, sample_rate: int = 44100) -> None:
@@ -23,13 +26,13 @@ def _create_dummy_wav(path: str, duration_sec: float = 0.5, sample_rate: int = 4
         wf.writeframes(b"\x00" * (num_frames * 4))
 
 
-class TestHardwareAudioBackends(unittest.TestCase):
-    def setUp(self) -> None:
+class TestHardwareAudioBackends:
+    @pytest.fixture(autouse=True)
+    def setup_teardown(self) -> Generator[None, None, None]:
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.wav_path = os.path.join(self.tmp_dir.name, "test.wav")
         _create_dummy_wav(self.wav_path)
-
-    def tearDown(self) -> None:
+        yield
         self.tmp_dir.cleanup()
 
     def test_pyglet_audio_backend(self) -> None:
@@ -38,7 +41,7 @@ class TestHardwareAudioBackends(unittest.TestCase):
 
         backend = PygletAudioBackend()
         backend.play("music", self.wav_path, loop=True, volume=0.8, loop_start=0.1, loop_end=0.4)
-        self.assertTrue(backend.is_playing("music"))
+        assert backend.is_playing("music")
 
         backend.set_volume("music", 0.5)
         backend.update(0.1)
@@ -47,7 +50,7 @@ class TestHardwareAudioBackends(unittest.TestCase):
         backend.resume("music")
 
         backend.stop("music")
-        self.assertFalse(backend.is_playing("music"))
+        assert not backend.is_playing("music")
 
         backend.shutdown()
 
@@ -58,21 +61,21 @@ class TestHardwareAudioBackends(unittest.TestCase):
         backend = MiniaudioAudioBackend()
         backend.play("music", self.wav_path, loop=True, volume=0.8, loop_start=0.1, loop_end=0.4)
         if backend._active:
-            self.assertTrue(backend.is_playing("music"))
+            assert backend.is_playing("music")
 
         backend.set_volume("music", 0.5)
         backend.update(0.1)
 
         backend.pause("music")
-        self.assertFalse(backend.is_playing("music"))
+        assert not backend.is_playing("music")
         backend.resume("music")
 
         backend.stop("music")
-        self.assertFalse(backend.is_playing("music"))
+        assert not backend.is_playing("music")
 
         backend.shutdown()
 
-    def test_pyglet_audio_backend_error_handling(self) -> None:
+    def test_pyglet_audio_backend_error_handling(self, caplog: pytest.LogCaptureFixture) -> None:
         pytest.importorskip("pyglet")
         from eager_graphics.renderers.pyglet import PygletAudioBackend
 
@@ -80,24 +83,26 @@ class TestHardwareAudioBackends(unittest.TestCase):
         missing_path = os.path.join(self.tmp_dir.name, "missing.wav")
 
         # Missing audio file should log warning and not crash
-        with self.assertLogs("eager_graphics.renderers.pyglet", level="WARNING") as cm:
+        with caplog.at_level(logging.WARNING, logger="eager_graphics.renderers.pyglet"):
+            caplog.clear()
             backend.play("sfx", missing_path, loop=False)
-            self.assertFalse(backend.is_playing("sfx"))
-        self.assertTrue(any("missing.wav" in msg for msg in cm.output))
+            assert not backend.is_playing("sfx")
+            assert any("missing.wav" in msg for msg in caplog.messages)
 
         # Corrupt audio file should log warning and not crash
         corrupt_path = os.path.join(self.tmp_dir.name, "corrupt.wav")
         with open(corrupt_path, "wb") as f:
             f.write(b"invalid wave data")
 
-        with self.assertLogs("eager_graphics.renderers.pyglet", level="WARNING") as cm:
+        with caplog.at_level(logging.WARNING, logger="eager_graphics.renderers.pyglet"):
+            caplog.clear()
             backend.play("music", corrupt_path, loop=True)
-            self.assertFalse(backend.is_playing("music"))
-        self.assertTrue(any("corrupt.wav" in msg for msg in cm.output))
+            assert not backend.is_playing("music")
+            assert any("corrupt.wav" in msg for msg in caplog.messages)
 
         backend.shutdown()
 
-    def test_miniaudio_audio_backend_error_handling(self) -> None:
+    def test_miniaudio_audio_backend_error_handling(self, caplog: pytest.LogCaptureFixture) -> None:
         pytest.importorskip("miniaudio")
         from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
 
@@ -105,26 +110,29 @@ class TestHardwareAudioBackends(unittest.TestCase):
         missing_path = os.path.join(self.tmp_dir.name, "missing.wav")
 
         # Missing file on streaming channel (music)
-        with self.assertLogs("eager_graphics.renderers.miniaudio", level="WARNING") as cm:
+        with caplog.at_level(logging.WARNING, logger="eager_graphics.renderers.miniaudio"):
+            caplog.clear()
             backend.play("music", missing_path, loop=True)
-            self.assertFalse(backend.is_playing("music"))
-        self.assertTrue(any("missing.wav" in msg for msg in cm.output))
+            assert not backend.is_playing("music")
+            assert any("missing.wav" in msg for msg in caplog.messages)
 
         # Missing file on decoded channel (sfx)
-        with self.assertLogs("eager_graphics.renderers.miniaudio", level="WARNING") as cm:
+        with caplog.at_level(logging.WARNING, logger="eager_graphics.renderers.miniaudio"):
+            caplog.clear()
             backend.play("sfx", missing_path, loop=False)
-            self.assertFalse(backend.is_playing("sfx"))
-        self.assertTrue(any("missing.wav" in msg for msg in cm.output))
+            assert not backend.is_playing("sfx")
+            assert any("missing.wav" in msg for msg in caplog.messages)
 
         # Corrupt file on decoded channel
         corrupt_path = os.path.join(self.tmp_dir.name, "corrupt.wav")
         with open(corrupt_path, "wb") as f:
             f.write(b"invalid wave data")
 
-        with self.assertLogs("eager_graphics.renderers.miniaudio", level="WARNING") as cm:
+        with caplog.at_level(logging.WARNING, logger="eager_graphics.renderers.miniaudio"):
+            caplog.clear()
             backend.play("sfx", corrupt_path, loop=False)
-            self.assertFalse(backend.is_playing("sfx"))
-        self.assertTrue(any("corrupt.wav" in msg for msg in cm.output))
+            assert not backend.is_playing("sfx")
+            assert any("corrupt.wav" in msg for msg in caplog.messages)
 
         backend.shutdown()
 
@@ -136,7 +144,7 @@ class TestHardwareAudioBackends(unittest.TestCase):
         backend._active = False  # Simulate hardware device unavailability
         # Must return immediately without error
         backend.play("music", "test.wav", loop=True)
-        self.assertFalse(backend.is_playing("music"))
+        assert not backend.is_playing("music")
         backend.shutdown()
 
     def test_miniaudio_streaming_vs_decoding(self) -> None:
@@ -144,6 +152,7 @@ class TestHardwareAudioBackends(unittest.TestCase):
         from unittest.mock import patch
 
         import miniaudio
+
         try:
             miniaudio.PlaybackDevice()
         except miniaudio.MiniaudioError:
@@ -153,20 +162,22 @@ class TestHardwareAudioBackends(unittest.TestCase):
 
         backend = MiniaudioAudioBackend()
 
-        with patch.object(miniaudio, "stream_file", wraps=miniaudio.stream_file) as mock_stream, \
-             patch.object(miniaudio, "decode_file", wraps=miniaudio.decode_file) as mock_decode:
+        with (
+            patch.object(miniaudio, "stream_file", wraps=miniaudio.stream_file) as mock_stream,
+            patch.object(miniaudio, "decode_file", wraps=miniaudio.decode_file) as mock_decode,
+        ):
             # Long-running channel (music) must use stream_file
             backend.play("music", self.wav_path, loop=True)
-            self.assertTrue(mock_stream.called)
-            self.assertFalse(mock_decode.called)
+            assert mock_stream.called
+            assert not mock_decode.called
 
             mock_stream.reset_mock()
             mock_decode.reset_mock()
 
             # Short sound effect channel (sfx) must use decode_file
             backend.play("sfx", self.wav_path, loop=False)
-            self.assertTrue(mock_decode.called)
-            self.assertFalse(mock_stream.called)
+            assert mock_decode.called
+            assert not mock_stream.called
 
         backend.shutdown()
 
@@ -202,7 +213,7 @@ class TestHardwareAudioBackends(unittest.TestCase):
         for t in threads:
             t.join()
 
-        self.assertEqual(len(errors), 0)
+        assert len(errors) == 0
         backend.shutdown()
 
     def test_miniaudio_stream_eof_non_loop(self) -> None:
@@ -212,7 +223,7 @@ class TestHardwareAudioBackends(unittest.TestCase):
         backend = MiniaudioAudioBackend()
 
         class DummyStream:
-            def send(self, n):
+            def send(self, n: int) -> list[int]:
                 return []
 
         track = _ChannelTrack(
@@ -226,7 +237,7 @@ class TestHardwareAudioBackends(unittest.TestCase):
         backend._tracks["music"] = track
         if backend._generator is not None:
             backend._generator.send(100)
-            self.assertFalse(track.is_playing)
+            assert not track.is_playing
         backend.shutdown()
 
     def test_miniaudio_stream_stop_and_shutdown_clears_is_playing(self) -> None:
@@ -236,7 +247,7 @@ class TestHardwareAudioBackends(unittest.TestCase):
         backend = MiniaudioAudioBackend()
 
         class DummyStream:
-            def send(self, n):
+            def send(self, n: int) -> list[int]:
                 return [0] * 100
 
         track = _ChannelTrack(
@@ -248,9 +259,9 @@ class TestHardwareAudioBackends(unittest.TestCase):
             stream=DummyStream(),
         )
         backend._tracks["music"] = track
-        self.assertTrue(track.is_playing)
+        assert track.is_playing
         backend.stop("music")
-        self.assertFalse(track.is_playing)
+        assert not track.is_playing
 
         track2 = _ChannelTrack(
             samples=None,
@@ -261,11 +272,11 @@ class TestHardwareAudioBackends(unittest.TestCase):
             stream=DummyStream(),
         )
         backend._tracks["sfx"] = track2
-        self.assertTrue(track2.is_playing)
+        assert track2.is_playing
         backend.shutdown()
-        self.assertFalse(track2.is_playing)
+        assert not track2.is_playing
 
-    def test_miniaudio_stream_mid_playback_read_error(self) -> None:
+    def test_miniaudio_stream_mid_playback_read_error(self, caplog: pytest.LogCaptureFixture) -> None:
         """A stream raising an unhandled read error mid-playback must log WARNING and stop playing."""
         pytest.importorskip("miniaudio")
         from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend, _ChannelTrack
@@ -292,24 +303,24 @@ class TestHardwareAudioBackends(unittest.TestCase):
             stream=FaultyStream(),
         )
         backend._tracks["ambient"] = track
-        self.assertTrue(track.is_playing)
+        assert track.is_playing
 
         generator: Any = backend._generator
         if generator is not None:
             # First send consumes initial valid chunk
             _ = generator.send(50)
-            self.assertTrue(track.is_playing)
+            assert track.is_playing
 
             # Second send triggers FaultyStream error and logs WARNING
-            with self.assertLogs("eager_graphics.renderers.miniaudio", level="WARNING") as cm:
+            with caplog.at_level(logging.WARNING, logger="eager_graphics.renderers.miniaudio"):
+                caplog.clear()
                 _ = generator.send(50)
-                self.assertFalse(track.is_playing)
-
-            self.assertTrue(any("faulty_stream.wav" in msg for msg in cm.output))
+                assert not track.is_playing
+                assert any("faulty_stream.wav" in msg for msg in caplog.messages)
 
         backend.shutdown()
 
-    def test_miniaudio_missing_library_fallback(self) -> None:
+    def test_miniaudio_missing_library_fallback(self, caplog: pytest.LogCaptureFixture) -> None:
         """When miniaudio is not installed, MiniaudioAudioBackend must log warning and not crash."""
         import eager_graphics.renderers.miniaudio as ma_mod
 
@@ -318,19 +329,12 @@ class TestHardwareAudioBackends(unittest.TestCase):
             mock.patch.object(ma_mod, "miniaudio", None),
         ):
             ma_mod._WARNED_MISSING = False
-            with self.assertLogs("eager_graphics.renderers.miniaudio", level="WARNING") as cm:
+            with caplog.at_level(logging.WARNING, logger="eager_graphics.renderers.miniaudio"):
+                caplog.clear()
                 backend = ma_mod.MiniaudioAudioBackend()
-                self.assertFalse(backend._active)
+                assert not backend._active
                 backend.play("music", self.wav_path, loop=True)
-                self.assertFalse(backend.is_playing("music"))
+                assert not backend.is_playing("music")
                 backend.stop("music")
                 backend.shutdown()
-
-            self.assertTrue(any("is not installed" in msg for msg in cm.output))
-
-
-
-
-if __name__ == "__main__":
-    unittest.main()
-
+                assert any("is not installed" in msg for msg in caplog.messages)

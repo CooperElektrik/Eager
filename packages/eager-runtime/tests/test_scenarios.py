@@ -1,9 +1,4 @@
-"""Opaque-Box E2E Test Suite for cross-feature combinations and real-world application scenarios.
-
-Contains:
-  - Tier 3: Cross-Feature Combinations (7 tests)
-  - Tier 4: Real-World Application Scenarios (3 tests)
-"""
+"""E2E Test Suite for cross-feature combinations and real-world application scenarios."""
 
 from __future__ import annotations
 
@@ -25,13 +20,9 @@ from eager_runtime import (
 )
 from eager_runtime.i18n import extract_catalog
 
-# ==============================================================================
-# TIER 3: Cross-Feature Combinations
-# ==============================================================================
 
-
-class TestTier3CrossFeatureCombinations:
-    """Tier 3: Complex multi-feature integration, state resilience, and interplay."""
+class TestCrossFeatureScenarios:
+    """Complex multi-feature integration, state resilience, and interplay."""
 
     def test_choices_nested_inside_conditionals(self) -> None:
         script = """
@@ -230,13 +221,8 @@ Priest: May the light guide you.
         ]
 
 
-# ==============================================================================
-# TIER 4: Real-World Application Scenarios
-# ==============================================================================
-
-
-class TestTier4RealWorldApplicationScenarios:
-    """Tier 4: End-to-end realistic story applications and comprehensive pipelines."""
+class TestApplicationScenarios:
+    """End-to-end realistic story applications and comprehensive pipelines."""
 
     def test_complete_visual_novel_investigation_mystery(self, tmp_path: Path) -> None:
         """A complete multi-scene branching visual novel story:

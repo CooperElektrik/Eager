@@ -8,11 +8,11 @@ from typing import Any
 import eager_script
 import pytest
 from eager_core.audio import NullAudioBackend
-from eager_core.events import AppendEvent, ChoiceOption, DialogueEvent
+from eager_core.events import AppendEvent, ChoiceOption, DialogueEvent, NarrationEvent
 from eager_core.types import Color
 
 from eager_runtime import ChoicePromptEvent, GameSession, InputAction, InputPromptEvent
-from eager_runtime.headless import NullStage
+from eager_runtime.headless import NullStage, NullUI
 from eager_runtime.persistent import PersistentData
 
 SAMPLE_STORY = """
@@ -1006,6 +1006,283 @@ def test_null_stage_on_append() -> None:
     stage._on_append(AppendEvent(text="world!", line_number=1))
     assert stage.ui_state.text == "Hello world!"
     assert stage.ui_state.choices == []
+
+
+def test_step_by_step_session_rollback() -> None:
+    story = """
+## Room --- room
+You wake up in a quiet room.
+Alice: Are you ready to choose?
+"""
+    graph = eager_script.parse_graph(story)
+    session = GameSession(graph, headless=True)
+
+    # Step 1: Narration
+    e1 = session.advance()
+    assert isinstance(e1, NarrationEvent)
+    assert not session.can_rollback  # First checkpoint
+
+    # Step 2: Dialogue
+    e2 = session.advance()
+    assert isinstance(e2, DialogueEvent)
+    assert session.can_rollback
+
+    # Rollback reverts to before e2 (Narration)
+    assert session.rollback() is True
+    assert session.director.ui_state.text == "You wake up in a quiet room."
+
+    # Roll forward re-applies e2 (Dialogue)
+    assert session.roll_forward() is True
+    assert session.director.ui_state.speaker == "Alice"
+    assert session.director.ui_state.text == "Are you ready to choose?"
+
+
+def test_session_rollback_across_choice() -> None:
+    story = """
+## Room --- room
+You wake up in a quiet room.
+Alice: Are you ready to choose?
+? Go left (left_room)
+? Go right (right_room)
+
+## Left Room --- left_room
+Narrator: The left room is filled with books.
+
+## Right Room --- right_room
+Narrator: The right room is empty.
+"""
+    graph = eager_script.parse_graph(story)
+    session = GameSession(graph, headless=True)
+
+    # Advance through narration and dialogue to choice prompt
+    session.advance()  # Narration
+    session.advance()  # Dialogue
+    e3 = session.advance()  # Choice prompt
+    assert isinstance(e3, ChoicePromptEvent)
+
+    # Choose left_room (advances onto narration in left_room)
+    session.choose(0)
+    assert session.vm.current_scene_id == "left_room"
+    assert session.director.ui_state.text == "The left room is filled with books."
+
+    # Rollback back to choice prompt
+    assert session.rollback() is True
+    assert session.active_choice_prompt is not None
+
+    # Choose right_room instead
+    session.choose(1)
+    assert session.vm.current_scene_id == "right_room"
+    assert session.director.ui_state.text == "The right room is empty."
+
+
+def test_injected_stage_and_ui() -> None:
+    from eager_core.protocols import StageProtocol, UIProtocol
+
+    class CustomMockUIState:
+        def __init__(self) -> None:
+            self.speaker: str | None = None
+            self.text: str = ""
+            self.choices: list[Any] = []
+
+        def clear_choices(self) -> None:
+            self.choices.clear()
+
+        def clear_dialogue(self) -> None:
+            self.speaker = None
+            self.text = ""
+
+        def to_dict(self) -> dict[str, Any]:
+            return {"speaker": self.speaker, "text": self.text, "choices": self.choices}
+
+        @classmethod
+        def from_dict(cls, data: dict[str, Any]) -> CustomMockUIState:
+            inst = cls()
+            inst.speaker = data.get("speaker")
+            inst.text = data.get("text", "")
+            inst.choices = data.get("choices", [])
+            return inst
+
+    class CustomMockStage:
+        def __init__(self) -> None:
+            self.ui_state = CustomMockUIState()
+            self.stepped_dt: float = 0.0
+
+        def bind(self, dispatcher: Any) -> None:
+            dispatcher.on_event(DialogueEvent)(self._on_dialogue)
+            dispatcher.on_event(ChoicePromptEvent)(self._on_choice)
+
+        def _on_dialogue(self, event: DialogueEvent) -> None:
+            self.ui_state.speaker = event.speaker
+            self.ui_state.text = event.text
+
+        def _on_choice(self, event: ChoicePromptEvent) -> None:
+            self.ui_state.choices = list(event.options)
+
+        def step(self, dt: float) -> None:
+            self.stepped_dt += dt
+
+        def finish_animations(self) -> None:
+            pass
+
+        def save_visual_state(self) -> dict[str, Any]:
+            return {"custom_marker": 42}
+
+        def load_visual_state(self, state: dict[str, Any]) -> None:
+            pass
+
+        def save_ui_state(self) -> dict[str, Any]:
+            return self.ui_state.to_dict()
+
+        def restore_ui_state(self, state: dict[str, Any]) -> None:
+            self.ui_state = CustomMockUIState.from_dict(state)
+
+    class CustomMockUI:
+        def __init__(self) -> None:
+            self.error_overlay: str | None = None
+            self.viewports: list[tuple[int, int]] = []
+            self.draw_calls: int = 0
+            self.handled_inputs: list[InputAction] = []
+
+        def set_viewport(self, width: int, height: int) -> None:
+            self.viewports.append((width, height))
+
+        def draw(self, *args: Any, **kwargs: Any) -> None:
+            self.draw_calls += 1
+
+        def sync(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def hit_test_choice(self, x: float, y: float) -> int | None:
+            return None
+
+        def hit_test_quick_action(self, x: float, y: float) -> str | None:
+            return None
+
+        def get_selected_choice(self) -> int | None:
+            return None
+
+        def set_selected_choice(self, index: int | None) -> None:
+            pass
+
+        def set_choice_options(self, options: Any) -> None:
+            pass
+
+        def set_input_text(self, text: str) -> None:
+            pass
+
+        def update_input(self, dt: float) -> None:
+            pass
+
+        def set_dialogue_visible_chars(
+            self,
+            visible_chars: int | None = None,
+            *,
+            show_arrow: bool = True,
+        ) -> None:
+            pass
+
+        def complete_dialogue_reveal(self, *, show_arrow: bool = True) -> None:
+            pass
+
+        def get_hovered_quick_action(self) -> str | None:
+            return None
+
+        def set_hovered_quick_action(self, action: str | None) -> None:
+            pass
+
+        def set_history_entries(self, entries: Any) -> None:
+            pass
+
+        def set_history_scroll(self, offset: float) -> None:
+            pass
+
+        def scroll_history(self, delta: float) -> None:
+            pass
+
+        def get_current_screen(self) -> str | None:
+            return None
+
+        def set_current_screen(self, screen_id: str | None) -> None:
+            pass
+
+        def set_error(self, message: str | None) -> None:
+            self.error_overlay = message
+
+        def handle_input(self, action: InputAction, **kwargs: Any) -> bool:
+            self.handled_inputs.append(action)
+            return True
+
+    story = """
+## Start --- start
+Alice: Hello from custom stage!
+? Option 1 (opt1)
+? Option 2 (opt2)
+
+## Opt 1 --- opt1
+Narrator: Done.
+"""
+    graph = eager_script.parse_graph(story)
+    custom_stage = CustomMockStage()
+    custom_ui = CustomMockUI()
+
+    assert isinstance(custom_stage, StageProtocol)
+    assert isinstance(custom_ui, UIProtocol)
+
+    session = GameSession(graph, stage=custom_stage, ui=custom_ui)
+    assert session.stage is custom_stage
+    assert session.ui is custom_ui
+
+    ev = session.advance()
+    assert isinstance(ev, DialogueEvent)
+    assert custom_stage.ui_state.speaker == "Alice"
+    assert custom_stage.ui_state.text == "Hello from custom stage!"
+
+    session.update(0.1)
+    assert custom_stage.stepped_dt == pytest.approx(0.1)
+
+
+def test_null_stage_and_null_ui() -> None:
+    from eager_core.protocols import StageProtocol, UIProtocol
+    null_stage = NullStage()
+    null_ui = NullUI()
+    assert isinstance(null_stage, StageProtocol)
+    assert isinstance(null_ui, UIProtocol)
+
+    story = """## Start --- start\nIn the dark.\n"""
+    graph = eager_script.parse_graph(story)
+    session = GameSession(graph, stage=null_stage, ui=null_ui)
+    ev = session.advance()
+    assert isinstance(ev, NarrationEvent)
+    assert null_stage.ui_state.text == "In the dark."
+
+
+def test_default_headless_fallback_when_providers_empty() -> None:
+    from unittest.mock import patch
+
+    from eager_core.protocols import reset_providers
+    from eager_graphics import register_providers
+
+    story = """## Start --- start\nAlice: Test\n"""
+    graph = eager_script.parse_graph(story)
+
+    try:
+        reset_providers()
+        session_headless = GameSession(graph, headless=True)
+        assert isinstance(session_headless.stage, NullStage)
+        assert isinstance(session_headless.ui, NullUI)
+
+        with patch("eager_runtime.session.load_providers"):
+            reset_providers()
+            session_no_providers = GameSession(graph)
+            assert isinstance(session_no_providers.stage, NullStage)
+            assert isinstance(session_no_providers.ui, NullUI)
+
+            evt = session_no_providers.advance()
+            assert evt is not None
+            assert session_no_providers.director.ui_state.speaker == "Alice"
+    finally:
+        register_providers()
+
 
 
 
