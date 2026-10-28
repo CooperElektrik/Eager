@@ -152,7 +152,7 @@ session = GameSession(graph, audio_backend=NullAudioBackend())
 event = session.advance()
 
 # Submit text for active input prompts
-if session.is_waiting_input:
+if session.active_input_prompt is not None:
     session.submit_input("Hero")
 
 # Rollback state to prior interaction checkpoint

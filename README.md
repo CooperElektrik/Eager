@@ -40,7 +40,7 @@ eager-script ──┐
 
 ---
 
-## v1.0.0 Release Readiness
+## Release Readiness
 
 The codebase has undergone a comprehensive stabilization sprint across 6 hardening tracks:
 - **Track R1 (Syntax & AST Lowering)**: Hardened screenplay parser boundaries, inline choice lowering, and `{fast}` instant typewriter text reveal.

@@ -56,13 +56,14 @@ eager-script ──┐
 
 ```python
 # Direct submodule imports
-from eager_core.events import DialogueEvent, ChoiceEvent
+from eager_core.events import DialogueEvent, ChoicePromptEvent
 from eager_core.types import Color, Vec2
-from eager_script.expr import evaluate_expression
+from eager_script.expr import compile_expr
+from eager_script import parse_hook_args
 
 # Avoid: non-existent shims or missing root exports
 from eager_runtime.events import DialogueEvent       # Fails: no shim in runtime
-from eager_script import evaluate_expression         # Fails: not exported at root
+from eager_script import evaluate_expression         # Fails: no such function
 ```
 
 ### Expression evaluation
@@ -83,10 +84,10 @@ result = eval(expr_string, {}, context_variables)    # Prohibited
 ```python
 # Parse in script, handle in graphics
 from eager_script import parse_hook_args
-from eager_graphics.director import StageDirector
 
 args = parse_hook_args(raw_hook_string)
-StageDirector.dispatch_hook(hook_name, args)
+# Hook handlers are registered on the runtime event dispatcher
+# (StageDirector.bind wires them to stage compositor actions).
 ```
 
 ---

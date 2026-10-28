@@ -70,15 +70,16 @@ from eager_graphics.compositor import StageCompositor
 from eager_graphics.director import StageDirector, CharacterConfig
 
 # 1. Setup compositor with virtual canvas resolution
-compositor = StageCompositor(virtual_size=(1920, 1080))
+compositor = StageCompositor(virtual_width=1920, virtual_height=1080)
 
 # 2. Setup stage director and register characters
 director = StageDirector(compositor)
-director.register_character("guard", CharacterConfig(
-    display_name="Town Guard",
+director.register_character(
+    "guard",
+    name="Town Guard",
     color="#e74c3c",
-    default_side_image="assets/guard_neutral.png"
-))
+    side_image="assets/guard_neutral.png",
+)
 
 # 3. Handle dialogue events
 dialogue = DialogueEvent(speaker="guard", text="Welcome to the gates.")
