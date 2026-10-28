@@ -119,6 +119,11 @@ class Label:
     anchor_y: str = TextAnchor.TOP
 
     def draw(self, backend: UIDrawBackend) -> None:
+        """Render text label using draw backend.
+
+        Args:
+            backend: UIDrawBackend primitive rendering interface.
+        """
         backend.draw_text(
             self.x,
             self.y,
@@ -139,12 +144,27 @@ class Slider:
     on_change: Callable[[float], None] | None = None
 
     def hit_test(self, x: float, y: float) -> bool:
+        """Check whether cursor point lies within slider bounding rectangle.
+
+        Args:
+            x: Cursor X coordinate.
+            y: Cursor Y coordinate.
+
+        Returns:
+            True if point intersects slider rectangle.
+        """
         return (
             self.rect.x <= x <= self.rect.x + self.rect.width
             and self.rect.y <= y <= self.rect.y + self.rect.height
         )
 
     def handle_click(self, x: float, y: float) -> None:
+        """Process click event, updating slider value and invoking callback.
+
+        Args:
+            x: Click X coordinate.
+            y: Click Y coordinate.
+        """
         if self.hit_test(x, y):
             rel = (x - self.rect.x) / self.rect.width
             self.value = max(0.0, min(1.0, rel))
@@ -152,6 +172,13 @@ class Slider:
                 self.on_change(self.value)
 
     def draw(self, backend: UIDrawBackend, bar_color: Color, fill_color: Color) -> None:
+        """Render slider track background bar and filled value segment.
+
+        Args:
+            backend: UIDrawBackend primitive rendering interface.
+            bar_color: Color of empty background track.
+            fill_color: Color of active value fill bar.
+        """
         # Background bar
         backend.draw_rect(self.rect.x, self.rect.y, self.rect.width, self.rect.height, bar_color)
         # Filled portion

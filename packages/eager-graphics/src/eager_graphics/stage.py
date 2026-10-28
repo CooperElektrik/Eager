@@ -92,37 +92,66 @@ class StageElement:
 
     @property
     def asset_id(self) -> str:
+        """Visual asset identifier for this element."""
         return self.state.asset_id
 
     @asset_id.setter
     def asset_id(self, val: str) -> None:
+        """Set visual asset identifier.
+
+        Args:
+            val: New asset identifier string.
+        """
         self.state.asset_id = val
 
     @property
     def position(self) -> Vec2:
+        """Current 2D position vector in virtual coordinates."""
         return self.state.position
 
     @position.setter
     def position(self, val: Vec2) -> None:
+        """Set 2D position vector.
+
+        Args:
+            val: New Vec2 position coordinates.
+        """
         self.state.position = val
 
     @property
     def opacity(self) -> float:
+        """Opacity multiplier in the range [0.0, 1.0]."""
         return self.state.opacity
 
     @opacity.setter
     def opacity(self, val: float) -> None:
+        """Set element opacity clamped to [0.0, 1.0].
+
+        Args:
+            val: Opacity value.
+        """
         self.state.opacity = max(0.0, min(1.0, val))
 
     @property
     def visible(self) -> bool:
+        """Visibility flag for this element."""
         return self.state.visible
 
     @visible.setter
     def visible(self, val: bool) -> None:
+        """Set element visibility.
+
+        Args:
+            val: Boolean visibility flag.
+        """
         self.state.visible = val
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize element to dictionary.
+
+        Returns:
+            Dictionary containing element_id and serialized state.
+        """
         return {
             "element_id": self.element_id,
             "state": self.state.to_dict(),
@@ -130,6 +159,14 @@ class StageElement:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> StageElement:
+        """Construct StageElement from serialized dictionary.
+
+        Args:
+            data: Dictionary containing element_id and state fields.
+
+        Returns:
+            Constructed StageElement instance.
+        """
         return cls(
             element_id=data["element_id"],
             state=ElementState.from_dict(data["state"]),

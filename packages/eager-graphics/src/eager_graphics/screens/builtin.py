@@ -30,6 +30,7 @@ class TitleScreen(Screen):
         self.rebuild_layout()
 
     def rebuild_layout(self) -> None:
+        """Recompute button dimensions and positions based on current viewport size."""
         vw = float(self.viewport_width)
         vh = float(self.viewport_height)
 
@@ -64,6 +65,11 @@ class TitleScreen(Screen):
         ]
 
     def on_enter(self, session: Any) -> None:
+        """Handle screen presentation entry and initialize viewport.
+
+        Args:
+            session: Active GameSession instance.
+        """
         super().on_enter(session)
         self.session = session
         if hasattr(session, "overlay") and session.overlay is not None:
@@ -74,6 +80,13 @@ class TitleScreen(Screen):
         self.rebuild_layout()
 
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
+        """Render title screen background, title text, and menu buttons.
+
+        Args:
+            backend: UIDrawBackend primitive rendering interface.
+            width: Target render surface width in pixels.
+            height: Target render surface height in pixels.
+        """
         super().draw(backend, width, height)
 
         vw = float(self.viewport_width)
@@ -121,6 +134,7 @@ class SaveLoadScreen(Screen):
         self.rebuild_layout()
 
     def rebuild_layout(self) -> None:
+        """Reconstruct slot grid buttons and metadata previews for current viewport."""
         self.buttons.clear()
 
         vw = float(self.viewport_width)
@@ -206,6 +220,11 @@ class SaveLoadScreen(Screen):
         )
 
     def on_enter(self, session: Any) -> None:
+        """Handle screen presentation entry and initialize viewport.
+
+        Args:
+            session: Active GameSession instance.
+        """
         super().on_enter(session)
         self.session = session
         if hasattr(session, "overlay") and session.overlay is not None:
@@ -216,6 +235,13 @@ class SaveLoadScreen(Screen):
         self.rebuild_layout()
 
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
+        """Render save/load screen slot buttons and navigation chrome.
+
+        Args:
+            backend: UIDrawBackend primitive rendering interface.
+            width: Target render surface width in pixels.
+            height: Target render surface height in pixels.
+        """
         super().draw(backend, width, height)
 
         vw = float(self.viewport_width)
@@ -256,6 +282,7 @@ class PreferencesScreen(Screen):
         self.rebuild_layout()
 
     def rebuild_layout(self) -> None:
+        """Reconstruct volume sliders, text speed controls, and language buttons."""
         self.buttons.clear()
         self.sliders.clear()
         self.labels.clear()
@@ -417,6 +444,11 @@ class PreferencesScreen(Screen):
             )
 
     def on_enter(self, session: Any) -> None:
+        """Handle preferences screen entry and sync controls.
+
+        Args:
+            session: Active GameSession instance.
+        """
         super().on_enter(session)
         self.session = session
         if hasattr(session, "overlay") and session.overlay is not None:
@@ -427,6 +459,13 @@ class PreferencesScreen(Screen):
         self.rebuild_layout()
 
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
+        """Render preferences screen controls, labels, and sliders.
+
+        Args:
+            backend: UIDrawBackend primitive rendering interface.
+            width: Target render surface width in pixels.
+            height: Target render surface height in pixels.
+        """
         super().draw(backend, width, height)
 
         vw = float(self.viewport_width)
@@ -478,6 +517,11 @@ class HistoryScreen(Screen):
         self._rebuild_buttons()
 
     def on_enter(self, session: Any) -> None:
+        """Handle history screen entry, resetting scroll offset.
+
+        Args:
+            session: Active GameSession instance.
+        """
         super().on_enter(session)
         self.session = session
         if hasattr(session, "overlay") and session.overlay is not None:
@@ -489,6 +533,7 @@ class HistoryScreen(Screen):
         self._rebuild_buttons()
 
     def rebuild_layout(self) -> None:
+        """Rebuild history scroll buttons and voice replay triggers."""
         self._rebuild_buttons()
 
     def _make_voice_action(self, voice_path: str) -> Callable[[], None]:
@@ -583,6 +628,7 @@ class HistoryScreen(Screen):
             curr_y += step_y
 
     def scroll_up(self) -> None:
+        """Scroll backward toward older dialogue entries."""
         if self.session is None:
             return
         backlog = getattr(self.session, "backlog", None)
@@ -592,6 +638,7 @@ class HistoryScreen(Screen):
             self._rebuild_buttons()
 
     def scroll_down(self) -> None:
+        """Scroll forward toward newer dialogue entries."""
         if self.session is None:
             return
         if self.scroll_offset > 0:
@@ -599,6 +646,13 @@ class HistoryScreen(Screen):
             self._rebuild_buttons()
 
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
+        """Render dialogue history lines, speaker labels, and navigation buttons.
+
+        Args:
+            backend: UIDrawBackend primitive rendering interface.
+            width: Target render surface width in pixels.
+            height: Target render surface height in pixels.
+        """
         super().draw(backend, width, height)
 
         vw = float(self.viewport_width)

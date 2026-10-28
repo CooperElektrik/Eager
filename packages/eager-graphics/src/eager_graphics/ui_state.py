@@ -23,6 +23,11 @@ class NVLEntry:
     emotion: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the NVL entry to a dictionary.
+
+        Returns:
+            Dictionary containing speaker, text, and emotion fields.
+        """
         return {
             "speaker": self.speaker,
             "text": self.text,
@@ -31,6 +36,14 @@ class NVLEntry:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> NVLEntry:
+        """Deserialize an NVL entry from a dictionary.
+
+        Args:
+            data: Dictionary containing speaker, text, and emotion fields.
+
+        Returns:
+            A reconstructed NVLEntry instance.
+        """
         return cls(
             speaker=data.get("speaker"),
             text=str(data.get("text", "")),

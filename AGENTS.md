@@ -113,12 +113,18 @@ A task is complete only when all steps pass:
    (cd packages/eager-graphics && uv run basedpyright src)
    (cd packages/eager-script-lsp && uv run basedpyright)
    ```
-4. **Git review:**
+4. **Docs build:**
+   ```bash
+   uv run mkdocs build
+```
+
+5. **Git review:**
    ```bash
    git status
    git diff --stat
    ```
-5. **Output reporting:** Report actual terminal outputs. Do not claim tests pass without running them.
+
+6. **Output reporting:** Report actual terminal outputs. Do not claim tests pass without running them.
 
 ---
 
@@ -147,4 +153,10 @@ uv run ruff check --fix packages/
 ### Search
 ```bash
 rg -C 10 "PatternName" packages/ --glob "!**/__pycache__/**"
+```
+
+### Documentation
+```bash
+uv run mkdocs build          # Build the docs site
+uv run mkdocs serve          # Serve docs locally (http://127.0.0.1:8000)
 ```

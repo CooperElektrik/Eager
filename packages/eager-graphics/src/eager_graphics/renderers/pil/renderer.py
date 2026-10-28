@@ -1825,9 +1825,11 @@ class PILRenderer(RenderBackend):
         return result
 
     def __len__(self) -> int:
+        """Return the number of draw commands in the last rendered frame."""
         return len(self.last_frame)
 
     def __repr__(self) -> str:
+        """Return a string representation of the PIL renderer state."""
         return (
             f"PILRenderer(width={self.width}, height={self.height}, "
             f"frame_count={self.frame_count}, last_frame_items={len(self.last_frame)}, "

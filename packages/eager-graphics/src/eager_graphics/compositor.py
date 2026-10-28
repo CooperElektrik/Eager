@@ -900,47 +900,22 @@ class StageCompositor:
         either to simulate a fixed slice of time, or to drive the timeline
         until a caller-supplied condition (e.g. "all tweens resolved") is met.
 
-        Parameters
-        ----------
-        render_backend : RenderBackend, optional
-            If provided and *render* is ``True``, each step's
-            :meth:`render_list` is flushed through the backend via
-            ``begin_frame`` / ``draw_item`` / ``end_frame``.
-        dt : float
-            Fixed timestep per frame (default ``1/60`` ≈ 60 FPS).
-        max_steps : int, optional
-            Hard cap on the number of frames.  If ``None``, the loop runs
-            until ``until`` returns ``True``.  At least one of ``max_steps``
-            or ``until`` must be provided.  If both are given, the loop
-            stops when whichever condition fires first.
-        until : callable, optional
-            A zero-argument predicate called after each step.  When it returns
-            ``True``, the loop stops.  Examples:
+        Args:
+            render_backend: If provided and render is True, each step's render_list
+                is flushed through the backend via begin_frame / draw_item / end_frame.
+            dt: Fixed timestep per frame in seconds. Defaults to 1/60.
+            max_steps: Hard cap on the number of frames. If None, the loop runs
+                until until returns True. At least one of max_steps or until must be provided.
+            until: A zero-argument predicate called after each step. When it returns
+                True, the loop stops.
+            render: If True, flush each frame through render_backend.
 
-            ::
-
-                # Run until no tweens are active:
-                comp.run_headless(until=lambda: not comp.timeline.has_tweens())
-
-                # Run for exactly 60 frames without rendering:
-                comp.run_headless(max_steps=60)
-
-                # Run + render for 120 frames into a NullRenderer:
-                comp.run_headless(backend, max_steps=120, render=True)
-        render : bool
-            If ``True``, flush each frame through *render_backend*.
-            ``render_backend`` must be provided when this is ``True``.
-
-        Returns
-        -------
-        int
+        Returns:
             The number of frames actually stepped.
 
-        Raises
-        ------
-        ValueError
-            If both ``max_steps`` and ``until`` are ``None``, or if
-            ``render`` is ``True`` without a ``render_backend``.
+        Raises:
+            ValueError: If both max_steps and until are None, or if render is True
+                without a render_backend.
         """
         if render and render_backend is None:
             msg = "render=True requires a render_backend"

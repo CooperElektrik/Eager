@@ -105,6 +105,11 @@ def _cmd_graph(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build and configure the command-line argument parser for eager-script.
+
+    Returns:
+        Configured ArgumentParser with parse, graph, and check subcommands.
+    """
     parser = argparse.ArgumentParser(
         prog="eager-script",
         description="Fast screenplay DSL parser and tool for visual novels and interactive fiction.",
@@ -167,6 +172,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run the eager-script command line tool.
+
+    Args:
+        argv: Command-line arguments. Defaults to sys.argv[1:].
+
+    Returns:
+        Exit code (0 for success, 1 for error).
+    """
     parser = build_parser()
     args = parser.parse_args(argv)
 

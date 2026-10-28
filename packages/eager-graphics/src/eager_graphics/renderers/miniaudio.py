@@ -309,6 +309,17 @@ class MiniaudioAudioBackend(BaseAudioBackend):
         loop_start: float | None = None,
         loop_end: float | None = None,
     ) -> None:
+        """Start playback of an audio asset on the specified channel.
+
+        Args:
+            channel: Target audio channel name.
+            asset_path: Path or filename of the sound asset to play.
+            loop: Whether the audio repeats when finished. Defaults to False.
+            volume: Normalized playback volume in the range [0.0, 1.0]. Defaults to 1.0.
+            fade_in: Duration of volume fade-in in seconds. Defaults to 0.0.
+            loop_start: Optional loop start offset in seconds.
+            loop_end: Optional loop end offset in seconds.
+        """
         if not self._active or not MINIAUDIO_AVAILABLE or miniaudio is None:
             return
 
@@ -377,41 +388,77 @@ class MiniaudioAudioBackend(BaseAudioBackend):
             self._tracks[channel] = track
 
     def stop(self, channel: str, *, fade_out: float = 0.0) -> None:
+        """Halt playback on the specified channel.
+
+        Args:
+            channel: Target audio channel name.
+            fade_out: Duration of fade out in seconds. Defaults to 0.0.
+        """
         with self._lock:
             track = self._tracks.pop(channel, None)
             if track is not None:
                 track.is_playing = False
 
     def set_volume(self, channel: str, volume: float) -> None:
+        """Set playback volume for an audio channel.
+
+        Args:
+            channel: Target audio channel name.
+            volume: Normalized volume level in the range [0.0, 1.0].
+        """
         with self._lock:
             track = self._tracks.get(channel)
             if track is not None:
                 track.volume = max(0.0, min(1.0, volume))
 
     def pause(self, channel: str) -> None:
+        """Pause playback on the specified channel.
+
+        Args:
+            channel: Target audio channel name.
+        """
         with self._lock:
             track = self._tracks.get(channel)
             if track is not None:
                 track.is_paused = True
 
     def resume(self, channel: str) -> None:
+        """Resume playback on a paused channel.
+
+        Args:
+            channel: Target audio channel name.
+        """
         with self._lock:
             track = self._tracks.get(channel)
             if track is not None:
                 track.is_paused = False
 
     def is_playing(self, channel: str) -> bool:
+        """Check whether audio is actively playing on the channel.
+
+        Args:
+            channel: Target audio channel name.
+
+        Returns:
+            True if audio is playing and not paused.
+        """
         with self._lock:
             track = self._tracks.get(channel)
             return bool(track is not None and track.is_playing and not track.is_paused)
 
     def update(self, dt: float) -> None:
+        """Clean up finished non-looping audio tracks.
+
+        Args:
+            dt: Delta time elapsed in seconds.
+        """
         with self._lock:
             for ch, track in list(self._tracks.items()):
                 if not track.is_playing:
                     del self._tracks[ch]
 
     def shutdown(self) -> None:
+        """Stop all active audio tracks and release the playback device."""
         with self._lock:
             for track in self._tracks.values():
                 track.is_playing = False

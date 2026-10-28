@@ -28,6 +28,15 @@ _POOL_SUFFIX_RE = re.compile(r"^(.*)_(\d+)$")
 
 
 class AudioMixerSaveState(TypedDict):
+    """Serialized state representation of an AudioMixer for saves and checkpoints.
+
+    Attributes:
+        master_volume: Master volume scaling factor across all channels in [0.0, 1.0].
+        channel_volumes: Mapping of channel names to category volume multipliers.
+        channels: Dictionary of serialized channel state dictionaries.
+        serial_counter: Counter for tracking playback serial allocations.
+    """
+
     master_volume: float
     channel_volumes: dict[str, float]
     channels: dict[str, dict[str, object]]
@@ -48,27 +57,74 @@ class AudioBackend(Protocol):
         loop_start: float | None = None,
         loop_end: float | None = None,
     ) -> None:
+        """Start playing an audio asset on the given channel.
+
+        Args:
+            channel: Target channel identifier (e.g. 'music', 'sound', 'voice').
+            asset_path: Path or filename of the audio resource to play.
+            loop: Whether the audio track should repeat seamlessly. Defaults to False.
+            volume: Channel playback volume multiplier in the range [0.0, 1.0].
+            fade_in: Duration of linear fade-in volume transition in seconds.
+            loop_start: Optional loop start position in seconds.
+            loop_end: Optional loop end position in seconds.
+        """
         ...
 
     def stop(self, channel: str, *, fade_out: float = 0.0) -> None:
+        """Stop audio playback on the specified channel.
+
+        Args:
+            channel: Identifier of the channel to halt.
+            fade_out: Duration in seconds to fade out volume before stopping.
+        """
         ...
 
     def set_volume(self, channel: str, volume: float) -> None:
+        """Adjust the output volume for a specific audio channel.
+
+        Args:
+            channel: Target channel identifier.
+            volume: Normalized volume level in the range [0.0, 1.0].
+        """
         ...
 
     def pause(self, channel: str) -> None:
+        """Pause playback on the given channel.
+
+        Args:
+            channel: Target channel identifier.
+        """
         ...
 
     def resume(self, channel: str) -> None:
+        """Resume playback on a paused channel.
+
+        Args:
+            channel: Target channel identifier.
+        """
         ...
 
     def is_playing(self, channel: str) -> bool:
+        """Check whether audio is currently actively playing on the channel.
+
+        Args:
+            channel: Target channel identifier.
+
+        Returns:
+            True if audio is actively playing on the channel.
+        """
         ...
 
     def update(self, dt: float) -> None:
+        """Tick per-frame backend processing, buffers, and active fades.
+
+        Args:
+            dt: Delta time elapsed since the previous update tick in seconds.
+        """
         ...
 
     def shutdown(self) -> None:
+        """Release audio devices, streams, and underlying backend resources."""
         ...
 
 
@@ -76,7 +132,11 @@ class BaseAudioBackend:
     """Base class providing default no-op implementations for optional lifecycle hooks."""
 
     def update(self, dt: float) -> None:
-        """Periodic per-frame audio pump/update tick."""
+        """Periodic per-frame audio pump/update tick.
+
+        Args:
+            dt: Delta time elapsed since last frame in seconds.
+        """
         _ = dt
 
     def shutdown(self) -> None:
@@ -106,6 +166,11 @@ class ChannelState:
     stop_on_fade_complete: bool = False
 
     def to_dict(self) -> dict[str, object]:
+        """Serialize channel playback state to a dictionary.
+
+        Returns:
+            Dictionary containing state fields and active fade parameters.
+        """
         return {
             "name": self.name,
             "current_asset": self.current_asset,
@@ -126,6 +191,14 @@ class ChannelState:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, object]) -> ChannelState:
+        """Construct a ChannelState instance from serialized dictionary data.
+
+        Args:
+            data: Mapping containing channel state attributes.
+
+        Returns:
+            Deserialized ChannelState instance.
+        """
         raw_queue = data.get("queue")
         queue_list = [str(x) for x in cast(list[object], raw_queue)] if isinstance(raw_queue, list) else []
         name_val = data["name"]
@@ -160,6 +233,7 @@ class NullAudioBackend:
     """Headless no-op audio backend recording calls for test inspection."""
 
     def __init__(self) -> None:
+        """Initialize the null backend with empty call records."""
         self.calls: list[tuple[object, ...]] = []
         self._playing_channels: set[str] = set()
         self.shutdown_called: bool = False
@@ -175,29 +249,76 @@ class NullAudioBackend:
         loop_start: float | None = None,
         loop_end: float | None = None,
     ) -> None:
+        """Record a play call and mark the channel as playing.
+
+        Args:
+            channel: Target audio channel name.
+            asset_path: Asset file path or identifier.
+            loop: Whether playback repeats in a loop.
+            volume: Initial volume level [0.0, 1.0].
+            fade_in: Fade in duration in seconds.
+            loop_start: Loop start time offset in seconds.
+            loop_end: Loop end time offset in seconds.
+        """
         self.calls.append(("play", channel, str(asset_path), loop, volume, fade_in, loop_start, loop_end))
         self._playing_channels.add(channel)
 
     def stop(self, channel: str, *, fade_out: float = 0.0) -> None:
+        """Record a stop call and remove the channel from playing set.
+
+        Args:
+            channel: Audio channel name to stop.
+            fade_out: Fade out duration in seconds.
+        """
         self.calls.append(("stop", channel, fade_out))
         self._playing_channels.discard(channel)
 
     def set_volume(self, channel: str, volume: float) -> None:
+        """Record a volume update for a channel.
+
+        Args:
+            channel: Target audio channel name.
+            volume: New volume multiplier in [0.0, 1.0].
+        """
         self.calls.append(("set_volume", channel, volume))
 
     def pause(self, channel: str) -> None:
+        """Record a pause call for a channel.
+
+        Args:
+            channel: Audio channel name to pause.
+        """
         self.calls.append(("pause", channel))
 
     def resume(self, channel: str) -> None:
+        """Record a resume call for a channel.
+
+        Args:
+            channel: Audio channel name to resume.
+        """
         self.calls.append(("resume", channel))
 
     def is_playing(self, channel: str) -> bool:
+        """Check whether the channel is currently recorded as playing.
+
+        Args:
+            channel: Audio channel name.
+
+        Returns:
+            True if channel is currently playing in this backend.
+        """
         return channel in self._playing_channels
 
     def update(self, dt: float) -> None:
+        """Record an update tick.
+
+        Args:
+            dt: Delta time elapsed in seconds.
+        """
         self.calls.append(("update", dt))
 
     def shutdown(self) -> None:
+        """Record a shutdown call and set shutdown_called flag."""
         self.shutdown_called = True
         self.calls.append(("shutdown",))
 
@@ -218,6 +339,12 @@ class AudioMixer:
         backend: AudioBackend | None = None,
         asset_dir: Path | str | None = None,
     ) -> None:
+        """Initialize AudioMixer with an audio backend and optional asset directory.
+
+        Args:
+            backend: Concrete AudioBackend implementation. Defaults to NullAudioBackend if None.
+            asset_dir: Base directory path for resolving relative audio asset paths.
+        """
         self.backend: AudioBackend = backend if backend is not None else NullAudioBackend()
         self.asset_dir: Path | None = Path(asset_dir) if asset_dir is not None else None
         if backend is None:

@@ -213,88 +213,160 @@ _providers_loaded: bool = False
 
 
 def register_stage_factory(factory: StageFactory | None) -> None:
-    """Register a global factory callable returning a StageProtocol instance."""
+    """Register a global factory callable returning a StageProtocol instance.
+
+    Args:
+        factory: Callable that creates a StageProtocol, or None to unregister.
+    """
     logger.debug("Registering stage factory: %s", factory)
     global _stage_factory
     _stage_factory = factory
 
 
 def get_stage_factory() -> StageFactory | None:
-    """Return the registered stage factory callable, if any."""
+    """Return the registered stage factory callable, if any.
+
+    Returns:
+        Registered StageFactory callable or None.
+    """
     return _stage_factory
 
 
 def register_ui_factory(factory: UIFactory | None) -> None:
-    """Register a global factory callable returning a UIProtocol instance."""
+    """Register a global factory callable returning a UIProtocol instance.
+
+    Args:
+        factory: Callable that creates a UIProtocol, or None to unregister.
+    """
     logger.debug("Registering UI factory: %s", factory)
     global _ui_factory
     _ui_factory = factory
 
 
 def get_ui_factory() -> UIFactory | None:
-    """Return the registered UI factory callable, if any."""
+    """Return the registered UI factory callable, if any.
+
+    Returns:
+        Registered UIFactory callable or None.
+    """
     return _ui_factory
 
 
 def register_screen_manager_factory(factory: ScreenManagerFactory | None) -> None:
-    """Register a global factory callable returning a ScreenManagerProtocol instance."""
+    """Register a global factory callable returning a ScreenManagerProtocol instance.
+
+    Args:
+        factory: Callable that creates a ScreenManagerProtocol, or None to unregister.
+    """
     logger.debug("Registering screen manager factory: %s", factory)
     global _screen_manager_factory
     _screen_manager_factory = factory
 
 
 def get_screen_manager_factory() -> ScreenManagerFactory | None:
-    """Return the registered screen manager factory callable, if any."""
+    """Return the registered screen manager factory callable, if any.
+
+    Returns:
+        Registered ScreenManagerFactory callable or None.
+    """
     return _screen_manager_factory
 
 
 def register_theme_factory(factory: ThemeFactory | None) -> None:
-    """Register a global factory callable returning a theme instance."""
+    """Register a global factory callable returning a theme instance.
+
+    Args:
+        factory: Callable that creates a Theme, or None to unregister.
+    """
     logger.debug("Registering theme factory: %s", factory)
     global _theme_factory
     _theme_factory = factory
 
 
 def get_theme_factory() -> ThemeFactory | None:
-    """Return the registered theme factory callable, if any."""
+    """Return the registered theme factory callable, if any.
+
+    Returns:
+        Registered ThemeFactory callable or None.
+    """
     return _theme_factory
 
 
 def register_player(backend: str, player_cls: Any) -> None:
-    """Register an interactive player implementation for *backend* (e.g. 'pil', 'pyglet')."""
+    """Register an interactive player implementation for *backend* (e.g. 'pil', 'pyglet').
+
+    Args:
+        backend: Name of the backend identifier (e.g. 'pil', 'pyglet').
+        player_cls: Class or factory implementing the interactive player runner.
+    """
     logger.debug("Registering player backend %r: %s", backend, player_cls)
     _player_factories[backend.lower()] = player_cls
 
 
 def get_player(backend: str) -> Any | None:
-    """Retrieve an interactive player implementation by backend name."""
+    """Retrieve an interactive player implementation by backend name.
+
+    Args:
+        backend: Name of the backend identifier.
+
+    Returns:
+        Registered player class/factory, or None if not registered.
+    """
     return _player_factories.get(backend.lower())
 
 
 def list_players() -> list[str]:
-    """Return list of registered player backend names."""
+    """Return list of registered player backend names.
+
+    Returns:
+        Sorted list of registered player backend names.
+    """
     return sorted(_player_factories.keys())
 
 
 def register_audio_backend(backend: str, audio_factory: Any) -> None:
-    """Register an audio backend factory for *backend* (e.g. 'pyglet', 'miniaudio')."""
+    """Register an audio backend factory for *backend* (e.g. 'pyglet', 'miniaudio').
+
+    Args:
+        backend: Name of the audio backend identifier.
+        audio_factory: Factory or class constructing an AudioBackend instance.
+    """
     logger.debug("Registering audio backend %r: %s", backend, audio_factory)
     _audio_backends[backend.lower()] = audio_factory
 
 
 def get_audio_backend(backend: str) -> Any | None:
-    """Retrieve an audio backend factory by backend name."""
+    """Retrieve an audio backend factory by backend name.
+
+    Args:
+        backend: Name of the audio backend identifier.
+
+    Returns:
+        Registered audio backend class/factory, or None.
+    """
     return _audio_backends.get(backend.lower())
 
 
 def register_renderer(backend: str, renderer_factory: Any) -> None:
-    """Register a renderer backend factory (e.g. 'null', 'pil', 'pyglet')."""
+    """Register a renderer backend factory (e.g. 'null', 'pil', 'pyglet').
+
+    Args:
+        backend: Name of the renderer backend identifier.
+        renderer_factory: Factory or class constructing a RenderBackend instance.
+    """
     logger.debug("Registering renderer backend %r: %s", backend, renderer_factory)
     _renderer_factories[backend.lower()] = renderer_factory
 
 
 def get_renderer(backend: str) -> Any | None:
-    """Retrieve a renderer backend factory by name."""
+    """Retrieve a renderer backend factory by name.
+
+    Args:
+        backend: Name of the renderer backend identifier.
+
+    Returns:
+        Registered renderer class/factory, or None.
+    """
     return _renderer_factories.get(backend.lower())
 
 

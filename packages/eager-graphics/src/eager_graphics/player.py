@@ -85,6 +85,11 @@ class BasePlayer:
 
     @show_fps.setter
     def show_fps(self, value: bool | str | DebugOverlayMode) -> None:
+        """Configure debug overlay mode from boolean flag, string name, or enum.
+
+        Args:
+            value: Boolean toggle, mode name string, or DebugOverlayMode enum.
+        """
         if isinstance(value, DebugOverlayMode):
             self.debug_mode = value
         elif isinstance(value, str):

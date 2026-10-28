@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="eager-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5" />
+      <stop offset="100%" stop-color="#7c3aed" />
+    </linearGradient>
+    <linearGradient id="eager-accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa" />
+      <stop offset="100%" stop-color="#a78bfa" />
+    </linearGradient>
+  </defs>
+  <!-- Background rounded rect -->
+  <rect width="128" height="128" rx="28" fill="url(#eager-grad)" />
+  <!-- Narrative Book / Screenplay pages -->
+  <path d="M 28 40 C 28 36, 32 32, 38 32 L 60 36 C 62 36.4, 64 38, 64 40 L 64 96 C 64 94, 60 92, 54 92 L 34 92 C 30.7 92, 28 89.3, 28 86 Z" fill="white" opacity="0.9" />
+  <path d="M 100 40 C 100 36, 96 32, 90 32 L 68 36 C 66 36.4, 64 38, 64 40 L 64 96 C 64 94, 68 92, 74 92 L 94 92 C 97.3 92, 100 89.3, 100 86 Z" fill="white" opacity="0.95" />
+  <!-- Center spine & energy/play chevron: "Eager" -->
+  <polygon points="56,48 78,64 56,80" fill="url(#eager-grad)" />
+  <polyline points="44,52 56,64 44,76" fill="none" stroke="url(#eager-accent)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

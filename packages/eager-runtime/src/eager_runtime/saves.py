@@ -102,6 +102,11 @@ class SaveMetadata:
     version: int = 2
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize save metadata to a dictionary.
+
+        Returns:
+            Dictionary containing slot name, timestamp, playtime, and scene info.
+        """
         return {
             "version": self.version,
             "slot_name": self.slot_name,
@@ -115,6 +120,17 @@ class SaveMetadata:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SaveMetadata:
+        """Construct SaveMetadata from a serialized dictionary.
+
+        Args:
+            data: Dictionary containing serialized metadata fields.
+
+        Returns:
+            Constructed SaveMetadata instance.
+
+        Raises:
+            TypeError: If data is not a dictionary.
+        """
         if not isinstance(data, dict):
             raise TypeError(f"SaveMetadata data must be a dict, got {type(data).__name__}")
 
@@ -171,6 +187,11 @@ class SaveData:
     version: int = 1
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize complete save container to a dictionary.
+
+        Returns:
+            Dictionary containing schema version, metadata, and checkpoint state.
+        """
         return {
             "version": self.version,
             "metadata": self.metadata.to_dict(),
@@ -186,6 +207,17 @@ class SaveData:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SaveData:
+        """Construct SaveData container from a serialized dictionary.
+
+        Args:
+            data: Dictionary containing save data payload.
+
+        Returns:
+            Constructed SaveData instance.
+
+        Raises:
+            TypeError: If data or inner metadata/checkpoint structures are invalid types.
+        """
         from eager_runtime.state import Checkpoint
 
         if not isinstance(data, dict):

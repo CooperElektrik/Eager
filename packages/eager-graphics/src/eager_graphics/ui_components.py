@@ -1075,6 +1075,7 @@ class QuickMenu:
         self.theme = theme
 
     def set_viewport(self, width: int, height: int) -> None:
+        """Update viewport dimensions for quick menu layout."""
         self.viewport_width = width
         self.viewport_height = height
 
@@ -1174,6 +1175,7 @@ class UIOverlay:
     quick_menu: QuickMenu = field(init=False)
 
     def __post_init__(self) -> None:
+        """Initialize child UI components using current theme and dimensions."""
         if isinstance(self.theme, dict):
             try:
                 self.theme = Theme(**self.theme)

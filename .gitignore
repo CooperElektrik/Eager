@@ -48,3 +48,6 @@ concat_output.txt
 # Misc.
 
 .agents/
+
+# Docs build
+site/

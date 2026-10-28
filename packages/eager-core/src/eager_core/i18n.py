@@ -29,14 +29,30 @@ class TranslationCatalog:
     metadata: dict[str, str] = field(default_factory=dict)
 
     def get_text(self, key: str, default: str) -> str:
-        """Return translated string if present and non-empty, otherwise default."""
+        """Return translated string if present and non-empty, otherwise default.
+
+        Args:
+            key: Translation key identifier.
+            default: Fallback text used if the key is not in the catalog.
+
+        Returns:
+            Translated string or fallback default.
+        """
         val = self.strings.get(key)
         if val is not None and val.strip():
             return val
         return default
 
     def get_speaker(self, speaker: str, default: str | None = None) -> str:
-        """Return translated speaker name if present, otherwise default or speaker."""
+        """Return translated speaker name if present, otherwise default or speaker.
+
+        Args:
+            speaker: Speaker character name to translate.
+            default: Optional fallback if translation missing. Defaults to speaker.
+
+        Returns:
+            Translated speaker name.
+        """
         fallback = default if default is not None else speaker
         val = self.speakers.get(speaker)
         if val is not None and val.strip():
@@ -44,7 +60,11 @@ class TranslationCatalog:
         return fallback
 
     def to_dict(self) -> dict[str, object]:
-        """Serialize catalog to dictionary."""
+        """Serialize catalog to dictionary.
+
+        Returns:
+            Dictionary containing locale, metadata, speakers, and strings.
+        """
         return {
             "locale": self.locale,
             "metadata": self.metadata,
@@ -54,7 +74,17 @@ class TranslationCatalog:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, object]) -> TranslationCatalog:
-        """Create catalog from dictionary."""
+        """Create catalog from dictionary.
+
+        Args:
+            data: Mapping containing locale and translation dictionaries.
+
+        Returns:
+            Constructed TranslationCatalog instance.
+
+        Raises:
+            I18nError: If data is not a Mapping.
+        """
         if not isinstance(data, Mapping):
             raise I18nError(f"Expected mapping for TranslationCatalog.from_dict, got {type(data).__name__}")
         locale = str(data.get("locale", "default"))
@@ -67,12 +97,23 @@ class TranslationCatalog:
         return cls(locale=locale, strings=strings, speakers=speakers, metadata=meta)
 
     def save_json(self, path: Path | str) -> None:
-        """Save catalog atomically to a JSON file."""
+        """Save catalog atomically to a JSON file.
+
+        Args:
+            path: Destination file path.
+        """
         atomic_write_json(Path(path), self.to_dict())
 
     @classmethod
     def load_json(cls, path: Path | str) -> TranslationCatalog:
-        """Load catalog from a JSON file."""
+        """Load catalog from a JSON file.
+
+        Args:
+            path: Path to the JSON catalog file.
+
+        Returns:
+            Loaded TranslationCatalog instance.
+        """
         data = safe_read_json(Path(path), default={})
         if not isinstance(data, Mapping):
             return cls(locale=Path(path).stem)
@@ -86,16 +127,32 @@ class TranslationManager:
     """Manages loaded translation catalogs and active locale resolution."""
 
     def __init__(self, default_locale: str = "default") -> None:
+        """Initialize TranslationManager.
+
+        Args:
+            default_locale: Locale code to use as initial and fallback locale. Defaults to 'default'.
+        """
         self.catalogs: dict[str, TranslationCatalog] = {}
         self.active_locale: str = default_locale
         self.fallback_locale: str = default_locale
 
     def register_catalog(self, catalog: TranslationCatalog) -> None:
-        """Register or replace a translation catalog."""
+        """Register or replace a translation catalog.
+
+        Args:
+            catalog: TranslationCatalog instance to register.
+        """
         self.catalogs[catalog.locale.lower()] = catalog
 
     def load_directory(self, locales_dir: Path | str) -> list[str]:
-        """Scan a directory for JSON translation catalogs and load them."""
+        """Scan a directory for JSON translation catalogs and load them.
+
+        Args:
+            locales_dir: Directory containing `.json` catalog files.
+
+        Returns:
+            List of successfully loaded locale codes.
+        """
         p = Path(locales_dir)
         loaded: list[str] = []
         if not p.is_dir():
@@ -114,13 +171,28 @@ class TranslationManager:
         return loaded
 
     def set_locale(self, locale: str) -> None:
-        """Set active locale for translations."""
+        """Set active locale for translations.
+
+        Args:
+            locale: Language locale identifier (e.g. 'en', 'es', 'ja').
+
+        Raises:
+            I18nError: If locale is empty or whitespace.
+        """
         if not locale or not locale.strip():
             raise I18nError("Locale cannot be empty")
         self.active_locale = locale.lower()
 
     def translate(self, key: str, default: str) -> str:
-        """Translate string key with fallback to fallback_locale then source default."""
+        """Translate string key with fallback to fallback_locale then source default.
+
+        Args:
+            key: Text lookup key.
+            default: Source fallback string.
+
+        Returns:
+            Translated text or default.
+        """
         if self.active_locale in self.catalogs:
             cat = self.catalogs[self.active_locale]
             val = cat.get_text(key, default)
@@ -142,7 +214,14 @@ class TranslationManager:
         return default
 
     def translate_speaker(self, speaker: str) -> str:
-        """Translate speaker name with fallback to source speaker."""
+        """Translate speaker name with fallback to source speaker.
+
+        Args:
+            speaker: Speaker identifier string.
+
+        Returns:
+            Localized speaker name.
+        """
         if self.active_locale in self.catalogs:
             cat = self.catalogs[self.active_locale]
             return cat.get_speaker(speaker)
@@ -157,7 +236,11 @@ class TranslationManager:
         return speaker
 
     def available_locales(self) -> list[str]:
-        """Return sorted list of registered locale codes."""
+        """Return sorted list of registered locale codes.
+
+        Returns:
+            Sorted list of all registered locale codes including 'default'.
+        """
         locales = set(self.catalogs.keys())
         locales.add("default")
         return sorted(locales)

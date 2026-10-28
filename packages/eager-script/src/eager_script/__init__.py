@@ -46,9 +46,15 @@ class ParsedLabel:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('label')."""
         return "label"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize section label node to a dictionary.
+
+        Returns:
+            Dictionary containing node type, label name, and line number.
+        """
         return {
             "type": self.type,
             "name": self.name,
@@ -69,9 +75,15 @@ class ParsedDialogue:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('dialogue')."""
         return "dialogue"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize dialogue node to a dictionary.
+
+        Returns:
+            Dictionary containing speaker, text, voice, emotion, and line number.
+        """
         return {
             "type": self.type,
             "speaker": self.speaker,
@@ -91,9 +103,15 @@ class ParsedAppend:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('append')."""
         return "append"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize append beat node to a dictionary.
+
+        Returns:
+            Dictionary containing node type, append text, and line number.
+        """
         return {
             "type": self.type,
             "text": self.text,
@@ -110,9 +128,15 @@ class ParsedFreshBox:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('fresh_box')."""
         return "fresh_box"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize fresh box beat node to a dictionary.
+
+        Returns:
+            Dictionary containing node type, text, and line number.
+        """
         return {
             "type": self.type,
             "text": self.text,
@@ -129,9 +153,15 @@ class ParsedNarration:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('narration')."""
         return "narration"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize narration beat node to a dictionary.
+
+        Returns:
+            Dictionary containing node type, narration text, and line number.
+        """
         return {
             "type": self.type,
             "text": self.text,
@@ -156,6 +186,7 @@ class ParsedChoiceOption:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('choice_option')."""
         return "choice_option"
 
     @property
@@ -164,6 +195,11 @@ class ParsedChoiceOption:
         return bool(self.body)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize choice option node to a dictionary.
+
+        Returns:
+            Dictionary containing choice option fields and lowering metadata.
+        """
         return {
             "type": self.type,
             "text": self.text,
@@ -183,9 +219,15 @@ class ParsedChoiceSet:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('choice_set')."""
         return "choice_set"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize choice set node to a dictionary.
+
+        Returns:
+            Dictionary containing serialized choice options list and line number.
+        """
         return {
             "type": self.type,
             "options": [option.to_dict() for option in self.options],
@@ -202,9 +244,15 @@ class ParsedJump:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('jump')."""
         return "jump"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize jump node to a dictionary.
+
+        Returns:
+            Dictionary containing target scene ID and line number.
+        """
         return {
             "type": self.type,
             "target": self.target,
@@ -221,9 +269,15 @@ class ParsedCall:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('call')."""
         return "call"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize call node to a dictionary.
+
+        Returns:
+            Dictionary containing subroutine target scene ID and line number.
+        """
         return {
             "type": self.type,
             "target": self.target,
@@ -239,9 +293,15 @@ class ParsedReturn:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('return')."""
         return "return"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize return node to a dictionary.
+
+        Returns:
+            Dictionary containing node type and line number.
+        """
         return {
             "type": self.type,
             "line_number": self.line_number,
@@ -257,9 +317,15 @@ class ParsedHook:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('hook')."""
         return "hook"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize hook node to a dictionary.
+
+        Returns:
+            Dictionary containing hook name and line number.
+        """
         return {
             "type": self.type,
             "hook_name": self.hook_name,
@@ -278,9 +344,15 @@ class ParsedSet:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('set')."""
         return "set"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize set node to a dictionary.
+
+        Returns:
+            Dictionary containing target variable, operator, expression, and line number.
+        """
         return {
             "type": self.type,
             "target": self.target,
@@ -300,9 +372,15 @@ class ParsedDefault:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('default')."""
         return "default"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize default variable definition node to a dictionary.
+
+        Returns:
+            Dictionary containing variable name, expression, and line number.
+        """
         return {
             "type": self.type,
             "name": self.name,
@@ -322,9 +400,15 @@ class ParsedCharacter:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('character')."""
         return "character"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize character definition node to a dictionary.
+
+        Returns:
+            Dictionary containing character id, display name, attributes, and line number.
+        """
         return {
             "type": self.type,
             "id": self.id,
@@ -343,9 +427,15 @@ class ParsedIf:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('if')."""
         return "if"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize if node to a dictionary.
+
+        Returns:
+            Dictionary containing expression source and line number.
+        """
         return {
             "type": self.type,
             "expr_src": self.expr_src,
@@ -362,9 +452,15 @@ class ParsedElif:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('elif')."""
         return "elif"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize elif node to a dictionary.
+
+        Returns:
+            Dictionary containing expression source and line number.
+        """
         return {
             "type": self.type,
             "expr_src": self.expr_src,
@@ -380,9 +476,15 @@ class ParsedElse:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('else')."""
         return "else"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize else node to a dictionary.
+
+        Returns:
+            Dictionary containing node type and line number.
+        """
         return {
             "type": self.type,
             "line_number": self.line_number,
@@ -397,9 +499,15 @@ class ParsedEnd:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('end')."""
         return "end"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize end node to a dictionary.
+
+        Returns:
+            Dictionary containing node type and line number.
+        """
         return {
             "type": self.type,
             "line_number": self.line_number,
@@ -416,9 +524,15 @@ class ParsedCondJump:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('cond_jump')."""
         return "cond_jump"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize conditional jump node to a dictionary.
+
+        Returns:
+            Dictionary containing condition expression, target index, and line number.
+        """
         return {
             "type": self.type,
             "condition": self.condition,
@@ -436,9 +550,15 @@ class ParsedLocalJump:
 
     @property
     def type(self) -> str:
+        """Node type discriminator string ('local_jump')."""
         return "local_jump"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize local jump node to a dictionary.
+
+        Returns:
+            Dictionary containing target index and line number.
+        """
         return {
             "type": self.type,
             "target_index": self.target_index,

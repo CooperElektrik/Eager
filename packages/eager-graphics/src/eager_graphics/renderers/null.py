@@ -47,20 +47,11 @@ class NullRenderer(RenderBackend):
     mirrors :meth:`eager_graphics.renderers.pyglet.PygletRenderer.render_compositor`,
     so the two backends are interchangeable at call sites.
 
-    Attributes
-    ----------
-    last_frame : list[RenderItem]
-        A copy of every :class:`~eager_graphics.protocol.RenderItem` submitted during
-        the most recent completed frame.  Useful for assertions and inspection.
-    frame_count : int
-        Number of frames that have been fully rendered (i.e.
-        :meth:`end_frame` has been called that many times).
-    clear_color : Color
-        The color used to clear the (conceptually virtual) framebuffer.
-    clock : FrameClock
-        Frame timing helper.  Ticked once per ``end_frame``; exposes
-        :attr:`~FrameClock.fps`, :attr:`~FrameClock.fps_avg`, and
-        :attr:`~FrameClock.fps_overall` for debug overlays and benchmarks.
+    Attributes:
+        last_frame: A copy of every RenderItem submitted during the most recent completed frame.
+        frame_count: Number of frames that have been fully rendered.
+        clear_color: The color used to clear the virtual framebuffer.
+        clock: Frame timing helper for FPS measurement and benchmark assertions.
     """
 
     def __init__(self) -> None:
@@ -154,15 +145,10 @@ class NullRenderer(RenderBackend):
         :meth:`eager_graphics.renderers.pyglet.PygletRenderer.render_compositor` so
         that code can swap backends transparently.
 
-        Parameters
-        ----------
-        compositor : StageCompositor
-            The compositor to read the render list from.  It is *not* advanced
-            here — call ``compositor.update(dt)`` yourself before/after as your
-            game-loop dictates.
-        window_width, window_height : int
-            Physical window dimensions (kept for API parity; the NullRenderer
-            draws in virtual coordinates and does not scale).
+        Args:
+            compositor: The compositor to read the render list from.
+            window_width: Physical window width in pixels.
+            window_height: Physical window height in pixels.
         """
         self.begin_frame()
         self.clear(BLACK)
@@ -314,6 +300,7 @@ class NullRenderer(RenderBackend):
         return len(self.last_frame)
 
     def __repr__(self) -> str:
+        """Return a string representation of the null renderer state."""
         return (
             f"NullRenderer(frame_count={self.frame_count}, "
             f"last_frame_items={len(self.last_frame)}, "

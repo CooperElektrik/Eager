@@ -126,6 +126,11 @@ class ScreenManager:
                 screen.set_theme(theme)
 
     def register(self, screen: Screen) -> None:
+        """Register a Screen instance into the screen registry.
+
+        Args:
+            screen: Screen instance to register.
+        """
         if self.theme is not None and (screen.theme is None or screen.theme.name == "default"):
             screen.set_theme(self.theme)
         self.screens[screen.name] = screen
@@ -138,6 +143,15 @@ class ScreenManager:
         return self.active_screen is not None and self.active_screen.visible
 
     def show(self, name: str, session: Any) -> bool:
+        """Activate and display the screen identified by name.
+
+        Args:
+            name: Screen identifier string.
+            session: Active GameSession instance.
+
+        Returns:
+            True if the screen was found and displayed, False otherwise.
+        """
         if name not in self.screens:
             return False
         if self.active_screen is not None:
@@ -194,6 +208,13 @@ class ScreenManager:
         return False
 
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
+        """Render the active screen if one is visible.
+
+        Args:
+            backend: UIDrawBackend primitive drawing interface.
+            width: Viewport width in pixels.
+            height: Viewport height in pixels.
+        """
         if self.viewport_width != width or self.viewport_height != height:
             self.set_viewport(width, height)
         if self.active_screen and self.active_screen.visible:

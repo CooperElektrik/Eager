@@ -48,26 +48,33 @@ class PersistentData(collections.abc.MutableMapping[str, Any]):
         atomic_write_json(self._file_path, self._data)
 
     def __getitem__(self, key: str) -> Any:
+        """Retrieve a stored persistent value by key."""
         return self._data[key]
 
     def __setitem__(self, key: str, value: Any) -> None:
+        """Store a persistent value by key."""
         self._data[key] = value
 
     def __delitem__(self, key: str) -> None:
+        """Remove a persistent variable by key."""
         del self._data[key]
 
     def __iter__(self) -> collections.abc.Iterator[str]:
+        """Iterate over all persistent variable keys."""
         return iter(self._data)
 
     def __len__(self) -> int:
+        """Return the number of stored persistent variables."""
         return len(self._data)
 
     def __getattr__(self, name: str) -> Any:
+        """Access a persistent variable as an attribute."""
         if name.startswith("_"):
             raise AttributeError(name)
         return self._data.get(name)
 
     def __setattr__(self, name: str, value: Any) -> None:
+        """Set a persistent variable as an attribute."""
         if name.startswith("_"):
             super().__setattr__(name, value)
         else:

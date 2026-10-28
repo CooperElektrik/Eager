@@ -722,9 +722,11 @@ class PygletRenderer(RenderBackend):
     # ------------------------------------------------------------------ #
 
     def __len__(self) -> int:
+        """Return the number of draw commands in the last rendered frame."""
         return len(self.last_frame)
 
     def __repr__(self) -> str:
+        """Return a string representation of the Pyglet renderer state."""
         return (
             f"PygletRenderer(width={self.width}, height={self.height}, "
             f"frame_count={self.frame_count}, last_frame_items={len(self.last_frame)}, "
@@ -1113,6 +1115,17 @@ class PygletAudioBackend:
         loop_start: float | None = None,
         loop_end: float | None = None,
     ) -> None:
+        """Start playback of an audio asset using Pyglet media player.
+
+        Args:
+            channel: Target audio channel name.
+            asset_path: File path or resource identifier of the audio track.
+            loop: Whether the audio track repeats when finished. Defaults to False.
+            volume: Normalized volume level in the range [0.0, 1.0]. Defaults to 1.0.
+            fade_in: Fade in duration in seconds. Defaults to 0.0.
+            loop_start: Optional loop start timestamp in seconds.
+            loop_end: Optional loop end timestamp in seconds.
+        """
         path_str = str(asset_path)
         if channel in self._players:
             old_player = self._players[channel]
@@ -1204,6 +1217,12 @@ class PygletAudioBackend:
             self._loop_points.pop(channel, None)
 
     def stop(self, channel: str, *, fade_out: float = 0.0) -> None:
+        """Halt playback and delete the player for a channel.
+
+        Args:
+            channel: Target audio channel name.
+            fade_out: Duration in seconds to fade out before stopping.
+        """
         player = self._players.get(channel)
         if player is not None:
             try:
@@ -1217,25 +1236,54 @@ class PygletAudioBackend:
             self._loop_points.pop(channel, None)
 
     def set_volume(self, channel: str, volume: float) -> None:
+        """Adjust channel playback volume.
+
+        Args:
+            channel: Target audio channel name.
+            volume: Normalized volume level in the range [0.0, 1.0].
+        """
         player = self._players.get(channel)
         if player is not None:
             player.volume = max(0.0, min(1.0, volume))
 
     def pause(self, channel: str) -> None:
+        """Pause playback on the channel.
+
+        Args:
+            channel: Target audio channel name.
+        """
         player = self._players.get(channel)
         if player is not None:
             player.pause()
 
     def resume(self, channel: str) -> None:
+        """Resume playback on the channel.
+
+        Args:
+            channel: Target audio channel name.
+        """
         player = self._players.get(channel)
         if player is not None:
             player.play()
 
     def is_playing(self, channel: str) -> bool:
+        """Check whether audio is actively playing on the channel.
+
+        Args:
+            channel: Target audio channel name.
+
+        Returns:
+            True if player exists and is currently playing.
+        """
         player = self._players.get(channel)
         return bool(player is not None and player.playing)
 
     def update(self, dt: float) -> None:
+        """Process custom loop point wrapping.
+
+        Args:
+            dt: Delta time elapsed in seconds.
+        """
         for ch, player in list(self._players.items()):
             if not player.playing:
                 continue
@@ -1253,6 +1301,7 @@ class PygletAudioBackend:
                     )
 
     def shutdown(self) -> None:
+        """Stop all channel players and release media sources."""
         for ch, player in list(self._players.items()):
             try:
                 player.pause()

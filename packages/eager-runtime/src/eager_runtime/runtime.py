@@ -122,6 +122,11 @@ class StoryVM:
 
     @translation_manager.setter
     def translation_manager(self, mgr: TranslationManager) -> None:
+        """Set the active translation manager instance.
+
+        Args:
+            mgr: New TranslationManager instance.
+        """
         self._translation_manager = mgr
 
     def set_locale(self, locale: str) -> None:
@@ -220,6 +225,11 @@ class StoryVM:
 
     @graph.setter
     def graph(self, new_graph: SceneGraph) -> None:
+        """Update the underlying scene graph instance.
+
+        Args:
+            new_graph: Replacement SceneGraph.
+        """
         self._graph = new_graph
 
     @property
@@ -229,6 +239,11 @@ class StoryVM:
 
     @current_scene_id.setter
     def current_scene_id(self, scene_id: str | None) -> None:
+        """Set the current scene identifier.
+
+        Args:
+            scene_id: Target scene ID string, or None.
+        """
         self._current_scene_id = scene_id
 
     @property
@@ -238,6 +253,11 @@ class StoryVM:
 
     @beat_index.setter
     def beat_index(self, index: int) -> None:
+        """Set the next beat index in the current scene.
+
+        Args:
+            index: Non-negative integer index.
+        """
         self._beat_index = max(0, index)
 
     def hot_reload(self, new_graph: SceneGraph) -> bool:

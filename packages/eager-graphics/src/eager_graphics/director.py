@@ -214,7 +214,7 @@ class StageDirector:
     # =========================================================================
 
     def handle_bg(self, args: str) -> None:
-        """Handle '~ bg asset_name [with transition] [duration=X]'."""
+        """Handle `~ bg asset_name [with transition] [duration=X]`."""
         parsed = parse_hook_args(args)
         if not parsed.positional:
             return
@@ -234,14 +234,14 @@ class StageDirector:
         )
 
     def handle_bg_clear(self, args: str) -> None:
-        """Handle '~ bg_clear [with transition] [duration=X]'."""
+        """Handle `~ bg_clear [with transition] [duration=X]`."""
         parsed = parse_hook_args(args)
         transition = parsed.with_ or parsed.get_str("transition", "cut") or "cut"
         duration = parsed.get_float("duration", 0.5 if transition != "cut" else 0.0)
         self.compositor.clear_background(transition=transition, duration=duration)
 
     def handle_scene(self, args: str) -> None:
-        """Handle '~ scene asset_name [with transition] [duration=X]': clears characters and sets background."""
+        """Handle `~ scene asset_name [with transition] [duration=X]`: clears characters and sets background."""
         # Clear all character sprites
         char_layer = self.compositor.stage.get_layer("characters")
         if char_layer:
@@ -250,7 +250,7 @@ class StageDirector:
         self.handle_bg(args)
 
     def handle_image(self, args: str) -> None:
-        """Handle '~ image name asset [at pos] [z=N]': arbitrary image display on foreground layer."""
+        """Handle `~ image name asset [at pos] [z=N]`: arbitrary image display on foreground layer."""
         parsed = parse_hook_args(args)
         if len(parsed.positional) < 2:
             return
@@ -272,7 +272,7 @@ class StageDirector:
         fg_layer.add_element(elem)
 
     def handle_show(self, args: str) -> None:
-        """Handle '~ show character [expression] [at position] [with transition] [duration=X]'."""
+        """Handle `~ show character [expression] [at position] [with transition] [duration=X]`."""
         parsed = parse_hook_args(args)
         if not parsed.positional:
             return
@@ -309,7 +309,7 @@ class StageDirector:
         )
 
     def handle_hide(self, args: str) -> None:
-        """Handle '~ hide character [with transition] [duration=X]'."""
+        """Handle `~ hide character [with transition] [duration=X]`."""
         parsed = parse_hook_args(args)
         if not parsed.positional:
             return
@@ -325,7 +325,7 @@ class StageDirector:
         )
 
     def handle_move(self, args: str) -> None:
-        """Handle '~ move character to position [duration=X] [easing=Y]'."""
+        """Handle `~ move character to position [duration=X] [easing=Y]`."""
         parsed = parse_hook_args(args)
         if not parsed.positional:
             return
@@ -345,7 +345,7 @@ class StageDirector:
         )
 
     def handle_expr(self, args: str) -> None:
-        """Handle '~ expr character expression'."""
+        """Handle `~ expr character expression`."""
         parsed = parse_hook_args(args)
         if len(parsed.positional) < 2:
             return
@@ -355,28 +355,28 @@ class StageDirector:
         self.compositor.set_expression(char_id, expr)
 
     def handle_fade_in(self, args: str) -> None:
-        """Handle '~ fade_in [duration=X] [color=#000]'."""
+        """Handle `~ fade_in [duration=X] [color=#000]`."""
         parsed = parse_hook_args(args)
         duration = parsed.get_float("duration", 1.0)
         color = _hook_color(parsed, "color", BLACK)
         self.compositor.fade_in(duration=duration, color=color)
 
     def handle_fade_out(self, args: str) -> None:
-        """Handle '~ fade_out [duration=X] [color=#000]'."""
+        """Handle `~ fade_out [duration=X] [color=#000]`."""
         parsed = parse_hook_args(args)
         duration = parsed.get_float("duration", 1.0)
         color = _hook_color(parsed, "color", BLACK)
         self.compositor.fade_out(duration=duration, color=color)
 
     def handle_flash(self, args: str) -> None:
-        """Handle '~ flash [duration=X] [color=#fff]'."""
+        """Handle `~ flash [duration=X] [color=#fff]`."""
         parsed = parse_hook_args(args)
         duration = parsed.get_float("duration", 0.15)
         color = _hook_color(parsed, "color", WHITE)
         self.compositor.flash(duration=duration, color=color)
 
     def handle_shake(self, args: str) -> None:
-        """Handle '~ shake [intensity=X] [duration=Y]'."""
+        """Handle `~ shake [intensity=X] [duration=Y]`."""
         parsed = parse_hook_args(args)
         intensity = parsed.get_float("intensity", 1.0)
         duration = parsed.get_float("duration", 0.3)
@@ -391,7 +391,7 @@ class StageDirector:
         return False
 
     def handle_play(self, args: str) -> None:
-        """Handle '~ play channel track [fade=X] [volume=Y] [loop=True/False] [loop_start=Z] [loop_end=W] [auto_channels=True/False] [max_polyphony=N]'."""
+        """Handle `~ play channel track [fade=X] [volume=Y] [loop=True/False] [loop_start=Z] [loop_end=W] [auto_channels=True/False] [max_polyphony=N]`."""
         if self.audio is None:
             return
         parsed = parse_hook_args(args)
@@ -442,7 +442,7 @@ class StageDirector:
         )
 
     def handle_stop(self, args: str) -> None:
-        """Handle '~ stop channel [fade=X]' or '~ stop all'.
+        """Handle `~ stop channel [fade=X]` or `~ stop all`.
 
         Stopping a base channel (e.g. ``sound``) also stops its polyphonic
         pool members (``sound_0``, ``sound_1``, …).
@@ -459,7 +459,7 @@ class StageDirector:
             self.audio.stop(channel, fade_out=fade_out)
 
     def handle_volume(self, args: str) -> None:
-        """Handle '~ volume channel level'.
+        """Handle `~ volume channel level`.
 
         Volume changes on a base channel fan out to its polyphonic pool
         members.
@@ -477,7 +477,7 @@ class StageDirector:
             pass
 
     def handle_nvl(self, args: str) -> None:
-        """Handle '~ nvl [on/off/clear]'."""
+        """Handle `~ nvl [on/off/clear]`."""
         arg = args.strip().lower() if args else "on"
         if arg in ("off", "false", "0"):
             self.ui_state.nvl_mode = False
@@ -487,7 +487,7 @@ class StageDirector:
             self.ui_state.nvl_mode = True
 
     def handle_nvl_clear(self, args: str) -> None:
-        """Handle '~ nvl_clear'."""
+        """Handle `~ nvl_clear`."""
         self.ui_state.clear_nvl()
 
     # =========================================================================

@@ -85,20 +85,41 @@ class Keymap:
     }
 
     def __init__(self, bindings: dict[str, InputAction] | None = None) -> None:
+        """Initialize Keymap with optional custom bindings overriding defaults.
+
+        Args:
+            bindings: Optional mapping of key names to InputAction enums.
+        """
         self.bindings: dict[str, InputAction] = dict(self.DEFAULT_BINDINGS)
         if bindings:
             self.bindings.update(bindings)
 
     def map_key(self, key_name: str) -> InputAction | None:
-        """Map normalized key name string to InputAction or None if unbound."""
+        """Map normalized key name string to InputAction or None if unbound.
+
+        Args:
+            key_name: Key identifier string (e.g. 'space', 'escape', 'ctrl').
+
+        Returns:
+            Bound InputAction or None if key is not mapped.
+        """
         return self.bindings.get(key_name.lower())
 
     def bind(self, key_name: str, action: InputAction) -> None:
-        """Bind a key name to an InputAction."""
+        """Bind a key name to an InputAction.
+
+        Args:
+            key_name: Key identifier string.
+            action: Semantic InputAction to assign.
+        """
         logger.debug("Binding %r -> %s", key_name, action.value)
         self.bindings[key_name.lower()] = action
 
     def unbind(self, key_name: str) -> None:
-        """Unbind a key name."""
+        """Unbind a key name, removing its semantic mapping.
+
+        Args:
+            key_name: Key identifier string to remove.
+        """
         logger.debug("Unbinding %r", key_name)
         _ = self.bindings.pop(key_name.lower(), None)

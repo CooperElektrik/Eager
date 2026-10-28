@@ -21,7 +21,15 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class TextSegment:
-    """A formatted text segment with styling attributes."""
+    """A formatted text segment with styling attributes.
+
+    Attributes:
+        text: Substring content of this segment.
+        color: Optional text color override.
+        bold: Whether bold typography is enabled.
+        italic: Whether italic typography is enabled.
+        size_mult: Font size multiplier relative to standard text size.
+    """
 
     text: str
     color: Color | None = None
@@ -32,7 +40,12 @@ class TextSegment:
 
 @dataclass(frozen=True, slots=True)
 class PausePoint:
-    """Typewriter pause position in plain text."""
+    """Typewriter pause position in plain text.
+
+    Attributes:
+        char_index: Character index in the plain text where typewriter pause occurs.
+        duration: Duration of the typewriter pause in seconds.
+    """
 
     char_index: int
     duration: float  # In seconds
@@ -40,7 +53,14 @@ class PausePoint:
 
 @dataclass(frozen=True, slots=True)
 class FormattedText:
-    """Parsed text containing plain text string, segment styles, and pause points."""
+    """Parsed text containing plain text string, segment styles, and pause points.
+
+    Attributes:
+        plain_text: Unformatted text with all markup tags stripped.
+        segments: Tuple of styled text segments.
+        pauses: Tuple of pause points encountered during tag parsing.
+        fast_index: Character index after which typewriter effect immediately displays.
+    """
 
     plain_text: str
     segments: tuple[TextSegment, ...]
@@ -52,7 +72,17 @@ _TAG_RE = re.compile(r"\{(/?[a-zA-Z0-9_#:=.]+)\}")
 
 
 def parse_text_tags(raw: str) -> FormattedText:
-    """Parse inline markup tags: {b}, {/b}, {i}, {/i}, {color=#hex}, {/color}, {size=N}, {/size}, {w}, {p}, {fast}."""
+    """Parse inline markup tags from raw dialogue text.
+
+    Supported tags include styling ({b}, {/b}, {i}, {/i}, {color=#hex}, {/color}, {size=N}, {/size}),
+    pauses ({w}, {w=seconds}, {p}, {p=seconds}), and typewriter acceleration ({fast}).
+
+    Args:
+        raw: Raw text containing potential inline markup tags.
+
+    Returns:
+        FormattedText containing clean plain text, styled segments, and typewriter pauses.
+    """
     plain_parts: list[str] = []
     segments: list[TextSegment] = []
     pauses: list[PausePoint] = []
@@ -177,7 +207,11 @@ def parse_text_tags(raw: str) -> FormattedText:
 
 
 class TextReveal:
-    """Typewriter text reveal controller."""
+    """Typewriter text reveal controller for dialogue boxes.
+
+    Paces character appearance over time based on characters-per-second, honoring
+    embedded pause durations and instant reveal tags.
+    """
 
     def __init__(
         self,
@@ -185,6 +219,13 @@ class TextReveal:
         chars_per_second: float = 50.0,
         initial_visible_chars: int = 0,
     ) -> None:
+        """Initialize the typewriter reveal controller.
+
+        Args:
+            formatted: Parsed text structure containing plain text and pause points.
+            chars_per_second: Text typing speed. Set <= 0 for immediate reveal.
+            initial_visible_chars: Minimum number of initial characters already revealed.
+        """
         self.formatted: FormattedText = formatted
         self.chars_per_second: float = chars_per_second
         self.total_chars: int = len(formatted.plain_text)
@@ -206,7 +247,11 @@ class TextReveal:
             self._current_pause_idx += 1
 
     def update(self, dt: float) -> None:
-        """Advance reveal progress by dt seconds."""
+        """Advance reveal progress by dt seconds.
+
+        Args:
+            dt: Delta time elapsed in seconds.
+        """
         if self.is_complete:
             return
 

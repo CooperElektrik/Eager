@@ -1,4 +1,4 @@
-"""Lightweight frame timing and FPS measurement utilities."""
+"""Lightweight frame timing and FPS measurement utilities for Eager."""
 
 from __future__ import annotations
 
@@ -13,15 +13,15 @@ logger = logging.getLogger(__name__)
 class FrameClock:
     """Track frame timestamps and compute FPS (frames-per-second).
 
-    Parameters
-    ----------
-    rolling_window : int, optional
-        Number of recent frames used for the rolling-average FPS, by default 60.
+    Provides frame delta calculations, instantaneous FPS, rolling average FPS over
+    a configurable window of recent frames, and overall elapsed time tracking.
 
-    Attributes
-    ----------
-    rolling_window : int
-        The rolling-average window size.
+    Args:
+        rolling_window: Number of recent frames used for the rolling-average FPS.
+            Defaults to 60.
+
+    Attributes:
+        rolling_window: The rolling-average window size in frames.
     """
 
     def __init__(self, rolling_window: int = 60) -> None:
@@ -40,18 +40,14 @@ class FrameClock:
     # ------------------------------------------------------------------ #
 
     def tick(self, now: float | None = None) -> float:
-        """Record a frame boundary and return the delta since the last.
+        """Record a frame boundary and return the delta time since the previous tick.
 
-        Parameters
-        ----------
-        now : float, optional
-            Explicit timestamp (for deterministic testing). When ``None``
-            (the default) :func:`time.perf_counter` is used.
+        Args:
+            now: Explicit timestamp in seconds (for deterministic testing). When
+                None (default), `time.perf_counter()` is used.
 
-        Returns
-        -------
-        float
-            Seconds elapsed since the previous tick, or ``0.0`` on the first tick.
+        Returns:
+            Seconds elapsed since the previous tick, or 0.0 on the first tick.
         """
         if now is None:
             now = time.perf_counter()

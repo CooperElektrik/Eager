@@ -29,6 +29,11 @@ class CallFrame:
     kind: str = "call"  # "call" for '>>', "inline" for an optional inline choice block
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize call frame to a dictionary.
+
+        Returns:
+            Dictionary containing scene_id, beat_index, and frame kind.
+        """
         return {
             "scene_id": self.scene_id,
             "beat_index": self.beat_index,
@@ -37,6 +42,14 @@ class CallFrame:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CallFrame:
+        """Construct CallFrame from a serialized dictionary.
+
+        Args:
+            data: Dictionary containing frame fields.
+
+        Returns:
+            Constructed CallFrame instance.
+        """
         return cls(
             scene_id=data["scene_id"],
             beat_index=data["beat_index"],

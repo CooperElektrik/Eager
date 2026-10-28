@@ -35,9 +35,15 @@ class SceneEnterEvent:
 
     @property
     def type(self) -> str:
+        """Event type identifier ('scene_enter')."""
         return "scene_enter"
 
     def to_dict(self) -> dict[str, object]:
+        """Serialize event to a dictionary.
+
+        Returns:
+            Dictionary containing event attributes.
+        """
         return {
             "type": self.type,
             "scene_id": self.scene_id,
@@ -59,9 +65,15 @@ class DialogueEvent:
 
     @property
     def type(self) -> str:
+        """Event type identifier ('dialogue')."""
         return "dialogue"
 
     def to_dict(self) -> dict[str, object]:
+        """Serialize event to a dictionary.
+
+        Returns:
+            Dictionary containing dialogue fields and metadata.
+        """
         data: dict[str, object] = {
             "type": self.type,
             "speaker": self.speaker,
@@ -85,9 +97,15 @@ class AppendEvent:
 
     @property
     def type(self) -> str:
+        """Event type identifier ('append')."""
         return "append"
 
     def to_dict(self) -> dict[str, object]:
+        """Serialize event to a dictionary.
+
+        Returns:
+            Dictionary containing append text and line info.
+        """
         data: dict[str, object] = {
             "type": self.type,
             "text": self.text,
@@ -108,9 +126,15 @@ class FreshBoxEvent:
 
     @property
     def type(self) -> str:
+        """Event type identifier ('fresh_box')."""
         return "fresh_box"
 
     def to_dict(self) -> dict[str, object]:
+        """Serialize event to a dictionary.
+
+        Returns:
+            Dictionary containing fresh box text and line info.
+        """
         data: dict[str, object] = {
             "type": self.type,
             "text": self.text,
@@ -131,9 +155,15 @@ class NarrationEvent:
 
     @property
     def type(self) -> str:
+        """Event type identifier ('narration')."""
         return "narration"
 
     def to_dict(self) -> dict[str, object]:
+        """Serialize event to a dictionary.
+
+        Returns:
+            Dictionary containing narration text and line info.
+        """
         data: dict[str, object] = {
             "type": self.type,
             "text": self.text,
@@ -157,6 +187,11 @@ class ChoiceOption:
     beat_id: str | None = None
 
     def to_dict(self) -> dict[str, object]:
+        """Serialize choice option to a dictionary.
+
+        Returns:
+            Dictionary containing option details.
+        """
         data: dict[str, object] = {
             "index": self.index,
             "text": self.text,
@@ -172,6 +207,14 @@ class ChoiceOption:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, object]) -> ChoiceOption:
+        """Construct ChoiceOption from dictionary.
+
+        Args:
+            data: Mapping containing choice option fields.
+
+        Returns:
+            Deserialized ChoiceOption instance.
+        """
         idx_val = data["index"]
         text_val = data["text"]
         target_val = data.get("target")
@@ -199,9 +242,15 @@ class ChoicePromptEvent:
 
     @property
     def type(self) -> str:
+        """Event type identifier ('choice_prompt')."""
         return "choice_prompt"
 
     def to_dict(self) -> dict[str, object]:
+        """Serialize choice prompt event to a dictionary.
+
+        Returns:
+            Dictionary containing options and line number.
+        """
         data: dict[str, object] = {
             "type": self.type,
             "options": [opt.to_dict() for opt in self.options],
@@ -222,9 +271,15 @@ class HookEvent:
 
     @property
     def type(self) -> str:
+        """Event type identifier ('hook')."""
         return "hook"
 
     def to_dict(self) -> dict[str, object]:
+        """Serialize hook event to a dictionary.
+
+        Returns:
+            Dictionary containing hook name and arguments.
+        """
         return {
             "type": self.type,
             "hook_name": self.hook_name,
@@ -244,9 +299,15 @@ class SceneExitEvent:
 
     @property
     def type(self) -> str:
+        """Event type identifier ('scene_exit')."""
         return "scene_exit"
 
     def to_dict(self) -> dict[str, object]:
+        """Serialize scene exit event to a dictionary.
+
+        Returns:
+            Dictionary containing transition kind and target.
+        """
         return {
             "type": self.type,
             "scene_id": self.scene_id,
@@ -265,9 +326,15 @@ class StoryEndEvent:
 
     @property
     def type(self) -> str:
+        """Event type identifier ('story_end')."""
         return "story_end"
 
     def to_dict(self) -> dict[str, object]:
+        """Serialize story end event to a dictionary.
+
+        Returns:
+            Dictionary containing terminal scene ID and reason.
+        """
         return {
             "type": self.type,
             "scene_id": self.scene_id,
@@ -287,9 +354,15 @@ class InputPromptEvent:
 
     @property
     def type(self) -> str:
+        """Event type identifier ('input_prompt')."""
         return "input_prompt"
 
     def to_dict(self) -> dict[str, object]:
+        """Serialize input prompt event to a dictionary.
+
+        Returns:
+            Dictionary containing input variable, prompt, and default text.
+        """
         data: dict[str, object] = {
             "type": self.type,
             "var_name": self.var_name,

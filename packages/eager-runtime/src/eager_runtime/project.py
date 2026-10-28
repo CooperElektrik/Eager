@@ -38,6 +38,14 @@ class ProjectConfig:
 
     @classmethod
     def load(cls, toml_path: Path) -> ProjectConfig:
+        """Load and parse game.toml configuration file.
+
+        Args:
+            toml_path: Path to the game.toml project file.
+
+        Returns:
+            Parsed ProjectConfig instance, or default settings if file is absent.
+        """
         if not toml_path.exists():
             return cls()
         with open(toml_path, "rb") as f:

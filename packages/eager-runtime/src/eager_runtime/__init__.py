@@ -126,6 +126,7 @@ _LAZY_EXPORTS = {
 
 
 def __getattr__(name: str) -> Any:
+    """Lazy-load package exports when accessed dynamically."""
     if name in _LAZY_EXPORTS:
         import importlib
 

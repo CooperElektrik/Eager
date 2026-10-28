@@ -148,6 +148,11 @@ class Theme:
         return choice_style_cls(**kwargs)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize basic theme configuration to a dictionary.
+
+        Returns:
+            Dictionary containing theme name, font family, and font size.
+        """
         return {
             "name": self.name,
             "font_family": self.font_family,

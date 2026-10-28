@@ -20,7 +20,16 @@ logger = logging.getLogger(__name__)
 
 
 def get_default_save_dir(game_name: str = "default") -> Path:
-    """Return platform-standard save data directory."""
+    """Return platform-standard save data directory.
+
+    Respects `$XDG_DATA_HOME` on Linux/POSIX, falling back to `~/.local/share/eager/<game_name>`.
+
+    Args:
+        game_name: Specific game or project folder name. Defaults to 'default'.
+
+    Returns:
+        Path to the game save directory (created if missing).
+    """
     xdg_data = os.environ.get("XDG_DATA_HOME")
     if xdg_data:
         base = Path(xdg_data)
@@ -32,7 +41,18 @@ def get_default_save_dir(game_name: str = "default") -> Path:
 
 
 def atomic_write_json(file_path: Path, data: object) -> None:
-    """Write JSON data atomically using a temporary file in the same directory."""
+    """Write JSON data atomically using a temporary file in the same directory.
+
+    Writes to a `.tmp` sibling file first and renames it over the target path to prevent
+    corrupt partial writes during crashes or power cuts.
+
+    Args:
+        file_path: Target path to write JSON content to.
+        data: JSON-serializable object.
+
+    Raises:
+        StorageError: If serialization or file I/O operations fail.
+    """
     temp_path: Path | None = None
     try:
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -57,7 +77,16 @@ def atomic_write_json(file_path: Path, data: object) -> None:
 
 
 def safe_read_json(file_path: Path, default: object = None, *, backup_corrupt: bool = False) -> object:
-    """Read JSON file safely, returning default if missing or corrupted."""
+    """Read JSON file safely, returning default if missing or corrupted.
+
+    Args:
+        file_path: Path of JSON file to load.
+        default: Fallback value returned if the file is absent or invalid JSON. Defaults to None.
+        backup_corrupt: If True, creates a `.corrupt.bak` copy when file reading or parsing fails.
+
+    Returns:
+        Parsed JSON object or `default` fallback.
+    """
     if not file_path.exists():
         logger.debug("JSON file not found: %s (returning default)", file_path)
         return default
