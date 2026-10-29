@@ -210,3 +210,49 @@ def test_unreachable_scene_cluster() -> None:
     warned_labels = {w.message for w in unreachable_scenes}
     assert any("island_a" in msg for msg in warned_labels)
     assert any("island_b" in msg for msg in warned_labels)
+
+
+def test_if_branches_do_not_falsely_trigger_unreachable_or_cycle_warnings() -> None:
+    script = """
+    ## Main --- main
+    @if cond == 1
+        > target_a
+    @elif cond == 2
+        > target_b
+    @else
+        > target_c
+    @end
+    Alice: After if block
+    > finish
+
+    ## Target A --- target_a
+    Alice: At target A
+    > main
+
+    ## Target B --- target_b
+    Alice: At target B
+    > finish
+
+    ## Target C --- target_c
+    Alice: At target C
+    > finish
+
+    ## Finish --- finish
+    Alice: All done
+    """
+    result = validate(parse(script))
+    unreachable_warnings = [
+        w for w in result.warnings if "Unreachable code" in w.message
+    ]
+    assert unreachable_warnings == []
+
+    unreachable_scene_warnings = [
+        w for w in result.warnings if "unreachable from the script entry point" in w.message
+    ]
+    assert unreachable_scene_warnings == []
+
+    cycle_warnings = [
+        w for w in result.warnings if "Infinite loop detected" in w.message
+    ]
+    assert cycle_warnings == []
+

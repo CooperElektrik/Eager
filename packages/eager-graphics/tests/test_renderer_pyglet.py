@@ -666,3 +666,36 @@ def test_pyglet_player_mouse_handlers_sync_active_input_prompt() -> None:
         player.close()
 
 
+def test_pyglet_renderer_save_frame(invisible_window: Window, tmp_path: Path) -> None:
+    renderer = PygletRenderer(width=1280, height=720, window=invisible_window)
+    out_file = tmp_path / "screenshot.png"
+    renderer.save_frame(out_file)
+    assert out_file.exists()
+    assert out_file.stat().st_size > 0
+
+
+def test_pyglet_player_fullscreen_and_keymap(tmp_path: Path) -> None:
+    from eager_runtime import GameSession
+
+    script = """
+## Start --- start
+Alice: Fullscreen test
+"""
+    graph = parse_graph(script)
+    session = GameSession(graph)
+    player = PygletPlayer(session=session, width=1280, height=720, visible=False)
+    try:
+        # Fullscreen toggle method
+        assert player.fullscreen is False
+        player.toggle_fullscreen()
+        # Key press 'f' maps to InputAction.FULLSCREEN
+        handled = player.handle_key_press("f")
+        assert handled is True
+        # Key press 'f11' also maps to InputAction.FULLSCREEN
+        handled_f11 = player.handle_key_press("f11")
+        assert handled_f11 is True
+    finally:
+        player.close()
+
+
+

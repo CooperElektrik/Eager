@@ -121,6 +121,43 @@ def test_director_dialogue_emotion_auto_sync() -> None:
     assert comp.render_list()[0].asset_id == "alice/furious"
 
 
+def test_director_dialogue_emotion_with_display_name_and_character_id_mapping() -> None:
+    comp = StageCompositor(1920, 1080)
+    director = StageDirector(comp)
+    disp = MockEventDispatcher()
+    director.bind(disp)
+
+    # Register character h as Hoshiko
+    director.register_character("h", name="Hoshiko")
+
+    # Show character on stage using character ID 'h'
+    comp.show_character("h", "neutral", position="center", transition="cut")
+    assert comp.render_list()[0].asset_id == "h/neutral"
+
+    # DialogueEvent emitted with display name 'Hoshiko' and emotion 'happy'
+    dlg = DialogueEvent(
+        speaker="Hoshiko",
+        text="Hello!",
+        voice=None,
+        emotion="happy",
+        line_number=5,
+    )
+    disp.emit_event(dlg)
+    assert comp.render_list()[0].asset_id == "h/happy"
+
+    # Test handle_expr with display name
+    director.handle_expr("Hoshiko sad")
+    assert comp.render_list()[0].asset_id == "h/sad"
+
+    # Test handle_move with display name
+    director.handle_move("Hoshiko to left")
+
+    # Test handle_hide with display name
+    director.handle_hide("Hoshiko with cut")
+    assert len(comp.render_list()) == 0
+
+
+
 def test_director_scene_bg_auto_mapping() -> None:
     comp = StageCompositor(1920, 1080)
     director = StageDirector(comp)

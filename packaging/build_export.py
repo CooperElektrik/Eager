@@ -67,7 +67,9 @@ def build_pyinstaller(platform: str, output: Path) -> Path:
             shutil.rmtree(d)
 
     cmd = [
-        "pyinstaller",
+        sys.executable,
+        "-m",
+        "PyInstaller",
         str(SPEC_FILE),
         "--noconfirm",
         "--clean",

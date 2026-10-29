@@ -185,7 +185,8 @@ def compute_code_actions(
         item = doc.get_item_at_line(line_0)
         scene_id = doc.get_scene_at_line(line_0)
         if item is not None and scene_id is not None and "{id=" not in line_text:
-            raw_beat_id = compute_beat_id(scene_id, item, occurrence=1)
+            occ = doc.get_beat_occurrence(line_0)
+            raw_beat_id = compute_beat_id(scene_id, item, occurrence=occ)
             # Shorten scene prefix if present
             short_id = raw_beat_id.split(".", 1)[-1] if "." in raw_beat_id else raw_beat_id
             tag_text = f" {{id={short_id}}}"

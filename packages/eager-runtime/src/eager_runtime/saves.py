@@ -180,11 +180,11 @@ class SaveMetadata:
 class SaveData:
     """Complete save file container wrapping metadata and checkpoint."""
 
-    CURRENT_VERSION: ClassVar[int] = 1
+    CURRENT_VERSION: ClassVar[int] = 2
 
     metadata: SaveMetadata
     checkpoint: Checkpoint
-    version: int = 1
+    version: int = 2
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize complete save container to a dictionary.
@@ -310,6 +310,7 @@ class SaveManager:
     def clear_schema_migrations(cls) -> None:
         """Clear all globally registered schema migrations."""
         cls._class_migrations.clear()
+        cls._class_migrations[1] = _migrate_save_data_v1_to_v2
 
     def register_migration(
         self,
@@ -345,18 +346,18 @@ class SaveManager:
             return data
 
         while current_v < target:
-            if current_v in self._migrations:
+            if hook is not None:
+                data = _invoke_migration_hook(hook, data, current_v, target)
+                data.setdefault("version", target)
+                current_v = int(data["version"])
+                break
+            elif current_v in self._migrations:
                 data = self._migrations[current_v](data)
                 next_v = int(data.get("version", current_v + 1))
                 if next_v <= current_v:
                     data["version"] = current_v + 1
                     next_v = current_v + 1
                 current_v = next_v
-            elif hook is not None:
-                data = _invoke_migration_hook(hook, data, current_v, target)
-                data.setdefault("version", target)
-                current_v = int(data["version"])
-                break
             elif current_v == 0:
                 # Built-in migration from legacy unversioned (v0) to v1
                 data["version"] = 1
@@ -365,6 +366,10 @@ class SaveManager:
                     if "story" in cp and isinstance(cp["story"], dict):
                         cp["story"].setdefault("version", 1)
                 current_v = 1
+            elif current_v == 1:
+                # Built-in migration from schema v1 to v2
+                data = _migrate_save_data_v1_to_v2(data)
+                current_v = 2
             else:
                 msg = f"No migration registered to upgrade save data from version {current_v} to {target}."
                 raise SaveMigrationError(msg)

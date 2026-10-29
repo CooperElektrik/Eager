@@ -622,6 +622,7 @@ class StoryVM:
         self._beat_index = 0
         self._visited_scenes.add(scene_id)
         self._just_entered_scene = True
+        self._is_ended = False
         self._next_transition_target = None
 
     def step(self) -> StoryEvent | None:
@@ -727,13 +728,13 @@ class StoryVM:
             beat_id = cid
 
             if isinstance(item, ParsedDialogue):
-                raw_speaker = self._translate_speaker(item.speaker)
-                interp_speaker = self._interpolate(raw_speaker)
-                # If speaker matches a character ID, we could map name if needed, but interpolate handles [var]
+                interp_speaker = self._interpolate(item.speaker)
+                # If speaker matches a character ID, map to display name before translation
                 if self._graph.characters:
                     cid_match = interp_speaker if interp_speaker in self._graph.characters else interp_speaker.lower()
                     if cid_match in self._graph.characters:
                         interp_speaker = self._graph.characters[cid_match].get("name", interp_speaker)
+                interp_speaker = self._translate_speaker(interp_speaker)
                 raw_text, _ = self._translate_beat(cid, item.text)
                 return DialogueEvent(
                     speaker=interp_speaker,

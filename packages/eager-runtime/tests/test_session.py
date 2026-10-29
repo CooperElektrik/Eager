@@ -1284,6 +1284,64 @@ def test_default_headless_fallback_when_providers_empty() -> None:
         register_providers()
 
 
+def test_session_warp_resets_finished_and_clears_dialogue() -> None:
+    story = """
+## Start --- start
+Alice: Beginning
+> end_scene
+
+## End Scene --- end_scene
+Alice: The End
+"""
+    graph = eager_script.parse_graph(story)
+    session = GameSession(graph, headless=True)
+    session.advance()
+    session.advance()
+    # Finish the story
+    session.advance()
+    assert session.is_finished is True
+    assert session.director.ui_state.is_finished is True
+
+    # Warp back to start
+    success = session.warp("start")
+    assert success is True
+    assert session.is_finished is False
+    assert session.mode == "game"
+    assert session.director.ui_state.is_finished is False
+    assert session.director.ui_state.text == ""  # Never None!
+    assert isinstance(session.director.ui_state.text, str)
+
+
+def test_session_project_dir_locales_and_config_dimensions(tmp_path: Path) -> None:
+    import json
+
+    from eager_runtime.project import ProjectConfig
+
+    # Create project directory with locales and game.toml
+    proj_dir = tmp_path / "my_project"
+    proj_dir.mkdir()
+    locales_dir = proj_dir / "locales"
+    locales_dir.mkdir()
+    # Write a JSON translation catalog in locales/es.json
+    (locales_dir / "es.json").write_text(
+        json.dumps({
+            "locale": "es",
+            "strings": {"Hello": "Hola"},
+            "speakers": {},
+        }),
+        encoding="utf-8",
+    )
+    script_file = proj_dir / "story.es"
+    script_file.write_text("## Start --- start\nAlice: Hello\n", encoding="utf-8")
+
+    cfg = ProjectConfig(virtual_width=1280, virtual_height=720, title="Test VN")
+    session = GameSession(proj_dir, config=cfg, headless=True)
+    assert session.virtual_width == 1280
+    assert session.virtual_height == 720
+    assert "es" in session.translation_manager.catalogs
+
+
+
 
 
 

@@ -192,7 +192,8 @@ def compute_hover(
         item = doc.get_item_at_line(position.line)
         scene_id = doc.get_scene_at_line(position.line)
         if item is not None and scene_id is not None and workspace.translation_catalogs:
-            beat_id = compute_beat_id(scene_id, item, occurrence=1)
+            occ = doc.get_beat_occurrence(position.line)
+            beat_id = compute_beat_id(scene_id, item, occurrence=occ)
             md_lines = [
                 f"### Localization: `{beat_id}`",
                 "\n| Locale | Translation |",

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import eager_script
+from eager_runtime.i18n import get_beat_occurrence
 from eager_script import (
     CHARACTER_PATTERN,
     CHOICE_INLINE_PATTERN,
@@ -154,6 +155,36 @@ class ScriptDocument:
                 else:
                     break
         return current_scene
+
+    def get_beat_occurrence(self, line_0: int) -> int:
+        """Compute the 1-based occurrence count of the beat at 0-based line_0."""
+        scene_id = self.get_scene_at_line(line_0)
+        item = self.get_item_at_line(line_0)
+        if not scene_id or not item:
+            return 1
+
+        if self.scene_graph and scene_id in self.scene_graph.nodes:
+            node = self.scene_graph.nodes[scene_id]
+            for idx, b in enumerate(node.body):
+                if getattr(b, "line_number", None) == item.line_number:
+                    return get_beat_occurrence(node.body, idx)
+
+        # Fallback to AST items if scene_graph is not built yet
+        scene_items: list[Any] = []
+        in_scene = False
+        for ast_item in self.ast_items:
+            if isinstance(ast_item, ParsedLabel):
+                if in_scene:
+                    break
+                if ast_item.name == scene_id:
+                    in_scene = True
+            elif in_scene:
+                scene_items.append(ast_item)
+
+        for idx, b in enumerate(scene_items):
+            if getattr(b, "line_number", None) == item.line_number:
+                return get_beat_occurrence(scene_items, idx)
+        return 1
 
     def parse(self) -> None:
         """Perform lexical token scanning and resilient AST extraction."""
@@ -651,6 +682,7 @@ class ScriptDocument:
                     value=text,
                 )
             )
+            self._scan_inline_text_spans(line_idx, text, t_start)
             # Target
             target_start = indent + m.start(2)
             target_end = indent + m.end(2)
@@ -712,6 +744,7 @@ class ScriptDocument:
                     value=text,
                 )
             )
+            self._scan_inline_text_spans(line_idx, text, t_start)
             if cond:
                 c_start = indent + m_inline.start(2)
                 c_end = indent + m_inline.end(2)
@@ -1327,7 +1360,10 @@ class ScriptDocument:
                 value=text,
             )
         )
+        self._scan_inline_text_spans(line_idx, text, text_start_col)
 
+    def _scan_inline_text_spans(self, line_idx: int, text: str, text_start_col: int) -> None:
+        """Scan inline voice tags, beat IDs, color tags, text styling, and variable interpolations."""
         # 1. Voice tags: {voice:path}
         for m in re.finditer(r"\{voice:([^}]+)\}", text):
             v_start = text_start_col + m.start()
@@ -1457,7 +1493,7 @@ class ScriptDocument:
         clean_expr = re.sub(r"(\"[^\"]*\"|'[^']*')", lambda m: " " * len(m.group(0)), expr_str)
 
         # Extract identifier tokens that are variable references or builtin functions
-        for m in re.finditer(r"\b([A-Za-z_][A-Za-z0-9_]*)\b", clean_expr):
+        for m in re.finditer(r"\b([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\b", clean_expr):
             ident = m.group(1)
             # Emit token span for built-in functions to support hover docs
             if ident in (

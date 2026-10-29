@@ -376,3 +376,19 @@ def test_graph_elif_else_cumulative_condition_accumulation() -> None:
     assert edges["scene_b"] == "(not (a)) and (b)"
     assert edges["scene_c"] == "(not (a)) and (not (b)) and (c)"
     assert edges["scene_d"] == "(not (a)) and (not (b)) and (not (c))"
+
+
+def test_unclosed_if_block_flushes_body_to_scene_graph() -> None:
+    # During live editing in IDE/LSP, script may end before @end
+    script = """
+## Main --- main
+Alice: Hello
+@if a
+    Alice: Inside unclosed if
+"""
+    graph = parse_graph(script)
+    main_node = graph.nodes["main"]
+    # Body should contain the statements from the unclosed @if branch
+    dialogues = [b for b in main_node.body if hasattr(b, "text")]
+    assert any(getattr(b, "text", "") == "Inside unclosed if" for b in dialogues)
+

@@ -268,6 +268,62 @@ Narrator: Version 2
     result = session.handle_input(InputAction.RELOAD)
     assert result is True
     assert session.director.ui_state.text == "Version 2"
+
+
+def test_game_session_hot_reload_parse_error_preserves_story(tmp_path: Path) -> None:
+    script_file = tmp_path / "main.es"
+    script_file.write_text(
+        """## Start --- start
+Narrator: Safe text
+""",
+        encoding="utf-8",
+    )
+    session = GameSession(script_file)
+    session.advance()
+    assert session.director.ui_state.text == "Safe text"
+
+    # Write invalid syntax
+    script_file.write_text(
+        """## Start --- start
+@if
+""",
+        encoding="utf-8",
+    )
+    success = session.hot_reload()
+    assert success is False
+    assert session.overlay.error_overlay is not None
+    assert "Hot-reload parse error" in session.overlay.error_overlay
+    # VM state should still be on the working version
+    assert session.vm.current_scene_id == "start"
+
+
+def test_game_session_hot_reload_syncs_characters_and_defaults(tmp_path: Path) -> None:
+    script_file = tmp_path / "main.es"
+    script_file.write_text(
+        """## Start --- start
+Narrator: Initial
+""",
+        encoding="utf-8",
+    )
+    session = GameSession(script_file)
+    session.advance()
+
+    # Update with character declaration and default variable
+    script_file.write_text(
+        """@character h "Hoshiko" color=#ff00ff
+@default affinity = 10
+
+## Start --- start
+h: Reloaded
+""",
+        encoding="utf-8",
+    )
+    success = session.hot_reload()
+    assert success is True
+    assert "h" in session.director.characters
+    assert session.director.characters["h"].name == "Hoshiko"
+    assert session.vm.get_variable("affinity") == 10
+
     assert session._ui_dirty is True
 
 

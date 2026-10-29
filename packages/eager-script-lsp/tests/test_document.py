@@ -149,3 +149,48 @@ $ x = x == 1
     color_span = next(s for s in doc.spans if s.kind == "color_literal")
     assert color_span.start_col == 23
     assert color_span.end_col == 30
+
+
+def test_dotted_persistent_variable_in_expression():
+    text = """$ persistent.ending_a = true
+@if persistent.ending_a
+    Alice: Unlocked!
+@end
+"""
+    doc = ScriptDocument("file:///persistent_test.es", text)
+    # Mutation on line 0
+    mutations = [occ for occ in doc.occurrences if occ.kind == "variable_mutation"]
+    assert len(mutations) == 1
+    assert mutations[0].name == "persistent.ending_a"
+
+    # Read on line 1 inside @if
+    reads = [occ for occ in doc.occurrences if occ.kind == "variable_read"]
+    assert any(occ.name == "persistent.ending_a" for occ in reads)
+
+
+def test_choice_text_scans_inline_tags_and_variables():
+    text = """## Start --- start
+? Pay [gold] coins {color=#ffd700} (buy) if gold >= 10
+"""
+    doc = ScriptDocument("file:///choice_tags.es", text)
+    reads = [occ for occ in doc.occurrences if occ.kind == "variable_read"]
+    assert any(occ.name == "gold" for occ in reads)
+    colors = [s for s in doc.spans if s.kind == "color_literal"]
+    assert any(s.value == "#ffd700" for s in colors)
+
+
+def test_document_get_beat_occurrence_multiple_identical_beats():
+    text = """## Start --- start
+Alice: Hello!
+Alice: Other text
+Alice: Hello!
+"""
+    doc = ScriptDocument("file:///dup_beats.es", text)
+    # Line 1 is first 'Alice: Hello!' -> occurrence 1
+    occ1 = doc.get_beat_occurrence(1)
+    assert occ1 == 1
+
+    # Line 3 is second 'Alice: Hello!' -> occurrence 2
+    occ2 = doc.get_beat_occurrence(3)
+    assert occ2 == 2
+

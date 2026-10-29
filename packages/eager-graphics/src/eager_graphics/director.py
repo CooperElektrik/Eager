@@ -104,13 +104,15 @@ class StageDirector:
         self.ui_state = UIState.from_dict(state)
 
     def save_visual_state(self) -> dict[str, Any]:
-        """Serialize compositor stage state."""
+        """Serialize compositor and UI state."""
         return {
             "compositor": self.compositor.save_state(),
+            "ui_state": self.save_ui_state(),
         }
 
     def load_visual_state(self, state: dict[str, Any]) -> None:
         """Restore compositor and UI state from a serialized dictionary."""
+        self._sprite_base_y.clear()
         if comp_state := state.get("compositor"):
             self.compositor.load_state(comp_state)
         if ui_state := state.get("ui_state"):
@@ -246,6 +248,7 @@ class StageDirector:
         char_layer = self.compositor.stage.get_layer("characters")
         if char_layer:
             char_layer.clear()
+        self._sprite_base_y.clear()
         # Set background
         self.handle_bg(args)
 
@@ -314,7 +317,10 @@ class StageDirector:
         if not parsed.positional:
             return
 
-        char_id = parsed.positional[0].strip().lower()
+        raw_id = parsed.positional[0]
+        cfg = self._find_character_config(raw_id)
+        char_id = cfg.character_id if cfg is not None else raw_id.strip().lower()
+        self._sprite_base_y.pop(char_id, None)
         transition = parsed.with_ or parsed.get_str("transition", "fade") or "fade"
         duration = parsed.get_float("duration", 0.3)
 
@@ -330,7 +336,10 @@ class StageDirector:
         if not parsed.positional:
             return
 
-        char_id = parsed.positional[0].strip().lower()
+        raw_id = parsed.positional[0]
+        cfg = self._find_character_config(raw_id)
+        char_id = cfg.character_id if cfg is not None else raw_id.strip().lower()
+        self._sprite_base_y.pop(char_id, None)
         destination = parsed.to or (
             parsed.positional[1] if len(parsed.positional) > 1 else "center"
         )
@@ -350,7 +359,9 @@ class StageDirector:
         if len(parsed.positional) < 2:
             return
 
-        char_id = parsed.positional[0].strip().lower()
+        raw_id = parsed.positional[0]
+        cfg = self._find_character_config(raw_id)
+        char_id = cfg.character_id if cfg is not None else raw_id.strip().lower()
         expr = parsed.positional[1].strip().lower()
         self.compositor.set_expression(char_id, expr)
 
@@ -524,8 +535,11 @@ class StageDirector:
             self.ui_state.nvl_entries.append(NVLEntry(speaker=speaker, text=text, emotion=emotion))
 
         if speaker and emotion:
-            char_id = speaker.strip().lower()
-            self.compositor.set_expression(char_id, emotion.strip().lower())
+            target_id = (
+                self._resolve_speaker_element_id(speaker)
+                or (char_cfg.character_id if char_cfg is not None else speaker.strip().lower())
+            )
+            self.compositor.set_expression(target_id, emotion.strip().lower())
 
         if self.auto_highlight_speaker:
             self._apply_speaker_highlight(speaker)

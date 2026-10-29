@@ -214,7 +214,12 @@ def mask_script_includes(text: str) -> str:
     return re.sub(r"^([ \t]*)@include\b", r"\1# @include", text, flags=re.MULTILINE)
 
 
-def load_project_graph(target_path: Path, *, strict: bool = False) -> SceneGraph:
+def load_project_graph(
+    target_path: Path,
+    *,
+    strict: bool = False,
+    raise_parse_error: bool = False,
+) -> SceneGraph:
     """Load and merge all scene graphs for a project or script file."""
 
     es_files = resolve_project_scripts(target_path)
@@ -226,6 +231,8 @@ def load_project_graph(target_path: Path, *, strict: bool = False) -> SceneGraph
             cleaned = mask_script_includes(text)
             graphs.append(parse_graph(cleaned))
         except (ValueError, TypeError, OSError, ParseError) as exc:
+            if raise_parse_error and isinstance(exc, (ParseError, ValueError)):
+                raise
             logger.warning("Failed to parse %s: %s", es_file, exc)
 
     if not graphs:

@@ -600,7 +600,8 @@ def _run_interactive_player(session: Any, *, backend: str) -> None:
         )
 
     asset_dir = str(session.asset_dir) if getattr(session, "asset_dir", None) else None
-    title = f"Eager Visual Novel ({backend.upper()})"
+    cfg_title = getattr(getattr(session, "config", None), "title", None)
+    title = cfg_title if cfg_title else f"Eager Visual Novel ({backend.upper()})"
     player: Any = player_cls(
         session=session,
         width=1280,

@@ -629,13 +629,13 @@ def test_save_data_version_declaration() -> None:
         dialogue_snippet="Hello",
     )
     save_data = SaveData(metadata=meta, checkpoint=cp)
-    assert save_data.version == 1
+    assert save_data.version == 2
     d = save_data.to_dict()
-    assert d["version"] == 1
+    assert d["version"] == 2
     assert d["metadata"]["version"] == 2
 
     restored = SaveData.from_dict(d)
-    assert restored.version == 1
+    assert restored.version == 2
     assert restored.metadata.version == 2
 
 
@@ -670,7 +670,7 @@ def test_load_slot_unversioned_legacy_auto_upgrade(tmp_path: Path) -> None:
 
 
 def test_load_slot_with_registered_migration(tmp_path: Path) -> None:
-    manager = SaveManager(tmp_path)
+    manager = SaveManager(tmp_path, target_version=1)
     cp = Checkpoint(
         story={"current_scene": "hallway", "version": 1},
         visual={"sprites": ["hero"]},
@@ -694,8 +694,31 @@ def test_load_slot_with_registered_migration(tmp_path: Path) -> None:
     assert entities == [{"name": "hero", "scale": 1.0}]
 
 
+def test_load_slot_v1_auto_migrates_to_v2_by_default(tmp_path: Path) -> None:
+    # Save a v1 slot explicitly
+    cp = Checkpoint(
+        story={"current_scene": "intro", "version": 1},
+        visual={"sprites": ["hero"]},
+        audio={},
+        backlog_len=0,
+        ui={"text": "V1 save"},
+    )
+    SaveManager(tmp_path, target_version=1).save_slot("v1_slot", cp)
+
+    # Load with default SaveManager (target_version=2)
+    default_manager = SaveManager(tmp_path)
+    assert default_manager.target_version == 2
+    loaded = default_manager.load_slot("v1_slot")
+    assert loaded is not None
+    assert loaded.story.get("current_scene") == "intro"
+    meta = default_manager.get_slot_metadata("v1_slot")
+    assert meta is not None
+    assert meta.dialogue_snippet == "V1 save"
+
+
+
 def test_load_slot_with_migration_hook_arg(tmp_path: Path) -> None:
-    manager = SaveManager(tmp_path)
+    manager = SaveManager(tmp_path, target_version=1)
     cp = Checkpoint(
         story={"current_scene": "room", "version": 1},
         visual={"lighting": "dark"},

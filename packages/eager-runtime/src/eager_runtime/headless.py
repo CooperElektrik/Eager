@@ -267,10 +267,11 @@ class NullStage:
         """Serialize current visual stage state for checkpointing.
 
         Returns:
-            Dictionary containing compositor state.
+            Dictionary containing compositor and UI state.
         """
         return {
             "compositor": self.compositor.save_state(),
+            "ui_state": self.save_ui_state(),
         }
 
     def load_visual_state(self, state: dict[str, Any]) -> None:

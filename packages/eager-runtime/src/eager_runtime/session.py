@@ -146,6 +146,11 @@ class GameSession:
         self.backend = backend
         self.asset_dir = Path(asset_dir) if asset_dir is not None else None
         self._custom_save_dir = Path(save_dir) if save_dir is not None else None
+        if config is not None:
+            if virtual_width == 1920 and hasattr(config, "virtual_width") and config.virtual_width:
+                virtual_width = config.virtual_width
+            if virtual_height == 1080 and hasattr(config, "virtual_height") and config.virtual_height:
+                virtual_height = config.virtual_height
         self.virtual_width = virtual_width
         self.virtual_height = virtual_height
         self.auto_reload = auto_reload or watch
@@ -171,7 +176,12 @@ class GameSession:
         self.translation_manager = TranslationManager()
         locales_dir: Path | None = None
         if self.script_path is not None:
-            candidate = self.script_path.resolve().parent / "locales"
+            base_dir = (
+                self.script_path.resolve()
+                if self.script_path.is_dir()
+                else self.script_path.resolve().parent
+            )
+            candidate = base_dir / "locales"
             if candidate.is_dir():
                 locales_dir = candidate
         if locales_dir is not None:
@@ -527,9 +537,7 @@ class GameSession:
 
         if not simulate:
             self.vm.jump(target_scene)
-            self.checkpoints.clear()
-            self.checkpoints.push(self._capture_checkpoint())
-            return True
+            return self._finalize_warp(prev_skip=self.skip_mode)
 
         if self.vm.current_scene_id == target_scene and not self.vm.is_ended:
             return True
@@ -543,9 +551,7 @@ class GameSession:
 
         if path is None or len(path) <= 1:
             self.vm.jump(target_scene)
-            self.checkpoints.clear()
-            self.checkpoints.push(self._capture_checkpoint())
-            return True
+            return self._finalize_warp(prev_skip=self.skip_mode)
 
         self.vm.jump(path[0])
         prev_skip = self.skip_mode
@@ -624,17 +630,21 @@ class GameSession:
         if self.vm.current_scene_id != target_scene:
             self.vm.jump(target_scene)
 
+        return self._finalize_warp(prev_skip=prev_skip)
+
+    def _finalize_warp(self, prev_skip: bool = False) -> bool:
         if hasattr(self.director, "finish_animations"):
             self.director.finish_animations()
         elif hasattr(self.stage, "finish_animations"):
             self.stage.finish_animations()
 
         if hasattr(self.director, "ui_state"):
-            self.director.ui_state.speaker = None
-            self.director.ui_state.text = None
-            self.director.ui_state.visible_chars = None
+            self.director.ui_state.clear_dialogue()
             self.director.ui_state.clear_choices()
+            self.director.ui_state.is_finished = False
 
+        self.is_finished = False
+        self.mode = "game"
         self.text_reveal = None
         self.active_choice_prompt = None
         self.active_input_prompt = None
@@ -1061,6 +1071,13 @@ class GameSession:
             return self.screens.show("save", self)
         elif action == InputAction.HISTORY:
             return self.screens.show("history", self)
+        elif action == InputAction.FULLSCREEN:
+            player: Any = getattr(self, "_player", None)
+            if player is not None and hasattr(player, "toggle_fullscreen"):
+                player.toggle_fullscreen()
+            elif hasattr(self.renderer, "toggle_fullscreen"):
+                self.renderer.toggle_fullscreen()
+            return True
         elif action == InputAction.RELOAD:
             return self.hot_reload()
         elif action == InputAction.SCREENSHOT:
@@ -1182,7 +1199,7 @@ class GameSession:
 
         # 2. Re-parse the script
         try:
-            new_graph = load_project_graph(target_path)
+            new_graph = load_project_graph(target_path, raise_parse_error=True)
             self._project_scripts = resolve_project_scripts(target_path)
             if self.watcher is not None:
                 self.watcher.target_paths = self._project_scripts
@@ -1191,9 +1208,26 @@ class GameSession:
             self._ui_dirty = True
             return False
 
-        # 3. Hot-swap the VM
+        # 3. Hot-swap the VM and sync characters and defaults
         self.graph = new_graph
         self.vm.graph = new_graph
+
+        if hasattr(self.director, "register_character") and new_graph.characters:
+            for cid, cinfo in new_graph.characters.items():
+                attrs = cinfo.get("attrs", {}) if isinstance(cinfo, dict) else {}
+                name = cinfo.get("name") if isinstance(cinfo, dict) else None
+                self.director.register_character(
+                    cid,
+                    name=name,
+                    asset_prefix=attrs.get("asset_prefix"),
+                    default_expression=attrs.get("default_expression", "default"),
+                    default_position=attrs.get("default_position", "center"),
+                    side_image=attrs.get("side_image"),
+                    color=attrs.get("color"),
+                )
+
+        if hasattr(self.vm, "_apply_graph_defaults"):
+            self.vm._apply_graph_defaults()
 
         # 4. Reconcile State
         if cur_scene_id is not None and cur_scene_id in new_graph.nodes:

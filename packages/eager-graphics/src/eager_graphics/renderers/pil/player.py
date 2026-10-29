@@ -88,6 +88,15 @@ if TYPE_CHECKING or PIL_AVAILABLE:
                 self.compositor, self.width, self.height
             )
 
+        def toggle_fullscreen(self) -> None:
+            """Toggle fullscreen mode."""
+            if self._root is not None:
+                try:
+                    cur = bool(self._root.attributes("-fullscreen"))
+                    self._root.attributes("-fullscreen", not cur)
+                except Exception:  # noqa: BLE001, S110
+                    pass
+
         def toggle_debug_overlay(self) -> None:
             """Cycle debug overlay mode for developer diagnostics."""
             _ = self.cycle_debug_overlay()

@@ -122,7 +122,8 @@ def compute_inlay_hints(
                 item = doc.get_item_at_line(line_0)
                 scene_id = doc.get_scene_at_line(line_0)
                 if item and scene_id:
-                    beat_id = compute_beat_id(scene_id, item, occurrence=1)
+                    occ = doc.get_beat_occurrence(line_0)
+                    beat_id = compute_beat_id(scene_id, item, occurrence=occ)
                     pos = Position(line=line_0, character=len(doc.lines[line_0]))
 
                     # Check each active locale

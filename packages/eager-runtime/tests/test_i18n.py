@@ -474,3 +474,29 @@ Hero: My name is [hero_name].
     assert diag_ev.text == "My name is Carlos."
 
 
+def test_character_display_name_resolves_before_speaker_translation() -> None:
+    from eager_script import parse_graph
+
+    script = """
+@character h "Hoshiko"
+
+## Start --- start
+h: Konnichiwa!
+"""
+    graph = parse_graph(script)
+    tm = TranslationManager()
+    cat_ja = TranslationCatalog(
+        locale="ja",
+        speakers={"Hoshiko": "星子"},
+    )
+    tm.register_catalog(cat_ja)
+    tm.set_locale("ja")
+
+    vm = StoryVM(graph, translation_manager=tm)
+    vm.step()  # SceneEnterEvent
+    ev = vm.step()
+    assert isinstance(ev, DialogueEvent)
+    assert ev.speaker == "星子"
+
+
+

@@ -335,6 +335,7 @@ def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:
                 curr_line = item.line_number
                 curr_branch_body: list[Any] = []
                 i += 1
+                closed = False
                 while i < len(items):
                     sub = items[i]
                     if isinstance(sub, ParsedIf):
@@ -356,11 +357,14 @@ def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:
                         i += 1
                     elif isinstance(sub, ParsedEnd):
                         branches.append((curr_cond, curr_branch_body, curr_line))
+                        closed = True
                         i += 1
                         break
                     else:
                         curr_branch_body.append(sub)
                         i += 1
+                if not closed and (curr_branch_body or curr_cond is not None):
+                    branches.append((curr_cond, curr_branch_body, curr_line))
                 out.append(("if_structure", branches))
             elif isinstance(item, (ParsedElif, ParsedElse, ParsedEnd)):
                 # Return out to parent if-block parser

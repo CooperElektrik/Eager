@@ -14,9 +14,10 @@ def test_director_save_load_visual_state_roundtrip() -> None:
     director.ui_state.speaker = "Bob"
     director.ui_state.text = "State check"
 
-    # Save visual state (contains stage compositor state)
+    # Save visual state (contains stage compositor state and UI state)
     saved = director.save_visual_state()
     assert "compositor" in saved
+    assert "ui_state" in saved
     ui_saved = director.save_ui_state()
 
     # Modify state further
@@ -24,8 +25,12 @@ def test_director_save_load_visual_state_roundtrip() -> None:
     director.ui_state.speaker = "Alice"
     assert len(comp.render_list()) == 3
 
-    # Restore state
+    # Restore state via load_visual_state alone
     director.load_visual_state(saved)
+    assert len(comp.render_list()) == 2
+    assert director.ui_state.speaker == "Bob"
+    assert director.ui_state.text == "State check"
+
     director.restore_ui_state(ui_saved)
     assert len(comp.render_list()) == 2
     assert director.ui_state.speaker == "Bob"

@@ -696,7 +696,7 @@ def test_warp_simulates_stage_state_and_variables() -> None:
     assert sound_chan is None or sound_chan.is_playing is False
 
     # UI text should be clean for Act 1
-    assert session.director.ui_state.text is None
+    assert not session.director.ui_state.text
 
     # Advancing now executes Act 1 beats (modifying expression to happy)
     evt = session.advance()

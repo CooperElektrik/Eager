@@ -102,6 +102,9 @@ class BasePlayer:
         else:
             self.debug_mode = DebugOverlayMode.OFF
 
+    def toggle_fullscreen(self) -> None:
+        """Toggle fullscreen mode if supported by the player implementation."""
+
     def toggle_debug_overlay(self) -> None:
         """Toggle or cycle debug overlay visibility."""
         self.show_fps = not self.show_fps
@@ -269,6 +272,9 @@ class BasePlayer:
             return True
         if action == InputAction.DEBUG_OVERLAY:
             self.toggle_debug_overlay()
+            return True
+        if action == InputAction.FULLSCREEN:
+            self.toggle_fullscreen()
             return True
         if action:
             self._mark_ui_dirty()

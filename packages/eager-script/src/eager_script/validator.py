@@ -86,6 +86,8 @@ def validate(items: Sequence[ParsedItem]) -> ValidationResult:
         inline_if_stack: list[dict[str, Any]] = []
 
         for sub in nested_items:
+            if isinstance(sub, (ParsedIf, ParsedElif, ParsedElse, ParsedEnd)):
+                terminator = None
             if terminator is not None:
                 warnings.append(
                     ValidationError(
@@ -414,7 +416,7 @@ def validate(items: Sequence[ParsedItem]) -> ValidationResult:
     # Check for unreachable statements within scene blocks (dead code after terminating statements)
     terminator_info: tuple[str, int] | None = None
     for item in items:
-        if isinstance(item, ParsedLabel):
+        if isinstance(item, (ParsedLabel, ParsedIf, ParsedElif, ParsedElse, ParsedEnd)):
             terminator_info = None
         elif terminator_info is not None:
             term_desc, term_line = terminator_info
@@ -445,6 +447,8 @@ def validate(items: Sequence[ParsedItem]) -> ValidationResult:
     for item in items:
         if isinstance(item, ParsedLabel):
             curr_scene = item.name
+            curr_terminated = False
+        elif isinstance(item, (ParsedIf, ParsedElif, ParsedElse, ParsedEnd)):
             curr_terminated = False
         elif curr_scene is not None and not curr_terminated:
             if isinstance(item, (ParsedJump, ParsedCall)):
@@ -513,7 +517,7 @@ def validate(items: Sequence[ParsedItem]) -> ValidationResult:
             current_scene_label = item.name
             scene_has_branch_or_exit = False
         elif current_scene_label is not None:
-            if isinstance(item, (ParsedChoiceSet, ParsedReturn)):
+            if isinstance(item, (ParsedChoiceSet, ParsedReturn, ParsedIf)):
                 scene_has_branch_or_exit = True
             elif (
                 isinstance(item, ParsedJump)
