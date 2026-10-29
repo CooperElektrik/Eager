@@ -1,133 +1,59 @@
 #!/usr/bin/env python3
-"""Concatenate all .py files in the repository into a single labelled file.
-
-Read-only with respect to the source tree: the script never modifies or
-deletes any existing file. It refuses to write to a path that is itself
-a Python source file in the tree, and refuses to overwrite an existing
-file unless --force is given.
-
-Usage:
-    python scripts/concat_py.py                      # writes concat_output.txt
-    python scripts/concat_py.py report.txt           # custom output path
-    python scripts/concat_py.py --root packages      # limit to a subdirectory
-    python scripts/concat_py.py -                    # write to stdout
-"""
-
-from __future__ import annotations
-
+"""Concatenate all .py files in the repository into a single labelled file."""
 import argparse
 import sys
 from pathlib import Path
 
-# Directories skipped when walking the tree.
-EXCLUDED_DIRS = {
-    ".git",
-    ".venv",
-    "venv",
-    "__pycache__",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".mypy_cache",
-    ".poolside",
-    ".freebuff",
-    "node_modules",
-    "build",
-    "dist",
-    "egg-info",
+EXCLUDED = {
+    ".git", ".venv", "venv", "__pycache__", ".pytest_cache", ".ruff_cache", 
+    ".mypy_cache", ".poolside", ".freebuff", "node_modules", "build", "dist", "egg-info"
 }
 
-SEPARATOR = "=" * 78
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("output", nargs="?", default="concat_output.txt", help="Output file path, or '-' for stdout")
+    p.add_argument("--root", default=".", type=Path, help="Directory to scan")
+    p.add_argument("--include-tests", action="store_true", help="Include test modules")
+    p.add_argument("--exclude-tests", dest="include_tests", action="store_false", help=argparse.SUPPRESS)
+    p.add_argument("-f", "--force", action="store_true", help="Allow overwriting an existing output file")
+    args = p.parse_args()
 
-
-def should_skip(path: Path) -> bool:
-    """Return True if any parent directory of *path* is excluded."""
-    return any(
-        part in EXCLUDED_DIRS or part.endswith(".egg-info") for part in path.parts
-    )
-
-
-def collect_files(root: Path) -> list[Path]:
-    """Return sorted .py files under *root*, excluding generated dirs."""
-    files = [
-        p
-        for p in root.rglob("*.py")
-        if p.is_file() and not should_skip(p.relative_to(root))
-    ]
-    return sorted(files)
-
-
-def format_file(path: Path, root: Path, index: int, total: int) -> str:
-    """Render one file's contents with a path/line-count header."""
-    rel = path.relative_to(root)
-    try:
-        text = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    line_count = text.count("\n") + (0 if text.endswith("\n") or not text else 1)
-    header = (
-        f"{SEPARATOR}\n"
-        f"[{index}/{total}] {rel.as_posix()}\n"
-        f"{line_count} lines\n"
-        f"{SEPARATOR}\n"
-    )
-    if text and not text.endswith("\n"):
-        text += "\n"
-    return header + text
-
-
-def concatenate(root: Path) -> tuple[str, int]:
-    """Return (combined output text, number of files included)."""
-    files = collect_files(root)
-    header = (
-        f"# Concatenated Python sources from {root.resolve()}\n# {len(files)} files\n\n"
-    )
-    parts = [header]
-    for i, path in enumerate(files, start=1):
-        parts.append(format_file(path, root, i, len(files)))
-    return "".join(parts), len(files)
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        "output",
-        nargs="?",
-        default="concat_output.txt",
-        help="Output file path, or '-' for stdout (default: concat_output.txt)",
-    )
-    parser.add_argument(
-        "--root",
-        default=".",
-        help="Directory to scan (default: current directory)",
-    )
-    parser.add_argument(
-        "-f",
-        "--force",
-        action="store_true",
-        help="Allow overwriting an existing output file",
-    )
-    args = parser.parse_args(argv)
-
-    root = Path(args.root).resolve()
+    root = args.root.resolve()
     if not root.is_dir():
-        parser.error(f"root is not a directory: {root}")
+        p.error(f"root is not a directory: {root}")
 
-    if args.output != "-":
-        out = Path(args.output).resolve()
+    out = None if args.output == "-" else Path(args.output).resolve()
+    if out:
         if out.suffix == ".py" and out.is_relative_to(root):
-            parser.error(f"refusing to overwrite Python source inside the tree: {out}")
+            p.error(f"refusing to overwrite Python source inside the tree: {out}")
         if out.exists() and not args.force:
-            parser.error(f"output already exists (use --force): {out}")
+            p.error(f"output already exists (use --force): {out}")
 
-    text, count = concatenate(root)
+    files = []
+    for path in root.rglob("*.py"):
+        if not path.is_file(): continue
+        parts = path.relative_to(root).parts
+        if EXCLUDED.intersection(parts) or any(pt.endswith(".egg-info") for pt in parts):
+            continue
+        is_test = {"test", "tests"}.intersection(parts) or path.name.startswith("test_") or path.name.endswith("_test.py") or path.name == "conftest.py"
+        if args.include_tests or not is_test:
+            files.append(path)
+    
+    files.sort()
+    out_parts = [f"# Concatenated Python sources from {root}\n# {len(files)} files\n\n"]
+    
+    for i, path in enumerate(files, 1):
+        txt = path.read_text("utf-8", "replace")
+        lines = txt.count("\n") + (0 if txt.endswith("\n") or not txt else 1)
+        trailer = "\n" if txt and not txt.endswith("\n") else ""
+        out_parts.append(f"{'='*78}\n[{i}/{len(files)}] {path.relative_to(root).as_posix()}\n{lines} lines\n{'='*78}\n{txt}{trailer}")
 
-    if args.output == "-":
-        sys.stdout.write(text)
+    text = "".join(out_parts)
+    if out:
+        out.write_text(text, "utf-8")
+        print(f"Wrote {len(files)} files to {out}", file=sys.stderr)
     else:
-        out.write_text(text, encoding="utf-8")
-        print(f"Wrote {count} files to {out}", file=sys.stderr)
-    return 0
-
+        sys.stdout.write(text)
 
 if __name__ == "__main__":
     raise SystemExit(main())
