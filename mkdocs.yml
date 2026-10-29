@@ -16,6 +16,7 @@ theme:
     - navigation.tabs.sticky
     - navigation.sections
     - navigation.top
+    - navigation.indexes
     - search.highlight
     - search.share
     - content.code.annotate
@@ -86,18 +87,92 @@ plugins:
 
 nav:
   - Home: index.md
-  - API Reference:
-    - API Overview: api/index.md
-    - eager-core: api/eager-core.md
-    - eager-script: api/eager-script.md
-    - eager-runtime: api/eager-runtime.md
-    - eager-graphics: api/eager-graphics.md
-    - eager-script-lsp: api/eager-script-lsp.md
   - Guides:
-    - Architecture: guides/architecture.md
-    - Import Conventions: guides/import-conventions.md
-    - Expression Evaluation: guides/expression-evaluation.md
-    - Hook Parsing: guides/hook-parsing.md
+    - Architecture & Design:
+      - Architecture: guides/architecture.md
+      - Import Conventions: guides/import-conventions.md
+    - Screenplay & DSL:
+      - Expression Evaluation: guides/expression-evaluation.md
+      - Hook Parsing: guides/hook-parsing.md
+  - API Reference:
+    - Overview: api/index.md
+    - eager-core:
+      - Overview: api/eager-core/index.md
+      - Types: api/eager-core/types.md
+      - Events: api/eager-core/events.md
+      - Audio: api/eager-core/audio.md
+      - Text: api/eager-core/text.md
+      - Timing: api/eager-core/timing.md
+      - Easing: api/eager-core/easing.md
+      - Input: api/eager-core/input.md
+      - Storage: api/eager-core/storage.md
+      - i18n: api/eager-core/i18n.md
+      - Protocols: api/eager-core/protocols.md
+      - Exceptions: api/eager-core/exceptions.md
+    - eager-script:
+      - Overview: api/eager-script/index.md
+      - Parser: api/eager-script/parser.md
+      - Expressions: api/eager-script/expr.md
+      - Scene Graph: api/eager-script/graph.md
+      - Hooks: api/eager-script/hooks.md
+      - Validator: api/eager-script/validator.md
+      - CLI: api/eager-script/cli.md
+    - eager-runtime:
+      - Overview: api/eager-runtime/index.md
+      - Story VM: api/eager-runtime/runtime.md
+      - Session: api/eager-runtime/session.md
+      - Dispatcher: api/eager-runtime/dispatcher.md
+      - Saves: api/eager-runtime/saves.md
+      - State: api/eager-runtime/state.md
+      - Persistent Data: api/eager-runtime/persistent.md
+      - Preferences: api/eager-runtime/preferences.md
+      - Headless Runner: api/eager-runtime/headless.md
+      - Assets: api/eager-runtime/assets.md
+      - Backlog: api/eager-runtime/backlog.md
+      - Terminal Player: api/eager-runtime/player.md
+      - Project: api/eager-runtime/project.md
+      - Watcher: api/eager-runtime/watcher.md
+      - i18n: api/eager-runtime/i18n.md
+      - CLI: api/eager-runtime/cli.md
+    - eager-graphics:
+      - Overview: api/eager-graphics/index.md
+      - Compositor: api/eager-graphics/compositor.md
+      - Director: api/eager-graphics/director.md
+      - Stage: api/eager-graphics/stage.md
+      - Layout: api/eager-graphics/layout.md
+      - Timeline: api/eager-graphics/timeline.md
+      - Types: api/eager-graphics/types.md
+      - Protocol: api/eager-graphics/protocol.md
+      - UI Components: api/eager-graphics/ui.md
+      - Theme: api/eager-graphics/theme.md
+      - Fonts: api/eager-graphics/fonts.md
+      - Player: api/eager-graphics/player.md
+      - Screens:
+        - Overview: api/eager-graphics/screens/index.md
+        - Screen Base: api/eager-graphics/screens/screen.md
+        - Builtin Screens: api/eager-graphics/screens/builtin.md
+        - Widgets: api/eager-graphics/screens/widgets.md
+      - Renderers:
+        - Overview: api/eager-graphics/renderers/index.md
+        - Null Renderer: api/eager-graphics/renderers/null.md
+        - PIL Renderer: api/eager-graphics/renderers/pil.md
+        - Pyglet Renderer: api/eager-graphics/renderers/pyglet.md
+        - Miniaudio Backend: api/eager-graphics/renderers/miniaudio.md
+    - eager-script-lsp:
+      - Overview: api/eager-script-lsp/index.md
+      - Server: api/eager-script-lsp/server.md
+      - Workspace: api/eager-script-lsp/workspace.md
+      - Document: api/eager-script-lsp/document.md
+      - CLI: api/eager-script-lsp/cli.md
+      - Features:
+        - Overview: api/eager-script-lsp/features/index.md
+        - Completion: api/eager-script-lsp/features/completion.md
+        - Diagnostics: api/eager-script-lsp/features/diagnostics.md
+        - Hover: api/eager-script-lsp/features/hover.md
+        - Navigation: api/eager-script-lsp/features/navigation.md
+        - Code Lenses: api/eager-script-lsp/features/lenses.md
+        - Refactor: api/eager-script-lsp/features/refactor.md
+        - Semantic Tokens: api/eager-script-lsp/features/tokens.md
   - About:
     - Changelog: about/changelog.md
     - License: about/license.md

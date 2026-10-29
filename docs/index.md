@@ -31,11 +31,11 @@ eager-script ──┐
 
 | Package | Import path | Role |
 |---------|-------------|------|
-| [`eager-core`](api/eager-core.md) | `eager_core` | Shared leaf foundation: audio mixing, geometry (`Vec2`, `Rect`), `Color`, easing, timing, input semantics, storage, text pacing (`{fast}`). |
-| [`eager-script`](api/eager-script.md) | `eager_script` | Zero-dependency screenplay DSL parser: AST generation, stream parsing, directed scene graph, validator, and expression compiler (`compile_expr`). |
-| [`eager-runtime`](api/eager-runtime.md) | `eager_runtime` | Headless story virtual machine (`StoryVM`), event dispatcher (`run_until_pause`), session controller (`GameSession`), save manager, and terminal player. |
-| [`eager-graphics`](api/eager-graphics.md) | `eager_graphics` | Resolution-independent presentation layer: stage compositor, dialogue/choice UI, built-in screens, and pluggable backends (Null, PIL, Pyglet). |
-| [`eager-script-lsp`](api/eager-script-lsp.md) | `eager_script_lsp` | Language Server Protocol (LSP 3.17+) server: real-time diagnostics, autocompletion, hover previews, navigation, and `--check` CLI. |
+| [`eager-core`](api/eager-core/index.md) | `eager_core` | Shared leaf foundation: audio mixing, geometry (`Vec2`, `Rect`), `Color`, easing, timing, input semantics, storage, text pacing (`{fast}`). |
+| [`eager-script`](api/eager-script/index.md) | `eager_script` | Zero-dependency screenplay DSL parser: AST generation, stream parsing, directed scene graph, validator, and expression compiler (`compile_expr`). |
+| [`eager-runtime`](api/eager-runtime/index.md) | `eager_runtime` | Headless story virtual machine (`StoryVM`), event dispatcher (`run_until_pause`), session controller (`GameSession`), save manager, and terminal player. |
+| [`eager-graphics`](api/eager-graphics/index.md) | `eager_graphics` | Resolution-independent presentation layer: stage compositor, dialogue/choice UI, built-in screens, and pluggable backends (Null, PIL, Pyglet). |
+| [`eager-script-lsp`](api/eager-script-lsp/index.md) | `eager_script_lsp` | Language Server Protocol (LSP 3.17+) server: real-time diagnostics, autocompletion, hover previews, navigation, and `--check` CLI. |
 
 ## Installation
 
@@ -73,8 +73,8 @@ uv run mkdocs serve
 
 Browse the auto-generated API reference for each package:
 
-- [eager-core](api/eager-core.md)
-- [eager-script](api/eager-script.md)
-- [eager-runtime](api/eager-runtime.md)
-- [eager-graphics](api/eager-graphics.md)
-- [eager-script-lsp](api/eager-script-lsp.md)
+- [eager-core](api/eager-core/index.md)
+- [eager-script](api/eager-script/index.md)
+- [eager-runtime](api/eager-runtime/index.md)
+- [eager-graphics](api/eager-graphics/index.md)
+- [eager-script-lsp](api/eager-script-lsp/index.md)
