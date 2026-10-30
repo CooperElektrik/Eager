@@ -728,13 +728,17 @@ class StoryVM:
             beat_id = cid
 
             if isinstance(item, ParsedDialogue):
-                interp_speaker = self._interpolate(item.speaker)
-                # If speaker matches a character ID, map to display name before translation
+                raw_speaker = self._interpolate(item.speaker)
+                display_speaker = raw_speaker
                 if self._graph.characters:
-                    cid_match = interp_speaker if interp_speaker in self._graph.characters else interp_speaker.lower()
+                    cid_match = raw_speaker if raw_speaker in self._graph.characters else raw_speaker.lower()
                     if cid_match in self._graph.characters:
-                        interp_speaker = self._graph.characters[cid_match].get("name", interp_speaker)
-                interp_speaker = self._translate_speaker(interp_speaker)
+                        display_speaker = self._graph.characters[cid_match].get("name", raw_speaker)
+                interp_speaker = self._translate_speaker(display_speaker)
+                if interp_speaker == display_speaker and raw_speaker != display_speaker:
+                    translated_raw = self._translate_speaker(raw_speaker)
+                    if translated_raw != raw_speaker:
+                        interp_speaker = translated_raw
                 raw_text, _ = self._translate_beat(cid, item.text)
                 return DialogueEvent(
                     speaker=interp_speaker,

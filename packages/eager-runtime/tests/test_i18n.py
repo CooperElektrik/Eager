@@ -499,4 +499,31 @@ h: Konnichiwa!
     assert ev.speaker == "星子"
 
 
+def test_character_speaker_translation_fallback_by_id() -> None:
+    from eager_script import parse_graph
+
+    script = """
+@character h "Hoshiko"
+
+## Start --- start
+h: Konnichiwa!
+"""
+    graph = parse_graph(script)
+    tm = TranslationManager()
+    # Catalog translates using raw speaker ID 'h' (e.g. from extract_catalog)
+    cat_ja = TranslationCatalog(
+        locale="ja",
+        speakers={"h": "星子"},
+    )
+    tm.register_catalog(cat_ja)
+    tm.set_locale("ja")
+
+    vm = StoryVM(graph, translation_manager=tm)
+    vm.step()  # SceneEnterEvent
+    ev = vm.step()
+    assert isinstance(ev, DialogueEvent)
+    assert ev.speaker == "星子"
+
+
+
 

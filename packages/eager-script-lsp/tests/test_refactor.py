@@ -140,3 +140,59 @@ def test_rename_character_occurrences():
         assert any(e.new_text == "kaori" for e in edits)
         # Display name and speaker should be Kaori
         assert any(e.new_text == "Kaori" for e in edits)
+
+
+def test_code_action_declare_missing_default():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        f1 = root / "f1.es"
+        f1.write_text(
+            "## Scene 1 --- s1\n$ score = 10\n$ persistent.cleared = True\n",
+            encoding="utf-8",
+        )
+        index = WorkspaceIndex(root)
+        index.initialize()
+        doc = index.get_document(f1.as_uri())
+        assert doc is not None
+
+        # Cursor on 'score' ($ score = 10, line 1, col 3)
+        actions = compute_code_actions(
+            doc,
+            index,
+            Range(start=Position(line=1, character=3), end=Position(line=1, character=3)),
+            CodeActionContext(diagnostics=[]),
+        )
+        default_actions = [a for a in actions if "@default score" in a.title]
+        assert len(default_actions) == 1
+        assert "Declare '@default score = 0' in preamble" in default_actions[0].title
+
+        # Cursor on 'persistent.cleared' ($ persistent.cleared = True, line 2, col 3)
+        actions_p = compute_code_actions(
+            doc,
+            index,
+            Range(start=Position(line=2, character=3), end=Position(line=2, character=3)),
+            CodeActionContext(diagnostics=[]),
+        )
+        default_actions_p = [a for a in actions_p if "@default persistent" in a.title]
+        assert len(default_actions_p) == 0
+
+        # Variable with @default should not offer the quick fix
+        f2 = root / "f2.es"
+        f2.write_text(
+            "@default score = 5\n## Scene 2 --- s2\n$ score = 10\n",
+            encoding="utf-8",
+        )
+        index2 = WorkspaceIndex(root)
+        index2.initialize()
+        doc2 = index2.get_document(f2.as_uri())
+        assert doc2 is not None
+
+        actions2 = compute_code_actions(
+            doc2,
+            index2,
+            Range(start=Position(line=2, character=3), end=Position(line=2, character=3)),
+            CodeActionContext(diagnostics=[]),
+        )
+        default_actions2 = [a for a in actions2 if "@default score" in a.title]
+        assert len(default_actions2) == 0
+

@@ -212,7 +212,9 @@ def compute_code_actions(
     # 3. Quick Fix: Declare missing @default variable
     if token and token.kind == "variable":
         var_name = token.value
-        if var_name not in workspace.variables or workspace.variables[var_name].default_val is None:
+        if not var_name.startswith("persistent.") and (
+            var_name not in workspace.variables or workspace.variables[var_name].default_val is None
+        ):
             preamble_pos = Position(line=0, character=0)
             actions.append(
                 CodeAction(
