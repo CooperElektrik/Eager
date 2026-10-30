@@ -1308,10 +1308,33 @@ class UIOverlay:
 
         curr_y = margin_y + 25.0
         text_max_w = box_w - 40.0
-        font_size = 14
+        font_size = self.scale_font_size(14)
+        speaker_font_size = self.scale_font_size(13)
         line_height = font_size * 1.4
+        max_content_h = box_h - 45.0
 
+        # Pre-wrap and measure entries to tail-fit the most recent visible entries
+        prepared_entries: list[tuple[Any, list[str], float]] = []
         for entry in ui_state.nvl_entries:
+            plain_text = parse_text_tags(entry.text).plain_text
+            wrapped = _get_wrapped_lines(plain_text, text_max_w, backend.measure_text, font_size=font_size)
+            lines = [w[0] if isinstance(w, tuple) else w for w in wrapped]
+            h = (line_height * 1.1 if entry.speaker else 0.0) + len(lines) * line_height + 10.0
+            prepared_entries.append((entry, lines, h))
+
+        # Tail-fit entries that fit within max_content_h
+        visible_entries: list[tuple[Any, list[str], float]] = []
+        total_h = 0.0
+        for item in reversed(prepared_entries):
+            entry, lines, h = item
+            if total_h + h <= max_content_h or not visible_entries:
+                visible_entries.append(item)
+                total_h += h
+            else:
+                break
+        visible_entries.reverse()
+
+        for entry, lines, _ in visible_entries:
             if curr_y + line_height > margin_y + box_h - 20.0:
                 break
             if entry.speaker:
@@ -1319,14 +1342,12 @@ class UIOverlay:
                     margin_x + 20.0,
                     curr_y,
                     entry.speaker,
-                    font_size=13,
+                    font_size=speaker_font_size,
                     color=Color(1.0, 0.9, 0.45, 1.0),
                 )
                 curr_y += line_height * 1.1
 
-            lines = _get_wrapped_lines(entry.text, text_max_w, backend.measure_text, font_size=font_size)
-            for line_item in lines:
-                line_str = line_item[0] if isinstance(line_item, tuple) else line_item
+            for line_str in lines:
                 if curr_y + line_height > margin_y + box_h - 20.0:
                     break
                 backend.draw_text(

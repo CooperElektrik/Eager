@@ -194,3 +194,46 @@ Alice: Hello!
     occ2 = doc.get_beat_occurrence(3)
     assert occ2 == 2
 
+
+def test_include_directive_syntax_and_masking():
+    text = '@include "other.es"\n## Start --- start\nNarrator: Hi\n'
+    doc = ScriptDocument("file:///main.es", text)
+    assert len(doc.syntax_errors) == 0
+    inc_spans = [s for s in doc.spans if s.kind == "include_path"]
+    assert len(inc_spans) == 1
+    assert inc_spans[0].value == "other.es"
+
+    bad_text = "@include\n## Start --- start\n"
+    bad_doc = ScriptDocument("file:///bad.es", bad_text)
+    assert len(bad_doc.syntax_errors) == 1
+    assert "Invalid @include syntax" in bad_doc.syntax_errors[0].message
+
+
+def test_inline_choice_ast_lookup_and_scene_resolution():
+    text = """## Scene 1 --- s1
+? Choice A
+    Alice: Inside choice!
+"""
+    doc = ScriptDocument("file:///choice.es", text)
+    item = doc.get_item_at_line(2)
+    assert item is not None
+    assert getattr(item, "speaker", None) == "Alice"
+    scene = doc.get_scene_at_line(2)
+    assert scene == "s1__anon_2"
+
+
+def test_scan_append_and_fresh_box_variants():
+    text = """## Start --- start
+-text
+-\ttabbed
+/
+/fresh
+"""
+    doc = ScriptDocument("file:///boxes.es", text)
+    assert len(doc.syntax_errors) == 0
+    appends = [s for s in doc.spans if s.kind == "append_marker"]
+    assert len(appends) == 2
+    fresh = [s for s in doc.spans if s.kind == "fresh_box_marker"]
+    assert len(fresh) == 2
+
+

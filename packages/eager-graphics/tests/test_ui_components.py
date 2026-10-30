@@ -1054,3 +1054,43 @@ def test_ui_overlay_delegation_methods() -> None:
     assert overlay.get_hovered_quick_action() == "save"
     assert overlay.quick_menu.hovered_action == "save"
 
+
+def test_ui_overlay_draw_nvl_markup_scaling_and_overflow() -> None:
+    from eager_graphics.ui_state import NVLEntry, UIState
+
+    overlay = UIOverlay(1280, 720)
+    ui_state = UIState()
+    ui_state.nvl_mode = True
+    ui_state.nvl_entries = [
+        NVLEntry(speaker="Alice", text="Line with {b}bold{/b} and {color=#ff0000}color{/color}"),
+    ]
+    backend = NullRenderer()
+    overlay.draw_nvl(backend, ui_state)
+
+    # Check text tag was stripped in drawn text
+    text_calls = [c for c in backend.ui_calls if c["kind"] == "text"]
+    assert any("Line with bold and color" in c["text"] for c in text_calls)
+    assert not any("{b}" in c["text"] for c in text_calls)
+
+    # Check font scaling on 1440p
+    overlay_1440 = UIOverlay(2560, 1440)
+    backend_1440 = NullRenderer()
+    overlay_1440.draw_nvl(backend_1440, ui_state)
+    text_calls_1440 = [c for c in backend_1440.ui_calls if c["kind"] == "text"]
+    assert any(c["font_size"] == 28 for c in text_calls_1440)  # 14 * 2 = 28
+
+    # Overflow tail-fitting: add 100 entries so it exceeds max height
+    ui_state_large = UIState()
+    ui_state_large.nvl_mode = True
+    ui_state_large.nvl_entries = [
+        NVLEntry(speaker=None, text=f"Entry {i}") for i in range(100)
+    ]
+    backend_overflow = NullRenderer()
+    overlay.draw_nvl(backend_overflow, ui_state_large)
+    calls_overflow = [c for c in backend_overflow.ui_calls if c["kind"] == "text"]
+    # Most recent entry (Entry 99) should definitely be drawn
+    assert any(c["text"] == "Entry 99" for c in calls_overflow)
+    # Old entry (Entry 0) should be dropped due to overflow tail-fitting
+    assert not any(c["text"] == "Entry 0" for c in calls_overflow)
+
+

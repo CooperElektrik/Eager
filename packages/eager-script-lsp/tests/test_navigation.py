@@ -188,3 +188,34 @@ def test_navigation_out_of_bounds_queries():
     assert compute_definition(doc, index, oob) is None
     assert compute_references(doc, index, oob) == []
 
+
+def test_include_directive_definition_and_links():
+    import tempfile
+
+    from lsprotocol.types import Location
+
+    from eager_script_lsp.features.tokens import compute_document_links
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        f_inc = root / "included.es"
+        f_inc.write_text("## Included --- inc\nNarrator: In included\n", encoding="utf-8")
+        f_main = root / "main.es"
+        f_main.write_text('@include "included.es"\n## Start --- start\n> inc\n', encoding="utf-8")
+
+        index = WorkspaceIndex(root)
+        index.initialize()
+        doc = index.get_document(f_main.as_uri())
+        assert doc is not None
+
+        # Position on "included.es" (line 0, col 12)
+        loc = compute_definition(doc, index, Position(line=0, character=12))
+        assert loc is not None
+        assert isinstance(loc, Location)
+        assert loc.uri == f_inc.as_uri()
+
+        # Document links
+        links = compute_document_links(doc, index)
+        assert any(link.target == f_inc.as_uri() for link in links)
+
+

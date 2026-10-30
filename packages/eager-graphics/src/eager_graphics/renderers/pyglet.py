@@ -28,7 +28,7 @@ from eager_graphics.fonts import register_pyglet_default_font
 from eager_graphics.layout import LayoutResolver, ViewportTransform
 from eager_graphics.player import BasePlayer
 from eager_graphics.protocol import RenderBackend, RenderItem
-from eager_graphics.types import Anchor, ScaleMode
+from eager_graphics.types import Anchor, DebugOverlayMode, ScaleMode
 
 if TYPE_CHECKING:
 
@@ -741,6 +741,63 @@ class PygletRenderer(RenderBackend):
             f"fps={self.clock.fps:.1f})"
         )
 
+    def debug_info(self) -> dict[str, Any]:
+        """Return a structured diagnostic snapshot of the Pyglet renderer state."""
+        return {
+            "performance": {
+                "fps": round(self.fps, 1),
+                "fps_avg": round(self.fps_avg, 1),
+                "fps_overall": round(self.fps_overall, 1),
+                "frame_count": self.frame_count,
+                "dt_ms": round(self.clock.dt * 1000.0, 2),
+            },
+            "stage": {
+                "active_sprites": len(self._active_sprites),
+                "pooled_sprites": len(self._pooled_stage_sprites),
+                "sprite_cursor": self._sprite_cursor,
+                "groups": len(self._stage_groups),
+            },
+            "ui_pools": {
+                "rectangles": {"cursor": self._rect_cursor, "pooled": len(self._rect_pool)},
+                "boxes": {"cursor": self._box_cursor, "pooled": len(self._box_pool)},
+                "gradients": {"cursor": self._grad_cursor, "pooled": len(self._grad_pool)},
+                "labels": {"cursor": self._label_cursor, "pooled": len(self._label_pool)},
+                "sprites": {"cursor": self._ui_sprite_cursor, "pooled": len(self._ui_sprite_pool)},
+                "groups": len(self._ui_groups),
+            },
+            "caches": {
+                "textures": len(getattr(self.asset_resolver, "_cache", {})),
+                "regions": len(self._region_cache),
+            },
+            "backend": {
+                "renderer": "pyglet",
+                "width": self.width,
+                "height": self.height,
+                "scale_mode": self.scale_mode.value if hasattr(self.scale_mode, "value") else str(self.scale_mode),
+            },
+        }
+
+    def debug_repr(self) -> str:
+        """Return a formatted multi-line diagnostic string."""
+        info = self.debug_info()
+        perf = info["performance"]
+        stage = info["stage"]
+        ui = info["ui_pools"]
+        caches = info["caches"]
+        backend = info["backend"]
+        return (
+            f"── Eager Debug: Pyglet Backend ──────────────────────────\n"
+            f"FPS: {perf['fps']:.1f} (avg: {perf['fps_avg']:.1f}) | Frame: {perf['frame_count']} | dt: {perf['dt_ms']:.1f}ms\n"
+            f"Mode: {backend['renderer']} ({backend['width']}x{backend['height']}, {backend['scale_mode']})\n"
+            f"Stage Sprites: active={stage['active_sprites']} | pool={stage['pooled_sprites']} | groups={stage['groups']}\n"
+            f"UI Pools: rects={ui['rectangles']['cursor']}/{ui['rectangles']['pooled']}, "
+            f"boxes={ui['boxes']['cursor']}/{ui['boxes']['pooled']}, "
+            f"grads={ui['gradients']['cursor']}/{ui['gradients']['pooled']}, "
+            f"labels={ui['labels']['cursor']}/{ui['labels']['pooled']}, "
+            f"sprites={ui['sprites']['cursor']}/{ui['sprites']['pooled']}\n"
+            f"Caches: textures={caches['textures']} | regions={caches['regions']}"
+        )
+
     # ------------------------------------------------------------------ #
     # UIDrawBackend primitives
     #
@@ -1450,6 +1507,23 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):
         else:
             pyglet.app.run()
 
+    def toggle_debug_overlay(self) -> None:
+        """Cycle debug overlay mode for developer diagnostics."""
+        _ = self.cycle_debug_overlay()
+
+    def cycle_debug_overlay(self) -> DebugOverlayMode:
+        """Cycle debug overlay mode: OFF -> FPS -> DETAILED -> OFF."""
+        match self.debug_mode:
+            case DebugOverlayMode.OFF:
+                self.debug_mode = DebugOverlayMode.FPS
+            case DebugOverlayMode.FPS:
+                self.debug_mode = DebugOverlayMode.DETAILED
+            case DebugOverlayMode.DETAILED:
+                self.debug_mode = DebugOverlayMode.OFF
+        if self._fps_label is not None:
+            self._fps_label.text = ""
+        return self.debug_mode
+
     def on_draw(self) -> None:
         """Render frame: stage graphics followed by UI textbox, choices, screens, and FPS."""
         self.session.draw(self.renderer, self.width, self.height)
@@ -1457,20 +1531,26 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):
         # Flush batched UI elements
         self.renderer.flush_ui()
 
-        # 5. Render FPS counter
+        # 5. Render FPS / Debug overlay
         if self.show_fps and self._fps_label is not None:
             self._draw_fps()
 
     def _draw_fps(self) -> None:
-        """Update and draw the on-screen FPS counter overlay."""
-        if self._fps_label is None:
+        """Update and draw the on-screen FPS/debug overlay."""
+        if self._fps_label is None or self.debug_mode == DebugOverlayMode.OFF:
             return
         now = time.monotonic()
         if not self._fps_label.text or (now - self._last_fps_update) >= 0.25:
-            fps = self.renderer.fps
-            fps_avg = self.renderer.fps_avg
-            frames = self.renderer.frame_count
-            self._fps_label.text = f"FPS: {fps:.1f}  (avg: {fps_avg:.1f}, frames: {frames})"
+            if self.debug_mode == DebugOverlayMode.FPS:
+                fps = self.renderer.fps
+                fps_avg = self.renderer.fps_avg
+                frames = self.renderer.frame_count
+                self._fps_label.multiline = False
+                self._fps_label.text = f"FPS: {fps:.1f}  (avg: {fps_avg:.1f}, frames: {frames})"
+            elif self.debug_mode == DebugOverlayMode.DETAILED:
+                self._fps_label.multiline = True
+                self._fps_label.width = min(self.width - 20, 750)
+                self._fps_label.text = self.renderer.debug_repr()
             self._last_fps_update = now
         self._fps_label.draw()
 

@@ -79,6 +79,7 @@ KIND_TO_TOKEN_TYPE: dict[str, int] = {
     "hook_keyword": 5,      # keyword
     "hook_arg": 6,          # string
     "directive": 5,         # keyword
+    "include_path": 6,      # string
     "variable": 4,          # variable
     "set_op": 5,            # keyword
     "text_tag": 7,          # macro
@@ -239,7 +240,25 @@ def compute_document_links(
     links: list[DocumentLink] = []
 
     for span in doc.spans:
-        if span.kind in ("hook_arg", "emotion", "voice_path"):
+        if span.kind == "include_path":
+            from eager_script_lsp.workspace import uri_to_path
+
+            doc_path = uri_to_path(doc.uri)
+            target_path = (doc_path.parent / span.value).resolve()
+            if not target_path.is_file() and workspace.root_path:
+                root_target = (workspace.root_path / span.value).resolve()
+                if root_target.is_file():
+                    target_path = root_target
+            if target_path.is_file():
+                links.append(
+                    DocumentLink(
+                        range=span.range,
+                        target=target_path.as_uri(),
+                        tooltip=f"Open {target_path.name}",
+                    )
+                )
+
+        elif span.kind in ("hook_arg", "emotion", "voice_path"):
             asset_kind = span.metadata.get("asset_kind")
             disk_path = None
             if asset_kind == "background":

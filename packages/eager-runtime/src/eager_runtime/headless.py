@@ -18,6 +18,7 @@ from eager_core.events import (
     NarrationEvent,
     StoryEndEvent,
 )
+from eager_core.types import Color
 
 __all__ = [
     "HeadlessUIState",
@@ -71,7 +72,11 @@ class HeadlessUIState:
             "is_finished": self.is_finished,
             "side_image": self.side_image,
             "visible_chars": self.visible_chars,
-            "speaker_color": self.speaker_color,
+            "speaker_color": (
+                self.speaker_color.to_hex()
+                if hasattr(self.speaker_color, "to_hex")
+                else self.speaker_color
+            ),
         }
 
     @classmethod
@@ -89,6 +94,12 @@ class HeadlessUIState:
             ChoiceOption.from_dict(c) if isinstance(c, dict) else c
             for c in raw_choices
         ]
+        speaker_color_raw = data.get("speaker_color")
+        speaker_color = (
+            Color.from_hex(speaker_color_raw)
+            if isinstance(speaker_color_raw, str) and speaker_color_raw.startswith("#")
+            else speaker_color_raw
+        )
         return cls(
             speaker=data.get("speaker"),
             text=data.get("text", ""),
@@ -97,7 +108,7 @@ class HeadlessUIState:
             is_finished=bool(data.get("is_finished", False)),
             side_image=data.get("side_image"),
             visible_chars=data.get("visible_chars"),
-            speaker_color=data.get("speaker_color"),
+            speaker_color=speaker_color,
         )
 
 
@@ -185,14 +196,34 @@ class NullStage:
             color: Color value or hex string for speaker label.
         """
         cid = character_id.strip().lower()
+        parsed_color = color
+        if isinstance(color, str):
+            try:
+                from eager_core.types import Color
+                parsed_color = Color.from_hex(color)
+            except Exception:  # noqa: BLE001
+                parsed_color = None
+
         self.characters[cid] = {
             "name": name,
             "asset_prefix": asset_prefix,
             "default_expression": default_expression,
             "default_position": default_position,
             "side_image": side_image,
-            "color": color,
+            "color": parsed_color,
         }
+
+    def _find_character_config(self, speaker: str | None) -> dict[str, Any] | None:
+        """Find character metadata matching character_id or display name."""
+        if not speaker:
+            return None
+        sid = speaker.strip().lower()
+        if sid in self.characters:
+            return self.characters[sid]
+        for cinfo in self.characters.values():
+            if cinfo.get("name") and str(cinfo["name"]).strip().lower() == sid:
+                return cinfo
+        return None
 
     def bind(self, dispatcher: Any) -> None:
         """Bind stage event handlers to the runtime event dispatcher.

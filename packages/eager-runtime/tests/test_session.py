@@ -1341,6 +1341,64 @@ def test_session_project_dir_locales_and_config_dimensions(tmp_path: Path) -> No
     assert "es" in session.translation_manager.catalogs
 
 
+def test_hot_reload_refreshes_translation_and_character_styling(tmp_path: Path) -> None:
+    import json
+
+    proj_dir = tmp_path / "reload_proj"
+    proj_dir.mkdir()
+    locales_dir = proj_dir / "locales"
+    locales_dir.mkdir()
+
+    # Spanish translation catalog
+    (locales_dir / "es.json").write_text(
+        json.dumps({
+            "locale": "es",
+            "strings": {"start.greeting": "Hola"},
+            "speakers": {"h": "Hoshiko ES"},
+        }),
+        encoding="utf-8",
+    )
+
+    script_file = proj_dir / "main.es"
+    script_file.write_text(
+        """@character h "Hoshiko" color=#112233
+## Start --- start
+h: Hello {id=greeting}
+""",
+        encoding="utf-8",
+    )
+
+    session = GameSession(proj_dir, headless=True)
+    session.advance()
+    assert session.director.ui_state.speaker == "Hoshiko"
+    assert session.director.ui_state.text == "Hello"
+    assert session.director.ui_state.speaker_color == Color.from_hex("#112233")
+
+    # Switch to Spanish and hot-reload to verify presentation refresh picks up locale & character styling
+    session.translation_manager.set_locale("es")
+    session.hot_reload()
+    assert session.director.ui_state.speaker == "Hoshiko ES"
+    assert session.director.ui_state.text == "Hola"
+    assert session.director.ui_state.speaker_color == Color.from_hex("#112233")
+
+    # Update locale catalog on disk
+    (locales_dir / "es.json").write_text(
+        json.dumps({
+            "locale": "es",
+            "strings": {"start.greeting": "Hola amigo!"},
+            "speakers": {"h": "Hoshiko Reloaded"},
+        }),
+        encoding="utf-8",
+    )
+
+    # Hot reload picks up disk changes
+    session.hot_reload()
+    assert session.director.ui_state.speaker == "Hoshiko Reloaded"
+    assert session.director.ui_state.text == "Hola amigo!"
+    assert session.director.ui_state.speaker_color == Color.from_hex("#112233")
+
+
+
 
 
 

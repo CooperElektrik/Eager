@@ -6,7 +6,7 @@ sprites, audio tracks, and voice clips) exist in the specified asset directory.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -83,33 +83,59 @@ def extract_asset_references(
 
     items_to_scan: list[tuple[ParsedItem, str | None]] = []
 
+    def collect_items(seq: Iterable[ParsedItem], sc_id: str | None) -> None:
+        for it in seq:
+            items_to_scan.append((it, sc_id))
+            if isinstance(it, eager_script.ParsedChoiceSet):
+                for opt in it.options:
+                    if opt.body:
+                        collect_items(opt.body, sc_id)
+
     # Check if this is a SceneGraph
     if hasattr(graph_or_items, "nodes") and hasattr(graph_or_items, "preamble"):
         graph: SceneGraph = graph_or_items  # type: ignore[assignment]
         # Preamble items
-        for it in graph.preamble:
-            items_to_scan.append((it, None))
+        collect_items(graph.preamble, None)
         # Scene nodes
         for node_id, node in graph.nodes.items():
-            for it in node.body:
-                items_to_scan.append((it, node_id))
+            collect_items(node.body, node_id)
         # Preamble character definitions from graph.characters
         if graph.characters:
             for cid, cdef in graph.characters.items():
                 c_id = str(cid).strip().lower()
                 attrs_dict: dict[str, str] = {}
                 if isinstance(cdef, dict):
-                    attrs_dict = {str(k): str(v) for k, v in cdef.items()}
+                    raw_attrs = cdef.get("attrs")
+                    if isinstance(raw_attrs, dict):
+                        attrs_dict.update({str(k): str(v) for k, v in raw_attrs.items()})
+                    if "name" in cdef and cdef["name"] is not None:
+                        attrs_dict["name"] = str(cdef["name"])
                 character_configs[c_id] = attrs_dict
     else:
-        for it in graph_or_items:  # type: ignore[union-attr]
-            items_to_scan.append((it, None))
+        collect_items(graph_or_items, None)  # type: ignore[arg-type]
 
-    for item, scene_id in items_to_scan:
+    # First pass: collect all character definitions from items_to_scan
+    for item, _ in items_to_scan:
         if isinstance(item, eager_script.ParsedCharacter):
             c_id = item.id.strip().lower()
             attrs_dict = dict(item.attrs)
+            if item.name:
+                attrs_dict["name"] = item.name
             character_configs[c_id] = attrs_dict
+
+    def resolve_char_id(raw_name: str) -> str:
+        clean = raw_name.strip().lower()
+        if clean in character_configs:
+            return clean
+        for cid, cfg in character_configs.items():
+            name = cfg.get("name")
+            if name and name.strip().lower() == clean:
+                return cid
+        return clean
+
+    for item, scene_id in items_to_scan:
+        if isinstance(item, eager_script.ParsedCharacter):
+            continue
 
         elif isinstance(item, ParsedHook):
             hook_str = item.hook_name.strip()
@@ -134,7 +160,8 @@ def extract_asset_references(
 
             elif hook_cmd == "show":
                 if parsed.positional:
-                    char_id = parsed.positional[0].strip().lower()
+                    raw_char = parsed.positional[0].strip()
+                    char_id = resolve_char_id(raw_char)
                     cfg = character_configs.get(char_id, {})
                     if len(parsed.positional) > 1:
                         expr = parsed.positional[1].strip().lower()
@@ -153,7 +180,8 @@ def extract_asset_references(
 
             elif hook_cmd == "expr":
                 if len(parsed.positional) >= 2:
-                    char_id = parsed.positional[0].strip().lower()
+                    raw_char = parsed.positional[0].strip()
+                    char_id = resolve_char_id(raw_char)
                     expr = parsed.positional[1].strip().lower()
                     references.append(
                         AssetReference(
@@ -213,8 +241,8 @@ def extract_asset_references(
         elif isinstance(item, ParsedDialogue):
             # Check speaker emotion sprite
             speaker = item.speaker.strip()
-            speaker_lower = speaker.lower()
-            if item.emotion and speaker_lower not in ("narrator", ""):
+            speaker_lower = resolve_char_id(speaker)
+            if item.emotion and speaker.lower() not in ("narrator", ""):
                 expr = item.emotion.strip().lower()
                 references.append(
                     AssetReference(
@@ -268,6 +296,7 @@ def resolve_candidate_paths(
         expr = ref.expression or (ref.identifier.split("/")[1] if "/" in ref.identifier else "default")
         cfg = configs.get(cid, {})
         prefix = cfg.get("asset_prefix")
+        name = cfg.get("name")
 
         for ext in IMAGE_EXTENSIONS:
             candidates.append(f"{cid}/{expr}{ext}")
@@ -279,6 +308,13 @@ def resolve_candidate_paths(
                 candidates.append(f"{prefix}/{expr}{ext}")
                 candidates.append(f"characters/{prefix}_{expr}{ext}")
                 candidates.append(f"characters/{prefix}/{expr}{ext}")
+            if name:
+                name_clean = name.strip().lower()
+                if name_clean != cid and name_clean != (prefix or "").lower():
+                    candidates.append(f"{name_clean}/{expr}{ext}")
+                    candidates.append(f"{name_clean}_{expr}{ext}")
+                    candidates.append(f"characters/{name_clean}/{expr}{ext}")
+                    candidates.append(f"characters/{name_clean}_{expr}{ext}")
 
     elif ref.kind == "audio":
         track = ref.identifier

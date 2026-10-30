@@ -172,3 +172,54 @@ Narrator: All good.
     captured = capsys.readouterr()
     assert "Script validation PASSED" in captured.out
     assert "All referenced assets resolved successfully" in captured.out
+
+
+def test_check_assets_with_scene_graph_character_attrs(tmp_path: Path) -> None:
+    asset_dir = tmp_path / "assets"
+    asset_dir.mkdir()
+    (asset_dir / "hoshiko_prefix_smile.png").write_text("fake")
+
+    script = """
+@character h "Hoshiko" asset_prefix="hoshiko_prefix" default_expression="smile"
+
+## Start --- start
+~ show h
+Hoshiko (smile): Hello!
+"""
+    graph = eager_script.parse_graph(script)
+    report = check_assets(graph, asset_dir)
+    assert report.is_valid
+    assert len(report.missing) == 0
+
+
+def test_check_assets_inline_choice_body(tmp_path: Path) -> None:
+    asset_dir = tmp_path / "assets"
+    asset_dir.mkdir()
+    (asset_dir / "secret.png").write_text("fake")
+
+    # Raw ParsedChoiceSet with inline body
+    from eager_script import ParsedChoiceOption, ParsedChoiceSet, ParsedDialogue, ParsedHook
+
+    choice_item = ParsedChoiceSet(
+        options=(
+            ParsedChoiceOption(
+                text="Open chest",
+                target=None,
+                line_number=2,
+                body=(
+                    ParsedHook(hook_name="bg secret", line_number=3),
+                    ParsedDialogue(speaker="Hero", text="Found it!", emotion="happy", voice=None, line_number=4),
+                ),
+            ),
+        ),
+        line_number=2,
+    )
+
+    refs, _ = extract_asset_references([choice_item])
+    bg_refs = [r for r in refs if r.kind == "background"]
+    assert len(bg_refs) == 1
+    assert bg_refs[0].identifier == "secret"
+    char_refs = [r for r in refs if r.kind == "character"]
+    assert len(char_refs) == 1
+    assert char_refs[0].expression == "happy"
+

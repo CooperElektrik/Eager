@@ -15,6 +15,7 @@ from pyglet.window import Window, mouse
 from eager_graphics import (
     Anchor,
     Color,
+    DebugOverlayMode,
     LayoutResolver,
     RenderItem,
     ScaleMode,
@@ -373,9 +374,12 @@ def test_pyglet_player_run_and_input_handling(monkeypatch: pytest.MonkeyPatch) -
     assert run_called == [0.0]
 
     try:
-        # FPS overlay toggle
-        assert player.show_fps
+        # FPS overlay toggle cycles FPS -> DETAILED -> OFF
+        assert player.debug_mode == DebugOverlayMode.FPS
         player.on_key_press(pyglet.window.key.F3, 0)
+        assert player.debug_mode == DebugOverlayMode.DETAILED
+        player.on_key_press(pyglet.window.key.F3, 0)
+        assert player.debug_mode == DebugOverlayMode.OFF
         assert not player.show_fps
         player.on_draw()  # FPS draw skipped when show_fps is False
 
@@ -696,6 +700,55 @@ Alice: Fullscreen test
         assert handled_f11 is True
     finally:
         player.close()
+
+
+def test_pyglet_renderer_debug_info_and_player_cycle(tmp_path: Path) -> None:
+    from eager_runtime import GameSession
+
+    from eager_graphics.types import DebugOverlayMode
+
+    script = """
+## Start --- start
+Alice: Debug overlay test
+"""
+    graph = parse_graph(script)
+    session = GameSession(graph)
+    player = PygletPlayer(session=session, width=1280, height=720, visible=False, show_fps=False)
+    try:
+        # Check renderer debug_info and debug_repr
+        info = player.renderer.debug_info()
+        assert "performance" in info
+        assert "stage" in info
+        assert "ui_pools" in info
+        assert "caches" in info
+        assert "backend" in info
+        repr_str = player.renderer.debug_repr()
+        assert "Eager Debug: Pyglet Backend" in repr_str
+
+        # Initial mode should be OFF
+        assert player.debug_mode == DebugOverlayMode.OFF
+
+        # Cycle 1: OFF -> FPS
+        m1 = player.cycle_debug_overlay()
+        assert m1 == DebugOverlayMode.FPS
+        assert player.show_fps is True
+
+        # Cycle 2: FPS -> DETAILED
+        m2 = player.cycle_debug_overlay()
+        assert m2 == DebugOverlayMode.DETAILED
+        assert player.show_fps is True
+
+        # Cycle 3: DETAILED -> OFF
+        m3 = player.cycle_debug_overlay()
+        assert m3 == DebugOverlayMode.OFF
+        assert player.show_fps is False
+
+        # toggle_debug_overlay delegates to cycle_debug_overlay
+        player.toggle_debug_overlay()
+        assert player.debug_mode == DebugOverlayMode.FPS
+    finally:
+        player.close()
+
 
 
 

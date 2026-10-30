@@ -1155,16 +1155,64 @@ class GameSession:
         if 0 <= display_idx < len(new_scene.body):
             from eager_script import ParsedChoiceSet, ParsedDialogue, ParsedNarration
 
+            from eager_runtime.i18n import compute_beat_id, get_beat_occurrence
+
             item = new_scene.body[display_idx]
+            occ = get_beat_occurrence(new_scene.body, display_idx)
+            cid = compute_beat_id(self.vm.current_scene_id or "", item, occurrence=occ)
+
             if isinstance(item, ParsedDialogue):
-                self.director.ui_state.speaker = item.speaker
-                self.director.ui_state.text = self.vm.interpolate(item.text)
+                raw_speaker = self.vm._interpolate(item.speaker)
+                display_speaker = raw_speaker
+                if self.vm._graph.characters:
+                    cid_match = raw_speaker if raw_speaker in self.vm._graph.characters else raw_speaker.lower()
+                    if cid_match in self.vm._graph.characters:
+                        display_speaker = self.vm._graph.characters[cid_match].get("name", raw_speaker)
+                interp_speaker = self.vm._translate_speaker(display_speaker)
+                if interp_speaker == display_speaker and raw_speaker != display_speaker:
+                    translated_raw = self.vm._translate_speaker(raw_speaker)
+                    if translated_raw != raw_speaker:
+                        interp_speaker = translated_raw
+
+                raw_text, _ = self.vm._translate_beat(cid, item.text)
+                final_text = self.vm._interpolate(raw_text)
+
+                char_cfg = getattr(self.director, "_find_character_config", lambda s: None)(interp_speaker)
+                if char_cfg is None and raw_speaker != interp_speaker:
+                    char_cfg = getattr(self.director, "_find_character_config", lambda s: None)(raw_speaker)
+                if char_cfg is None and display_speaker != interp_speaker:
+                    char_cfg = getattr(self.director, "_find_character_config", lambda s: None)(display_speaker)
+
+                char_color = (
+                    getattr(char_cfg, "color", None)
+                    if not isinstance(char_cfg, dict)
+                    else (char_cfg.get("color") if isinstance(char_cfg, dict) else None)
+                )
+
+                self.director.ui_state.speaker = interp_speaker
+                self.director.ui_state.text = final_text
                 self.director.ui_state.emotion = item.emotion
+                if hasattr(self.director, "_resolve_side_image"):
+                    side = self.director._resolve_side_image(interp_speaker, item.emotion)
+                    if not side and raw_speaker != interp_speaker:
+                        side = self.director._resolve_side_image(raw_speaker, item.emotion)
+                    self.director.ui_state.side_image = side
+                elif isinstance(char_cfg, dict):
+                    self.director.ui_state.side_image = char_cfg.get("side_image")
+                self.director.ui_state.speaker_color = char_color
+
+                if getattr(self.director.ui_state, "nvl_mode", False) and getattr(self.director.ui_state, "nvl_entries", None):
+                    self.director.ui_state.nvl_entries[-1].speaker = interp_speaker
+                    self.director.ui_state.nvl_entries[-1].text = final_text
+                    self.director.ui_state.nvl_entries[-1].emotion = item.emotion
+
                 self.director.ui_state.visible_chars = None
                 self.text_reveal = None
             elif isinstance(item, ParsedNarration):
+                raw_text, _ = self.vm._translate_beat(cid, item.text)
+                final_text = self.vm._interpolate(raw_text)
                 self.director.ui_state.speaker = None
-                self.director.ui_state.text = self.vm.interpolate(item.text)
+                self.director.ui_state.text = final_text
                 self.director.ui_state.emotion = None
                 self.director.ui_state.visible_chars = None
                 self.text_reveal = None
@@ -1211,6 +1259,12 @@ class GameSession:
         # 3. Hot-swap the VM and sync characters and defaults
         self.graph = new_graph
         self.vm.graph = new_graph
+
+        if self.translation_manager is not None:
+            proj_dir = target_path if target_path.is_dir() else target_path.parent
+            locales_dir = proj_dir / "locales"
+            if locales_dir.is_dir():
+                self.translation_manager.load_directory(locales_dir)
 
         if hasattr(self.director, "register_character") and new_graph.characters:
             for cid, cinfo in new_graph.characters.items():

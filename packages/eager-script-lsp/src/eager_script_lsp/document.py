@@ -36,6 +36,7 @@ _TAG_PATTERN = re.compile(r"\{([^\}]+)\}")
 _COLOR_TAG_PATTERN = re.compile(r"\{color=(#[0-9a-fA-F]{3,8})\}")
 _BEAT_ID_TAG_PATTERN = re.compile(r"\{id=([a-zA-Z0-9_-]+)\}")
 _TOKEN_PATTERN = re.compile(r'"([^"]*)"|\'([^\']*)\'|(\S+)')
+_INCLUDE_PATTERN = re.compile(r'^@include\s+(?:"([^"]+)"|\'([^\']+)\')\s*$')
 
 __all__ = [
     "ScriptDocument",
@@ -139,21 +140,58 @@ class ScriptDocument:
     def get_item_at_line(self, line_0: int) -> ParsedItem | None:
         """Return the AST item on 0-based line_0, if any."""
         target_line_1 = line_0 + 1
-        for item in self.ast_items:
-            if getattr(item, "line_number", None) == target_line_1:
-                return item
-        return None
+
+        def search_items(items: Any) -> ParsedItem | None:
+            for item in items:
+                if getattr(item, "line_number", None) == target_line_1:
+                    return item
+                if isinstance(item, eager_script.ParsedChoiceSet):
+                    for opt in item.options:
+                        if opt.body:
+                            found = search_items(opt.body)
+                            if found is not None:
+                                return found
+            return None
+
+        return search_items(self.ast_items)
 
     def get_scene_at_line(self, line_0: int) -> str | None:
         """Return the scene identifier active at 0-based line_0."""
         target_line_1 = line_0 + 1
         current_scene: str | None = None
+        scene_items: list[Any] = []
+        collecting = False
+
         for item in self.ast_items:
             if isinstance(item, ParsedLabel):
                 if item.line_number <= target_line_1:
                     current_scene = item.name
+                    scene_items = []
+                    collecting = True
                 else:
                     break
+            elif collecting:
+                scene_items.append(item)
+
+        if current_scene:
+            def find_anon_scene(items: Any, parent_scene: str) -> str | None:
+                for it in items:
+                    if isinstance(it, eager_script.ParsedChoiceSet):
+                        for opt in it.options:
+                            if opt.body:
+                                anon_id = f"{parent_scene}__anon_{opt.line_number}"
+                                for sub_item in opt.body:
+                                    if getattr(sub_item, "line_number", None) == target_line_1:
+                                        return anon_id
+                                nested = find_anon_scene(opt.body, anon_id)
+                                if nested is not None:
+                                    return nested
+                return None
+
+            anon = find_anon_scene(scene_items, current_scene)
+            if anon is not None:
+                return anon
+
         return current_scene
 
     def get_beat_occurrence(self, line_0: int) -> int:
@@ -308,8 +346,8 @@ class ScriptDocument:
             self._scan_set(line_idx, content_line, content_stripped, sanitized_lines)
             return
 
-        # 7. Append beat '- ' or Fresh box beat '/ '
-        if content_stripped.startswith("- "):
+        # 7. Append beat '-' or Fresh box beat '/'
+        if content_stripped.startswith("-"):
             start_pos = content_line.find("-")
             self.spans.append(
                 TokenSpan(
@@ -322,10 +360,11 @@ class ScriptDocument:
                 )
             )
             text_part = content_line[start_pos + 1:].strip()
-            text_start = content_line.find(text_part, start_pos + 1)
-            self._scan_dialogue_text(line_idx, text_part, text_start)
+            if text_part:
+                text_start = content_line.find(text_part, start_pos + 1)
+                self._scan_dialogue_text(line_idx, text_part, text_start)
             return
-        if content_stripped.startswith("/ "):
+        if content_stripped.startswith("/"):
             start_pos = content_line.find("/")
             self.spans.append(
                 TokenSpan(
@@ -338,8 +377,9 @@ class ScriptDocument:
                 )
             )
             text_part = content_line[start_pos + 1:].strip()
-            text_start = content_line.find(text_part, start_pos + 1)
-            self._scan_dialogue_text(line_idx, text_part, text_start)
+            if text_part:
+                text_start = content_line.find(text_part, start_pos + 1)
+                self._scan_dialogue_text(line_idx, text_part, text_start)
             return
 
         # 8. Speaker dialogue or Narration
@@ -1256,6 +1296,54 @@ class ScriptDocument:
                     value=content_stripped,
                 )
             )
+            return
+
+        if content_stripped.startswith("@include"):
+            indent = len(content_line) - len(content_line.lstrip(" \t"))
+            m = _INCLUDE_PATTERN.match(content_stripped)
+            if not m:
+                self.syntax_errors.append(
+                    SyntaxIssue(
+                        message="Invalid @include syntax. Expected '@include \"file.es\"'",
+                        line=line_idx,
+                        start_col=at_pos,
+                        end_col=len(content_line),
+                    )
+                )
+                sanitized_lines[line_idx] = f"{' ' * indent}# <invalid @include>"
+                return
+
+            self.spans.append(
+                TokenSpan(
+                    kind="directive",
+                    start_line=line_idx,
+                    start_col=at_pos,
+                    end_line=line_idx,
+                    end_col=at_pos + len("@include"),
+                    value="@include",
+                )
+            )
+            path_grp = 1 if m.group(1) is not None else 2
+            inc_path = m.group(path_grp)
+            p_start = indent + m.start(path_grp)
+            p_end = indent + m.end(path_grp)
+            inc_span = TokenSpan(
+                kind="include_path",
+                start_line=line_idx,
+                start_col=p_start,
+                end_line=line_idx,
+                end_col=p_end,
+                value=inc_path,
+            )
+            self.spans.append(inc_span)
+            self.occurrences.append(
+                SymbolOccurrence(
+                    kind="include_path",
+                    name=inc_path,
+                    span=inc_span,
+                )
+            )
+            sanitized_lines[line_idx] = f"{' ' * indent}# @include"
             return
 
         # Unknown directive
