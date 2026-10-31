@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] - 2026-10-26
+## [0.7.0] - 2026-10-30
 
 ### Added
 
@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Vec2` arithmetic safety: operations on incompatible types return `NotImplemented` and division by zero raises `ZeroDivisionError`.
 - Hex syntax validation in `Color.from_hex` raising `ColorParseError`.
 - Sealed all 10 submodules with explicit ASCII-sorted `__all__` lists.
+- Complete Google-style docstring coverage across all 10 submodules for automated MkDocs API reference generation.
 
 ## [0.5.0] - 2026-10-24
 
@@ -59,7 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.7.0
 [0.5.0]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/CooperElektrik/Eager/compare/v0.2.0...v0.3.0

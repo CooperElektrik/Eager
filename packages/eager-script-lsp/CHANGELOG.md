@@ -5,20 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] - 2026-10-26
+## [0.7.0] - 2026-10-30
 
 ### Added
 
 - Context-aware autocompletion: identifier-aware filtering for scene targets (`> s`).
 - Hover documentation for character tokens in engine hooks and parameter/return type docstrings for built-in functions.
+- Recognized and masked `@include` directives in `ScriptDocument`, wiring definition navigation and document links.
+- Dotted persistent variables: full support for `persistent.<var>` in expressions, hover tooltips, and completions.
+- Choice inline spans scanning and recursive inline choice AST lookup.
+- Anonymous scene resolution and prefix variants for append (`+`) and fresh-box (`=`) dialogue tags.
+- Dynamic beat occurrence computation across document edits.
 - CLI capabilities: `--version` flag and `.es` file extension check.
 - Expanded test suite covering syntax recovery, diagnostics clearing on file close, and multi-file projects.
 - Sealed all 14 submodules with explicit ASCII-sorted `__all__` lists.
+- Complete Google-style docstring coverage across all 14 submodules for automated MkDocs API reference generation.
 
 ### Fixed
 
 - Preserved leading whitespace during AST error recovery in nested choice blocks.
+- Filtered out `persistent.*` variables from preamble `@default` declaration quick fixes.
 - Fixed identifier completion shadowing bug in `completion.py`.
+- Standardized test naming to 1:1 submodule mirroring (`test_cli.py`, `test_completion.py`, `test_document.py`, `test_edge_cases.py`, `test_hover.py`, `test_lenses.py`, `test_navigation.py`, `test_refactor.py`, `test_tokens.py`, `test_workspace.py`) and modernized to native pytest.
 
 ## [0.5.0] - 2026-10-24
 
@@ -53,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Semantic Highlighting & Lenses**: Semantic tokens provider, color picker/decorator provider for `{color=...}` tags, inlay hints for character display names, and "Warp & Play" code lenses.
 - **CLI & Transport**: Standalone `eager-script-lsp` binary and `eager lsp` CLI integration supporting stdio, TCP socket, WebSocket, and a headless `--check` batch validator.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.7.0
 [0.5.0]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/CooperElektrik/Eager/releases/tag/v0.4.0

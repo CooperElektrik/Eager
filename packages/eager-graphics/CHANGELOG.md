@@ -5,14 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] - 2026-10-26
+## [0.7.0] - 2026-10-30
 
 ### Added
 
 - Structured audio error logging: added `logger.warning(...)` diagnostics to `PygletAudioBackend` and `MiniaudioAudioBackend` when encountering uninitialized audio devices, missing media assets, or streaming decode failures.
 - Bound `InputPromptEvent` in `StageDirector.bind()` and wired `active_input_prompt` into `UIState` and `clear_dialogue()`.
-- Added stage composition boundary tests (`test_composition_edge_cases.py`).
+- Preserved live timeline during `StageCompositor.save_state()`: settled stage values are snapshotted without terminating active timeline animations or screen fade overlays mid-beat.
+- Custom fade-in color: added optional `color` parameter to `StageCompositor.fade_in()` and wired parameter parsing in `StageDirector.handle_fade_in()`.
+- Pyglet screenshot export: implemented `PygletRenderer.save_frame()` screenshot capture.
+- Unified fullscreen handling: wired `InputAction.FULLSCREEN` toggling across both `PygletPlayer` and `PILPlayer`.
+- NVL mode enhancements in `UIOverlay.draw_nvl`: added inline text tag parsing, font size scaling, and tail-fit overflowing dialogue entries.
+- Renderer introspection and parity: implemented `PygletRenderer.debug_info()` / `__repr__` and PygletPlayer F3 debug overlay cycling parity with `PILPlayer`.
+- Dynamic element mapping: resolved character element IDs via character display names, and translated speakers after character name resolution.
+- State snapshotting: included `ui_state` inside `save_visual_state` snapshots.
+- Added stage composition boundary tests (`test_composition_edge_cases.py`) verifying offscreen coordinates, negative scale, rotation beyond 360°, zero opacity culling, and layer z-order sorting.
 - Sealed all 17 submodules with explicit ASCII-sorted `__all__` lists.
+- Complete Google-style docstring coverage across all 17 submodules for automated MkDocs API reference generation.
 
 ### Changed
 
@@ -23,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Resolved 124 basedpyright diagnostics across `packages/eager-graphics/tests/`.
 - Fixed non-canonical import in `test_director.py:5`.
+- Standardized test naming to 1:1 submodule mirroring (`test_audio_backends.py`, `test_compositor.py`, `test_director.py`, `test_fonts.py`, `test_layout.py`, `test_renderer_null.py`, `test_renderer_pil.py`, `test_renderer_pyglet.py`, `test_screens.py`, `test_stage.py`, `test_theme.py`, `test_timeline.py`, `test_types.py`, `test_ui_components.py`, etc.) and modernized to native pytest.
 
 ## [0.6.0] - 2026-10-24
 
@@ -165,7 +175,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/CooperElektrik/Eager/compare/v0.2.0...v0.3.0

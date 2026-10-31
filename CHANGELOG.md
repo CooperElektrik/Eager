@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] - 2026-10-26
+## [0.7.0] - 2026-10-30
 
 ### Added
 
@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added streaming AST generator `parse_iter` and stateful `ScreenplayParser` in `eager-script`.
   - Added `ParsedSet`, `ParsedDefault`, `ParsedCharacter`, `ParsedIf`, `ParsedElif`, `ParsedElse`, `ParsedEnd`, `ParsedCondJump`, and `ParsedLocalJump` AST node definitions.
   - Expanded boundary tests for screenplay syntax covering empty scripts, consecutive blank lines, unclosed voice/formatting tags, bare jumps/calls/hooks, and unicode integrity across CJK and emoji.
+  - Added automatic flushing of unclosed `@if` blocks on script EOF in screenplay parser.
 - **Track R2: Core Primitives & Safety**:
   - Established custom domain exception hierarchy in `src/eager_core/exceptions.py` defining `EagerCoreError(Exception)`, `AudioError(EagerCoreError, ValueError)`, `ColorParseError(EagerCoreError, ValueError)`, `StorageError(EagerCoreError, OSError)`, and `I18nError(EagerCoreError, ValueError)` with arbitrary forensic keyword context attributes.
   - Added `Vec2` arithmetic safety: operations on incompatible types return `NotImplemented` and division by zero raises an informative `ZeroDivisionError`.
@@ -23,24 +24,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Stream-aware input handling in `TerminalPlayer`: caught `(EOFError, KeyboardInterrupt, OSError, ValueError)` on choice and text prompt inputs, providing graceful fallback when streams are closed or redirected.
   - Automatic forensic save backup: `SaveManager.load_slot()` detects non-dict roots, missing checkpoints, or malformed JSON payloads and automatically creates `<slot>.json.corrupt.bak` while returning `None`.
   - Resilient slot metadata handling: `SaveMetadata.from_dict()` and `SaveManager.list_slots()` gracefully skip corrupted save slots without aborting directory listing.
+  - Aligned `SaveData.CURRENT_VERSION` with `SaveMetadata` v2 and added automatic fallback migration for unversioned/legacy saves.
+  - Enhanced asset integrity checker (`check_assets()`): extracted character attributes and recursively descended into inline choice bodies.
+  - Robust project graph loading: re-raised parse errors in `load_project_graph()` during `hot_reload`, and synchronized declared characters and default variables.
+  - Live localization hot-reloading: dynamically reloaded locale catalogs and preserved translation and character styling during presentation refresh.
+  - Translation fallback: added raw speaker identifier fallback when display name has no matching translation key in catalog.
+  - Session navigation safety: ensured clean dialogue clearing and `is_finished` flag reset on `GameSession.warp()`.
+  - Configured project directory resolution for localization catalogs and viewport dimensions.
   - Sealed all 15 submodules in `eager-runtime` with explicit ASCII-sorted `__all__` lists.
 - **Track R4: Presentation & Backends Resilience**:
   - Structured audio error logging: added `logger.warning(...)` diagnostics to `PygletAudioBackend` and `MiniaudioAudioBackend` when encountering uninitialized audio devices, missing media assets, or streaming decode failures.
   - Bound `InputPromptEvent` in `StageDirector.bind()` and wired `active_input_prompt` into `UIState` and `clear_dialogue()`.
+  - Preserved live timeline during `StageCompositor.save_state()`: settled stage values are snapshotted without terminating active timeline animations or screen fade overlays mid-beat.
+  - Custom fade-in color: added optional `color` parameter to `StageCompositor.fade_in()` and wired parameter parsing in `StageDirector.handle_fade_in()`.
+  - Pyglet screenshot export: implemented `PygletRenderer.save_frame()` screenshot capture.
+  - Unified fullscreen handling: wired `InputAction.FULLSCREEN` toggling across both `PygletPlayer` and `PILPlayer`.
+  - NVL mode enhancements in `UIOverlay.draw_nvl`: added inline text tag parsing, font size scaling, and tail-fit overflowing dialogue entries.
+  - Renderer introspection and parity: implemented `PygletRenderer.debug_info()` / `__repr__` and PygletPlayer F3 debug overlay cycling parity with `PILPlayer`.
+  - Dynamic element mapping: resolved character element IDs via character display names, and translated speakers after character name resolution.
+  - State snapshotting: included `ui_state` inside `save_visual_state` snapshots.
   - Added stage composition boundary tests (`test_composition_edge_cases.py`) verifying offscreen coordinates, negative scale, rotation beyond 360°, zero opacity culling, and layer z-order sorting.
   - Sealed all 17 submodules in `eager-graphics` with explicit ASCII-sorted `__all__` lists.
 - **Track R5: Language Server Protocol Intelligence**:
-  - Partial filter autocompletion: regex-based filtering for scene targets (e.g., `> s` or `visited('s`), directives, and built-in functions.
+  - Recognized and masked `@include` directives in `ScriptDocument`, wiring definition navigation and document links.
+  - Partial filter autocompletion: regex-based filtering for scene targets (e.g., `> s` or `visited('s')`), directives, and built-in functions.
   - Character documentation on hover: hovering character tokens inside engine hooks (e.g., `~ show <char>`) displays character sheets with display names, colors, and asset references.
   - Function documentation tooltips: added full parameter and return type hover docstrings for all 11 DSL expression functions.
   - Definition lookup fallback: variable definition navigation falls back to the first mutation site when an explicit `@default` declaration is absent.
+  - Dotted persistent variables: full support for `persistent.<var>` in expressions, hover tooltips, and completions.
+  - Choice inline spans scanning and recursive inline choice AST lookup.
+  - Anonymous scene resolution and prefix variants for append (`+`) and fresh-box (`=`) dialogue tags.
+  - Dynamic beat occurrence computation across document edits.
   - Preserved indentation during AST error recovery: `_recover_ast` retains leading whitespace to prevent indentation truncation inside nested choice blocks.
   - Buffer synchronization diagnostics clearing: publishing empty diagnostics when untracked or deleted files are closed.
   - CLI capabilities: added `--version` flag and validated that target files end in `.es`.
-  - Expanded LSP test suite from 37 to 83 unit tests covering CLI options, AST resilience, completion filters, and multi-file project workspaces.
-- **Track R6: Monorepo Integrity & E2E Testing**:
-  - Authored comprehensive 58-test opaque-box E2E test suite in `packages/eager-runtime/tests/test_e2e_scenarios.py` across 4 systematic tiers (Feature Coverage, Boundary & Corner Cases, Cross-Feature Combinations, Real-World Application Scenarios) and published `TEST_READY.md`.
-  - Monorepo test suite expanded from 649 to 936 passing tests (+287 tests) with zero failures and zero flakiness.
+  - Sealed all 14 submodules in `eager-script-lsp` with explicit ASCII-sorted `__all__` lists.
+- **Track R6: Monorepo Modernization & Testing**:
+  - Authored comprehensive 58-test opaque-box E2E test suite in `packages/eager-runtime/tests/test_scenarios.py` across 4 systematic tiers (Feature Coverage, Boundary & Corner Cases, Cross-Feature Combinations, Real-World Application Scenarios) and published `TEST_READY.md`.
+  - Standardized test file naming to mirror source submodules 1:1 across all packages (`test_graph.py`, `test_parser.py`, `test_runtime.py`, `test_saves.py`, `test_renderer_pyglet.py`, etc.).
+  - Modernized the entire monorepo test suite to native pytest assertions, eliminating legacy `unittest.TestCase` inheritance and slow allocations.
+  - Consolidated redundant and slow test suites, slashing test suite execution time to ~4.5 seconds across 833 passing tests with zero flakiness.
+  - Migrated deprecated `tool.uv.dev-dependencies` to `dependency-groups.dev` in root `pyproject.toml`.
+  - Synchronized `>= 0.7.0` intra-monorepo minimum version dependencies across packaging manifests (`debian/DEBIAN/control`, `windows/eager.iss`, `editors/vscode/package.json`, `editors/vscode/package-lock.json`).
+- **Track R7: Documentation & Ecosystem**:
+  - Complete documentation overhaul using Material for MkDocs (`mkdocs.yml`), building in ~4.7s with zero warnings.
+  - 100% Google-style docstring coverage across all submodules in all 5 packages, validated by `mkdocstrings[python]` autodoc.
+  - Restructured API reference documentation into dedicated per-module documentation pages under `docs/api/`.
+  - Authored developer guides under `docs/guides/` covering monorepo architecture, import conventions, expression evaluation, and engine hook parsing.
 
 ### Changed
 
@@ -53,11 +83,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Track R1**: Safe expression evaluator catches and wraps all runtime arithmetic, type, and value errors (`ZeroDivisionError`, `ArithmeticError`, `TypeError`, `ValueError`) into `ExprError`.
 - **Track R1**: Refactored `test_parser.py` with explicit type narrowing, resolving 922 basedpyright errors and enabling permanent removal of `ignore = ["tests/test_parser.py"]`.
+- **Track R1**: Fixed `@if/@elif/@else` unreachable code and cycle false positive warnings in `SceneGraph` analysis and validator.
 - **Track R3**: Fixed infinite loop bug on `InputPromptEvent` in `EventDispatcher.run_until_pause()` by adding `InputPromptEvent` to the pause boundary condition.
 - **Track R3**: Fixed non-canonical direct submodule import in `cli.py:405` (`from eager_core.audio import NullAudioBackend`).
 - **Track R4**: Resolved 124 basedpyright diagnostics across `packages/eager-graphics/tests/` (MockUIDrawBackend method signatures, PIL getpixel narrowing, Pyglet window fixtures).
 - **Track R4**: Fixed non-canonical import in `test_director.py:5` (`from eager_core.audio import AudioMixer, NullAudioBackend`).
 - **Track R5**: Suppressed single-file false positive diagnostics for subroutine returns, external scene labels, and entry point reachability in multi-file projects.
+- **Track R5**: Filtered out `persistent.*` variables from preamble `@default` declaration quick fixes.
 
 ## [0.6.0] - 2026-10-24
 

@@ -5,19 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] - 2026-10-26
+## [0.7.0] - 2026-10-30
 
 ### Added
 
 - Streaming AST generator `parse_iter` and stateful `ScreenplayParser`.
 - AST nodes `ParsedSet`, `ParsedDefault`, `ParsedCharacter`, `ParsedIf`, `ParsedElif`, `ParsedElse`, `ParsedEnd`, `ParsedCondJump`, and `ParsedLocalJump`.
+- Automatic flushing of unclosed `@if` blocks on script EOF in screenplay parser.
 - Boundary test coverage covering empty scripts, unclosed tags, and unicode integrity across CJK/emoji.
 - Sealed all 5 submodules with explicit ASCII-sorted `__all__` lists.
+- Complete Google-style docstring coverage across all 5 submodules for automated MkDocs API reference generation.
 
 ### Fixed
 
 - Safe expression evaluator catches and wraps all runtime arithmetic, type, and value errors (`ZeroDivisionError`, `ArithmeticError`, `TypeError`, `ValueError`) into `ExprError`.
+- Fixed `@if/@elif/@else` unreachable code and cycle false positive warnings in `SceneGraph` analysis and validator.
 - Refactored `test_parser.py` with explicit type narrowing, resolving 922 basedpyright errors and enabling removal of `ignore = ["tests/test_parser.py"]`.
+- Standardized test naming to 1:1 submodule mirroring (`test_graph.py`, `test_parser.py`, `test_expr.py`, `test_validator.py`, `test_cli.py`) and modernized to native pytest.
 
 ### Removed
 
@@ -61,7 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.7.0
 [0.5.0]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/CooperElektrik/Eager/compare/v0.2.0...v0.3.0

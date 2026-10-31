@@ -48,7 +48,7 @@ The codebase has undergone a comprehensive stabilization sprint across 6 hardeni
 - **Track R3 (Headless Runtime)**: Resolved `InputPromptEvent` pausing in `run_until_pause()`, added stream-aware terminal input handling, and implemented forensic `.corrupt.bak` save backups.
 - **Track R4 (Presentation & Backends)**: Audio failure logging and resilience across Pyglet/Miniaudio, eliminated 124 basedpyright diagnostics, and disambiguated `ChoiceOption`.
 - **Track R5 (Language Server Protocol)**: Resilient AST recovery preserving indentation, partial filter completion, character hovers, and clean buffer closure.
-- **Track R6 (Monorepo Integrity)**: 936 passing tests (including a 58-test opaque-box E2E suite), 0 basedpyright diagnostics, clean ruff linting, and 16/16 import contracts kept.
+- **Track R6 (Monorepo Integrity)**: 833 passing tests (including a 58-test opaque-box E2E suite), 0 basedpyright diagnostics, clean ruff linting, 16/16 import contracts kept, and automated MkDocs documentation build.
 
 ---
 
@@ -97,20 +97,24 @@ uv run eager-script-lsp --check examples/demo_story.es
 All commands are run using `uv run` from the monorepo root:
 
 ```bash
-# Run full monorepo test suite (936 tests)
+# Run full monorepo test suite (833 tests)
 uv run pytest packages/ -q --tb=short -x
 
 # Run code linter
 uv run ruff check packages/
 
 # Run type checker across all packages
+(cd packages/eager-core && uv run basedpyright)
 (cd packages/eager-script && uv run basedpyright)
-(cd packages/eager-runtime && uv run basedpyright src)
+(cd packages/eager-runtime && uv run basedpyright)
 (cd packages/eager-graphics && uv run basedpyright src)
 (cd packages/eager-script-lsp && uv run basedpyright)
 
 # Verify architectural layer boundaries
 uv run lint-imports
+
+# Build documentation site
+uv run mkdocs build
 ```
 
 ---

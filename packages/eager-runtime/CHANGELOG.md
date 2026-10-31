@@ -5,18 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] - 2026-10-26
+## [0.7.0] - 2026-10-30
 
 ### Added
 
 - Stream-aware input handling in `TerminalPlayer`: caught `(EOFError, KeyboardInterrupt, OSError, ValueError)` on choice and text prompt inputs.
 - Resilient save file recovery: `SaveManager.load_slot()` detects non-dict roots, missing checkpoints, or malformed JSON payloads and safely archives corrupted files to `<slot>.json.corrupt.bak` while returning `None`.
+- Aligned `SaveData.CURRENT_VERSION` with `SaveMetadata` v2 and added automatic fallback migration for unversioned/legacy saves.
+- Enhanced asset integrity checker (`check_assets()`): extracted character attributes and recursively descended into inline choice bodies.
+- Robust project graph loading: re-raised parse errors in `load_project_graph()` during `hot_reload`, and synchronized declared characters and default variables.
+- Live localization hot-reloading: dynamically reloaded locale catalogs and preserved translation and character styling during presentation refresh.
+- Translation fallback: added raw speaker identifier fallback when display name has no matching translation key in catalog.
+- Session navigation safety: ensured clean dialogue clearing and `is_finished` flag reset on `GameSession.warp()`.
+- Configured project directory resolution for localization catalogs and viewport dimensions.
 - Sealed all 15 submodules with explicit ASCII-sorted `__all__` lists.
+- Complete Google-style docstring coverage across all 15 submodules for automated MkDocs API reference generation.
 
 ### Fixed
 
 - Resolved infinite loop on `InputPromptEvent` in `EventDispatcher.run_until_pause()` by including input prompts in the pause boundary condition.
 - Direct submodule import in `cli.py:405` (`from eager_core.audio import NullAudioBackend`).
+- Standardized test naming to 1:1 submodule mirroring (`test_assets.py`, `test_cli.py`, `test_dispatcher.py`, `test_i18n.py`, `test_player.py`, `test_project.py`, `test_runtime.py`, `test_saves.py`, `test_scenarios.py`, `test_session.py`, `test_state.py`, `test_watcher.py`) and modernized to native pytest.
 
 ## [0.6.0] - 2026-10-24
 
@@ -129,7 +138,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/CooperElektrik/Eager/compare/v0.2.0...v0.3.0
