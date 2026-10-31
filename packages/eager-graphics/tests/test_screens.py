@@ -168,20 +168,10 @@ height = 720
         assert "p1" in merged.nodes
         assert "p2" in merged.nodes
 
-    def test_widgets_bar_and_grid(self):
-        from eager_core.types import Color, Rect
+    def test_widgets_grid(self):
+        from eager_core.types import Rect
 
-        from eager_graphics.screens import Bar, Grid
-
-        bar = Bar(Rect(10, 10, 100, 20), value=0.5, max_value=1.0)
-        backend = MockUIDrawBackend()
-        bar.draw(
-            backend,
-            Color(0.1, 0.1, 0.1, 1.0),
-            Color(0.8, 0.2, 0.2, 1.0),
-            border_color=Color(1, 1, 1, 1),
-        )
-        assert len(backend.rects) >= 2
+        from eager_graphics.screens import Grid
 
         grid = Grid(Rect(0, 0, 300, 200), rows=2, cols=3, padding=0.0, spacing_x=0.0, spacing_y=0.0)
         c0 = grid.cell_rect(0, 0)

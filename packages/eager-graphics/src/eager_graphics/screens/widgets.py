@@ -1,4 +1,4 @@
-"""Immediate-mode UI widgets: Button, Label, Slider, Bar, Grid."""
+"""Immediate-mode UI widgets: Button, Label, Slider, Grid."""
 
 from __future__ import annotations
 
@@ -187,39 +187,6 @@ class Slider:
 
 
 @dataclass
-class Bar:
-    """Progress or status meter bar widget."""
-
-    rect: Rect
-    value: float = 0.0
-    max_value: float = 1.0
-
-    def draw(
-        self,
-        backend: UIDrawBackend,
-        bar_color: Color,
-        fill_color: Color,
-        border_color: Color | None = None,
-        line_width: float = 1.0,
-    ) -> None:
-        """Render bar background, filled portion, and optional border."""
-        ratio = max(0.0, min(1.0, self.value / self.max_value)) if self.max_value > 0 else 0.0
-        fill_w = self.rect.width * ratio
-
-        backend.draw_rect(
-            self.rect.x,
-            self.rect.y,
-            self.rect.width,
-            self.rect.height,
-            bar_color,
-            border_color=border_color,
-            border_width=line_width if border_color is not None else 0.0,
-        )
-        if fill_w > 0:
-            backend.draw_rect(self.rect.x, self.rect.y, fill_w, self.rect.height, fill_color)
-
-
-@dataclass
 class Grid:
     """Layout helper for positioning items in a row/column grid."""
 
@@ -248,4 +215,4 @@ class Grid:
         return self.cell_rect(row, col)
 
 
-__all__ = ["Bar", "Button", "Grid", "Label", "Slider"]
+__all__ = ["Button", "Grid", "Label", "Slider"]

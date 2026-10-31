@@ -310,7 +310,7 @@ if TYPE_CHECKING or PIL_AVAILABLE:
                 f"Sprite LRU: {sp['items']}/{sp['max_items']} ({sp_mb:.1f} MB) | Hit Rate: {sp_hr:.1f}% ({sp['hits']}H/{sp['misses']}M)",
                 f"Total LRU: {caches['total_lru_items']} items ({tot_mb:.1f} MB)",
                 f"Sub-caches: text: {caches['text_mask_lru']['items']}, scaled: {caches['scaled_lru']['items']}, ui: {caches['ui_image_lru']['items']}, geom: {caches['geom_lru']['items']}",
-                f"LUTs: α:{caches['luts']['alpha']} rgba:{caches['luts']['rgba']} fade:{caches['luts']['fade']} | Fonts: {caches['fonts']} | Textures: {caches['loaded_assets']}",
+                f"LUTs: rgba:{caches['luts']['rgba']} fade:{caches['luts']['fade']} | Fonts: {caches['fonts']} | Textures: {caches['loaded_assets']}",
             ])
 
             director = getattr(self.session, "director", None)

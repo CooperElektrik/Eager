@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import copy
 import datetime
-import inspect
 import logging
 import shutil
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -20,7 +18,6 @@ if TYPE_CHECKING:
     from eager_runtime.state import Checkpoint
 
 __all__ = [
-    "MigrationHook",
     "SaveData",
     "SaveManager",
     "SaveMetadata",
@@ -34,11 +31,6 @@ class SaveMigrationError(StoryRuntimeError):
     """Raised when save data cannot be migrated to the target schema version."""
 
 
-MigrationHook = (
-    Callable[[dict[str, Any], int, int], dict[str, Any]]
-    | Callable[[dict[str, Any], int], dict[str, Any]]
-    | Callable[[dict[str, Any]], dict[str, Any]]
-)
 
 
 def _backup_corrupt_slot(path: Path) -> None:
@@ -51,39 +43,6 @@ def _backup_corrupt_slot(path: Path) -> None:
         pass
 
 
-def _invoke_migration_hook(
-    hook: MigrationHook,
-    data: dict[str, Any],
-    source_version: int,
-    target_version: int,
-) -> dict[str, Any]:
-    """Invoke migration hook supporting 1, 2, or 3 arguments."""
-    try:
-        sig = inspect.signature(hook)
-        params = [
-            p
-            for p in sig.parameters.values()
-            if p.kind
-            in (
-                inspect.Parameter.POSITIONAL_ONLY,
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            )
-        ]
-        param_count = len(params)
-    except (ValueError, TypeError):
-        param_count = 3
-
-    if param_count == 1:
-        res = hook(data)  # type: ignore[call-arg]
-    elif param_count == 2:
-        res = hook(data, source_version)  # type: ignore[call-arg]
-    else:
-        res = hook(data, source_version, target_version)  # type: ignore[call-arg]
-
-    if not isinstance(res, dict):
-        msg = f"Migration hook must return a dict, got {type(res).__name__}"
-        raise SaveMigrationError(msg)
-    return res
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,10 +233,6 @@ def _migrate_save_data_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
 class SaveManager:
     """Manages reading, writing, listing, and organizing game save files."""
 
-    _class_migrations: ClassVar[dict[int, Callable[[dict[str, Any]], dict[str, Any]]]] = {
-        1: _migrate_save_data_v1_to_v2,
-    }
-
     def __init__(
         self,
         save_dir: Path,
@@ -285,56 +240,21 @@ class SaveManager:
         max_quicksaves: int = 5,
         *,
         target_version: int = SaveData.CURRENT_VERSION,
-        migration_hook: MigrationHook | None = None,
     ) -> None:
         self.save_dir = save_dir
         self.save_dir.mkdir(parents=True, exist_ok=True)
         self.max_autosaves = max_autosaves
         self.max_quicksaves = max_quicksaves
         self.target_version = target_version
-        self.migration_hook = migration_hook
-        self._migrations: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = dict(
-            self._class_migrations
-        )
-
-    @classmethod
-    def register_schema_migration(
-        cls,
-        from_version: int,
-        migration_fn: Callable[[dict[str, Any]], dict[str, Any]],
-    ) -> None:
-        """Register a global schema migration function for a specific version."""
-        cls._class_migrations[from_version] = migration_fn
-
-    @classmethod
-    def clear_schema_migrations(cls) -> None:
-        """Clear all globally registered schema migrations."""
-        cls._class_migrations.clear()
-        cls._class_migrations[1] = _migrate_save_data_v1_to_v2
-
-    def register_migration(
-        self,
-        from_version: int,
-        migration_fn: Callable[[dict[str, Any]], dict[str, Any]],
-    ) -> None:
-        """Register a schema migration function on this manager instance."""
-        self._migrations[from_version] = migration_fn
-
-    def clear_migrations(self) -> None:
-        """Clear migrations registered on this manager instance."""
-        self._migrations.clear()
 
     def upgrade_save_data(
         self,
         data: dict[str, Any],
         *,
         target_version: int | None = None,
-        migration_hook: MigrationHook | None = None,
     ) -> dict[str, Any]:
-        """Upgrade save data dictionary to target schema version using registered migrations or hook."""
+        """Upgrade save data dictionary to target schema version."""
         target = self.target_version if target_version is None else target_version
-        hook = migration_hook if migration_hook is not None else self.migration_hook
-
         data = copy.deepcopy(data)
         current_v = int(data.get("version", 0))
 
@@ -345,34 +265,23 @@ class SaveManager:
         if current_v == target:
             return data
 
-        while current_v < target:
-            if hook is not None:
-                data = _invoke_migration_hook(hook, data, current_v, target)
-                data.setdefault("version", target)
-                current_v = int(data["version"])
-                break
-            elif current_v in self._migrations:
-                data = self._migrations[current_v](data)
-                next_v = int(data.get("version", current_v + 1))
-                if next_v <= current_v:
-                    data["version"] = current_v + 1
-                    next_v = current_v + 1
-                current_v = next_v
-            elif current_v == 0:
-                # Built-in migration from legacy unversioned (v0) to v1
-                data["version"] = 1
-                if "checkpoint" in data and isinstance(data["checkpoint"], dict):
-                    cp = data["checkpoint"]
-                    if "story" in cp and isinstance(cp["story"], dict):
-                        cp["story"].setdefault("version", 1)
-                current_v = 1
-            elif current_v == 1:
-                # Built-in migration from schema v1 to v2
-                data = _migrate_save_data_v1_to_v2(data)
-                current_v = 2
-            else:
-                msg = f"No migration registered to upgrade save data from version {current_v} to {target}."
-                raise SaveMigrationError(msg)
+        if current_v == 0:
+            # Built-in migration from legacy unversioned (v0) to v1
+            data["version"] = 1
+            if "checkpoint" in data and isinstance(data["checkpoint"], dict):
+                cp = data["checkpoint"]
+                if "story" in cp and isinstance(cp["story"], dict):
+                    cp["story"].setdefault("version", 1)
+            current_v = 1
+
+        if current_v == 1 and target >= 2:
+            # Built-in migration from schema v1 to v2
+            data = _migrate_save_data_v1_to_v2(data)
+            current_v = 2
+
+        if current_v != target:
+            msg = f"No migration registered to upgrade save data from version {current_v} to {target}."
+            raise SaveMigrationError(msg)
 
         return data
 
@@ -416,7 +325,6 @@ class SaveManager:
         slot_name: str,
         *,
         target_version: int | None = None,
-        migration_hook: MigrationHook | None = None,
     ) -> Checkpoint | None:
         """Load checkpoint from a named slot, migrating schema if necessary."""
         path = self._slot_path(slot_name)
@@ -432,7 +340,6 @@ class SaveManager:
             migrated_data = self.upgrade_save_data(
                 data,
                 target_version=target_version,
-                migration_hook=migration_hook,
             )
             save_obj = SaveData.from_dict(migrated_data)
             return save_obj.checkpoint
@@ -531,7 +438,6 @@ class SaveManager:
         prefix: str = "quick",
         max_slots: int | None = None,
         target_version: int | None = None,
-        migration_hook: MigrationHook | None = None,
     ) -> Checkpoint | None:
         """Load from most recent quicksave slot (or custom prefix)."""
         limit = self.max_quicksaves if max_slots is None else max_slots
@@ -541,7 +447,6 @@ class SaveManager:
         return self.load_slot(
             slot,
             target_version=target_version,
-            migration_hook=migration_hook,
         )
 
     def autosave(self, checkpoint: Checkpoint, **extra: Any) -> SaveMetadata:
@@ -552,13 +457,11 @@ class SaveManager:
         self,
         *,
         target_version: int | None = None,
-        migration_hook: MigrationHook | None = None,
     ) -> Checkpoint | None:
         """Load from most recent autosave slot."""
         return self.quickload(
             prefix="auto",
             max_slots=self.max_autosaves,
             target_version=target_version,
-            migration_hook=migration_hook,
         )
 

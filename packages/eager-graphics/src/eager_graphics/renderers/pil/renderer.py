@@ -120,7 +120,6 @@ class PILRenderer(RenderBackend):
         self._measure_cache: dict[
             tuple[str, int] | tuple[str, int, bool, bool], tuple[float, float]
         ] = {}
-        self._alpha_lut_cache: dict[int, list[int]] = {}
         self._rgba_lut_cache: dict[tuple[int, int, int, int], list[int]] = {}
         self._fade_lut_cache: dict[tuple[Any, ...], list[int]] = {}
         self._mip_cache: dict[tuple[str, int], Image.Image] = {}
@@ -204,12 +203,6 @@ class PILRenderer(RenderBackend):
         if self._needs_clear:
             self._image.paste(self._clear_color_bytes, (0, 0, self.width, self.height))
             self._needs_clear = False
-
-    def _frame_bytes_bottom_up(self) -> bytes:
-        """Export current frame buffer as bottom-up raw bytes for OpenGL upload."""
-        if self._needs_clear:
-            self._execute_clear()
-        return self._image.tobytes("raw", self.mode, 0, -1)
 
     def clear_cache(self) -> None:
         """Clear the transformed sprite cache, scaled texture cache, and statistics."""
@@ -333,7 +326,6 @@ class PILRenderer(RenderBackend):
                 "total_lru_items": total_lru_items,
                 "total_lru_bytes": total_lru_bytes,
                 "luts": {
-                    "alpha": len(self._alpha_lut_cache),
                     "rgba": len(self._rgba_lut_cache),
                     "fade": len(self._fade_lut_cache),
                 },
@@ -392,7 +384,7 @@ class PILRenderer(RenderBackend):
             f"Sprite LRU: {sp['items']}/{sp['max_items']} ({sp_bytes_mb:.1f} MB) | Hits: {sp_hr:.1f}% ({sp['hits']}H/{sp['misses']}M)",
             f"Total LRU: {caches['total_lru_items']} items ({caches['total_lru_bytes'] / (1024 * 1024):.1f} MB)",
             f"Sub-caches: text: {caches['text_mask_lru']['items']}, scaled: {caches['scaled_lru']['items']}, ui: {caches['ui_image_lru']['items']}",
-            f"LUTs: α:{caches['luts']['alpha']} rgba:{caches['luts']['rgba']} fade:{caches['luts']['fade']} | Fonts: {caches['fonts']} | Textures: {caches['loaded_assets']}",
+            f"LUTs: rgba:{caches['luts']['rgba']} fade:{caches['luts']['fade']} | Fonts: {caches['fonts']} | Textures: {caches['loaded_assets']}",
         ])
         return "\n".join(lines)
 
@@ -444,10 +436,6 @@ class PILRenderer(RenderBackend):
         # not count as a visible frame (would skew frame_count and FPS).
         self.frame_count = saved_frame_count
         return max(0, self._cache_misses - misses_before)
-
-    def _get_alpha_lut(self, alpha_byte: int) -> list[int]:
-        """Retrieve precomputed 256-entry alpha modulation lookup table."""
-        return _ALPHA_LUTS[alpha_byte]
 
     def _get_rgba_lut(self, r: int, g: int, b: int, a: int) -> list[int]:
         """Retrieve precomputed 1024-entry RGBA multiply lookup table."""

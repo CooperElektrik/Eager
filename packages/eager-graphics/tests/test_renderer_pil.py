@@ -690,7 +690,7 @@ def test_pil_renderer_tinted_opaque_remains_opaque() -> None:
         layer="background",
         z_order=0,
     )
-    _img, is_opaque, _off_x, _off_y = renderer._transform_sprite(
+    cached_sp = renderer._transform_sprite(
         renderer.asset_resolver.get_image("bg/castle"),
         item,
         200,
@@ -701,7 +701,7 @@ def test_pil_renderer_tinted_opaque_remains_opaque() -> None:
         0.0,
         0.0,
     )
-    assert is_opaque is True
+    assert cached_sp.is_opaque is True
 
 
 def test_pil_renderer_stage_caching() -> None:
@@ -1005,11 +1005,11 @@ def test_putalpha_fastpath_produces_correct_alpha():
     # Check the sprite cache entry
     cache = renderer._sprite_cache
     assert len(cache) >= 1
-    for transformed_img, is_opaque, _, _ in cache.values():
+    for sp in cache.values():
         # 0.5 * 255 = 127.5 → 128
         # With putalpha on an opaque asset, all pixels should have alpha=128
-        assert transformed_img.getpixel((0, 0))[3] == 128
-        assert not is_opaque, "Sprite with opacity 0.5 should not be opaque"
+        assert sp.image.getpixel((0, 0))[3] == 128
+        assert not sp.is_opaque, "Sprite with opacity 0.5 should not be opaque"
 
 
 def test_putalpha_fastpath_full_opacity_unchanged():
@@ -1036,9 +1036,9 @@ def test_putalpha_fastpath_full_opacity_unchanged():
     renderer.end_frame()
 
     cache = renderer._sprite_cache
-    for transformed_img, is_opaque, _, _ in cache.values():
-        assert transformed_img.getpixel((0, 0))[3] == 255
-        assert is_opaque, "Full-opacity opaque sprite should be opaque"
+    for sp in cache.values():
+        assert sp.image.getpixel((0, 0))[3] == 255
+        assert sp.is_opaque, "Full-opacity opaque sprite should be opaque"
 
 
 def test_putalpha_does_not_corrupt_cached_texture():

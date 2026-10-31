@@ -5,7 +5,6 @@ from __future__ import annotations
 import collections
 import copy
 import json
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -62,7 +61,6 @@ class StorySnapshot:
     """An immutable, serializable snapshot of the narrative execution state."""
 
     CURRENT_VERSION: ClassVar[int] = 1
-    _migrations: ClassVar[dict[int, Callable[[dict[str, Any]], dict[str, Any]]]] = {}
 
     current_scene: str | None
     beat_index: int
@@ -77,19 +75,6 @@ class StorySnapshot:
     rng_state: list[Any] | None = None
     version: int = 1
 
-    @classmethod
-    def register_migration(
-        cls,
-        from_version: int,
-        migration_fn: Callable[[dict[str, Any]], dict[str, Any]],
-    ) -> None:
-        """Register a schema migration function for a specific StorySnapshot version."""
-        cls._migrations[from_version] = migration_fn
-
-    @classmethod
-    def clear_migrations(cls) -> None:
-        """Clear all registered StorySnapshot migrations."""
-        cls._migrations.clear()
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize snapshot to a JSON-compatible dictionary."""
@@ -119,19 +104,8 @@ class StorySnapshot:
         *,
         target_version: int | None = None,
     ) -> StorySnapshot:
-        """Restore a StorySnapshot from a dictionary, applying migrations if necessary."""
-        data = copy.deepcopy(data)
-        target = cls.CURRENT_VERSION if target_version is None else target_version
+        """Restore a StorySnapshot from a dictionary."""
         version = int(data.get("version", 1))
-        while (version < target or version in cls._migrations) and version in cls._migrations:
-            data = cls._migrations[version](data)
-            next_v = int(data.get("version", version + 1))
-            if next_v <= version:
-                raise ValueError(
-                    f"StorySnapshot migration for version {version} failed to advance version monotonically (got {next_v})"
-                )
-            version = next_v
-
         call_stack = tuple(CallFrame.from_dict(f) for f in data.get("call_stack", []))
         variables = copy.deepcopy(data.get("variables", {}))
         visited_scenes = tuple(data.get("visited_scenes", []))

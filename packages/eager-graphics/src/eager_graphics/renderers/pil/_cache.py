@@ -103,29 +103,6 @@ class _CachedSprite:
             return self.color.size
         return (0, 0)
 
-    def __len__(self) -> int:
-        return 4
-
-    def __getitem__(self, idx: int) -> Any:
-        match idx:
-            case 0:
-                return self.image
-            case 1:
-                return self.is_opaque
-            case 2:
-                return self.off_x
-            case 3:
-                return self.off_y
-            case _:
-                raise IndexError(idx)
-
-    def __iter__(self):  # type: ignore[no-untyped-def]
-        yield self.image
-        yield self.is_opaque
-        yield self.off_x
-        yield self.off_y
-
-
 class _GeomEntry:
     """Base geometry for a sprite before opacity modulation."""
 
@@ -159,29 +136,6 @@ class _GeomEntry:
             else 0
         )
         self.nbytes = _image_nbytes(color) + _image_nbytes(natural_mask) + patch_bytes
-
-    def __len__(self) -> int:
-        return 4
-
-    def __getitem__(self, idx: int) -> Any:
-        match idx:
-            case 0:
-                return self.color
-            case 1:
-                return self.natural_mask
-            case 2:
-                return self.off_x
-            case 3:
-                return self.off_y
-            case _:
-                raise IndexError(idx)
-
-    def __iter__(self):  # type: ignore[no-untyped-def]
-        yield self.color
-        yield self.natural_mask
-        yield self.off_x
-        yield self.off_y
-
 
 __all__ = [
     "_CachedSprite",

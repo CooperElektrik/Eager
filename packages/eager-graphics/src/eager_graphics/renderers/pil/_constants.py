@@ -2,15 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 _EXTENSIONS: tuple[str, ...] = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
 _IDENTITY_256: list[int] = list(range(256))
 _ALPHA_LUTS: list[list[int]] = [
     [round(i * (a / 255.0)) for i in range(256)] for a in range(256)
-]
-_ALPHA_MODULATION_1024: list[list[int]] = [
-    _IDENTITY_256 + _IDENTITY_256 + _IDENTITY_256 + _ALPHA_LUTS[a] for a in range(256)
 ]
 _QUANT_ALPHA_LUT: list[int] = [
     255 if i == 255 else max(1, min(254, round(i / 4) * 4)) for i in range(256)
@@ -30,11 +25,9 @@ _MAX_TEXT_CACHE: int = 1024
 _MAX_RGBA_LUTS: int = 256
 _MAX_MIP_CACHE: int = 128
 _MAX_GRADIENT_CACHE: int = 256
-_NO_CACHE: Any = object()
 
 __all__ = [
     "_ALPHA_LUTS",
-    "_ALPHA_MODULATION_1024",
     "_DEFAULT_CACHE_BYTES",
     "_EXTENSIONS",
     "_IDENTITY_256",
@@ -42,7 +35,6 @@ __all__ = [
     "_MAX_MIP_CACHE",
     "_MAX_RGBA_LUTS",
     "_MAX_TEXT_CACHE",
-    "_NO_CACHE",
     "_OPAQUE_LUT",
     "_PIL_ANCHOR_X",
     "_PIL_ANCHOR_Y",

@@ -2,7 +2,6 @@
 
 import json
 import time
-from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -433,24 +432,6 @@ def test_persistent_data(tmp_path: Path) -> None:
     assert p2.unlocked_gallery is True
 
 
-def test_gallery_and_achievements(tmp_path: Path) -> None:
-    pfile = tmp_path / "persistent_gallery.json"
-    p = PersistentData(pfile)
-
-    assert not p.is_gallery_unlocked("cg_ending_1")
-    p.unlock_gallery("cg_ending_1")
-    assert p.is_gallery_unlocked("cg_ending_1")
-
-    assert not p.has_achievement("ach_first_win")
-    p.unlock_achievement("ach_first_win")
-    assert p.has_achievement("ach_first_win")
-
-    # Reload from disk
-    p2 = PersistentData(pfile)
-    assert p2.is_gallery_unlocked("cg_ending_1")
-    assert p2.has_achievement("ach_first_win")
-
-
 def test_preferences(tmp_path: Path) -> None:
     pref_path = tmp_path / "preferences.json"
     pref = Preferences(text_speed=100.0, music_volume=0.5, fullscreen=True)
@@ -545,15 +526,6 @@ def test_game_session_playtime_and_screenshot(tmp_path: Path) -> None:
 # Schema Migrations
 # ---------------------------------------------------------------------------
 
-@pytest.fixture(autouse=True)
-def _reset_migrations() -> Iterator[None]:
-    StorySnapshot.clear_migrations()
-    SaveManager.clear_schema_migrations()
-    yield
-    StorySnapshot.clear_migrations()
-    SaveManager.clear_schema_migrations()
-
-
 def test_story_snapshot_version_declaration() -> None:
     snap = StorySnapshot(
         current_scene="scene_1",
@@ -579,38 +551,6 @@ def test_story_snapshot_version_declaration() -> None:
     )
     assert snap_v2.version == 2
     assert snap_v2.to_dict()["version"] == 2
-
-
-def test_story_snapshot_migration() -> None:
-    def migrate_v1_to_v2(data: dict) -> dict:
-        coins = data["variables"].pop("coins", 0)
-        data["variables"]["currency"] = {"gold": coins}
-        data["version"] = 2
-        return data
-
-    StorySnapshot.register_migration(1, migrate_v1_to_v2)
-    old_dict = {
-        "version": 1,
-        "current_scene": "intro",
-        "beat_index": 1,
-        "call_stack": [],
-        "variables": {"coins": 50},
-        "visited_scenes": ["intro"],
-    }
-    snap = StorySnapshot.from_dict(old_dict)
-    assert snap.version == 2
-    assert snap.variables["currency"] == {"gold": 50}
-    assert "coins" not in snap.variables
-
-
-def test_story_snapshot_non_monotonic_migration() -> None:
-    def bad_migration(data: dict) -> dict:
-        return data  # version remains 1
-
-    StorySnapshot.register_migration(1, bad_migration)
-    with pytest.raises(ValueError) as ctx:
-        StorySnapshot.from_dict({"version": 1}, target_version=2)
-    assert "monotonically" in str(ctx.value).lower()
 
 
 def test_save_data_version_declaration() -> None:
@@ -669,31 +609,6 @@ def test_load_slot_unversioned_legacy_auto_upgrade(tmp_path: Path) -> None:
     assert cp.visual.get("layer") == "bg"
 
 
-def test_load_slot_with_registered_migration(tmp_path: Path) -> None:
-    manager = SaveManager(tmp_path, target_version=1)
-    cp = Checkpoint(
-        story={"current_scene": "hallway", "version": 1},
-        visual={"sprites": ["hero"]},
-        audio={},
-        backlog_len=0,
-        ui={},
-    )
-    manager.save_slot("slot_1", cp)
-
-    def migrate_v1_to_v2(data: dict) -> dict:
-        sprites = data["checkpoint"]["visual"].get("sprites", [])
-        data["checkpoint"]["visual"]["entities"] = [{"name": s, "scale": 1.0} for s in sprites]
-        data["version"] = 2
-        return data
-
-    manager.register_migration(1, migrate_v1_to_v2)
-
-    loaded = manager.load_slot("slot_1", target_version=2)
-    assert loaded is not None
-    entities = loaded.visual.get("entities")
-    assert entities == [{"name": "hero", "scale": 1.0}]
-
-
 def test_load_slot_v1_auto_migrates_to_v2_by_default(tmp_path: Path) -> None:
     # Save a v1 slot explicitly
     cp = Checkpoint(
@@ -715,50 +630,6 @@ def test_load_slot_v1_auto_migrates_to_v2_by_default(tmp_path: Path) -> None:
     assert meta is not None
     assert meta.dialogue_snippet == "V1 save"
 
-
-
-def test_load_slot_with_migration_hook_arg(tmp_path: Path) -> None:
-    manager = SaveManager(tmp_path, target_version=1)
-    cp = Checkpoint(
-        story={"current_scene": "room", "version": 1},
-        visual={"lighting": "dark"},
-        audio={},
-        backlog_len=0,
-        ui={},
-    )
-    manager.save_slot("slot_hook", cp)
-
-    def custom_hook(data: dict, src_v: int, tgt_v: int) -> dict:
-        assert src_v == 1
-        assert tgt_v == 2
-        data["checkpoint"]["visual"]["lighting"] = "ambient"
-        data["version"] = tgt_v
-        return data
-
-    loaded = manager.load_slot("slot_hook", target_version=2, migration_hook=custom_hook)
-    assert loaded is not None
-    assert loaded.visual.get("lighting") == "ambient"
-
-
-def test_load_slot_with_manager_migration_hook(tmp_path: Path) -> None:
-    def hook(data: dict, src_v: int, tgt_v: int) -> dict:
-        data["checkpoint"]["story"]["hook_ran"] = True
-        data["version"] = tgt_v
-        return data
-
-    manager = SaveManager(tmp_path, target_version=2, migration_hook=hook)
-    cp = Checkpoint(
-        story={"current_scene": "room", "version": 1},
-        visual={},
-        audio={},
-        backlog_len=0,
-        ui={},
-    )
-    SaveManager(tmp_path, target_version=1).save_slot("slot_inst", cp)
-
-    loaded = manager.load_slot("slot_inst")
-    assert loaded is not None
-    assert loaded.story["hook_ran"] is True
 
 
 def test_load_slot_newer_version_raises_save_migration_error(tmp_path: Path) -> None:
@@ -794,28 +665,3 @@ def test_load_slot_missing_migration_raises_save_migration_error(tmp_path: Path)
     assert "No migration registered" in str(ctx.value)
 
 
-def test_quickload_and_autoload_with_migration(tmp_path: Path) -> None:
-    def hook(data: dict, src_v: int, tgt_v: int) -> dict:
-        data["checkpoint"]["migrated"] = True
-        data["version"] = tgt_v
-        return data
-
-    manager = SaveManager(tmp_path, target_version=2, migration_hook=hook)
-    cp = Checkpoint(
-        story={"current_scene": "room", "version": 1},
-        visual={},
-        audio={},
-        backlog_len=0,
-        ui={},
-    )
-    # Quicksave at v1
-    SaveManager(tmp_path, target_version=1).quicksave(cp)
-    SaveManager(tmp_path, target_version=1).autosave(cp)
-
-    # quickload & autoload through manager (target_version=2)
-    loaded_quick = manager.quickload()
-    assert loaded_quick is not None
-    assert loaded_quick.story is not None
-
-    loaded_auto = manager.autoload()
-    assert loaded_auto is not None

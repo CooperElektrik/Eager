@@ -83,26 +83,3 @@ class PersistentData(collections.abc.MutableMapping[str, Any]):
     def to_dict(self) -> dict[str, Any]:
         """Return shallow copy as standard dictionary."""
         return dict(self._data)
-
-    def unlock_gallery(self, image_id: str) -> None:
-        """Unlock a CG gallery image."""
-        gallery = set(self._data.get("gallery", []))
-        gallery.add(image_id)
-        self._data["gallery"] = sorted(gallery)
-        self.save()
-
-    def is_gallery_unlocked(self, image_id: str) -> bool:
-        """Return True if the CG gallery image is unlocked."""
-        return image_id in self._data.get("gallery", [])
-
-    def unlock_achievement(self, ach_id: str) -> None:
-        """Unlock an achievement."""
-        ach = set(self._data.get("achievements", []))
-        ach.add(ach_id)
-        self._data["achievements"] = sorted(ach)
-        self.save()
-
-    def has_achievement(self, ach_id: str) -> bool:
-        """Return True if the achievement is unlocked."""
-        return ach_id in self._data.get("achievements", [])
-

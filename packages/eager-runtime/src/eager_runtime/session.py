@@ -267,7 +267,6 @@ class GameSession:
         # State flags
         self.mode: str = "game"  # "title", "game", "menu", "ended"
         self.skip_mode: bool = False
-        self.skip_timer: float = 0.0
         self.auto_mode: bool = False
         self.auto_timer: float = 0.0
         self.ui_hidden: bool = False

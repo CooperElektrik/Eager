@@ -16,7 +16,6 @@ from ._compat import (
 )
 from ._constants import (
     _ALPHA_LUTS,
-    _ALPHA_MODULATION_1024,
     _DEFAULT_CACHE_BYTES,
     _EXTENSIONS,
     _IDENTITY_256,
@@ -24,7 +23,6 @@ from ._constants import (
     _MAX_MIP_CACHE,
     _MAX_RGBA_LUTS,
     _MAX_TEXT_CACHE,
-    _NO_CACHE,
     _OPAQUE_LUT,
     _PIL_ANCHOR_X,
     _PIL_ANCHOR_Y,

@@ -714,7 +714,6 @@ class ScreenplayParser:
         self._narration_line: int = 0
         self._choice_buffer: list[ParsedChoiceOption] = []
         self._choice_bodies: list[list[ParsedItem]] = []
-        self._choice_indent: int = 0
 
     # ------------------------------------------------------------------
     # Flush helpers — each returns a list so both parse() and parse_iter()
@@ -913,7 +912,6 @@ class ScreenplayParser:
         self._narration_buffer.clear()
         self._choice_buffer.clear()
         self._choice_bodies.clear()
-        self._choice_indent = 0
 
         line_iter = self._iter_raw_lines(text)
         pending: tuple[int, str] | None = None
