@@ -23,6 +23,7 @@ __all__ = [
     "SceneSymbol",
     "VariableSymbol",
     "WorkspaceIndex",
+    "normalize_uri",
     "path_to_uri",
     "uri_to_path",
 ]
@@ -40,6 +41,13 @@ def path_to_uri(path: Path) -> str:
     """Convert a filesystem Path to a file:// URI."""
     uri = from_fs_path(str(path.resolve()))
     return uri if uri is not None else path.resolve().as_uri()
+
+
+def normalize_uri(uri: str) -> str:
+    """Normalize a file:// URI to canonical form."""
+    if uri.startswith("file://"):
+        return path_to_uri(uri_to_path(uri))
+    return uri
 
 
 @dataclass
@@ -263,7 +271,7 @@ class WorkspaceIndex:
 
     def get_document(self, uri: str) -> ScriptDocument | None:
         """Retrieve indexed ScriptDocument by URI."""
-        return self.documents.get(uri)
+        return self.documents.get(uri) or self.documents.get(normalize_uri(uri))
 
     def get_scene(self, scene_id: str) -> SceneSymbol | None:
         """Look up indexed scene symbol by identifier."""

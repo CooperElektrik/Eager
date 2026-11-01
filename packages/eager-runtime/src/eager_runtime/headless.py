@@ -183,6 +183,8 @@ class NullStage:
         default_position: str = "center",
         side_image: str | None = None,
         color: Any = None,
+        expressions: dict[str, str] | None = None,
+        **kwargs: Any,
     ) -> None:
         """Register a character metadata configuration on the headless stage.
 
@@ -194,6 +196,8 @@ class NullStage:
             default_position: Initial stage position tag.
             side_image: Path or identifier of dialogue side image.
             color: Color value or hex string for speaker label.
+            expressions: Optional dictionary mapping expression aliases.
+            **kwargs: Additional metadata or expression aliases.
         """
         cid = character_id.strip().lower()
         parsed_color = color
@@ -204,6 +208,11 @@ class NullStage:
             except Exception:  # noqa: BLE001
                 parsed_color = None
 
+        exprs = dict(expressions) if expressions is not None else {}
+        for k, v in kwargs.items():
+            if isinstance(v, str):
+                exprs[k] = v
+
         self.characters[cid] = {
             "name": name,
             "asset_prefix": asset_prefix,
@@ -211,6 +220,7 @@ class NullStage:
             "default_position": default_position,
             "side_image": side_image,
             "color": parsed_color,
+            "expressions": exprs,
         }
 
     def _find_character_config(self, speaker: str | None) -> dict[str, Any] | None:

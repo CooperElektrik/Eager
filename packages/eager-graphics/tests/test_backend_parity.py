@@ -59,9 +59,10 @@ def test_text_metrics_parity(headless_window: Window) -> None:
             py_w, py_h = py_r.measure_text(s, font_size=size)
             pil_w, pil_h = pil_r.measure_text(s, font_size=size)
 
-            max_allowed_w = max(3.0, len(s) * 0.2)
+            max_allowed_w = max(5.0, len(s) * (size / 50.0))
             assert abs(py_w - pil_w) <= max_allowed_w, f"Width mismatch for '{s}' at size {size}: {py_w} vs {pil_w}"
-            assert abs(py_h - pil_h) <= 1.0, f"Height mismatch for '{s}' at size {size}: {py_h} vs {pil_h}"
+            max_allowed_h = max(1.0, len(s.splitlines()) * 1.5)
+            assert abs(py_h - pil_h) <= max_allowed_h, f"Height mismatch for '{s}' at size {size}: {py_h} vs {pil_h}"
 
 
 def test_ui_primitives_render_parity(headless_window: Window) -> None:

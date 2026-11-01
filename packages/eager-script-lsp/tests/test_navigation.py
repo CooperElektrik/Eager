@@ -16,12 +16,12 @@ from eager_script_lsp.features.navigation import (
     compute_references,
     prepare_call_hierarchy,
 )
-from eager_script_lsp.workspace import WorkspaceIndex
+from eager_script_lsp.workspace import WorkspaceIndex, normalize_uri
 
 
 def test_go_to_definition_and_references():
     with tempfile.TemporaryDirectory() as tmpdir:
-        root = Path(tmpdir)
+        root = Path(tmpdir).resolve()
         index = WorkspaceIndex(root)
 
         f1 = root / "f1.es"
@@ -37,15 +37,15 @@ def test_go_to_definition_and_references():
         loc = compute_definition(doc1, index, Position(line=1, character=3))
         assert loc is not None
         assert not isinstance(loc, list)
-        assert loc.uri == f2.as_uri()
+        assert normalize_uri(loc.uri) == normalize_uri(f2.as_uri())
 
         # References to s1 from f2.es
         doc2 = index.get_document(f2.as_uri())
         assert doc2 is not None
         refs = compute_references(doc2, index, Position(line=2, character=9))
-        uris = [r.uri for r in refs]
-        assert f1.as_uri() in uris
-        assert f2.as_uri() in uris
+        uris = [normalize_uri(r.uri) for r in refs]
+        assert normalize_uri(f1.as_uri()) in uris
+        assert normalize_uri(f2.as_uri()) in uris
 
 
 def test_document_symbols():
@@ -66,7 +66,7 @@ $ score += 1
 
 def test_call_hierarchy():
     with tempfile.TemporaryDirectory() as tmpdir:
-        root = Path(tmpdir)
+        root = Path(tmpdir).resolve()
         f1 = root / "story.es"
         f1.write_text("""## Start --- start
 > middle
@@ -98,7 +98,7 @@ Narrator: Done
 def test_definition_characters_variables_and_assets():
     """Verify Go to Definition for characters, variables, and media assets."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        root = Path(tmpdir)
+        root = Path(tmpdir).resolve()
         (root / "assets" / "bg").mkdir(parents=True)
         (root / "assets" / "bg" / "park.png").write_bytes(b"PNG")
 
@@ -149,7 +149,7 @@ $ uninitialized_var = 5
 def test_references_character_and_variable_occurrences():
     """Verify Find References locates all character and variable occurrences across workspace."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        root = Path(tmpdir)
+        root = Path(tmpdir).resolve()
         (root / "f1.es").write_text("""@character hoshiko "Hoshiko"
 @default affinity = 10
 ## Scene 1 --- s1
@@ -197,7 +197,7 @@ def test_include_directive_definition_and_links():
     from eager_script_lsp.features.tokens import compute_document_links
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        root = Path(tmpdir)
+        root = Path(tmpdir).resolve()
         f_inc = root / "included.es"
         f_inc.write_text("## Included --- inc\nNarrator: In included\n", encoding="utf-8")
         f_main = root / "main.es"
@@ -212,10 +212,10 @@ def test_include_directive_definition_and_links():
         loc = compute_definition(doc, index, Position(line=0, character=12))
         assert loc is not None
         assert isinstance(loc, Location)
-        assert loc.uri == f_inc.as_uri()
+        assert normalize_uri(loc.uri) == normalize_uri(f_inc.as_uri())
 
         # Document links
         links = compute_document_links(doc, index)
-        assert any(link.target == f_inc.as_uri() for link in links)
+        assert any(normalize_uri(link.target) == normalize_uri(f_inc.as_uri()) for link in links)
 
 

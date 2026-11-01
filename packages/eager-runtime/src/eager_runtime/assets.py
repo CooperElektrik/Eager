@@ -271,6 +271,50 @@ def extract_asset_references(
     return references, character_configs
 
 
+def _expand_character_expression(raw_expr: str, cfg: dict[str, str]) -> list[str]:
+    """Expand character expression alias into constituent layer names."""
+    if not raw_expr:
+        return ["default"]
+    if raw_expr in cfg:
+        target = cfg[raw_expr]
+        return [p.strip() for p in target.replace(",", "+").split("+") if p.strip()]
+    if "+" in raw_expr or "," in raw_expr:
+        tokens = [p.strip() for p in raw_expr.replace(",", "+").split("+") if p.strip()]
+        layers: list[str] = []
+        for tok in tokens:
+            resolved = cfg.get(tok, tok)
+            for sub in resolved.replace(",", "+").split("+"):
+                s = sub.strip()
+                if s and s not in layers:
+                    layers.append(s)
+        return layers if layers else [raw_expr]
+    return [raw_expr]
+
+
+def _candidate_paths_for_character_layer(cid: str, layer: str, cfg: dict[str, str]) -> list[str]:
+    cands: list[str] = []
+    prefix = cfg.get("asset_prefix")
+    name = cfg.get("name")
+    for ext in IMAGE_EXTENSIONS:
+        cands.append(f"{cid}/{layer}{ext}")
+        cands.append(f"{cid}_{layer}{ext}")
+        cands.append(f"characters/{cid}/{layer}{ext}")
+        cands.append(f"characters/{cid}_{layer}{ext}")
+        if prefix:
+            cands.append(f"{prefix}_{layer}{ext}")
+            cands.append(f"{prefix}/{layer}{ext}")
+            cands.append(f"characters/{prefix}_{layer}{ext}")
+            cands.append(f"characters/{prefix}/{layer}{ext}")
+        if name:
+            name_clean = name.strip().lower()
+            if name_clean != cid and name_clean != (prefix or "").lower():
+                cands.append(f"{name_clean}/{layer}{ext}")
+                cands.append(f"{name_clean}_{layer}{ext}")
+                cands.append(f"characters/{name_clean}/{layer}{ext}")
+                cands.append(f"characters/{name_clean}_{layer}{ext}")
+    return cands
+
+
 def resolve_candidate_paths(
     ref: AssetReference,
     character_configs: dict[str, dict[str, str]] | None = None,
@@ -295,26 +339,9 @@ def resolve_candidate_paths(
         cid = ref.character_id or ref.identifier.split("/")[0]
         expr = ref.expression or (ref.identifier.split("/")[1] if "/" in ref.identifier else "default")
         cfg = configs.get(cid, {})
-        prefix = cfg.get("asset_prefix")
-        name = cfg.get("name")
-
-        for ext in IMAGE_EXTENSIONS:
-            candidates.append(f"{cid}/{expr}{ext}")
-            candidates.append(f"{cid}_{expr}{ext}")
-            candidates.append(f"characters/{cid}/{expr}{ext}")
-            candidates.append(f"characters/{cid}_{expr}{ext}")
-            if prefix:
-                candidates.append(f"{prefix}_{expr}{ext}")
-                candidates.append(f"{prefix}/{expr}{ext}")
-                candidates.append(f"characters/{prefix}_{expr}{ext}")
-                candidates.append(f"characters/{prefix}/{expr}{ext}")
-            if name:
-                name_clean = name.strip().lower()
-                if name_clean != cid and name_clean != (prefix or "").lower():
-                    candidates.append(f"{name_clean}/{expr}{ext}")
-                    candidates.append(f"{name_clean}_{expr}{ext}")
-                    candidates.append(f"characters/{name_clean}/{expr}{ext}")
-                    candidates.append(f"characters/{name_clean}_{expr}{ext}")
+        layers = _expand_character_expression(expr, cfg)
+        for layer in layers:
+            candidates.extend(_candidate_paths_for_character_layer(cid, layer, cfg))
 
     elif ref.kind == "audio":
         track = ref.identifier
@@ -384,6 +411,47 @@ def check_assets(
         )
 
     for ref in references:
+        configs = char_configs or {}
+        if ref.kind == "character":
+            cid = ref.character_id or ref.identifier.split("/")[0]
+            expr = ref.expression or (ref.identifier.split("/")[1] if "/" in ref.identifier else "default")
+            cfg = configs.get(cid, {})
+            layers = _expand_character_expression(expr, cfg)
+            if len(layers) > 1:
+                missing_layers: list[str] = []
+                missing_candidates: list[str] = []
+                found_layer_files: list[Path] = []
+                for layer in layers:
+                    layer_cands = _candidate_paths_for_character_layer(cid, layer, cfg)
+                    layer_file: Path | None = None
+                    for cand in layer_cands:
+                        cand_path = path_asset_dir / cand
+                        if cand_path.is_file():
+                            layer_file = cand_path
+                            break
+                    if layer_file is not None:
+                        found_layer_files.append(layer_file)
+                    else:
+                        missing_layers.append(layer)
+                        missing_candidates.extend(layer_cands[:2])
+
+                if not missing_layers:
+                    resolved_count += 1
+                    for f in found_layer_files:
+                        used_files.add(f.resolve())
+                else:
+                    missing.append(
+                        MissingAssetIssue(
+                            reference=ref,
+                            expected_paths=tuple(missing_candidates[:5]),
+                            message=(
+                                f"Line {ref.line_number}: Character asset '{ref.identifier}' is missing "
+                                f"constituent layer(s): {', '.join(missing_layers)} in '{asset_dir}'"
+                            ),
+                        )
+                    )
+                continue
+
         candidates = resolve_candidate_paths(ref, char_configs)
         found_file: Path | None = None
 

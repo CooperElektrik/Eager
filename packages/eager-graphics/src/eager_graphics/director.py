@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from eager_core.audio import AudioMixer
@@ -57,6 +57,37 @@ class CharacterConfig:
     default_position: str = "center"
     side_image: str | None = None
     color: Color | None = None
+    expressions: dict[str, str] = field(default_factory=dict)
+
+    def resolve_expression(self, expr: str) -> str:
+        """Resolve an expression string, expanding any aliases configured for the character.
+
+        Supports single expressions, comma-separated, and plus-separated layer combinations.
+        Aliases defined in `expressions` are expanded recursively.
+        """
+        expr_clean = expr.strip()
+        if not expr_clean:
+            return expr_clean
+
+        if expr_clean in self.expressions:
+            return self.expressions[expr_clean]
+
+        if "," in expr_clean or "+" in expr_clean:
+            parts = [
+                pt.strip()
+                for pt in expr_clean.replace(",", "+").split("+")
+                if pt.strip()
+            ]
+            expanded: list[str] = []
+            for pt in parts:
+                resolved = self.expressions.get(pt, pt)
+                for sub in resolved.split("+"):
+                    s = sub.strip()
+                    if s and s not in expanded:
+                        expanded.append(s)
+            return "+".join(expanded) if expanded else expr_clean
+
+        return expr_clean
 
 
 class StageDirector:
@@ -128,6 +159,8 @@ class StageDirector:
         default_position: str = "center",
         side_image: str | None = None,
         color: str | Color | None = None,
+        expressions: dict[str, str] | None = None,
+        **kwargs: Any,
     ) -> None:
         """Register default configuration for a character."""
         cid = character_id.strip().lower()
@@ -140,6 +173,11 @@ class StageDirector:
         elif isinstance(color, Color):
             parsed_color = color
 
+        exprs = dict(expressions) if expressions is not None else {}
+        for k, v in kwargs.items():
+            if isinstance(v, str):
+                exprs[k] = v
+
         self.characters[cid] = CharacterConfig(
             character_id=cid,
             name=name,
@@ -148,6 +186,7 @@ class StageDirector:
             default_position=default_position,
             side_image=side_image,
             color=parsed_color,
+            expressions=exprs,
         )
 
     def _find_character_config(self, speaker: str | None) -> CharacterConfig | None:
@@ -292,6 +331,9 @@ class StageDirector:
         else:
             expr = "default"
 
+        if cfg is not None:
+            expr = cfg.resolve_expression(expr)
+
         # Position
         pos = parsed.at or (cfg.default_position if cfg else "center")
 
@@ -363,6 +405,8 @@ class StageDirector:
         cfg = self._find_character_config(raw_id)
         char_id = cfg.character_id if cfg is not None else raw_id.strip().lower()
         expr = parsed.positional[1].strip().lower()
+        if cfg is not None:
+            expr = cfg.resolve_expression(expr)
         self.compositor.set_expression(char_id, expr)
 
     def handle_fade_in(self, args: str) -> None:
@@ -513,6 +557,7 @@ class StageDirector:
             return cfg.side_image
         if cfg and cfg.asset_prefix:
             expr = emotion.strip().lower() if emotion else cfg.default_expression
+            expr = cfg.resolve_expression(expr)
             return f"{cfg.asset_prefix}_{expr}"
         return None
 
@@ -539,7 +584,12 @@ class StageDirector:
                 self._resolve_speaker_element_id(speaker)
                 or (char_cfg.character_id if char_cfg is not None else speaker.strip().lower())
             )
-            self.compositor.set_expression(target_id, emotion.strip().lower())
+            resolved_expr = (
+                char_cfg.resolve_expression(emotion.strip().lower())
+                if char_cfg is not None
+                else emotion.strip().lower()
+            )
+            self.compositor.set_expression(target_id, resolved_expr)
 
         if self.auto_highlight_speaker:
             self._apply_speaker_highlight(speaker)

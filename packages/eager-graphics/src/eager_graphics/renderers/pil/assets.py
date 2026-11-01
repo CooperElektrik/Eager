@@ -37,6 +37,33 @@ class PILAssetResolver:
             self._opaque_cache[asset_id] = True
             return img
 
+        # Composite layered sprite resolution (e.g. "hoshiko/base+uniform+smile")
+        if "+" in asset_id and "/" in asset_id:
+            prefix, layers_str = asset_id.rsplit("/", 1)
+            layer_names = [pt.strip() for pt in layers_str.split("+") if pt.strip()]
+            if len(layer_names) > 1:
+                base_img = self.get_image(
+                    f"{prefix}/{layer_names[0]}", default_width, default_height
+                ).copy()
+                for layer in layer_names[1:]:
+                    overlay = self.get_image(f"{prefix}/{layer}", default_width, default_height)
+                    if overlay.size != base_img.size:
+                        full_overlay = Image.new("RGBA", base_img.size, (0, 0, 0, 0))
+                        full_overlay.paste(overlay, (0, 0))
+                        base_img.alpha_composite(full_overlay)
+                    else:
+                        base_img.alpha_composite(overlay)
+
+                extrema = base_img.getextrema()
+                is_opaque = len(extrema) >= 4 and extrema[3][0] == 255
+                self._image_cache[asset_id] = base_img
+                self._opaque_cache[asset_id] = is_opaque
+                return base_img
+            elif len(layer_names) == 1:
+                return self.get_image(
+                    f"{prefix}/{layer_names[0]}", default_width, default_height
+                )
+
         # 1. Attempt loading from disk if asset_dir configured
         if self.asset_dir is not None:
             resolved_base = self.asset_dir.resolve()

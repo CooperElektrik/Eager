@@ -19,7 +19,7 @@ from eager_script_lsp.features.refactor import (
     compute_rename,
     prepare_rename,
 )
-from eager_script_lsp.workspace import WorkspaceIndex
+from eager_script_lsp.workspace import WorkspaceIndex, path_to_uri
 
 
 def test_prepare_rename_valid():
@@ -38,7 +38,7 @@ def test_prepare_rename_valid():
 
 def test_rename_scene_label_across_files():
     with tempfile.TemporaryDirectory() as tmpdir:
-        root = Path(tmpdir)
+        root = Path(tmpdir).resolve()
         f1 = root / "f1.es"
         f1.write_text("## Scene A --- old_label\nNarrator: Hi\n", encoding="utf-8")
         f2 = root / "f2.es"
@@ -54,10 +54,10 @@ def test_rename_scene_label_across_files():
         assert edit.changes is not None
 
         # Both files should have edits replacing old_label with new_label
-        assert f1.as_uri() in edit.changes
-        assert f2.as_uri() in edit.changes
-        assert any(e.new_text == "new_label" for e in edit.changes[f1.as_uri()])
-        assert any(e.new_text == "new_label" for e in edit.changes[f2.as_uri()])
+        assert path_to_uri(f1) in edit.changes
+        assert path_to_uri(f2) in edit.changes
+        assert any(e.new_text == "new_label" for e in edit.changes[path_to_uri(f1)])
+        assert any(e.new_text == "new_label" for e in edit.changes[path_to_uri(f2)])
 
 
 def test_code_action_create_missing_scene():
@@ -101,7 +101,7 @@ def test_code_action_pin_beat_id():
 
 def test_rename_from_label_title():
     with tempfile.TemporaryDirectory() as tmpdir:
-        root = Path(tmpdir)
+        root = Path(tmpdir).resolve()
         f1 = root / "f1.es"
         f1.write_text("## Scene A --- s1\n> s1\n", encoding="utf-8")
 
@@ -113,13 +113,13 @@ def test_rename_from_label_title():
         # Rename cursor positioned on 'Scene A' (col 5)
         edit = compute_rename(doc, index, Position(line=0, character=5), "s2")
         assert edit is not None and edit.changes is not None
-        edits = edit.changes[f1.as_uri()]
+        edits = edit.changes[path_to_uri(f1)]
         assert any(e.new_text == "s2" for e in edits)
 
 
 def test_rename_character_occurrences():
     with tempfile.TemporaryDirectory() as tmpdir:
-        root = Path(tmpdir)
+        root = Path(tmpdir).resolve()
         f1 = root / "f1.es"
         f1.write_text(
             '@character hoshiko "Hoshiko" color=#ff77aa\n## Scene 1 --- s1\nHoshiko: Hi\n~ show hoshiko smile\n',
@@ -134,7 +134,7 @@ def test_rename_character_occurrences():
         # Rename cursor on 'Hoshiko:' speaker
         edit = compute_rename(doc, index, Position(line=2, character=2), "kaori")
         assert edit is not None and edit.changes is not None
-        edits = edit.changes[f1.as_uri()]
+        edits = edit.changes[path_to_uri(f1)]
 
         # ID should be replaced with kaori
         assert any(e.new_text == "kaori" for e in edits)
@@ -144,7 +144,7 @@ def test_rename_character_occurrences():
 
 def test_code_action_declare_missing_default():
     with tempfile.TemporaryDirectory() as tmpdir:
-        root = Path(tmpdir)
+        root = Path(tmpdir).resolve()
         f1 = root / "f1.es"
         f1.write_text(
             "## Scene 1 --- s1\n$ score = 10\n$ persistent.cleared = True\n",

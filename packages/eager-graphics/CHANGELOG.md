@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Composite / layered sprite rendering:
+  - Supported expression aliasing and recursive layer resolution in `CharacterConfig.resolve_expression()` and `StageDirector` (`register_character`, `handle_show`, `handle_expression`, `resolve_side_image`).
+  - Added layered image compositing with caching in `PILAssetResolver` (`_load_layered_image`), combining multiple sprite layers into a single RGBA buffer.
+  - Added multi-layer sprite composite texture caching and hardware drawing support in `PygletAssetResolver` and `PygletRenderer`.
+  - Added unit and integration test coverage for composite sprite compositing and size normalization (`tests/test_composite_sprites.py`).
+
+### Fixed
+
+- Pyglet FPS debug overlay: registered and used canonical engine default font rather than querying DirectWrite for non-existent system font name `"sans-serif"`.
+- Windows audio backend teardown: prevented test teardown file access errors in `test_audio_backends.py` via `ignore_cleanup_errors` and explicit device stop.
+- Backend text metric parity test tolerances: adapted width and multi-line height thresholds to account for cross-platform FreeType vs DirectWrite layout variations.
+
 ## [0.7.0] - 2026-10-30
 
 ### Added

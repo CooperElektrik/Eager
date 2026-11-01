@@ -29,7 +29,7 @@ def _create_dummy_wav(path: str, duration_sec: float = 0.5, sample_rate: int = 4
 class TestHardwareAudioBackends:
     @pytest.fixture(autouse=True)
     def setup_teardown(self) -> Generator[None, None, None]:
-        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.tmp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.wav_path = os.path.join(self.tmp_dir.name, "test.wav")
         _create_dummy_wav(self.wav_path)
         yield
@@ -59,6 +59,8 @@ class TestHardwareAudioBackends:
         from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
 
         backend = MiniaudioAudioBackend()
+        if backend._device is not None:
+            backend._device.stop()
         backend.play("music", self.wav_path, loop=True, volume=0.8, loop_start=0.1, loop_end=0.4)
         if backend._active:
             assert backend.is_playing("music")
@@ -107,6 +109,8 @@ class TestHardwareAudioBackends:
         from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
 
         backend = MiniaudioAudioBackend()
+        if backend._device is not None:
+            backend._device.stop()
         missing_path = os.path.join(self.tmp_dir.name, "missing.wav")
 
         # Missing file on streaming channel (music)
@@ -141,6 +145,8 @@ class TestHardwareAudioBackends:
         from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
 
         backend = MiniaudioAudioBackend()
+        if backend._device is not None:
+            backend._device.stop()
         backend._active = False  # Simulate hardware device unavailability
         # Must return immediately without error
         backend.play("music", "test.wav", loop=True)
@@ -161,6 +167,8 @@ class TestHardwareAudioBackends:
         from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
 
         backend = MiniaudioAudioBackend()
+        if backend._device is not None:
+            backend._device.stop()
 
         with (
             patch.object(miniaudio, "stream_file", wraps=miniaudio.stream_file) as mock_stream,
@@ -188,6 +196,8 @@ class TestHardwareAudioBackends:
         from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
 
         backend = MiniaudioAudioBackend()
+        if backend._device is not None:
+            backend._device.stop()
         backend.play("music", self.wav_path, loop=True, volume=0.8)
 
         errors: list[Exception] = []
@@ -221,6 +231,8 @@ class TestHardwareAudioBackends:
         from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend, _ChannelTrack
 
         backend = MiniaudioAudioBackend()
+        if backend._device is not None:
+            backend._device.stop()
 
         class DummyStream:
             def send(self, n: int) -> list[int]:
@@ -245,6 +257,8 @@ class TestHardwareAudioBackends:
         from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend, _ChannelTrack
 
         backend = MiniaudioAudioBackend()
+        if backend._device is not None:
+            backend._device.stop()
 
         class DummyStream:
             def send(self, n: int) -> list[int]:
@@ -282,6 +296,8 @@ class TestHardwareAudioBackends:
         from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend, _ChannelTrack
 
         backend = MiniaudioAudioBackend()
+        if backend._device is not None:
+            backend._device.stop()
 
         class FaultyStream:
             def __init__(self) -> None:

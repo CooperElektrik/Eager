@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Graphics & Presentation**:
+  - Added composite / layered sprite support across `StageDirector`, `CharacterConfig`, and renderer backends.
+  - Implemented expression resolution and recursive alias expansion for character expressions in `StageDirector.register_character()`, `handle_show()`, and `handle_expression()`.
+  - Added multi-layer sprite compositing in `PILAssetResolver` / `PILRenderer`, layering constituent image parts (`base+uniform+smile` or comma/plus separated) onto composite buffers with caching.
+  - Added multi-layer sprite texture generation and rendering support in `PygletAssetResolver` / `PygletRenderer`.
+- **Runtime**:
+  - Added composite character sprite path resolution and integrity validation in `check_assets()` and `resolve_candidate_paths()`, detecting missing individual constituent layer files.
+  - Wired custom character expression aliases from screenplay declarations (`@character ... expr="layer1+layer2"`) into `GameSession` director initialization and hot-reloading.
+  - Supported `expressions` dictionary and arbitrary expression keyword attributes in `NullStage.register_character()`.
+- **Tooling & Language Server**:
+  - Added `normalize_uri()` and case-insensitive URI normalization in `WorkspaceIndex.get_document()` to robustly resolve documents across Windows drive letter casing and client variations.
+
+### Fixed
+
+- **CLI**: Fixed project name parsing in `eager new` on Windows when creating projects in nested directories, avoiding malformed TOML escape errors from filesystem paths.
+- **Presentation**: Used canonical font family in `PygletPlayer` FPS debug overlay, resolving missing DirectWrite font assertion failures on Windows.
+- **Audio Tests**: Fixed Windows file lock and thread contention issues during audio backend cleanup and test teardown.
+
 ## [0.7.0] - 2026-10-30
 
 ### Added

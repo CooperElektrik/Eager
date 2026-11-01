@@ -228,9 +228,17 @@ class GameSession:
         self.stage.bind(self.dispatcher)
 
         if self.graph.characters:
+            known_keys = {
+                "asset_prefix",
+                "default_expression",
+                "default_position",
+                "side_image",
+                "color",
+            }
             for cid, cinfo in self.graph.characters.items():
                 attrs = cinfo.get("attrs", {}) if isinstance(cinfo, dict) else {}
                 name = cinfo.get("name") if isinstance(cinfo, dict) else None
+                custom_expressions = {k: v for k, v in attrs.items() if k not in known_keys}
                 self.director.register_character(
                     cid,
                     name=name,
@@ -239,6 +247,7 @@ class GameSession:
                     default_position=attrs.get("default_position", "center"),
                     side_image=attrs.get("side_image"),
                     color=attrs.get("color"),
+                    expressions=custom_expressions,
                 )
 
         self.checkpoints = CheckpointHistory(max_history=rollback_limit)
@@ -1266,9 +1275,17 @@ class GameSession:
                 self.translation_manager.load_directory(locales_dir)
 
         if hasattr(self.director, "register_character") and new_graph.characters:
+            known_keys = {
+                "asset_prefix",
+                "default_expression",
+                "default_position",
+                "side_image",
+                "color",
+            }
             for cid, cinfo in new_graph.characters.items():
                 attrs = cinfo.get("attrs", {}) if isinstance(cinfo, dict) else {}
                 name = cinfo.get("name") if isinstance(cinfo, dict) else None
+                custom_expressions = {k: v for k, v in attrs.items() if k not in known_keys}
                 self.director.register_character(
                     cid,
                     name=name,
@@ -1277,6 +1294,7 @@ class GameSession:
                     default_position=attrs.get("default_position", "center"),
                     side_image=attrs.get("side_image"),
                     color=attrs.get("color"),
+                    expressions=custom_expressions,
                 )
 
         if hasattr(self.vm, "_apply_graph_defaults"):

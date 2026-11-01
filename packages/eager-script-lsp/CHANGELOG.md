@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Added `normalize_uri()` and exported it in `eager_script_lsp.workspace`.
+- Added URI normalization fallback in `WorkspaceIndex.get_document()` to ensure robust document lookup regardless of Windows drive letter casing differences (`file:///c:/` vs `file:///C:/`).
+
+### Fixed
+
+- Standardized LSP navigation and refactoring tests (`test_navigation.py`, `test_refactor.py`) on Windows to resolve short 8.3 paths and match normalized document URIs.
+
 ## [0.7.0] - 2026-10-30
 
 ### Added

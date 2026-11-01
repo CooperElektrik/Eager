@@ -658,7 +658,7 @@ def _cmd_new(args: argparse.Namespace) -> int:
         return 1
 
     is_demo = getattr(args, "demo", False)
-    title = args.name.replace("_", " ").replace("-", " ").title()
+    title = Path(args.name).name.replace("_", " ").replace("-", " ").title()
 
     if is_demo:
         # Search for showcase demo directory in workspace or parent paths

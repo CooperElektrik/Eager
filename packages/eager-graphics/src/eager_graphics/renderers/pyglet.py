@@ -62,7 +62,7 @@ class PygletAssetResolver:
                 if p.is_file():
                     rel = p.relative_to(dir_path).as_posix()
                     self._asset_index[rel] = p
-                    rel_no_ext = str(Path(rel).with_suffix(""))
+                    rel_no_ext = Path(rel).with_suffix("").as_posix()
                     self._asset_index[rel_no_ext] = p
                     self._asset_index[p.stem] = p
         except OSError:
@@ -95,6 +95,145 @@ class PygletAssetResolver:
             pass
         return tex
 
+    def _find_asset_file(self, asset_id: str) -> Path | None:
+        """Locate an asset file on disk or in the pre-indexed asset directory."""
+        if self.asset_dir is None:
+            return None
+        resolved_base = self.asset_dir.resolve()
+        candidate_ids = [asset_id]
+        if not asset_id.startswith("characters/"):
+            candidate_ids.append(f"characters/{asset_id}")
+        if asset_id.startswith("bg/"):
+            candidate_ids.append(f"backgrounds/{asset_id[3:]}")
+        elif asset_id.startswith("backgrounds/"):
+            candidate_ids.append(f"bg/{asset_id[12:]}")
+
+        extensions = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"]
+        for cid in candidate_ids:
+            cand_path = (self.asset_dir / cid).resolve()
+            if not cand_path.is_relative_to(resolved_base):
+                raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
+            if self._asset_index:
+                if cid in self._asset_index:
+                    file_path = self._asset_index[cid].resolve()
+                    if not file_path.is_relative_to(resolved_base):
+                        raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
+                    return file_path
+                for ext in extensions:
+                    target = f"{cid}{ext}"
+                    if target in self._asset_index:
+                        file_path = self._asset_index[target].resolve()
+                        if not file_path.is_relative_to(resolved_base):
+                            raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
+                        return file_path
+            else:
+                for ext in extensions:
+                    file_path = (self.asset_dir / f"{cid}{ext}").resolve()
+                    if not file_path.is_relative_to(resolved_base):
+                        raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
+                    if file_path.is_file():
+                        return file_path
+        return None
+
+    def _resolve_composite_texture(
+        self,
+        prefix: str,
+        layer_names: list[str],
+        default_width: int,
+        default_height: int,
+    ) -> pyglet.image.AbstractImage:
+        """Composite constituent sprite layers into a single hardware texture."""
+        try:
+            from PIL import Image
+
+            first_path = self._find_asset_file(f"{prefix}/{layer_names[0]}")
+            if first_path is not None:
+                with Image.open(first_path) as raw:
+                    base_img = raw.convert("RGBA")
+            else:
+                raw_tex = self.get_texture(
+                    f"{prefix}/{layer_names[0]}", default_width, default_height
+                )
+                img_data = raw_tex.get_image_data()
+                base_img = Image.frombytes(
+                    "RGBA",
+                    (img_data.width, img_data.height),
+                    img_data.get_data("RGBA", img_data.width * 4),
+                )
+
+            for layer in layer_names[1:]:
+                layer_path = self._find_asset_file(f"{prefix}/{layer}")
+                if layer_path is not None:
+                    with Image.open(layer_path) as raw:
+                        overlay = raw.convert("RGBA")
+                else:
+                    raw_tex = self.get_texture(
+                        f"{prefix}/{layer}", default_width, default_height
+                    )
+                    img_data = raw_tex.get_image_data()
+                    overlay = Image.frombytes(
+                        "RGBA",
+                        (img_data.width, img_data.height),
+                        img_data.get_data("RGBA", img_data.width * 4),
+                    )
+
+                if overlay.size != base_img.size:
+                    full_overlay = Image.new("RGBA", base_img.size, (0, 0, 0, 0))
+                    full_overlay.paste(overlay, (0, 0))
+                    base_img.alpha_composite(full_overlay)
+                else:
+                    base_img.alpha_composite(overlay)
+
+            w, h = base_img.size
+            img_data = pyglet.image.ImageData(w, h, "RGBA", base_img.tobytes(), pitch=-w * 4)
+            return self._clamp_texture(img_data.get_texture())
+        except ImportError:
+            base_tex = self.get_texture(
+                f"{prefix}/{layer_names[0]}", default_width, default_height
+            )
+            base_data = base_tex.get_image_data()
+            w, h = base_data.width, base_data.height
+            base_bytes = bytearray(base_data.get_data("RGBA", w * 4))
+
+            for layer in layer_names[1:]:
+                overlay_tex = self.get_texture(
+                    f"{prefix}/{layer}", default_width, default_height
+                )
+                overlay_data = overlay_tex.get_image_data()
+                if overlay_data.width == w and overlay_data.height == h:
+                    overlay_bytes = overlay_data.get_data("RGBA", w * 4)
+                    for i in range(0, len(base_bytes), 4):
+                        sa = overlay_bytes[i + 3]
+                        if sa == 0:
+                            continue
+                        if sa == 255:
+                            base_bytes[i : i + 4] = overlay_bytes[i : i + 4]
+                            continue
+                        da = base_bytes[i + 3]
+                        if da == 0:
+                            base_bytes[i : i + 4] = overlay_bytes[i : i + 4]
+                            continue
+                        inv_sa = 255 - sa
+                        a_out = sa + (da * inv_sa) // 255
+                        if a_out > 0:
+                            sr, sg, sb = (
+                                overlay_bytes[i],
+                                overlay_bytes[i + 1],
+                                overlay_bytes[i + 2],
+                            )
+                            dr, dg, db = (
+                                base_bytes[i],
+                                base_bytes[i + 1],
+                                base_bytes[i + 2],
+                            )
+                            base_bytes[i] = (sr * sa + dr * da * inv_sa // 255) // a_out
+                            base_bytes[i + 1] = (sg * sa + dg * da * inv_sa // 255) // a_out
+                            base_bytes[i + 2] = (sb * sa + db * da * inv_sa // 255) // a_out
+                            base_bytes[i + 3] = a_out
+
+            img_data = pyglet.image.ImageData(w, h, "RGBA", bytes(base_bytes), pitch=w * 4)
+            return self._clamp_texture(img_data.get_texture())
+
     def get_texture(
         self,
         asset_id: str,
@@ -110,57 +249,31 @@ class PygletAssetResolver:
             self._cache[asset_id] = tex
             return tex
 
+        # Composite layered sprite resolution (e.g. "hoshiko/base+uniform+smile")
+        if "+" in asset_id and "/" in asset_id:
+            prefix, layers_str = asset_id.rsplit("/", 1)
+            layer_names = [pt.strip() for pt in layers_str.split("+") if pt.strip()]
+            if len(layer_names) > 1:
+                tex = self._resolve_composite_texture(
+                    prefix, layer_names, default_width, default_height
+                )
+                self._cache[asset_id] = tex
+                return tex
+            elif len(layer_names) == 1:
+                return self.get_texture(
+                    f"{prefix}/{layer_names[0]}", default_width, default_height
+                )
+
         # 1. Attempt loading from disk if asset_dir configured
         if self.asset_dir is not None:
-            resolved_base = self.asset_dir.resolve()
-            candidate_ids = [asset_id]
-            if not asset_id.startswith("characters/"):
-                candidate_ids.append(f"characters/{asset_id}")
-            if asset_id.startswith("bg/"):
-                candidate_ids.append(f"backgrounds/{asset_id[3:]}")
-            elif asset_id.startswith("backgrounds/"):
-                candidate_ids.append(f"bg/{asset_id[12:]}")
-
-            extensions = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"]
-            for cid in candidate_ids:
-                cand_path = (self.asset_dir / cid).resolve()
-                if not cand_path.is_relative_to(resolved_base):
-                    raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
-                if self._asset_index:
-                    if cid in self._asset_index:
-                        file_path = self._asset_index[cid].resolve()
-                        if not file_path.is_relative_to(resolved_base):
-                            raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
-                        try:
-                            tex = self._clamp_texture(pyglet.image.load(str(file_path)).get_texture())
-                            self._cache[asset_id] = tex
-                            return tex
-                        except (OSError, ImageDecodeException):
-                            pass
-                    for ext in extensions:
-                        target = f"{cid}{ext}"
-                        if target in self._asset_index:
-                            file_path = self._asset_index[target].resolve()
-                            if not file_path.is_relative_to(resolved_base):
-                                raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
-                            try:
-                                tex = self._clamp_texture(pyglet.image.load(str(file_path)).get_texture())
-                                self._cache[asset_id] = tex
-                                return tex
-                            except (OSError, ImageDecodeException):
-                                pass
-                else:
-                    for ext in extensions:
-                        file_path = (self.asset_dir / f"{cid}{ext}").resolve()
-                        if not file_path.is_relative_to(resolved_base):
-                            raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
-                        if file_path.is_file():
-                            try:
-                                tex = self._clamp_texture(pyglet.image.load(str(file_path)).get_texture())
-                                self._cache[asset_id] = tex
-                                return tex
-                            except (OSError, ImageDecodeException):
-                                pass
+            file_path = self._find_asset_file(asset_id)
+            if file_path is not None:
+                try:
+                    tex = self._clamp_texture(pyglet.image.load(str(file_path)).get_texture())
+                    self._cache[asset_id] = tex
+                    return tex
+                except (OSError, ImageDecodeException):
+                    pass
 
         # 2. Generate placeholder texture
         img = self._generate_placeholder(asset_id, default_width, default_height)
@@ -1464,7 +1577,7 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):
         self._last_fps_update: float = 0.0
         self._fps_label: Label = Label(
             "",
-            font_name="sans-serif",
+            font_name=register_pyglet_default_font(),
             font_size=11,
             x=10,
             y=10,

@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Composite / layered sprite asset validation:
+  - Added constituent layer candidate resolution and layer validation in `check_assets()` and `resolve_candidate_paths()`, pinpointing missing individual layers in composite expressions (`base+uniform+smile`).
+  - Added comprehensive composite asset validation tests in `tests/test_composite_assets.py`.
+- Custom character expression aliases:
+  - Wired screenplay character expression attributes (`@character <id> ... <alias>="<layers>"`) into `director.register_character()` in `GameSession.__init__` and `GameSession.hot_reload_screenplay()`.
+  - Added `expressions` dictionary and `**kwargs` support to `NullStage.register_character()`.
+
+### Fixed
+
+- Project scaffolding: fixed `eager new` on Windows to extract directory basename for `title` instead of stringifying the entire filesystem path, preventing invalid TOML unicode escape sequence errors in `game.toml`.
+
 ## [0.7.0] - 2026-10-30
 
 ### Added
