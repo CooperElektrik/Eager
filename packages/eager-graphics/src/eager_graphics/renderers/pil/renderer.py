@@ -910,6 +910,10 @@ class PILRenderer(RenderBackend):
             return _CachedSprite(color, mask, -(draw_w * fx), -(draw_h * fy))
 
         color_tint = tint_rgba[:3]
+        # Adaptive resampling: use lower-cost NEAREST filter while actively tweening
+        is_in_motion = self.adaptive_resampling and (item.asset_id in self._in_motion_assets)
+        cur_resample = Image.Resampling.NEAREST if is_in_motion else self.resampling
+
         geom_key = (
             item.asset_id,
             draw_w,
@@ -920,11 +924,8 @@ class PILRenderer(RenderBackend):
             color_tint,
             fx,
             fy,
+            cur_resample,
         )
-
-        # Adaptive resampling: use lower-cost NEAREST filter while actively tweening
-        is_in_motion = self.adaptive_resampling and (item.asset_id in self._in_motion_assets)
-        cur_resample = Image.Resampling.NEAREST if is_in_motion else self.resampling
 
         geom = self._geom_cache.lookup(geom_key)
         if geom is not None:
@@ -972,8 +973,7 @@ class PILRenderer(RenderBackend):
                                 img = mip.resize((draw_w, draw_h), resample=cur_resample).convert("RGBA")
                             else:
                                 img = base_pre.resize((draw_w, draw_h), resample=cur_resample).convert("RGBA")
-                    if not is_in_motion:
-                        self._scaled_cache.put(scale_key, img, _image_nbytes(img))
+                    self._scaled_cache.put(scale_key, img, _image_nbytes(img))
                     shared_img = True
 
             # B. Flips
@@ -1082,8 +1082,7 @@ class PILRenderer(RenderBackend):
                 else None
             )
             geom = _GeomEntry(geom_color, natural_mask, off_x, off_y, patches)
-            if not is_in_motion:
-                self._geom_cache.put(geom_key, geom, geom.nbytes)
+            self._geom_cache.put(geom_key, geom, geom.nbytes)
 
         # F. Opacity Modulation with cached mask reuse
         final_alpha_f = max(0.0, min(1.0, op_quant * (tint_rgba[3] / 255.0)))
@@ -1835,15 +1834,12 @@ class PILRenderer(RenderBackend):
 
         if not cache and color_rgba[3] == 255:
             # Fast direct render onto canvas for uncached opaque text (e.g. active typing characters),
-            # bypassing temporary mask allocation and paste passes.
+            # bypassing temporary mask allocation, getbbox, and paste passes.
             font = self._ui_font(font_size)
-            try:
-                stroke_w = 1 if bold else 0
-                l, t, r, b = font.getbbox(text, anchor=anchor, stroke_width=stroke_w)
-                self._mark_ui_dirty(round(x + l), round(y + t), round(x + r + 1), round(y + b + 1))
-            except (AttributeError, ValueError, TypeError):
-                w_est, h_est = self.measure_text(text, font_size=font_size, cache=True)
-                self._mark_ui_dirty(round(x), round(y), round(x + w_est + 1), round(y + h_est + 1))
+            w_est, h_est = self.measure_text(text, font_size=font_size, cache=cache)
+            left = (x - w_est / 2.0) if anchor_x == "center" else ((x - w_est) if anchor_x == "right" else x)
+            top = (y - h_est / 2.0) if anchor_y == "middle" else ((y - h_est) if anchor_y == "bottom" else y)
+            self._mark_ui_dirty(round(left), round(top), round(left + w_est + 2), round(top + h_est + 2))
             draw = ImageDraw.Draw(self._image)
             draw.text(
                 (float(x), float(y)),
