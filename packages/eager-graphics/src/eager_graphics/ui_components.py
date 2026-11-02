@@ -603,6 +603,8 @@ class DialogueBox:
             visible_line_end = min(line_end, visible_limit)
             x_cursor = text_start_x
             line_y = dialogue_start_y + (i * line_height)
+            is_line_fully_revealed = (visible_line_end == line_end)
+            cache_text = is_fully_revealed or is_line_fully_revealed
 
             for seg_start, seg_end, seg in seg_spans:
                 overlap_start = max(line_start, seg_start)
@@ -619,14 +621,14 @@ class DialogueBox:
                         color=seg_color,
                         bold=seg.bold,
                         italic=seg.italic,
-                        cache=is_fully_revealed,
+                        cache=cache_text,
                     )
                     piece_w, _ = backend.measure_text(
                         piece_text,
                         font_size=seg_font_size,
                         bold=seg.bold,
                         italic=seg.italic,
-                        cache=is_fully_revealed,
+                        cache=True,
                     )
                     x_cursor += piece_w
         if layout.show_arrow and is_fully_revealed:

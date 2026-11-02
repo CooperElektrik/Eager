@@ -131,6 +131,7 @@ class PILRenderer(RenderBackend):
             max_items=_MAX_GRADIENT_CACHE,
             max_bytes=64 * 1024 * 1024,
         )
+        self._rect_mask_cache: dict[tuple[int, int, int], Image.Image] = {}
         self._cache_hits: int = 0
         self._cache_misses: int = 0
 
@@ -220,6 +221,7 @@ class PILRenderer(RenderBackend):
         self._fade_lut_cache.clear()
         self._mip_cache.clear()
         self._gradient_cache.clear()
+        self._rect_mask_cache.clear()
         self._cache_hits = 0
         self._cache_misses = 0
         self._bg_cache = None
@@ -925,7 +927,7 @@ class PILRenderer(RenderBackend):
         cur_resample = Image.Resampling.NEAREST if is_in_motion else self.resampling
 
         geom = self._geom_cache.lookup(geom_key)
-        if geom is not None and not is_in_motion:
+        if geom is not None:
             pass
         else:
             base_is_opaque = self.asset_resolver.is_asset_opaque(item.asset_id)
@@ -935,7 +937,7 @@ class PILRenderer(RenderBackend):
             # A. Scale
             if (img.width, img.height) != (draw_w, draw_h):
                 scale_key = (item.asset_id, draw_w, draw_h)
-                scaled = self._scaled_cache.lookup(scale_key) if not is_in_motion else None
+                scaled = self._scaled_cache.lookup(scale_key)
                 if scaled is not None:
                     img = scaled
                     shared_img = True
@@ -953,20 +955,23 @@ class PILRenderer(RenderBackend):
                         else:
                             img = _resize_opaque(base_tex, (draw_w, draw_h), resample=cur_resample)
                     else:
-                        def_w = 1920 if item.layer == "background" or item.asset_id.startswith("bg/") else 400
-                        def_h = 1080 if item.layer == "background" or item.asset_id.startswith("bg/") else 800
-                        base_pre = self.asset_resolver.get_premultiplied_image(item.asset_id, def_w, def_h)
-                        factor = min(base_pre.width // draw_w, base_pre.height // draw_h)
-                        if factor >= 2 and cur_resample != Image.Resampling.NEAREST:
-                            k = 1 << ((factor).bit_length() - 1)
-                            mip_key = (item.asset_id, k)
-                            mip = self._mip_cache.get(mip_key)
-                            if mip is None:
-                                mip = base_pre.reduce(k)
-                                self._put_mip(mip_key, mip)
-                            img = mip.resize((draw_w, draw_h), resample=cur_resample).convert("RGBA")
+                        if cur_resample == Image.Resampling.NEAREST:
+                            img = base_tex.resize((draw_w, draw_h), resample=Image.Resampling.NEAREST)
                         else:
-                            img = base_pre.resize((draw_w, draw_h), resample=cur_resample).convert("RGBA")
+                            def_w = 1920 if item.layer == "background" or item.asset_id.startswith("bg/") else 400
+                            def_h = 1080 if item.layer == "background" or item.asset_id.startswith("bg/") else 800
+                            base_pre = self.asset_resolver.get_premultiplied_image(item.asset_id, def_w, def_h)
+                            factor = min(base_pre.width // draw_w, base_pre.height // draw_h)
+                            if factor >= 2:
+                                k = 1 << ((factor).bit_length() - 1)
+                                mip_key = (item.asset_id, k)
+                                mip = self._mip_cache.get(mip_key)
+                                if mip is None:
+                                    mip = base_pre.reduce(k)
+                                    self._put_mip(mip_key, mip)
+                                img = mip.resize((draw_w, draw_h), resample=cur_resample).convert("RGBA")
+                            else:
+                                img = base_pre.resize((draw_w, draw_h), resample=cur_resample).convert("RGBA")
                     if not is_in_motion:
                         self._scaled_cache.put(scale_key, img, _image_nbytes(img))
                     shared_img = True
@@ -1487,6 +1492,8 @@ class PILRenderer(RenderBackend):
                                 if base0.size != (draw_w, draw_h)
                                 else base0
                             )
+                            if self.mode == "RGB" and tex0.mode == "RGBA":
+                                tex0 = tex0.convert("RGB")
                             self._scaled_cache.put(scale_key0, tex0, _image_nbytes(tex0))
 
                         scale_key1 = (bg_items[1].asset_id, draw_w, draw_h)
@@ -1497,6 +1504,8 @@ class PILRenderer(RenderBackend):
                                 if base1.size != (draw_w, draw_h)
                                 else base1
                             )
+                            if self.mode == "RGB" and tex1.mode == "RGBA":
+                                tex1 = tex1.convert("RGB")
                             self._scaled_cache.put(scale_key1, tex1, _image_nbytes(tex1))
 
                         if bg_items[0].opacity >= 1.0:
@@ -1663,7 +1672,12 @@ class PILRenderer(RenderBackend):
             overlay = Image.new("RGBA", (w, h), c_rgba)
             self._image.alpha_composite(overlay, dest=(x0, y0))
         else:
-            mask = Image.new("L", (w, h), alpha)
+            mask_key = (w, h, alpha)
+            mask = self._rect_mask_cache.get(mask_key)
+            if mask is None:
+                mask = Image.new("L", (w, h), alpha)
+                if len(self._rect_mask_cache) < 64:
+                    self._rect_mask_cache[mask_key] = mask
             self._image.paste(c_rgba[:3], (x0, y0, x1, y1), mask)
 
     def draw_rect(
@@ -1811,6 +1825,34 @@ class PILRenderer(RenderBackend):
         pil_anchor_x = _PIL_ANCHOR_X.get(anchor_x, "l")
         pil_anchor_y = _PIL_ANCHOR_Y.get(anchor_y, "t")
         anchor = f"{pil_anchor_x}{pil_anchor_y}"
+
+        color_rgba = (
+            _WHITE_RGBA
+            if color == WHITE
+            else color.to_rgba_bytes()
+        )
+        color_bytes = color_rgba[:3] if self.mode == "RGB" else color_rgba
+
+        if not cache and color_rgba[3] == 255:
+            # Fast direct render onto canvas for uncached opaque text (e.g. active typing characters),
+            # bypassing temporary mask allocation and paste passes.
+            font = self._ui_font(font_size)
+            try:
+                stroke_w = 1 if bold else 0
+                l, t, r, b = font.getbbox(text, anchor=anchor, stroke_width=stroke_w)
+                self._mark_ui_dirty(round(x + l), round(y + t), round(x + r + 1), round(y + b + 1))
+            except (AttributeError, ValueError, TypeError):
+                w_est, h_est = self.measure_text(text, font_size=font_size, cache=True)
+                self._mark_ui_dirty(round(x), round(y), round(x + w_est + 1), round(y + h_est + 1))
+            draw = ImageDraw.Draw(self._image)
+            draw.text(
+                (float(x), float(y)),
+                text,
+                font=font,
+                fill=color_bytes,
+                anchor=anchor,
+            )
+            return
 
         cache_key = (text, font_size, anchor, bold, italic)
         cached = self._text_mask_cache.lookup(cache_key)
