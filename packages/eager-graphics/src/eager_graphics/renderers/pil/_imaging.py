@@ -61,6 +61,30 @@ def _bboxes_intersect(
     return a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]
 
 
+def _cluster_dirty_boxes(
+    boxes: list[tuple[int, int, int, int]],
+) -> list[tuple[int, int, int, int]]:
+    """Merge only overlapping or intersecting bounding boxes into disjoint clusters."""
+    if not boxes:
+        return []
+    clusters = list(boxes)
+    merged = True
+    while merged:
+        merged = False
+        i = 0
+        while i < len(clusters):
+            j = i + 1
+            while j < len(clusters):
+                if _bboxes_intersect(clusters[i], clusters[j]):
+                    clusters[i] = _union_bboxes(clusters[i], clusters[j])
+                    clusters.pop(j)
+                    merged = True
+                else:
+                    j += 1
+            i += 1
+    return clusters
+
+
 def _max_rect(data: bytes, cw: int, ch: int) -> tuple[int, int, int, int] | None:
     """Largest all-``255`` rectangle in a ``cw`` x ``ch`` byte grid (cell coords, end-exclusive)."""
     heights = [0] * cw
@@ -178,6 +202,7 @@ def _split_rgba(img: Image.Image, *, shared: bool) -> tuple[Image.Image, Image.I
 __all__ = [
     "_alpha_bbox",
     "_bboxes_intersect",
+    "_cluster_dirty_boxes",
     "_image_nbytes",
     "_largest_opaque_rect",
     "_max_rect",

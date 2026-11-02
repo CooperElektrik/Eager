@@ -18,6 +18,7 @@ from ._compat import (
     PIL,
     PIL_AVAILABLE,
     Image,
+    ImageChops,
     ImageDraw,
     ImageFont,
     _check_pil_available,
@@ -38,6 +39,7 @@ from ._constants import (
 from ._imaging import (
     _alpha_bbox,
     _bboxes_intersect,
+    _cluster_dirty_boxes,
     _image_nbytes,
     _resize_opaque,
     _split_patches,
@@ -48,6 +50,8 @@ from .assets import PILAssetResolver
 
 if TYPE_CHECKING:
     from eager_graphics.compositor import StageCompositor
+    from eager_graphics.lighting import LightmapState
+    from eager_graphics.particles import ParticleBatch
 
 
 class PILRenderer(RenderBackend):
@@ -547,6 +551,106 @@ class PILRenderer(RenderBackend):
         if x1 <= x0 or y1 <= y0:
             return None
         return (x0, y0, x1, y1)
+
+    def draw_particles(self, batch: ParticleBatch) -> None:
+        """Render a pre-baked particle batch via zero-resample Image.paste."""
+        if not self._in_frame:
+            msg = "draw_particles called outside of begin_frame/end_frame block"
+            raise RuntimeError(msg)
+
+        lut = batch.lut
+        canvas_paste = self._image.paste
+        w, h = self.width, self.height
+
+        for x, y, scale_idx, angle_idx, alpha_idx in batch.particles:
+            stamp = lut.get_stamp(scale_idx, angle_idx, alpha_idx)
+            dest_x = x + round(stamp.off_x)
+            dest_y = y + round(stamp.off_y)
+            sw, sh = stamp.width, stamp.height
+            if dest_x + sw <= 0 or dest_y + sh <= 0 or dest_x >= w or dest_y >= h:
+                continue
+            canvas_paste(stamp.color, (dest_x, dest_y), stamp.mask)
+
+    def render_lightmap(self, lightmap: LightmapState) -> None:
+        """Composite a screen-space low-res lightmap onto the display buffer."""
+        if not lightmap.enabled or (lightmap.ambient == WHITE and not lightmap.lights):
+            return
+
+        # 1/8th resolution canvas (e.g. 160x90 for 1280x720)
+        low_w = max(16, self.width // 8)
+        low_h = max(9, self.height // 8)
+
+        # Ambient color
+        amb = lightmap.ambient
+        amb_rgb = (round(amb.r * 255), round(amb.g * 255), round(amb.b * 255))
+        lightmap_img = Image.new("RGB", (low_w, low_h), amb_rgb)
+
+        transform = self._current_transform
+        sc_x = (transform.scale_x / 8.0) if transform else (1.0 / 8.0)
+        sc_y = (transform.scale_y / 8.0) if transform else (1.0 / 8.0)
+        off_x = (transform.offset_x / 8.0) if transform else 0.0
+        off_y = (transform.offset_y / 8.0) if transform else 0.0
+
+        if lightmap.lights:
+            draw = ImageDraw.Draw(lightmap_img)
+            for light in lightmap.lights:
+                lx = off_x + light.x * sc_x
+                ly = off_y + light.y * sc_y
+                lr = max(1.0, light.radius * sc_x)
+                x0 = round(lx - lr)
+                y0 = round(ly - lr)
+                x1 = round(lx + lr)
+                y1 = round(ly + lr)
+                if x1 <= 0 or y1 <= 0 or x0 >= low_w or y0 >= low_h:
+                    continue
+
+                col = light.color
+                c_rgb = (round(col.r * 255), round(col.g * 255), round(col.b * 255))
+
+                # Concentric falloff rings on the low-res buffer
+                steps = max(2, min(8, round(lr)))
+                for s in range(steps, 0, -1):
+                    f = s / steps
+                    r_step = lr * f
+                    bx0 = round(lx - r_step)
+                    by0 = round(ly - r_step)
+                    bx1 = round(lx + r_step)
+                    by1 = round(ly + r_step)
+                    alpha_factor = (1.0 - f) * light.intensity
+                    r_val = round(amb_rgb[0] + (c_rgb[0] - amb_rgb[0]) * alpha_factor)
+                    g_val = round(amb_rgb[1] + (c_rgb[1] - amb_rgb[1]) * alpha_factor)
+                    b_val = round(amb_rgb[2] + (c_rgb[2] - amb_rgb[2]) * alpha_factor)
+                    fill_col = (max(0, min(255, r_val)), max(0, min(255, g_val)), max(0, min(255, b_val)))
+                    draw.ellipse([bx0, by0, bx1, by1], fill=fill_col)
+
+        # Upscale to full window resolution with BILINEAR (<0.3 ms)
+        full_lightmap = lightmap_img.resize((self.width, self.height), Image.Resampling.BILINEAR)
+
+        # Composite onto canvas
+        if lightmap.blend_mode == "screen":
+            self._image = ImageChops.screen(self._image, full_lightmap)
+        else:
+            self._image = ImageChops.multiply(self._image, full_lightmap)
+
+    def _render_top_fx(
+        self,
+        top_items: list[RenderItem],
+        particle_batches: list[ParticleBatch],
+    ) -> None:
+        """Render foreground/overlay elements and particle batches in z-order."""
+        entries: list[tuple[int, Any, bool]] = []
+        for it in top_items:
+            entries.append((it.z_order, it, False))
+        for pb in particle_batches:
+            if pb.z_order >= 200000:
+                entries.append((pb.z_order, pb, True))
+        entries.sort(key=lambda e: e[0])
+
+        for _, obj, is_batch in entries:
+            if is_batch:
+                self.draw_particles(obj)
+            else:
+                self.draw_item(obj)
 
     def draw_item(self, item: RenderItem) -> None:
         """Render a single compositor item."""
@@ -1066,10 +1170,16 @@ class PILRenderer(RenderBackend):
         )
 
         items = compositor.render_list()
+        particle_batches = (
+            compositor.get_particle_batches(self._current_transform)
+            if hasattr(compositor, "get_particle_batches")
+            else []
+        )
 
         # Fast-path (Tier 3): Check if full stage is identical to previous frame
         if (
-            self._stage_cache is not None
+            not particle_batches
+            and self._stage_cache is not None
             and self._last_stage_items is not None
             and len(self._last_stage_items) == len(items)
             and self._last_stage_items == items
@@ -1094,23 +1204,45 @@ class PILRenderer(RenderBackend):
                 self._ui_dirty_bbox = None
             else:
                 self._image.paste(self._stage_cache, (0, 0))
+
+            if hasattr(compositor, "lighting") and compositor.lighting.enabled:
+                self.render_lightmap(compositor.lighting)
             return self._image
 
         # Motion tracking: detect which items are actively moving/tweening/changing
+        # Tracks motion in quantized screen-space integer dimensions so sub-pixel
+        # oscillations (e.g. idle breathing) don't trigger NEAREST filtering.
         curr_geom: dict[tuple[str, str, int], tuple[Any, ...]] = {}
         in_motion: set[str] = set()
+        transform = self._current_transform
         for it in items:
             k = (it.layer, it.asset_id, it.z_order)
             t = it.tint
-            tint_key = t.to_rgba_bytes()
+            tint_rgba = _WHITE_RGBA if t == WHITE else t.to_rgba_bytes()
+            final_alpha_f = max(0.0, min(1.0, it.opacity * (tint_rgba[3] / 255.0)))
+            final_alpha_byte = round(final_alpha_f * 255)
+            quant_alpha = _QUANT_ALPHA_LUT[final_alpha_byte]
+
+            is_bg = it.layer == "background" or it.asset_id.startswith("bg/")
+            def_w = 1920 if is_bg else 400
+            def_h = 1080 if is_bg else 800
+            base_tex = self.asset_resolver.get_image(it.asset_id, def_w, def_h)
+            eff_w = base_tex.width * abs(it.scale_x)
+            eff_h = base_tex.height * abs(it.scale_y)
+            draw_w = max(1, round(eff_w * transform.scale_x))
+            draw_h = max(1, round(eff_h * transform.scale_y))
+            anchor_s_x = round(transform.offset_x + it.x * transform.scale_x)
+            anchor_s_y = round(transform.offset_y + it.y * transform.scale_y)
+            rot_norm = round(it.rotation % 360.0, 2) if it.rotation != 0.0 else 0.0
+
             g = (
-                it.x,
-                it.y,
-                it.scale_x,
-                it.scale_y,
-                it.rotation,
-                it.opacity,
-                tint_key,
+                anchor_s_x,
+                anchor_s_y,
+                draw_w,
+                draw_h,
+                rot_norm,
+                quant_alpha,
+                tint_rgba,
             )
             curr_geom[k] = g
             prev = self._prev_item_geom.get(k)
@@ -1127,28 +1259,33 @@ class PILRenderer(RenderBackend):
                 curr_bboxes[k] = bb
         self._curr_item_bboxes = curr_bboxes
 
-        # Separate items into 3 composition tiers: Background, Actors, Overlay
+        # Separate items into composition tiers:
+        # - base_items (layer z < 200,000: background + characters)
+        # - top_items (layer z >= 200,000: foreground, overlay, UI)
         bg_items: list[RenderItem] = []
         actor_items: list[RenderItem] = []
-        overlay_items: list[RenderItem] = []
+        top_items: list[RenderItem] = []
 
         for it in items:
             if it.layer == "background":
                 bg_items.append(it)
-            elif it.layer == "overlay":
-                overlay_items.append(it)
+            elif it.layer in ("overlay", "foreground") or it.z_order >= 200000:
+                top_items.append(it)
             else:
                 actor_items.append(it)
 
         base_items = bg_items + actor_items
+        has_active_top_fx = bool(top_items) or bool(particle_batches)
+        base_in_motion = any(it.asset_id in self._in_motion_assets for it in base_items)
 
-        # Tier 2: Check if base items (background + actors) are identical
+        # Tier 2: Check if base items (background + characters) are identical and settled
         can_use_base_cache = (
-            bool(overlay_items)
+            has_active_top_fx
             and self._base_cache is not None
             and self._last_base_items is not None
             and len(self._last_base_items) == len(base_items)
             and self._last_base_items == base_items
+            and not base_in_motion
             and self._last_base_transform == self._current_transform
             and self._base_cache.size == (window_width, window_height)
         )
@@ -1170,19 +1307,21 @@ class PILRenderer(RenderBackend):
             self._image.paste(self._base_cache, (0, 0))
             self._needs_clear = False
             self._frame_buffer.extend(base_items)
-            for item in overlay_items:
-                self.draw_item(item)
+            self._render_top_fx(top_items, particle_batches)
             self._last_dirty_bbox = None
         elif can_use_bg_cache and self._bg_cache is not None:
             use_dirty_rect = False
+            use_multi_rect = False
+            dirty_boxes: list[tuple[int, int, int, int]] = []
             dirty_bbox: tuple[int, int, int, int] | None = None
+            disjoint_clusters: list[tuple[int, int, int, int]] = []
+
             if (
                 self._last_stage_items is not None
-                and not overlay_items
+                and not has_active_top_fx
                 and not self._last_had_overlay
                 and bool(self._in_motion_assets)
             ):
-                dirty_boxes: list[tuple[int, int, int, int]] = []
                 for it in actor_items:
                     k = (it.layer, it.asset_id, it.z_order)
                     if it.asset_id in self._in_motion_assets:
@@ -1196,36 +1335,73 @@ class PILRenderer(RenderBackend):
                             dirty_boxes.append(prev_bb)
 
                 for k, prev_bb in self._prev_item_bboxes.items():
-                    if k[0] not in ("background", "overlay") and k not in curr_bboxes:
+                    if k[0] not in ("background", "overlay", "foreground") and k not in curr_bboxes:
                         dirty_boxes.append(prev_bb)
 
                 if self._ui_dirty_bbox is not None:
                     dirty_boxes.append(self._ui_dirty_bbox)
 
                 if dirty_boxes:
-                    dirty_bbox = dirty_boxes[0]
-                    for db in dirty_boxes[1:]:
+                    disjoint_clusters = _cluster_dirty_boxes(dirty_boxes)
+                    dirty_bbox = disjoint_clusters[0]
+                    for db in disjoint_clusters[1:]:
                         dirty_bbox = _union_bboxes(dirty_bbox, db)
 
-                    # Expand dirty_bbox to include any intersecting actors
+                    # Expand clusters to include any intersecting actors
                     expanded = True
                     while expanded:
                         expanded = False
                         for it in actor_items:
                             k = (it.layer, it.asset_id, it.z_order)
                             bb = curr_bboxes.get(k)
-                            if bb is not None and _bboxes_intersect(bb, dirty_bbox):
-                                new_dirty = _union_bboxes(dirty_bbox, bb)
-                                if new_dirty != dirty_bbox:
-                                    dirty_bbox = new_dirty
-                                    expanded = True
+                            if bb is not None:
+                                for idx, cl in enumerate(disjoint_clusters):
+                                    if _bboxes_intersect(bb, cl):
+                                        new_cl = _union_bboxes(cl, bb)
+                                        if new_cl != cl:
+                                            disjoint_clusters[idx] = new_cl
+                                            expanded = True
+                                            break
+                        if expanded:
+                            disjoint_clusters = _cluster_dirty_boxes(disjoint_clusters)
+                            dirty_bbox = disjoint_clusters[0]
+                            for db in disjoint_clusters[1:]:
+                                dirty_bbox = _union_bboxes(dirty_bbox, db)
 
-                    x0, y0, x1, y1 = dirty_bbox
-                    w_box, h_box = x1 - x0, y1 - y0
-                    if w_box > 0 and h_box > 0 and (w_box * h_box < 0.85 * window_width * window_height):
+                    screen_area = window_width * window_height
+                    total_cluster_area = sum((b[2] - b[0]) * (b[3] - b[1]) for b in disjoint_clusters)
+                    union_area = (dirty_bbox[2] - dirty_bbox[0]) * (dirty_bbox[3] - dirty_bbox[1])
+
+                    # Multi-rect dirty restoration condition (Item 4)
+                    if (
+                        len(disjoint_clusters) > 1
+                        and total_cluster_area < 0.25 * screen_area
+                        and total_cluster_area < 0.60 * union_area
+                    ):
+                        use_multi_rect = True
+                    elif union_area < 0.85 * screen_area:
                         use_dirty_rect = True
 
-            if use_dirty_rect and dirty_bbox is not None:
+            if use_multi_rect and disjoint_clusters:
+                self._last_render_path = "Tier 1 (Multi-Rect Dirty Repaint)"
+                for cl in disjoint_clusters:
+                    crop = self._bg_cache.crop(cl)
+                    self._image.paste(crop, (cl[0], cl[1]))
+                self._needs_clear = False
+                self._frame_buffer.extend(bg_items)
+
+                for item in actor_items:
+                    k = (item.layer, item.asset_id, item.z_order)
+                    bb = curr_bboxes.get(k)
+                    if bb is not None and any(_bboxes_intersect(bb, cl) for cl in disjoint_clusters):
+                        self.draw_item(item)
+                    else:
+                        self._frame_buffer.append(item)
+
+                self._ui_dirty_bbox = None
+                self._last_dirty_bbox = dirty_bbox
+
+            elif use_dirty_rect and dirty_bbox is not None:
                 self._last_render_path = "Tier 1 (Dirty Rect Repaint)"
                 crop = self._bg_cache.crop(dirty_bbox)
                 self._image.paste(crop, (dirty_bbox[0], dirty_bbox[1]))
@@ -1252,7 +1428,8 @@ class PILRenderer(RenderBackend):
                 self._ui_dirty_bbox = None
                 self._last_dirty_bbox = None
 
-            if overlay_items and not self._in_motion_assets:
+            # Snapshot Tier 2 base scene cache if foreground FX/particles or overlays are active
+            if has_active_top_fx and not base_in_motion:
                 self._base_cache = self._snapshot(self._base_cache)
                 self._last_base_items = list(base_items)
                 self._last_base_transform = self._current_transform
@@ -1261,8 +1438,7 @@ class PILRenderer(RenderBackend):
                 self._last_base_items = None
                 self._last_base_transform = None
 
-            for item in overlay_items:
-                self.draw_item(item)
+            self._render_top_fx(top_items, particle_batches)
         else:
             self._last_render_path = "Full Repaint"
             self._last_dirty_bbox = None
@@ -1356,6 +1532,11 @@ class PILRenderer(RenderBackend):
             for item in bg_items[skip_count:]:
                 self.draw_item(item)
 
+            # Render background particles (z < 200,000)
+            for pb in particle_batches:
+                if pb.z_order < 200000:
+                    self.draw_particles(pb)
+
             # Snapshot Tier 1 background cache if background items exist
             if bg_items and not any(it.asset_id in self._in_motion_assets for it in bg_items):
                 self._bg_cache = self._image.copy()
@@ -1369,8 +1550,8 @@ class PILRenderer(RenderBackend):
             for item in actor_items:
                 self.draw_item(item)
 
-            # Snapshot Tier 2 base scene cache if overlay items are present
-            if overlay_items and not self._in_motion_assets:
+            # Snapshot Tier 2 base scene cache if foreground FX/particles or overlays are active
+            if has_active_top_fx and not base_in_motion:
                 self._base_cache = self._snapshot(self._base_cache)
                 self._last_base_items = list(base_items)
                 self._last_base_transform = self._current_transform
@@ -1379,8 +1560,10 @@ class PILRenderer(RenderBackend):
                 self._last_base_items = None
                 self._last_base_transform = None
 
-            for item in overlay_items:
-                self.draw_item(item)
+            self._render_top_fx(top_items, particle_batches)
+
+        if hasattr(compositor, "lighting") and compositor.lighting.enabled:
+            self.render_lightmap(compositor.lighting)
 
         self.end_frame()
 
@@ -1388,14 +1571,14 @@ class PILRenderer(RenderBackend):
         # Always snapshot the clean stage buffer when settled (no assets in motion)
         # after all stage layers finish (BG + Actors + Overlays) so UI redraws
         # can restore the stage without a full re-render.
-        if not self._in_motion_assets:
+        if not self._in_motion_assets and not particle_batches:
             self._stage_cache = self._snapshot(self._stage_cache)
         else:
             self._stage_cache = None
         self._last_stage_items = items
         self._last_transform = self._current_transform
         self._ui_dirty_bbox = None
-        self._last_had_overlay = bool(overlay_items)
+        self._last_had_overlay = has_active_top_fx
 
         return self._image
 

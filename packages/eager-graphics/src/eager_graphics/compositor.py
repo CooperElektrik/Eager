@@ -10,7 +10,9 @@ from eager_core.easing import get_easing
 from eager_core.timing import FrameClock
 from eager_core.types import BLACK, WHITE, Color, Vec2
 
-from eager_graphics.layout import LayoutResolver
+from eager_graphics.layout import LayoutResolver, ViewportTransform
+from eager_graphics.lighting import LightmapState, PointLight
+from eager_graphics.particles import ParticleBatch, ParticleEmitter
 from eager_graphics.protocol import RenderBackend, RenderItem
 from eager_graphics.stage import ElementState, Stage, StageElement
 from eager_graphics.timeline import Timeline
@@ -52,6 +54,10 @@ class StageCompositor:
 
         # Frame timing clock for FPS measurement (ticked in step()).
         self.clock: FrameClock = FrameClock()
+
+        # Expressive particle emitters & screen-space lighting
+        self._particle_emitters: dict[str, ParticleEmitter] = {}
+        self.lighting: LightmapState = LightmapState()
 
     @property
     def shake_offset(self) -> Vec2:
@@ -862,6 +868,12 @@ class StageCompositor:
         else:
             self._shake_offset = Vec2(0.0, 0.0)
 
+        # 3. Update particle emitters
+        if self._particle_emitters:
+            bounds = (0.0, 0.0, float(self.virtual_width), float(self.virtual_height))
+            for emitter in self._particle_emitters.values():
+                emitter.update(dt, bounds)
+
     # =========================================================================
     # Headless Game Loop
     # =========================================================================
@@ -1068,7 +1080,53 @@ class StageCompositor:
             self.virtual_height = int(state["virtual_height"])
 
     def clear(self) -> None:
-        """Clear all animations and reset all stage layers."""
+        """Clear all animations, particle systems, lighting, and reset all stage layers."""
         self.timeline.clear()
         self.stage.clear()
+        self._particle_emitters.clear()
+        self.lighting.clear()
+
+    # =========================================================================
+    # Particle Systems & Lighting Operations
+    # =========================================================================
+
+    def add_particle_emitter(self, emitter: ParticleEmitter) -> None:
+        """Register an active particle emitter system."""
+        self._particle_emitters[emitter.emitter_id] = emitter
+
+    def remove_particle_emitter(self, emitter_id: str) -> None:
+        """Remove a registered particle emitter by ID."""
+        self._particle_emitters.pop(emitter_id, None)
+
+    def get_particle_emitter(self, emitter_id: str) -> ParticleEmitter | None:
+        """Look up an active particle emitter by ID."""
+        return self._particle_emitters.get(emitter_id)
+
+    def clear_particle_emitters(self) -> None:
+        """Clear all registered particle emitters."""
+        self._particle_emitters.clear()
+
+    def get_particle_batches(self, transform: ViewportTransform) -> list[ParticleBatch]:
+        """Generate screen-projected particle batches in z-order."""
+        batches: list[ParticleBatch] = []
+        for emitter in sorted(self._particle_emitters.values(), key=lambda e: e.z_order):
+            batches.append(emitter.build_batch(transform))
+        return batches
+
+    def set_ambient_light(self, color: Color, intensity: float = 1.0) -> None:
+        """Set ambient lighting color and intensity."""
+        self.lighting.ambient = color
+        self.lighting.enabled = (color != WHITE) or bool(self.lighting.lights)
+
+    def add_light(self, light: PointLight) -> None:
+        """Add a dynamic point light to the stage."""
+        self.lighting.add_light(light)
+
+    def remove_light(self, light: PointLight) -> None:
+        """Remove a dynamic point light."""
+        self.lighting.remove_light(light)
+
+    def clear_lights(self) -> None:
+        """Clear all dynamic lights and reset ambient light."""
+        self.lighting.clear()
         self._shake_offset = Vec2(0.0, 0.0)

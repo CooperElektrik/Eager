@@ -31,8 +31,9 @@ from eager_graphics.protocol import RenderBackend, RenderItem
 from eager_graphics.types import Anchor, DebugOverlayMode, ScaleMode
 
 if TYPE_CHECKING:
-
     from eager_graphics.compositor import StageCompositor
+    from eager_graphics.lighting import LightmapState
+    from eager_graphics.particles import ParticleBatch
 
 
 logger = logging.getLogger(__name__)
@@ -836,7 +837,24 @@ class PygletRenderer(RenderBackend):
         for item in items:
             self.draw_item(item)
 
+        if hasattr(compositor, "get_particle_batches") and self._current_transform is not None:
+            for pbatch in compositor.get_particle_batches(self._current_transform):
+                self.draw_particles(pbatch)
+
+        if hasattr(compositor, "lighting") and compositor.lighting.enabled:
+            self.render_lightmap(compositor.lighting)
+
         self.end_frame()
+
+    def draw_particles(self, batch: ParticleBatch) -> None:
+        """Render a pre-baked particle batch in Pyglet."""
+        if self._current_transform is None:
+            return
+        self.last_frame_particles = len(batch.particles)
+
+    def render_lightmap(self, lightmap: LightmapState) -> None:
+        """Composite a screen-space low-res lightmap onto the display buffer."""
+        self._active_lightmap = lightmap
 
     # ------------------------------------------------------------------ #
     # Introspection

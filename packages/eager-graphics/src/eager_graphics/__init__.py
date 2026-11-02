@@ -53,6 +53,18 @@ from eager_core.types import (
 from eager_graphics.compositor import StageCompositor
 from eager_graphics.director import CharacterConfig, StageDirector
 from eager_graphics.layout import LayoutResolver, ViewportTransform
+from eager_graphics.lighting import (
+    AmbientLight,
+    LightKind,
+    LightmapState,
+    PointLight,
+)
+from eager_graphics.particles import (
+    ParticleBatch,
+    ParticleEmitter,
+    ParticleStamp,
+    ParticleStampLUT,
+)
 from eager_graphics.player import BasePlayer
 from eager_graphics.protocol import RenderBackend, RenderItem, UIDrawBackend
 from eager_graphics.renderers.null import NullRenderer
@@ -82,6 +94,7 @@ __all__ = [
     "RED",
     "TRANSPARENT",
     "WHITE",
+    "AmbientLight",
     "Anchor",
     "BasePlayer",
     "CharacterConfig",
@@ -99,11 +112,18 @@ __all__ = [
     "InputBox",
     "Layer",
     "LayoutResolver",
+    "LightKind",
+    "LightmapState",
     "NullRenderer",
     "PILAssetResolver",
     "PILPlayer",
     "PILRenderer",
+    "ParticleBatch",
+    "ParticleEmitter",
+    "ParticleStamp",
+    "ParticleStampLUT",
     "PausePoint",
+    "PointLight",
     "PygletAssetResolver",
     "PygletPlayer",
     "PygletRenderer",

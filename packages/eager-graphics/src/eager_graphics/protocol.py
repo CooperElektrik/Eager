@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from eager_core.types import WHITE, Color
 
 from eager_graphics.types import Anchor
+
+if TYPE_CHECKING:
+    from eager_graphics.lighting import LightmapState
+    from eager_graphics.particles import ParticleBatch
 
 __all__ = [
     "RenderBackend",
@@ -85,6 +89,14 @@ class RenderBackend(Protocol):
 
     def draw_item(self, item: RenderItem) -> None:
         """Render a single compositor item to the target display buffer."""
+        ...
+
+    def draw_particles(self, batch: ParticleBatch) -> None:
+        """Render a pre-baked particle batch to the display buffer."""
+        ...
+
+    def render_lightmap(self, lightmap: LightmapState) -> None:
+        """Composite a screen-space low-res lightmap onto the display buffer."""
         ...
 
     def end_frame(self) -> None:

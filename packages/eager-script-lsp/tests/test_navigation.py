@@ -216,6 +216,6 @@ def test_include_directive_definition_and_links():
 
         # Document links
         links = compute_document_links(doc, index)
-        assert any(normalize_uri(link.target) == normalize_uri(f_inc.as_uri()) for link in links)
+        assert any(link.target is not None and normalize_uri(link.target) == normalize_uri(f_inc.as_uri()) for link in links)
 
 

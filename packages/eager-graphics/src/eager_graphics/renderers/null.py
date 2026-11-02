@@ -27,12 +27,16 @@ Example
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from eager_core.timing import FrameClock
 from eager_core.types import BLACK, WHITE, Color
 
 from eager_graphics.protocol import RenderBackend, RenderItem
+
+if TYPE_CHECKING:
+    from eager_graphics.lighting import LightmapState
+    from eager_graphics.particles import ParticleBatch
 
 __all__ = [
     "NullRenderer",
@@ -60,6 +64,8 @@ class NullRenderer(RenderBackend):
         # never transforms items — it stores them verbatim.
         self.last_frame: list[RenderItem] = []
         self._frame_buffer: list[RenderItem] = []
+        self.last_particle_batches: list[tuple[str, int]] = []
+        self.last_lightmaps: list[tuple[bool, int]] = []
         self.frame_count: int = 0
         self.clear_color: Color = BLACK
         self._in_frame: bool = False
@@ -92,6 +98,20 @@ class NullRenderer(RenderBackend):
         # Store a copy so later mutations to the compositor's render list
         # don't alias the recorded frame.
         self._frame_buffer.append(item)
+
+    def draw_particles(self, batch: ParticleBatch) -> None:
+        """Record a particle batch draw call."""
+        if not self._in_frame:
+            msg = "draw_particles called outside of begin_frame/end_frame block"
+            raise RuntimeError(msg)
+        self.last_particle_batches.append((batch.emitter_id, len(batch.particles)))
+
+    def render_lightmap(self, lightmap: LightmapState) -> None:
+        """Record a screen-space lightmap draw call."""
+        if not self._in_frame:
+            msg = "render_lightmap called outside of begin_frame/end_frame block"
+            raise RuntimeError(msg)
+        self.last_lightmaps.append((lightmap.enabled, len(lightmap.lights)))
 
     def end_frame(self) -> None:
         """Finalize the current frame, publishing its draw calls."""
@@ -155,6 +175,12 @@ class NullRenderer(RenderBackend):
         items = compositor.render_list()
         for item in items:
             self.draw_item(item)
+        if hasattr(compositor, "get_particle_batches") and hasattr(compositor, "layout"):
+            transform = compositor.layout.compute_viewport_transform(window_width, window_height)
+            for batch in compositor.get_particle_batches(transform):
+                self.draw_particles(batch)
+        if hasattr(compositor, "lighting") and compositor.lighting.enabled:
+            self.render_lightmap(compositor.lighting)
         self.end_frame()
 
     # ------------------------------------------------------------------ #
