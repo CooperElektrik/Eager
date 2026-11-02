@@ -155,6 +155,7 @@ class PILRenderer(RenderBackend):
         self._prev_item_geom: dict[tuple[str, str, int], tuple[Any, ...]] = {}
         self._curr_item_geom: dict[tuple[str, str, int], tuple[Any, ...]] = {}
         self._in_motion_assets: set[str] = set()
+        self._morphing_assets: set[str] = set()
         self._prev_item_bboxes: dict[tuple[str, str, int], tuple[int, int, int, int]] = {}
         self._curr_item_bboxes: dict[tuple[str, str, int], tuple[int, int, int, int]] = {}
         self._last_had_overlay: bool = False
@@ -237,6 +238,7 @@ class PILRenderer(RenderBackend):
         self._prev_item_geom.clear()
         self._curr_item_geom.clear()
         self._in_motion_assets.clear()
+        self._morphing_assets.clear()
         self._prev_item_bboxes.clear()
         self._curr_item_bboxes.clear()
         self._last_had_overlay = False
@@ -912,6 +914,7 @@ class PILRenderer(RenderBackend):
         color_tint = tint_rgba[:3]
         # Adaptive resampling: use lower-cost NEAREST filter while actively tweening
         is_in_motion = self.adaptive_resampling and (item.asset_id in self._in_motion_assets)
+        is_morphing = self.adaptive_resampling and (item.asset_id in self._morphing_assets)
         cur_resample = Image.Resampling.NEAREST if is_in_motion else self.resampling
 
         geom_key = (
@@ -973,7 +976,9 @@ class PILRenderer(RenderBackend):
                                 img = mip.resize((draw_w, draw_h), resample=cur_resample).convert("RGBA")
                             else:
                                 img = base_pre.resize((draw_w, draw_h), resample=cur_resample).convert("RGBA")
-                    self._scaled_cache.put(scale_key, img, _image_nbytes(img))
+                    is_large = (draw_w * draw_h >= 500_000) or (item.layer == "background")
+                    if not (is_morphing and is_large):
+                        self._scaled_cache.put(scale_key, img, _image_nbytes(img))
                     shared_img = True
 
             # B. Flips
@@ -1030,7 +1035,7 @@ class PILRenderer(RenderBackend):
                 off_x = new_vx - (rot_w / 2.0)
                 off_y = new_vy - (rot_h / 2.0)
 
-                if not is_ortho:
+                if not is_ortho and not is_in_motion:
                     bbox = _alpha_bbox(img)
                     if bbox is not None and bbox != (0, 0, rot_w, rot_h):
                         img = img.crop(bbox)
@@ -1069,6 +1074,9 @@ class PILRenderer(RenderBackend):
             if base_is_opaque and is_ortho:
                 geom_color = img
                 natural_mask = None
+            elif is_in_motion and not base_is_opaque:
+                geom_color = img
+                natural_mask = img
             else:
                 geom_color, natural_mask = _split_rgba(img, shared=shared_img)
 
@@ -1082,7 +1090,10 @@ class PILRenderer(RenderBackend):
                 else None
             )
             geom = _GeomEntry(geom_color, natural_mask, off_x, off_y, patches)
-            self._geom_cache.put(geom_key, geom, geom.nbytes)
+            is_large = (draw_w * draw_h >= 500_000) or (item.layer == "background")
+            skip_geom_cache = (is_in_motion and not is_ortho) or (is_morphing and is_large)
+            if not skip_geom_cache:
+                self._geom_cache.put(geom_key, geom, geom.nbytes)
 
         # F. Opacity Modulation with cached mask reuse
         final_alpha_f = max(0.0, min(1.0, op_quant * (tint_rgba[3] / 255.0)))
@@ -1100,6 +1111,8 @@ class PILRenderer(RenderBackend):
             if mask is None:
                 if geom.natural_mask is None:
                     mask = Image.new("L", geom.color.size, effective_alpha)
+                elif geom.natural_mask is geom.color:
+                    mask = geom.color.getchannel("A").point(_ALPHA_LUTS[effective_alpha])
                 else:
                     mask = geom.natural_mask.point(_ALPHA_LUTS[effective_alpha])
                 if len(geom.alpha_masks) >= 64:
@@ -1218,6 +1231,7 @@ class PILRenderer(RenderBackend):
         # oscillations (e.g. idle breathing) don't trigger NEAREST filtering.
         curr_geom: dict[tuple[str, str, int], tuple[Any, ...]] = {}
         in_motion: set[str] = set()
+        morphing: set[str] = set()
         transform = self._current_transform
         for it in items:
             k = (it.layer, it.asset_id, it.z_order)
@@ -1252,16 +1266,11 @@ class PILRenderer(RenderBackend):
             prev = self._prev_item_geom.get(k)
             if prev is not None and prev != g:
                 in_motion.add(it.asset_id)
+                if prev[2] != draw_w or prev[3] != draw_h or prev[4] != rot_norm:
+                    morphing.add(it.asset_id)
         self._curr_item_geom = curr_geom
         self._in_motion_assets = in_motion
-
-        curr_bboxes: dict[tuple[str, str, int], tuple[int, int, int, int]] = {}
-        for it in items:
-            k = (it.layer, it.asset_id, it.z_order)
-            bb = self._compute_item_bbox(it, self._current_transform)
-            if bb is not None:
-                curr_bboxes[k] = bb
-        self._curr_item_bboxes = curr_bboxes
+        self._morphing_assets = morphing
 
         # Separate items into composition tiers:
         # - base_items (layer z < 200,000: background + characters)
@@ -1281,6 +1290,14 @@ class PILRenderer(RenderBackend):
         base_items = bg_items + actor_items
         has_active_top_fx = bool(top_items) or bool(particle_batches)
         base_in_motion = any(it.asset_id in self._in_motion_assets for it in base_items)
+
+        curr_bboxes: dict[tuple[str, str, int], tuple[int, int, int, int]] = {}
+        for it in actor_items:
+            k = (it.layer, it.asset_id, it.z_order)
+            bb = self._compute_item_bbox(it, self._current_transform)
+            if bb is not None:
+                curr_bboxes[k] = bb
+        self._curr_item_bboxes = curr_bboxes
 
         # Tier 2: Check if base items (background + characters) are identical and settled
         can_use_base_cache = (
@@ -1351,30 +1368,39 @@ class PILRenderer(RenderBackend):
                     for db in disjoint_clusters[1:]:
                         dirty_bbox = _union_bboxes(dirty_bbox, db)
 
-                    # Expand clusters to include any intersecting actors
-                    expanded = True
-                    while expanded:
-                        expanded = False
-                        for it in actor_items:
-                            k = (it.layer, it.asset_id, it.z_order)
-                            bb = curr_bboxes.get(k)
-                            if bb is not None:
-                                for idx, cl in enumerate(disjoint_clusters):
-                                    if _bboxes_intersect(bb, cl):
-                                        new_cl = _union_bboxes(cl, bb)
-                                        if new_cl != cl:
-                                            disjoint_clusters[idx] = new_cl
-                                            expanded = True
-                                            break
-                        if expanded:
-                            disjoint_clusters = _cluster_dirty_boxes(disjoint_clusters)
-                            dirty_bbox = disjoint_clusters[0]
-                            for db in disjoint_clusters[1:]:
-                                dirty_bbox = _union_bboxes(dirty_bbox, db)
-
                     screen_area = window_width * window_height
                     total_cluster_area = sum((b[2] - b[0]) * (b[3] - b[1]) for b in disjoint_clusters)
                     union_area = (dirty_bbox[2] - dirty_bbox[0]) * (dirty_bbox[3] - dirty_bbox[1])
+
+                    # Fast early bailout: if dirty area already covers >= 85% of screen
+                    # and multi-rect is disqualified, expanding clusters will only increase it.
+                    can_expand = (union_area < 0.85 * screen_area) or (
+                        len(disjoint_clusters) > 1 and total_cluster_area < 0.25 * screen_area
+                    )
+                    if can_expand:
+                        # Expand clusters to include any intersecting actors
+                        expanded = True
+                        while expanded:
+                            expanded = False
+                            for it in actor_items:
+                                k = (it.layer, it.asset_id, it.z_order)
+                                bb = curr_bboxes.get(k)
+                                if bb is not None:
+                                    for idx, cl in enumerate(disjoint_clusters):
+                                        if _bboxes_intersect(bb, cl):
+                                            new_cl = _union_bboxes(cl, bb)
+                                            if new_cl != cl:
+                                                disjoint_clusters[idx] = new_cl
+                                                expanded = True
+                                                break
+                            if expanded:
+                                disjoint_clusters = _cluster_dirty_boxes(disjoint_clusters)
+                                dirty_bbox = disjoint_clusters[0]
+                                for db in disjoint_clusters[1:]:
+                                    dirty_bbox = _union_bboxes(dirty_bbox, db)
+
+                        total_cluster_area = sum((b[2] - b[0]) * (b[3] - b[1]) for b in disjoint_clusters)
+                        union_area = (dirty_bbox[2] - dirty_bbox[0]) * (dirty_bbox[3] - dirty_bbox[1])
 
                     # Multi-rect dirty restoration condition (Item 4)
                     if (

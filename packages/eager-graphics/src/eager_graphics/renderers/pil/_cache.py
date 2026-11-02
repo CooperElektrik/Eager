@@ -75,7 +75,11 @@ class _CachedSprite:
         # byte-identical to compositing ``color`` through ``mask`` but lets the
         # hot path use cheap unmasked pastes for the bulk of the sprite.
         self.patches = patches
-        self.nbytes = _image_nbytes(color) + _image_nbytes(mask)
+        self.nbytes = (
+            _image_nbytes(color)
+            if mask is color
+            else _image_nbytes(color) + _image_nbytes(mask)
+        )
         self._image: Image.Image | None = None
 
     @property
@@ -89,7 +93,7 @@ class _CachedSprite:
             return self._image
         if self.color is None:
             raise RuntimeError("Empty sprite")
-        if self.mask is None:
+        if self.mask is None or self.mask is self.color:
             self._image = self.color
             return self.color
         img = self.color.copy()
@@ -135,7 +139,8 @@ class _GeomEntry:
             if patches is not None
             else 0
         )
-        self.nbytes = _image_nbytes(color) + _image_nbytes(natural_mask) + patch_bytes
+        mask_bytes = _image_nbytes(natural_mask) if natural_mask is not color else 0
+        self.nbytes = _image_nbytes(color) + mask_bytes + patch_bytes
 
 __all__ = [
     "_CachedSprite",
