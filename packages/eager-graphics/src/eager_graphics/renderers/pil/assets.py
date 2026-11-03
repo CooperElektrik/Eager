@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 from pathlib import Path
 
 from ._compat import Image, ImageChops, ImageDraw, _check_pil_available
@@ -19,6 +20,8 @@ class PILAssetResolver:
         self._image_cache: dict[str, Image.Image] = {}
         self._opaque_cache: dict[str, bool] = {}
         self._premultiplied_cache: dict[str, Image.Image] = {}
+        self._opaque_rgb_cache: dict[str, Image.Image] = {}
+        self._lock: threading.RLock = threading.RLock()
 
     def get_image(
         self,
@@ -31,11 +34,16 @@ class PILAssetResolver:
         if img is not None:
             return img
 
-        if asset_id == "__builtin_color_rect__":
-            img = Image.new("RGBA", (1, 1), (255, 255, 255, 255))
-            self._image_cache[asset_id] = img
-            self._opaque_cache[asset_id] = True
-            return img
+        with self._lock:
+            img = self._image_cache.get(asset_id)
+            if img is not None:
+                return img
+
+            if asset_id == "__builtin_color_rect__":
+                img = Image.new("RGBA", (1, 1), (255, 255, 255, 255))
+                self._image_cache[asset_id] = img
+                self._opaque_cache[asset_id] = True
+                return img
 
         # Composite layered sprite resolution (e.g. "hoshiko/base+uniform+smile")
         if "+" in asset_id and "/" in asset_id:
@@ -117,22 +125,44 @@ class PILAssetResolver:
         default_height: int = 800,
     ) -> Image.Image:
         """Retrieve pre-multiplied RGBa (or opaque RGBA) image for high-speed resampling."""
-        img_pre = self._premultiplied_cache.get(asset_id)
-        if img_pre is not None:
+        with self._lock:
+            img_pre = self._premultiplied_cache.get(asset_id)
+            if img_pre is not None:
+                return img_pre
+            img = self.get_image(asset_id, default_width, default_height)
+            if self.is_asset_opaque(asset_id):
+                img_pre = img
+            else:
+                img_pre = img.convert("RGBa")
+            self._premultiplied_cache[asset_id] = img_pre
             return img_pre
-        img = self.get_image(asset_id, default_width, default_height)
-        if self.is_asset_opaque(asset_id):
-            img_pre = img
-        else:
-            img_pre = img.convert("RGBa")
-        self._premultiplied_cache[asset_id] = img_pre
-        return img_pre
+
+    def get_opaque_rgb_image(
+        self,
+        asset_id: str,
+        default_width: int = 400,
+        default_height: int = 800,
+    ) -> Image.Image:
+        """Retrieve 3-channel RGB image for opaque assets (avoids RGBA overhead in RGB mode)."""
+        with self._lock:
+            img_rgb = self._opaque_rgb_cache.get(asset_id)
+            if img_rgb is not None:
+                return img_rgb
+            img = self.get_image(asset_id, default_width, default_height)
+            if self.is_asset_opaque(asset_id) and img.mode != "RGB":
+                img_rgb = img.convert("RGB")
+            else:
+                img_rgb = img
+            self._opaque_rgb_cache[asset_id] = img_rgb
+            return img_rgb
 
     def clear_cache(self) -> None:
         """Clear all cached image textures, opacity flags, and premultiplied versions."""
-        self._image_cache.clear()
-        self._opaque_cache.clear()
-        self._premultiplied_cache.clear()
+        with self._lock:
+            self._image_cache.clear()
+            self._opaque_cache.clear()
+            self._premultiplied_cache.clear()
+            self._opaque_rgb_cache.clear()
 
     def is_asset_opaque(self, asset_id: str) -> bool:
         """Return True if the base asset has no transparent pixels."""

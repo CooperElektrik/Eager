@@ -12,9 +12,61 @@ from enum import Enum
 __all__ = [
     "Anchor",
     "DebugOverlayMode",
+    "RenderPreset",
     "ScaleMode",
     "TransitionKind",
 ]
+
+
+class RenderPreset(str, Enum):
+    """Quality and performance tuning presets for render backends.
+
+    - ``PERFORMANCE``: Prioritizes throughput and minimal frame times. Uses fast
+      nearest-neighbor filtering, full stage caching, dirty-rect tracking, and patch blitting.
+    - ``BALANCED``: The default profile. Bilinear filtering with adaptive nearest
+      downsampling during continuous motion; balanced cache budgets.
+    - ``QUALITY``: Maximum visual fidelity. Bicubic filtering maintained even during
+      motion (no adaptive downgrading); large cache budgets.
+    - ``DEBUG``: Disables all caching and dirty-rect optimizations, executing full
+      un-cached composites on every frame for profiling and visual baseline testing.
+    """
+
+    PERFORMANCE = "performance"
+    BALANCED = "balanced"
+    QUALITY = "quality"
+    DEBUG = "debug"
+
+    @classmethod
+    def from_str(cls, val: str) -> RenderPreset:
+        """Parse string to RenderPreset enum, supporting case-insensitive lookups and aliases."""
+        clean = val.strip().lower().replace("-", "_")
+        for member in cls:
+            if member.value == clean or member.name.lower() == clean:
+                return member
+
+        # Friendly aliases (including legacy x264 terms)
+        aliases: dict[str, RenderPreset] = {
+            "perf": cls.PERFORMANCE,
+            "fast": cls.PERFORMANCE,
+            "faster": cls.PERFORMANCE,
+            "veryfast": cls.PERFORMANCE,
+            "superfast": cls.PERFORMANCE,
+            "ultrafast": cls.PERFORMANCE,
+            "default": cls.BALANCED,
+            "medium": cls.BALANCED,
+            "high": cls.QUALITY,
+            "slow": cls.QUALITY,
+            "slower": cls.QUALITY,
+            "veryslow": cls.QUALITY,
+            "placebo": cls.DEBUG,
+            "raw": cls.DEBUG,
+            "uncached": cls.DEBUG,
+        }
+        if clean in aliases:
+            return aliases[clean]
+
+        msg = f"Unknown render preset: '{val}'. Expected one of: {', '.join(m.value for m in cls)}"
+        raise ValueError(msg)
 
 
 class DebugOverlayMode(str, Enum):

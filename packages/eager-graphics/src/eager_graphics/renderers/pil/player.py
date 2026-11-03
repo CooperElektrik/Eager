@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from eager_graphics.player import BasePlayer
-from eager_graphics.types import DebugOverlayMode, ScaleMode
+from eager_graphics.types import DebugOverlayMode, RenderPreset, ScaleMode
 
 from ._compat import PIL_AVAILABLE, TKINTER_AVAILABLE, _TclError, tk
 from .renderer import PILRenderer
@@ -39,6 +39,8 @@ if TYPE_CHECKING or PIL_AVAILABLE:
             visible: bool = True,
             show_fps: bool | str | DebugOverlayMode = True,
             uncapped: bool = False,
+            preset: str | RenderPreset = RenderPreset.BALANCED,
+            **renderer_kwargs: Any,
         ) -> None:
             super().__init__(
                 session=session,
@@ -60,6 +62,8 @@ if TYPE_CHECKING or PIL_AVAILABLE:
                 height=height,
                 asset_dir=asset_dir,
                 scale_mode=scale_mode,
+                preset=preset,
+                **renderer_kwargs,
             )
 
             self._fps_widget: Any = None
@@ -403,6 +407,8 @@ if TYPE_CHECKING or PIL_AVAILABLE:
             """Close the player window (marks closed when running headless)."""
             super().close()
             self._closed = True
+            if hasattr(self, "renderer"):
+                self.renderer.close()
             root, self._root = self._root, None
             self._label = None
             if root is None:

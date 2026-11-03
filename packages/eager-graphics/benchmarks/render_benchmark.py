@@ -532,7 +532,9 @@ class BaseBackendAdapter:
 
     name: str = "base"
 
-    def initialize(self, width: int, height: int, asset_dir: Path | None) -> None:
+    def initialize(
+        self, width: int, height: int, asset_dir: Path | None, preset: str | None = None
+    ) -> None:
         raise NotImplementedError
 
     def render_frame(
@@ -554,7 +556,9 @@ class NullBackendAdapter(BaseBackendAdapter):
     height: int = 720
     renderer: Any = None
 
-    def initialize(self, width: int, height: int, asset_dir: Path | None) -> None:
+    def initialize(
+        self, width: int, height: int, asset_dir: Path | None, preset: str | None = None
+    ) -> None:
         from eager_graphics.renderers.null import NullRenderer
 
         self.width = width
@@ -579,12 +583,20 @@ class PILBackendAdapter(BaseBackendAdapter):
     height: int = 720
     renderer: Any = None
 
-    def initialize(self, width: int, height: int, asset_dir: Path | None) -> None:
+    def initialize(
+        self, width: int, height: int, asset_dir: Path | None, preset: str | None = None
+    ) -> None:
         from eager_graphics.renderers.pil import PILRenderer
 
         self.width = width
         self.height = height
-        self.renderer = PILRenderer(width, height, asset_dir=asset_dir, scale_mode=ScaleMode.LETTERBOX)
+        kwargs: dict[str, Any] = {
+            "asset_dir": asset_dir,
+            "scale_mode": ScaleMode.LETTERBOX,
+        }
+        if preset is not None:
+            kwargs["preset"] = preset
+        self.renderer = PILRenderer(width, height, **kwargs)
 
     def render_frame(
         self,
@@ -609,7 +621,9 @@ class PygletBackendAdapter(BaseBackendAdapter):
     window: Any = None
     renderer: Any = None
 
-    def initialize(self, width: int, height: int, asset_dir: Path | None) -> None:
+    def initialize(
+        self, width: int, height: int, asset_dir: Path | None, preset: str | None = None
+    ) -> None:
         import pyglet
 
         from eager_graphics.renderers.pyglet import PygletRenderer
@@ -701,9 +715,10 @@ def run_single_benchmark(
     height: int = 720,
     asset_dir: Path | None = None,
     stage_only: bool = False,
+    preset: str | None = None,
 ) -> BenchmarkMetrics:
     """Execute a single scenario benchmark against an adapter and return computed metrics."""
-    adapter.initialize(width, height, asset_dir)
+    adapter.initialize(width, height, asset_dir, preset=preset)
     try:
         comp, ui_state, choices, step_fn = scenario.create()
         overlay = None if stage_only else UIOverlay(width, height)
@@ -744,6 +759,7 @@ def _worker_main(argv: list[str]) -> int:
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--stage-only", action="store_true")
+    parser.add_argument("--preset", type=str, default="")
     parser.add_argument("--asset-dir", type=str, default="")
     parser.add_argument("--output-json", type=str, default="")
     args = parser.parse_args(argv)
@@ -774,6 +790,7 @@ def _worker_main(argv: list[str]) -> int:
             height=args.height,
             asset_dir=asset_dir,
             stage_only=args.stage_only,
+            preset=args.preset or None,
         )
         results.append(metrics.to_dict())
 
@@ -800,6 +817,7 @@ def run_backend_in_worker(
     height: int,
     stage_only: bool,
     asset_dir: Path,
+    preset: str | None = None,
 ) -> tuple[list[BenchmarkMetrics], str | None]:
     """Run a backend benchmark inside an isolated subprocess and parse JSON results."""
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp_out:
@@ -826,6 +844,8 @@ def run_backend_in_worker(
     ]
     if stage_only:
         cmd.append("--stage-only")
+    if preset:
+        cmd.extend(["--preset", preset])
     for sc in scenarios:
         cmd.extend(["--scenario", sc])
 
@@ -1003,6 +1023,25 @@ def main(argv: list[str] | None = None) -> int:
         help="Benchmark only the stage compositor (skip UI overlay drawing primitives)",
     )
     parser.add_argument(
+        "--preset",
+        type=str,
+        default=None,
+        choices=[
+            "performance",
+            "balanced",
+            "quality",
+            "debug",
+            # Aliases
+            "perf",
+            "fast",
+            "ultrafast",
+            "medium",
+            "slow",
+            "placebo",
+        ],
+        help="Renderer preset: performance, balanced (default), quality, debug",
+    )
+    parser.add_argument(
         "--json-file",
         type=str,
         default="",
@@ -1044,7 +1083,8 @@ def main(argv: list[str] | None = None) -> int:
     print("=" * 80)
     print("Eager-Graphics Render Backend Benchmark Suite")
     print(f"Target: {args.frames:,} frames at unbounded FPS (Warmup: {args.warmup} frames)")
-    print(f"Display Size: {width}x{height} | Mode: {'Stage-Only' if args.stage_only else 'Full VN (Stage + UI)'}")
+    preset_label = f" | Preset: {args.preset.upper()}" if args.preset else ""
+    print(f"Display Size: {width}x{height} | Mode: {'Stage-Only' if args.stage_only else 'Full VN (Stage + UI)'}{preset_label}")
     print(f"Backends to evaluate: {', '.join(backends)}")
     print(f"Scenarios: {', '.join(scenario_names)}")
     print("=" * 80)
@@ -1084,6 +1124,7 @@ def main(argv: list[str] | None = None) -> int:
                         height=height,
                         asset_dir=asset_path,
                         stage_only=args.stage_only,
+                        preset=args.preset,
                     )
                     all_results.append(m)
                     print(f" done! (Avg FPS: {m.avg_fps:.1f}, 1% Low: {m.fps_1pct_low:.1f})")
@@ -1098,6 +1139,7 @@ def main(argv: list[str] | None = None) -> int:
                     height=height,
                     stage_only=args.stage_only,
                     asset_dir=asset_path,
+                    preset=args.preset,
                 )
                 if err or not metrics_list:
                     print(f"    [ERROR] Backend {b_name} failed: {err}")

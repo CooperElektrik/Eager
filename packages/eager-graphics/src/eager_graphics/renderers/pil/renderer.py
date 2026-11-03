@@ -11,7 +11,7 @@ from eager_core.types import BLACK, WHITE, Color
 
 from eager_graphics.layout import ViewportTransform
 from eager_graphics.protocol import RenderBackend, RenderItem
-from eager_graphics.types import ScaleMode
+from eager_graphics.types import RenderPreset, ScaleMode
 
 from ._cache import _CachedSprite, _GeomEntry, _ImageLRU
 from ._compat import (
@@ -26,7 +26,6 @@ from ._compat import (
 )
 from ._constants import (
     _ALPHA_LUTS,
-    _DEFAULT_CACHE_BYTES,
     _MAX_GRADIENT_CACHE,
     _MAX_MIP_CACHE,
     _MAX_RGBA_LUTS,
@@ -41,17 +40,67 @@ from ._imaging import (
     _bboxes_intersect,
     _cluster_dirty_boxes,
     _image_nbytes,
-    _resize_opaque,
     _split_patches,
     _split_rgba,
     _union_bboxes,
 )
+from ._parallel import _RenderPool, affine_strips, resize_strips, rotate_expand_params
 from .assets import PILAssetResolver
 
 if TYPE_CHECKING:
     from eager_graphics.compositor import StageCompositor
     from eager_graphics.lighting import LightmapState
     from eager_graphics.particles import ParticleBatch
+
+
+_PRESET_CONFIGS: dict[RenderPreset, dict[str, Any]] = {
+    RenderPreset.PERFORMANCE: {
+        "resampling": getattr(Image.Resampling, "NEAREST", 0) if PIL_AVAILABLE else 0,
+        "adaptive_resampling": True,
+        "enable_stage_cache": True,
+        "enable_dirty_rects": True,
+        "dirty_area_threshold": 0.85,
+        "max_cached_sprites": 1024,
+        "cache_budget_bytes": 256 * 1024 * 1024,
+        "enable_patches": True,
+    },
+    RenderPreset.BALANCED: {
+        "resampling": getattr(Image.Resampling, "BILINEAR", 2) if PIL_AVAILABLE else 2,
+        "adaptive_resampling": True,
+        "enable_stage_cache": True,
+        "enable_dirty_rects": True,
+        "dirty_area_threshold": 0.85,
+        "max_cached_sprites": 512,
+        "cache_budget_bytes": 128 * 1024 * 1024,
+        "enable_patches": True,
+    },
+    RenderPreset.QUALITY: {
+        "resampling": getattr(Image.Resampling, "BICUBIC", 3) if PIL_AVAILABLE else 3,
+        "adaptive_resampling": False,
+        "enable_stage_cache": True,
+        "enable_dirty_rects": True,
+        "dirty_area_threshold": 0.75,
+        "max_cached_sprites": 1024,
+        "cache_budget_bytes": 512 * 1024 * 1024,
+        "enable_patches": True,
+    },
+    RenderPreset.DEBUG: {
+        "resampling": getattr(Image.Resampling, "BILINEAR", 2) if PIL_AVAILABLE else 2,
+        "adaptive_resampling": False,
+        "enable_stage_cache": False,
+        "enable_dirty_rects": False,
+        "dirty_area_threshold": 0.50,
+        "max_cached_sprites": 0,
+        "cache_budget_bytes": 0,
+        "enable_patches": True,
+    },
+}
+
+
+_SolidFillAction = tuple[str, tuple[int, ...] | tuple[int, int, int] | tuple[int, int, int, int], tuple[int, int, int, int]]
+_FadeLutAction = tuple[str, list[int]]
+_DirectDrawAction = _SolidFillAction | _FadeLutAction
+_PreparedSprite = _CachedSprite | _DirectDrawAction | None
 
 
 class PILRenderer(RenderBackend):
@@ -66,18 +115,50 @@ class PILRenderer(RenderBackend):
         asset_dir: str | Path | None = None,
         scale_mode: ScaleMode = ScaleMode.LETTERBOX,
         window: Any | None = None,
-        resampling: Image.Resampling = Image.Resampling.BILINEAR,
-        max_cached_sprites: int = 512,
-        adaptive_resampling: bool = True,
+        preset: str | RenderPreset = RenderPreset.BALANCED,
+        resampling: Image.Resampling | None = None,
+        max_cached_sprites: int | None = None,
+        adaptive_resampling: bool | None = None,
+        enable_stage_cache: bool | None = None,
+        enable_dirty_rects: bool | None = None,
+        dirty_area_threshold: float | None = None,
+        cache_budget_bytes: int | None = None,
+        enable_patches: bool | None = None,
+        render_threads: int | None = None,
     ) -> None:
         _check_pil_available()
+        self.preset = RenderPreset.from_str(preset) if isinstance(preset, str) else preset
+        cfg = _PRESET_CONFIGS[self.preset]
+
+        self.resampling = cfg["resampling"] if resampling is None else resampling
+        self.adaptive_resampling = (
+            cfg["adaptive_resampling"] if adaptive_resampling is None else adaptive_resampling
+        )
+        self.enable_stage_cache = (
+            cfg["enable_stage_cache"] if enable_stage_cache is None else enable_stage_cache
+        )
+        self.enable_dirty_rects = (
+            cfg["enable_dirty_rects"] if enable_dirty_rects is None else enable_dirty_rects
+        )
+        self.dirty_area_threshold = (
+            cfg["dirty_area_threshold"] if dirty_area_threshold is None else dirty_area_threshold
+        )
+        self.max_cached_sprites = (
+            cfg["max_cached_sprites"] if max_cached_sprites is None else max_cached_sprites
+        )
+        self.cache_budget_bytes = (
+            cfg["cache_budget_bytes"] if cache_budget_bytes is None else cache_budget_bytes
+        )
+        self.enable_patches = (
+            cfg["enable_patches"] if enable_patches is None else enable_patches
+        )
+        self.render_threads = render_threads
+        self._pool: _RenderPool = _RenderPool(render_threads)
+
         self.asset_resolver = PILAssetResolver(asset_dir)
         self.scale_mode = scale_mode
         self.window = window
-        self.resampling = resampling
-        self.max_cached_sprites = max_cached_sprites
         self.mode = mode
-        self.adaptive_resampling = adaptive_resampling
 
         self.width = window.width if window is not None else width
         self.height = window.height if window is not None else height
@@ -92,6 +173,8 @@ class PILRenderer(RenderBackend):
         self._image: Image.Image = Image.new(
             self.mode, (self.width, self.height), self._clear_color_bytes
         )
+        self._draw: ImageDraw.ImageDraw = ImageDraw.Draw(self._image)
+        self._rgba_draw: ImageDraw.ImageDraw = ImageDraw.Draw(self._image, "RGBA")
         self._in_frame: bool = False
         self._frame_buffer: list[RenderItem] = []
         self._needs_clear: bool = False
@@ -102,19 +185,19 @@ class PILRenderer(RenderBackend):
         # Optimization Caches
         self._sprite_cache: _ImageLRU = _ImageLRU(
             max_items=self.max_cached_sprites,
-            max_bytes=_DEFAULT_CACHE_BYTES,
+            max_bytes=self.cache_budget_bytes,
         )
         self._geom_cache: _ImageLRU = _ImageLRU(
             max_items=self.max_cached_sprites,
-            max_bytes=_DEFAULT_CACHE_BYTES,
+            max_bytes=self.cache_budget_bytes,
         )
         self._scaled_cache: _ImageLRU = _ImageLRU(
             max_items=self.max_cached_sprites,
-            max_bytes=_DEFAULT_CACHE_BYTES,
+            max_bytes=self.cache_budget_bytes,
         )
         self._ui_image_cache: _ImageLRU = _ImageLRU(
             max_items=self.max_cached_sprites,
-            max_bytes=_DEFAULT_CACHE_BYTES,
+            max_bytes=self.cache_budget_bytes,
         )
         self._text_mask_cache: _ImageLRU = _ImageLRU(
             max_items=_MAX_TEXT_CACHE,
@@ -128,8 +211,8 @@ class PILRenderer(RenderBackend):
         self._fade_lut_cache: dict[tuple[Any, ...], list[int]] = {}
         self._mip_cache: dict[tuple[str, int], Image.Image] = {}
         self._gradient_cache: _ImageLRU = _ImageLRU(
-            max_items=_MAX_GRADIENT_CACHE,
-            max_bytes=64 * 1024 * 1024,
+            max_items=0 if self.preset == RenderPreset.DEBUG else _MAX_GRADIENT_CACHE,
+            max_bytes=0 if self.preset == RenderPreset.DEBUG else 64 * 1024 * 1024,
         )
         self._rect_mask_cache: dict[tuple[int, int, int], Image.Image] = {}
         self._cache_hits: int = 0
@@ -169,12 +252,19 @@ class PILRenderer(RenderBackend):
         self.height = window.height
         self._ensure_buffer()
 
+    def _set_image(self, img: Image.Image) -> None:
+        """Assign current working image buffer and bind cached ImageDraw contexts."""
+        self._image = img
+        self._draw = ImageDraw.Draw(img)
+        self._rgba_draw = ImageDraw.Draw(img, "RGBA")
+
     def _ensure_buffer(self) -> None:
         """Ensure internal Image buffer matches current width and height."""
         if self._image.size != (self.width, self.height) or self._image.mode != self.mode:
-            self._image = Image.new(
+            new_img = Image.new(
                 self.mode, (self.width, self.height), self._clear_color_bytes
             )
+            self._set_image(new_img)
             self._needs_clear = False
             self._bg_cache = None
             self._base_cache = None
@@ -209,6 +299,10 @@ class PILRenderer(RenderBackend):
         if self._needs_clear:
             self._image.paste(self._clear_color_bytes, (0, 0, self.width, self.height))
             self._needs_clear = False
+
+    def close(self) -> None:
+        """Release worker threads and renderer resources."""
+        self._pool.close()
 
     def clear_cache(self) -> None:
         """Clear the transformed sprite cache, scaled texture cache, and statistics."""
@@ -317,6 +411,14 @@ class PILRenderer(RenderBackend):
                 "adaptive_resampling": self.adaptive_resampling,
                 "active_filter": filter_mode,
             },
+            "tuning": {
+                "preset": self.preset.value,
+                "enable_stage_cache": self.enable_stage_cache,
+                "enable_dirty_rects": self.enable_dirty_rects,
+                "dirty_area_threshold": self.dirty_area_threshold,
+                "cache_budget_bytes": self.cache_budget_bytes,
+                "enable_patches": self.enable_patches,
+            },
             "caches": {
                 "sprite_lru": {
                     "items": len(self._sprite_cache),
@@ -369,7 +471,7 @@ class PILRenderer(RenderBackend):
         lines = [
             "── Eager Debug: PIL Backend ──────────────────────────",
             f"FPS: {fps:.1f} (avg: {fps_avg:.1f}) | Frames: {frames} | dt: {dt:.1f}ms",
-            f"Pillow: {p_ver} ({simd_str}) | Mode: {backend['mode']} ({backend['dimensions'][0]}x{backend['dimensions'][1]})",
+            f"Preset: {self.preset.value} | Pillow: {p_ver} ({simd_str}) | Mode: {backend['mode']} ({backend['dimensions'][0]}x{backend['dimensions'][1]})",
             "── Stage & Repaint ───────────────────────────────────",
             f"Render Path: {stage['last_render_path']}",
         ]
@@ -563,7 +665,7 @@ class PILRenderer(RenderBackend):
             raise RuntimeError(msg)
 
         lut = batch.lut
-        canvas_paste = self._image.paste
+        canvas_im_paste = self._image.im.paste
         w, h = self.width, self.height
 
         for x, y, scale_idx, angle_idx, alpha_idx in batch.particles:
@@ -573,7 +675,7 @@ class PILRenderer(RenderBackend):
             sw, sh = stamp.width, stamp.height
             if dest_x + sw <= 0 or dest_y + sh <= 0 or dest_x >= w or dest_y >= h:
                 continue
-            canvas_paste(stamp.color, (dest_x, dest_y), stamp.mask)
+            canvas_im_paste(stamp.color.im, (dest_x, dest_y, dest_x + sw, dest_y + sh), stamp.mask.im)
 
     def render_lightmap(self, lightmap: LightmapState) -> None:
         """Composite a screen-space low-res lightmap onto the display buffer."""
@@ -632,9 +734,9 @@ class PILRenderer(RenderBackend):
 
         # Composite onto canvas
         if lightmap.blend_mode == "screen":
-            self._image = ImageChops.screen(self._image, full_lightmap)
+            self._set_image(ImageChops.screen(self._image, full_lightmap))
         else:
-            self._image = ImageChops.multiply(self._image, full_lightmap)
+            self._set_image(ImageChops.multiply(self._image, full_lightmap))
 
     def _render_top_fx(
         self,
@@ -656,17 +758,13 @@ class PILRenderer(RenderBackend):
             else:
                 self.draw_item(obj)
 
-    def draw_item(self, item: RenderItem) -> None:
-        """Render a single compositor item."""
-        if not self._in_frame:
-            msg = "draw_item called outside of begin_frame/end_frame block"
-            raise RuntimeError(msg)
-
-        self._frame_buffer.append(item)
-
+    def _prepare_item_sprite(
+        self, item: RenderItem
+    ) -> tuple[_PreparedSprite, float, float]:
+        """Compute item geometry, look up cache, or transform sprite."""
         # 1. Early discard: invisible opacity, degenerate scale, or transparent tint
         if item.opacity <= 0.0 or not (item.scale_x and item.scale_y) or item.tint.a <= 0.0:
-            return
+            return None, 0.0, 0.0
 
         transform = self._current_transform
         if transform is None:
@@ -706,7 +804,7 @@ class PILRenderer(RenderBackend):
                 or dest_x_approx >= self.width
                 or dest_y_approx >= self.height
             ):
-                return
+                return None, anchor_s_x, anchor_s_y
         else:
             rad = max(draw_w, draw_h)
             if (
@@ -715,7 +813,7 @@ class PILRenderer(RenderBackend):
                 or anchor_s_x - rad >= self.width
                 or anchor_s_y - rad >= self.height
             ):
-                return
+                return None, anchor_s_x, anchor_s_y
 
         # Fast tint bytes computation
         t = item.tint
@@ -731,7 +829,7 @@ class PILRenderer(RenderBackend):
         # Fast path for 1x1 solid color texture (UI blocks, screen fades, flashes)
         if base_tex.size == (1, 1) and rot_norm == 0.0:
             if final_alpha_byte == 0:
-                return
+                return None, anchor_s_x, anchor_s_y
             dest_x = round(anchor_s_x - draw_w * fx)
             dest_y = round(anchor_s_y - draw_h * fy)
             px = base_tex.getpixel((0, 0))
@@ -742,22 +840,9 @@ class PILRenderer(RenderBackend):
             b = round(px[2] * (tint_rgba[2] / 255.0))
 
             if final_alpha_byte == 255:
-                # Opaque shape of any size: bypass Image.new() allocation and use paste(color, box)
                 c_fill = (r, g, b) if self.mode == "RGB" else (r, g, b, 255)
                 box = (dest_x, dest_y, dest_x + draw_w, dest_y + draw_h)
-                if (
-                    dest_x <= 0
-                    and dest_y <= 0
-                    and dest_x + draw_w >= self.width
-                    and dest_y + draw_h >= self.height
-                ):
-                    self._image.paste(c_fill, box)
-                    self._needs_clear = False
-                else:
-                    if self._needs_clear:
-                        self._execute_clear()
-                    self._image.paste(c_fill, box)
-                return
+                return ("paste_solid", c_fill, box), anchor_s_x, anchor_s_y
 
             if (
                 dest_x <= 0
@@ -765,8 +850,6 @@ class PILRenderer(RenderBackend):
                 and dest_x + draw_w >= self.width
                 and dest_y + draw_h >= self.height
             ):
-                if self._needs_clear:
-                    self._execute_clear()
                 lut_key = (r, g, b, final_alpha_byte, self.mode)
                 lut = self._fade_lut_cache.get(lut_key)
                 if lut is None:
@@ -779,10 +862,9 @@ class PILRenderer(RenderBackend):
                         lut = lut_r + lut_g + lut_b
                     else:
                         lut = lut_r + lut_g + lut_b + [255] * 256
-                    if len(self._fade_lut_cache) < 256:
+                    if len(self._fade_lut_cache) < 256 and self.preset != RenderPreset.DEBUG:
                         self._fade_lut_cache[lut_key] = lut
-                self._image = self._image.point(lut)
-                return
+                return ("point_lut", lut), anchor_s_x, anchor_s_y
 
         # 5. Transform Cache Lookup with Quantized Alpha Decoupling
         op_quant = 1.0 if item.opacity == 1.0 else round(item.opacity, 3)
@@ -805,39 +887,72 @@ class PILRenderer(RenderBackend):
         cached = self._sprite_cache.lookup(cache_key)
         if cached is not None:
             self._cache_hits += 1
-            cached_sprite = cached
-        else:
-            self._cache_misses += 1
-            cached_sprite = self._transform_sprite(
-                base_tex,
-                item,
-                draw_w,
-                draw_h,
-                rot_norm,
-                op_quant,
-                tint_rgba,
-                fx,
-                fy,
-                quant_alpha=quant_alpha,
-            )
-            # Modulated fade sprites share geometry color buffer with _geom_cache;
-            # charge only the mask size to avoid cache eviction thrashing.
-            sprite_bytes = (
-                cached_sprite.nbytes
-                if final_alpha_byte == 255
-                else _image_nbytes(cached_sprite.mask)
-            )
-            if not is_in_motion:
-                self._sprite_cache.put(cache_key, cached_sprite, sprite_bytes)
+            return cached, anchor_s_x, anchor_s_y
 
-        # 6. Final destination coordinates on canvas
+        self._cache_misses += 1
+        cached_sprite = self._transform_sprite(
+            base_tex,
+            item,
+            draw_w,
+            draw_h,
+            rot_norm,
+            op_quant,
+            tint_rgba,
+            fx,
+            fy,
+            quant_alpha=quant_alpha,
+        )
+        sprite_bytes = (
+            cached_sprite.nbytes
+            if final_alpha_byte == 255
+            else _image_nbytes(cached_sprite.mask)
+        )
+        if not is_in_motion and self._sprite_cache.enabled:
+            self._sprite_cache.put(cache_key, cached_sprite, sprite_bytes)
+
+        return cached_sprite, anchor_s_x, anchor_s_y
+
+    def _draw_cached_sprite(
+        self,
+        cached_sprite: _PreparedSprite,
+        anchor_s_x: float,
+        anchor_s_y: float,
+    ) -> None:
+        """Composite a transformed sprite onto the frame buffer."""
+        if cached_sprite is None:
+            return
+        if isinstance(cached_sprite, tuple):
+            if len(cached_sprite) == 3 and cached_sprite[0] == "paste_solid":
+                _, c_fill, box = cached_sprite
+                dest_x, dest_y, dest_x2, dest_y2 = box
+                if (
+                    dest_x <= 0
+                    and dest_y <= 0
+                    and dest_x2 >= self.width
+                    and dest_y2 >= self.height
+                ):
+                    self._image.paste(c_fill, box)
+                    self._needs_clear = False
+                else:
+                    if self._needs_clear:
+                        self._execute_clear()
+                    self._image.paste(c_fill, box)
+                return
+            if len(cached_sprite) == 2 and cached_sprite[0] == "point_lut":
+                _, lut = cached_sprite
+                if self._needs_clear:
+                    self._execute_clear()
+                self._set_image(self._image.point(lut))
+                return
+            return
+
         if cached_sprite.color is None:
             return
         dest_x = round(anchor_s_x + cached_sprite.off_x)
         dest_y = round(anchor_s_y + cached_sprite.off_y)
         spr_w, spr_h = cached_sprite.size
 
-        # 7. Viewport Frustum Culling (exact)
+        # Viewport Frustum Culling (exact)
         if (
             dest_x + spr_w <= 0
             or dest_y + spr_h <= 0
@@ -846,7 +961,7 @@ class PILRenderer(RenderBackend):
         ):
             return
 
-        # 8. High-Performance Compositing (paste is faster and auto-clips)
+        # High-Performance Compositing (im.paste is faster and auto-clips)
         if cached_sprite.is_opaque:
             if (
                 dest_x <= 0
@@ -857,28 +972,49 @@ class PILRenderer(RenderBackend):
                 self._needs_clear = False
             elif self._needs_clear:
                 self._execute_clear()
-            self._image.paste(cached_sprite.color, (dest_x, dest_y))
+            self._image.im.paste(
+                cached_sprite.color.im, (dest_x, dest_y, dest_x + spr_w, dest_y + spr_h)
+            )
         else:
             if self._needs_clear:
                 self._execute_clear()
             patches = cached_sprite.patches
             if patches is not None:
-                # Opaque-core + fringe decomposition: the bulk of the sprite is
-                # pasted unmasked (no per-pixel blend), the rest exactly as the
-                # single masked paste would have been.
+                im_paste = self._image.im.paste
                 for patch_color, patch_mask, patch_dx, patch_dy in patches:
-                    pos = (dest_x + patch_dx, dest_y + patch_dy)
+                    pos_x = dest_x + patch_dx
+                    pos_y = dest_y + patch_dy
+                    pw, ph = patch_color.size
+                    box = (pos_x, pos_y, pos_x + pw, pos_y + ph)
                     if patch_mask is None:
-                        self._image.paste(patch_color, pos)
+                        im_paste(patch_color.im, box)
                     else:
-                        self._image.paste(patch_color, pos, patch_mask)
+                        im_paste(patch_color.im, box, patch_mask.im)
                 return
             if cached_sprite.mask is not None:
-                self._image.paste(cached_sprite.color, (dest_x, dest_y), cached_sprite.mask)
+                self._image.im.paste(
+                    cached_sprite.color.im,
+                    (dest_x, dest_y, dest_x + spr_w, dest_y + spr_h),
+                    cached_sprite.mask.im,
+                )
             elif self.mode == "RGBA":
                 self._image.alpha_composite(cached_sprite.image, dest=(dest_x, dest_y))
             else:
-                self._image.paste(cached_sprite.color, (dest_x, dest_y))
+                self._image.im.paste(
+                    cached_sprite.color.im,
+                    (dest_x, dest_y, dest_x + spr_w, dest_y + spr_h),
+                )
+
+    def draw_item(self, item: RenderItem) -> None:
+        """Render a single compositor item."""
+        if not self._in_frame:
+            msg = "draw_item called outside of begin_frame/end_frame block"
+            raise RuntimeError(msg)
+
+        self._frame_buffer.append(item)
+        cached_sprite, anchor_s_x, anchor_s_y = self._prepare_item_sprite(item)
+        if cached_sprite is not None:
+            self._draw_cached_sprite(cached_sprite, anchor_s_x, anchor_s_y)
 
     def _transform_sprite(
         self,
@@ -946,18 +1082,29 @@ class PILRenderer(RenderBackend):
                     img = scaled
                     shared_img = True
                 else:
-                    if base_is_opaque:
+                    is_rot_ortho = (
+                        rot_norm == 0.0
+                        or abs(rot_norm - 90.0) < 1e-3
+                        or abs(rot_norm - 180.0) < 1e-3
+                        or abs(rot_norm - 270.0) < 1e-3
+                    )
+                    if base_is_opaque and is_rot_ortho:
                         factor = min(base_tex.width // draw_w, base_tex.height // draw_h)
-                        if factor >= 2 and cur_resample != Image.Resampling.NEAREST:
+                        if factor >= 2 and cur_resample != Image.Resampling.NEAREST and self.preset != RenderPreset.DEBUG:
                             k = 1 << ((factor).bit_length() - 1)
                             mip_key = (item.asset_id, k)
                             mip = self._mip_cache.get(mip_key)
                             if mip is None:
                                 mip = base_tex.reduce(k)
                                 self._put_mip(mip_key, mip)
-                            img = _resize_opaque(mip, (draw_w, draw_h), resample=cur_resample)
+                            img = resize_strips(self._pool, mip, (draw_w, draw_h), resample=cur_resample, is_opaque=True)
                         else:
-                            img = _resize_opaque(base_tex, (draw_w, draw_h), resample=cur_resample)
+                            src_img = (
+                                self.asset_resolver.get_opaque_rgb_image(item.asset_id)
+                                if self.mode == "RGB"
+                                else base_tex
+                            )
+                            img = resize_strips(self._pool, src_img, (draw_w, draw_h), resample=cur_resample, is_opaque=True)
                     else:
                         if cur_resample == Image.Resampling.NEAREST:
                             img = base_tex.resize((draw_w, draw_h), resample=Image.Resampling.NEAREST)
@@ -966,20 +1113,22 @@ class PILRenderer(RenderBackend):
                             def_h = 1080 if item.layer == "background" or item.asset_id.startswith("bg/") else 800
                             base_pre = self.asset_resolver.get_premultiplied_image(item.asset_id, def_w, def_h)
                             factor = min(base_pre.width // draw_w, base_pre.height // draw_h)
-                            if factor >= 2:
+                            if factor >= 2 and self.preset != RenderPreset.DEBUG:
                                 k = 1 << ((factor).bit_length() - 1)
                                 mip_key = (item.asset_id, k)
                                 mip = self._mip_cache.get(mip_key)
                                 if mip is None:
                                     mip = base_pre.reduce(k)
                                     self._put_mip(mip_key, mip)
-                                img = mip.resize((draw_w, draw_h), resample=cur_resample).convert("RGBA")
+                                img = resize_strips(self._pool, mip, (draw_w, draw_h), resample=cur_resample).convert("RGBA")
                             else:
-                                img = base_pre.resize((draw_w, draw_h), resample=cur_resample).convert("RGBA")
+                                img = resize_strips(self._pool, base_pre, (draw_w, draw_h), resample=cur_resample).convert("RGBA")
                     is_large = (draw_w * draw_h >= 500_000) or (item.layer == "background")
-                    if not (is_morphing and is_large):
+                    if self._scaled_cache.enabled and not (is_morphing and is_large):
                         self._scaled_cache.put(scale_key, img, _image_nbytes(img))
-                    shared_img = True
+                        shared_img = True
+                    else:
+                        shared_img = False
 
             # B. Flips
             if item.flip_h and item.flip_v:
@@ -1023,7 +1172,16 @@ class PILRenderer(RenderBackend):
                     new_vy = -vx
                     is_ortho = True
                 else:
-                    img = img.rotate(-rot_norm, resample=cur_resample, expand=True)
+                    if img.mode != "RGBA":
+                        img = img.convert("RGBA")
+                    # Pillow rotate() supports NEAREST, BILINEAR, BICUBIC (LANCZOS is unsupported in affine transform)
+                    rot_resample = (
+                        Image.Resampling.BICUBIC
+                        if cur_resample == getattr(Image.Resampling, "LANCZOS", 1)
+                        else cur_resample
+                    )
+                    (rot_w, rot_h), rot_matrix = rotate_expand_params(img.width, img.height, -rot_norm)
+                    img = affine_strips(self._pool, img, (rot_w, rot_h), rot_matrix, rot_resample)
                     shared_img = False
                     rad = math.radians(rot_norm)
                     cos_t = math.cos(rad)
@@ -1071,7 +1229,7 @@ class PILRenderer(RenderBackend):
                     shared_img = False
 
             # E. Split into color + mask
-            if base_is_opaque and is_ortho:
+            if img.mode == "RGB" or (base_is_opaque and is_ortho):
                 geom_color = img
                 natural_mask = None
             elif is_in_motion and not base_is_opaque:
@@ -1084,15 +1242,16 @@ class PILRenderer(RenderBackend):
             # it for geometry that gets cached.  In-motion sprites rebuild their
             # transform every frame; the search would then run per frame and cost
             # more than it saves, so they stay on the plain masked path.
+            is_large = (draw_w * draw_h >= 500_000) or (item.layer == "background")
+            skip_geom_cache = (is_in_motion and not is_ortho) or (is_morphing and is_large)
+            will_retain = self._geom_cache.enabled and not skip_geom_cache
             patches = (
                 _split_patches(geom_color, natural_mask)
-                if natural_mask is not None and not is_in_motion
+                if natural_mask is not None and not is_in_motion and self.enable_patches and will_retain
                 else None
             )
             geom = _GeomEntry(geom_color, natural_mask, off_x, off_y, patches)
-            is_large = (draw_w * draw_h >= 500_000) or (item.layer == "background")
-            skip_geom_cache = (is_in_motion and not is_ortho) or (is_morphing and is_large)
-            if not skip_geom_cache:
+            if will_retain:
                 self._geom_cache.put(geom_key, geom, geom.nbytes)
 
         # F. Opacity Modulation with cached mask reuse
@@ -1195,7 +1354,8 @@ class PILRenderer(RenderBackend):
 
         # Fast-path (Tier 3): Check if full stage is identical to previous frame
         if (
-            not particle_batches
+            self.enable_stage_cache
+            and not particle_batches
             and self._stage_cache is not None
             and self._last_stage_items is not None
             and len(self._last_stage_items) == len(items)
@@ -1233,44 +1393,53 @@ class PILRenderer(RenderBackend):
         in_motion: set[str] = set()
         morphing: set[str] = set()
         transform = self._current_transform
-        for it in items:
-            k = (it.layer, it.asset_id, it.z_order)
-            t = it.tint
-            tint_rgba = _WHITE_RGBA if t == WHITE else t.to_rgba_bytes()
-            final_alpha_f = max(0.0, min(1.0, it.opacity * (tint_rgba[3] / 255.0)))
-            final_alpha_byte = round(final_alpha_f * 255)
-            quant_alpha = _QUANT_ALPHA_LUT[final_alpha_byte]
+        if (
+            not self.enable_stage_cache
+            and not self.enable_dirty_rects
+            and not self.adaptive_resampling
+        ):
+            self._curr_item_geom = {}
+            self._in_motion_assets = in_motion
+            self._morphing_assets = morphing
+        else:
+            for it in items:
+                k = (it.layer, it.asset_id, it.z_order)
+                t = it.tint
+                tint_rgba = _WHITE_RGBA if t == WHITE else t.to_rgba_bytes()
+                final_alpha_f = max(0.0, min(1.0, it.opacity * (tint_rgba[3] / 255.0)))
+                final_alpha_byte = round(final_alpha_f * 255)
+                quant_alpha = _QUANT_ALPHA_LUT[final_alpha_byte]
 
-            is_bg = it.layer == "background" or it.asset_id.startswith("bg/")
-            def_w = 1920 if is_bg else 400
-            def_h = 1080 if is_bg else 800
-            base_tex = self.asset_resolver.get_image(it.asset_id, def_w, def_h)
-            eff_w = base_tex.width * abs(it.scale_x)
-            eff_h = base_tex.height * abs(it.scale_y)
-            draw_w = max(1, round(eff_w * transform.scale_x))
-            draw_h = max(1, round(eff_h * transform.scale_y))
-            anchor_s_x = round(transform.offset_x + it.x * transform.scale_x)
-            anchor_s_y = round(transform.offset_y + it.y * transform.scale_y)
-            rot_norm = round(it.rotation % 360.0, 2) if it.rotation != 0.0 else 0.0
+                is_bg = it.layer == "background" or it.asset_id.startswith("bg/")
+                def_w = 1920 if is_bg else 400
+                def_h = 1080 if is_bg else 800
+                base_tex = self.asset_resolver.get_image(it.asset_id, def_w, def_h)
+                eff_w = base_tex.width * abs(it.scale_x)
+                eff_h = base_tex.height * abs(it.scale_y)
+                draw_w = max(1, round(eff_w * transform.scale_x))
+                draw_h = max(1, round(eff_h * transform.scale_y))
+                anchor_s_x = round(transform.offset_x + it.x * transform.scale_x)
+                anchor_s_y = round(transform.offset_y + it.y * transform.scale_y)
+                rot_norm = round(it.rotation % 360.0, 2) if it.rotation != 0.0 else 0.0
 
-            g = (
-                anchor_s_x,
-                anchor_s_y,
-                draw_w,
-                draw_h,
-                rot_norm,
-                quant_alpha,
-                tint_rgba,
-            )
-            curr_geom[k] = g
-            prev = self._prev_item_geom.get(k)
-            if prev is not None and prev != g:
-                in_motion.add(it.asset_id)
-                if prev[2] != draw_w or prev[3] != draw_h or prev[4] != rot_norm:
-                    morphing.add(it.asset_id)
-        self._curr_item_geom = curr_geom
-        self._in_motion_assets = in_motion
-        self._morphing_assets = morphing
+                g = (
+                    anchor_s_x,
+                    anchor_s_y,
+                    draw_w,
+                    draw_h,
+                    rot_norm,
+                    quant_alpha,
+                    tint_rgba,
+                )
+                curr_geom[k] = g
+                prev = self._prev_item_geom.get(k)
+                if prev is not None and prev != g:
+                    in_motion.add(it.asset_id)
+                    if prev[2] != draw_w or prev[3] != draw_h or prev[4] != rot_norm:
+                        morphing.add(it.asset_id)
+            self._curr_item_geom = curr_geom
+            self._in_motion_assets = in_motion
+            self._morphing_assets = morphing
 
         # Separate items into composition tiers:
         # - base_items (layer z < 200,000: background + characters)
@@ -1292,16 +1461,18 @@ class PILRenderer(RenderBackend):
         base_in_motion = any(it.asset_id in self._in_motion_assets for it in base_items)
 
         curr_bboxes: dict[tuple[str, str, int], tuple[int, int, int, int]] = {}
-        for it in actor_items:
-            k = (it.layer, it.asset_id, it.z_order)
-            bb = self._compute_item_bbox(it, self._current_transform)
-            if bb is not None:
-                curr_bboxes[k] = bb
+        if self.enable_dirty_rects:
+            for it in actor_items:
+                k = (it.layer, it.asset_id, it.z_order)
+                bb = self._compute_item_bbox(it, self._current_transform)
+                if bb is not None:
+                    curr_bboxes[k] = bb
         self._curr_item_bboxes = curr_bboxes
 
         # Tier 2: Check if base items (background + characters) are identical and settled
         can_use_base_cache = (
-            has_active_top_fx
+            self.enable_stage_cache
+            and has_active_top_fx
             and self._base_cache is not None
             and self._last_base_items is not None
             and len(self._last_base_items) == len(base_items)
@@ -1313,7 +1484,8 @@ class PILRenderer(RenderBackend):
 
         # Tier 1: Check if background items are identical
         can_use_bg_cache = (
-            bool(bg_items)
+            self.enable_stage_cache
+            and bool(bg_items)
             and self._bg_cache is not None
             and self._last_bg_items is not None
             and len(self._last_bg_items) == len(bg_items)
@@ -1338,7 +1510,8 @@ class PILRenderer(RenderBackend):
             disjoint_clusters: list[tuple[int, int, int, int]] = []
 
             if (
-                self._last_stage_items is not None
+                self.enable_dirty_rects
+                and self._last_stage_items is not None
                 and not has_active_top_fx
                 and not self._last_had_overlay
                 and bool(self._in_motion_assets)
@@ -1372,9 +1545,9 @@ class PILRenderer(RenderBackend):
                     total_cluster_area = sum((b[2] - b[0]) * (b[3] - b[1]) for b in disjoint_clusters)
                     union_area = (dirty_bbox[2] - dirty_bbox[0]) * (dirty_bbox[3] - dirty_bbox[1])
 
-                    # Fast early bailout: if dirty area already covers >= 85% of screen
+                    # Fast early bailout: if dirty area already covers >= threshold of screen
                     # and multi-rect is disqualified, expanding clusters will only increase it.
-                    can_expand = (union_area < 0.85 * screen_area) or (
+                    can_expand = (union_area < self.dirty_area_threshold * screen_area) or (
                         len(disjoint_clusters) > 1 and total_cluster_area < 0.25 * screen_area
                     )
                     if can_expand:
@@ -1409,7 +1582,7 @@ class PILRenderer(RenderBackend):
                         and total_cluster_area < 0.60 * union_area
                     ):
                         use_multi_rect = True
-                    elif union_area < 0.85 * screen_area:
+                    elif union_area < self.dirty_area_threshold * screen_area:
                         use_dirty_rect = True
 
             if use_multi_rect and disjoint_clusters:
@@ -1453,13 +1626,24 @@ class PILRenderer(RenderBackend):
                 self._image.paste(self._bg_cache, (0, 0))
                 self._needs_clear = False
                 self._frame_buffer.extend(bg_items)
-                for item in actor_items:
-                    self.draw_item(item)
+                if not self._pool.is_serial and len(actor_items) > 1:
+                    actor_tasks = [
+                        (item, self._pool.submit(self._prepare_item_sprite, item))
+                        for item in actor_items
+                    ]
+                    for item, fut in actor_tasks:
+                        self._frame_buffer.append(item)
+                        cached_sprite, anchor_s_x, anchor_s_y = fut.result()
+                        if cached_sprite is not None:
+                            self._draw_cached_sprite(cached_sprite, anchor_s_x, anchor_s_y)
+                else:
+                    for item in actor_items:
+                        self.draw_item(item)
                 self._ui_dirty_bbox = None
                 self._last_dirty_bbox = None
 
             # Snapshot Tier 2 base scene cache if foreground FX/particles or overlays are active
-            if has_active_top_fx and not base_in_motion:
+            if self.enable_stage_cache and has_active_top_fx and not base_in_motion:
                 self._base_cache = self._snapshot(self._base_cache)
                 self._last_base_items = list(base_items)
                 self._last_base_transform = self._current_transform
@@ -1473,6 +1657,13 @@ class PILRenderer(RenderBackend):
             self._last_render_path = "Full Repaint"
             self._last_dirty_bbox = None
             self.clear(BLACK)
+
+            actor_tasks = None
+            if not self._pool.is_serial and actor_items and (len(actor_items) > 1 or bg_items):
+                actor_tasks = [
+                    (it, self._pool.submit(self._prepare_item_sprite, it))
+                    for it in actor_items
+                ]
 
             skip_count = 0
             if (
@@ -1511,27 +1702,40 @@ class PILRenderer(RenderBackend):
 
                         scale_key0 = (bg_items[0].asset_id, draw_w, draw_h)
                         tex0 = self._scaled_cache.lookup(scale_key0)
-                        if tex0 is None:
-                            tex0 = (
-                                _resize_opaque(base0, (draw_w, draw_h), resample=self.resampling)
-                                if base0.size != (draw_w, draw_h)
-                                else base0
-                            )
-                            if self.mode == "RGB" and tex0.mode == "RGBA":
-                                tex0 = tex0.convert("RGB")
-                            self._scaled_cache.put(scale_key0, tex0, _image_nbytes(tex0))
-
                         scale_key1 = (bg_items[1].asset_id, draw_w, draw_h)
                         tex1 = self._scaled_cache.lookup(scale_key1)
-                        if tex1 is None:
-                            tex1 = (
-                                _resize_opaque(base1, (draw_w, draw_h), resample=self.resampling)
-                                if base1.size != (draw_w, draw_h)
-                                else base1
+
+                        def _get_scaled_bg(asset_id: str, base_img: Image.Image) -> Image.Image:
+                            src = (
+                                self.asset_resolver.get_opaque_rgb_image(asset_id)
+                                if self.mode == "RGB"
+                                else base_img
                             )
-                            if self.mode == "RGB" and tex1.mode == "RGBA":
-                                tex1 = tex1.convert("RGB")
-                            self._scaled_cache.put(scale_key1, tex1, _image_nbytes(tex1))
+                            t = (
+                                resize_strips(self._pool, src, (draw_w, draw_h), resample=self.resampling, is_opaque=True)
+                                if src.size != (draw_w, draw_h)
+                                else src
+                            )
+                            if self.mode == "RGB" and t.mode == "RGBA":
+                                t = t.convert("RGB")
+                            return t
+
+                        if tex0 is None and tex1 is None and not self._pool.is_serial:
+                            fut1 = self._pool.submit(_get_scaled_bg, bg_items[1].asset_id, base1)
+                            tex0 = _get_scaled_bg(bg_items[0].asset_id, base0)
+                            tex1 = fut1.result()
+                            if self._scaled_cache.enabled:
+                                self._scaled_cache.put(scale_key0, tex0, _image_nbytes(tex0))
+                                self._scaled_cache.put(scale_key1, tex1, _image_nbytes(tex1))
+                        else:
+                            if tex0 is None:
+                                tex0 = _get_scaled_bg(bg_items[0].asset_id, base0)
+                                if self._scaled_cache.enabled:
+                                    self._scaled_cache.put(scale_key0, tex0, _image_nbytes(tex0))
+                            if tex1 is None:
+                                tex1 = _get_scaled_bg(bg_items[1].asset_id, base1)
+                                if self._scaled_cache.enabled:
+                                    self._scaled_cache.put(scale_key1, tex1, _image_nbytes(tex1))
 
                         if bg_items[0].opacity >= 1.0:
                             blend_alpha = min(1.0, max(0.0, bg_items[1].opacity))
@@ -1553,7 +1757,7 @@ class PILRenderer(RenderBackend):
                         ):
                             self._needs_clear = False
                             if dest_x == 0 and dest_y == 0 and draw_w == self.width and draw_h == self.height:
-                                self._image = blended
+                                self._set_image(blended)
                             else:
                                 self._image.paste(blended, (dest_x, dest_y))
                         else:
@@ -1572,7 +1776,7 @@ class PILRenderer(RenderBackend):
                     self.draw_particles(pb)
 
             # Snapshot Tier 1 background cache if background items exist
-            if bg_items and not any(it.asset_id in self._in_motion_assets for it in bg_items):
+            if self.enable_stage_cache and bg_items and not any(it.asset_id in self._in_motion_assets for it in bg_items):
                 self._bg_cache = self._image.copy()
                 self._last_bg_items = list(bg_items)
                 self._last_bg_transform = self._current_transform
@@ -1581,11 +1785,18 @@ class PILRenderer(RenderBackend):
                 self._last_bg_items = None
                 self._last_bg_transform = None
 
-            for item in actor_items:
-                self.draw_item(item)
+            if actor_tasks is not None:
+                for item, fut in actor_tasks:
+                    self._frame_buffer.append(item)
+                    cached_sprite, anchor_s_x, anchor_s_y = fut.result()
+                    if cached_sprite is not None:
+                        self._draw_cached_sprite(cached_sprite, anchor_s_x, anchor_s_y)
+            else:
+                for item in actor_items:
+                    self.draw_item(item)
 
             # Snapshot Tier 2 base scene cache if foreground FX/particles or overlays are active
-            if has_active_top_fx and not base_in_motion:
+            if self.enable_stage_cache and has_active_top_fx and not base_in_motion:
                 self._base_cache = self._snapshot(self._base_cache)
                 self._last_base_items = list(base_items)
                 self._last_base_transform = self._current_transform
@@ -1605,7 +1816,7 @@ class PILRenderer(RenderBackend):
         # Always snapshot the clean stage buffer when settled (no assets in motion)
         # after all stage layers finish (BG + Actors + Overlays) so UI redraws
         # can restore the stage without a full re-render.
-        if not self._in_motion_assets and not particle_batches:
+        if self.enable_stage_cache and not self._in_motion_assets and not particle_batches:
             self._stage_cache = self._snapshot(self._stage_cache)
         else:
             self._stage_cache = None
@@ -1693,6 +1904,8 @@ class PILRenderer(RenderBackend):
         if alpha == 255:
             c_bytes = c_rgba[:3] if self.mode == "RGB" else c_rgba
             self._image.paste(c_bytes, (x0, y0, x1, y1))
+        elif self.mode == "RGB":
+            self._rgba_draw.rectangle((x0, y0, x1 - 1, y1 - 1), fill=c_rgba)
         elif self.mode == "RGBA":
             overlay = Image.new("RGBA", (w, h), c_rgba)
             self._image.alpha_composite(overlay, dest=(x0, y0))
@@ -1794,30 +2007,37 @@ class PILRenderer(RenderBackend):
         if entry is None:
             # Generate and scale gradient once
             grad = Image.new("RGBA", (1, h))
+            inv = 1.0 / (h - 1)
+            step_r = (bc[0] - tc[0]) * inv
+            step_g = (bc[1] - tc[1]) * inv
+            step_b = (bc[2] - tc[2]) * inv
+            step_a = (bc[3] - tc[3]) * inv
+            r0, g0, b0, a0 = tc
             pixels = [
-                tuple(round(tc[i] + (bc[i] - tc[i]) * y_step / (h - 1)) for i in range(4))
+                (
+                    round(r0 + y_step * step_r),
+                    round(g0 + y_step * step_g),
+                    round(b0 + y_step * step_b),
+                    round(a0 + y_step * step_a),
+                )
                 for y_step in range(h)
             ]
             grad.putdata(pixels)
             grad_resized = grad.resize((w, h), Image.Resampling.BILINEAR)
 
             if self.mode == "RGBA":
-                color_plane = grad_resized
-                mask_plane = None
+                entry = (grad_resized, None)
                 nbytes = _image_nbytes(grad_resized)
-            else:
+            elif tc[3] == 255 and bc[3] == 255:
                 color_plane = grad_resized.convert("RGB")
-                # A fully opaque ramp needs no mask; pasting the colour plane
-                # directly is ~10x faster than a masked blend.
-                if tc[3] == 255 and bc[3] == 255:
-                    mask_plane = None
-                    nbytes = _image_nbytes(color_plane)
-                else:
-                    mask_plane = grad_resized.getchannel("A")
-                    nbytes = _image_nbytes(color_plane) + _image_nbytes(mask_plane)
+                entry = (color_plane, None)
+                nbytes = _image_nbytes(color_plane)
+            else:
+                entry = (grad_resized, grad_resized)
+                nbytes = _image_nbytes(grad_resized)
 
-            entry = (color_plane, mask_plane)
-            self._gradient_cache.put(cache_key, entry, nbytes)
+            if self._gradient_cache.enabled:
+                self._gradient_cache.put(cache_key, entry, nbytes)
 
         color_plane, mask_plane = entry
         if self.mode == "RGBA":
@@ -1858,16 +2078,16 @@ class PILRenderer(RenderBackend):
         )
         color_bytes = color_rgba[:3] if self.mode == "RGB" else color_rgba
 
-        if not cache and color_rgba[3] == 255:
-            # Fast direct render onto canvas for uncached opaque text (e.g. active typing characters),
+        if color_rgba[3] == 255 and (not cache or not self._text_mask_cache.enabled):
+            # Fast direct render onto canvas for uncached opaque text (e.g. active typing characters or DEBUG mode),
             # bypassing temporary mask allocation, getbbox, and paste passes.
             font = self._ui_font(font_size)
-            w_est, h_est = self.measure_text(text, font_size=font_size, cache=cache)
-            left = (x - w_est / 2.0) if anchor_x == "center" else ((x - w_est) if anchor_x == "right" else x)
-            top = (y - h_est / 2.0) if anchor_y == "middle" else ((y - h_est) if anchor_y == "bottom" else y)
-            self._mark_ui_dirty(round(left), round(top), round(left + w_est + 2), round(top + h_est + 2))
-            draw = ImageDraw.Draw(self._image)
-            draw.text(
+            if self.enable_dirty_rects:
+                w_est, h_est = self.measure_text(text, font_size=font_size, cache=cache)
+                left = (x - w_est / 2.0) if anchor_x == "center" else ((x - w_est) if anchor_x == "right" else x)
+                top = (y - h_est / 2.0) if anchor_y == "middle" else ((y - h_est) if anchor_y == "bottom" else y)
+                self._mark_ui_dirty(round(left), round(top), round(left + w_est + 2), round(top + h_est + 2))
+            self._draw.text(
                 (float(x), float(y)),
                 text,
                 font=font,

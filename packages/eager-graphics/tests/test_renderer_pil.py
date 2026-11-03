@@ -1802,6 +1802,122 @@ def test_pil_player_typewriter_reveal_cache_behavior() -> None:
     player.close()
 
 
+# ---------------------------------------------------------------------- #
+# Preset & Tuning Optimization Tests
+# ---------------------------------------------------------------------- #
+
+
+def test_render_presets_initialization() -> None:
+    """Verify performance, balanced, quality, and debug presets configure PILRenderer."""
+    from eager_graphics import RenderPreset
+
+    presets = [
+        RenderPreset.PERFORMANCE,
+        RenderPreset.BALANCED,
+        RenderPreset.QUALITY,
+        RenderPreset.DEBUG,
+    ]
+
+    for p in presets:
+        # Test by enum
+        r_enum = PILRenderer(1280, 720, preset=p)
+        assert r_enum.preset == p
+        assert r_enum.preset.value == p.value
+
+        # Test by string
+        r_str = PILRenderer(1280, 720, preset=p.value)
+        assert r_str.preset == p
+
+    # Test backward-compatible aliases
+    assert PILRenderer(1280, 720, preset="ultrafast").preset == RenderPreset.PERFORMANCE
+    assert PILRenderer(1280, 720, preset="perf").preset == RenderPreset.PERFORMANCE
+    assert PILRenderer(1280, 720, preset="medium").preset == RenderPreset.BALANCED
+    assert PILRenderer(1280, 720, preset="default").preset == RenderPreset.BALANCED
+    assert PILRenderer(1280, 720, preset="high").preset == RenderPreset.QUALITY
+    assert PILRenderer(1280, 720, preset="veryslow").preset == RenderPreset.QUALITY
+    assert PILRenderer(1280, 720, preset="placebo").preset == RenderPreset.DEBUG
+
+    # Debug: No caches, no dirty rects
+    r_debug = PILRenderer(1280, 720, preset="debug")
+    assert r_debug.enable_stage_cache is False
+    assert r_debug.enable_dirty_rects is False
+    assert r_debug.resampling == Image.Resampling.BILINEAR
+    assert r_debug.adaptive_resampling is False
+
+    # Performance: Maximum speed, Nearest resampling, generous cache
+    r_perf = PILRenderer(1280, 720, preset="performance")
+    assert r_perf.enable_stage_cache is True
+    assert r_perf.enable_dirty_rects is True
+    assert r_perf.enable_patches is True
+    assert r_perf.resampling == Image.Resampling.NEAREST
+    assert r_perf.cache_budget_bytes == 256 * 1024 * 1024
+    assert r_perf.dirty_area_threshold == 0.85
+
+    # Balanced: Default baseline
+    r_bal = PILRenderer(1280, 720)
+    assert r_bal.preset == RenderPreset.BALANCED
+    assert r_bal.enable_stage_cache is True
+    assert r_bal.enable_dirty_rects is True
+    assert r_bal.enable_patches is True
+    assert r_bal.resampling == Image.Resampling.BILINEAR
+    assert r_bal.adaptive_resampling is True
+    assert r_bal.cache_budget_bytes == 128 * 1024 * 1024
+
+    # Quality: High fidelity Bicubic, no adaptive motion downgrades
+    r_qual = PILRenderer(1280, 720, preset="quality")
+    assert r_qual.resampling == Image.Resampling.BICUBIC
+    assert r_qual.adaptive_resampling is False
+    assert r_qual.cache_budget_bytes == 512 * 1024 * 1024
+
+    # Invalid preset
+    with pytest.raises(ValueError, match="Unknown render preset"):
+        PILRenderer(1280, 720, preset="invalid_preset")
+
+
+def test_render_preset_granular_overrides() -> None:
+    """Granular constructor parameters must override preset defaults."""
+    from eager_graphics import RenderPreset
+
+    # Start with performance, but override cache budget and disable dirty rects
+    renderer = PILRenderer(
+        1280,
+        720,
+        preset="performance",
+        cache_budget_bytes=512 * 1024 * 1024,
+        enable_dirty_rects=False,
+    )
+    assert renderer.preset == RenderPreset.PERFORMANCE
+    assert renderer.cache_budget_bytes == 512 * 1024 * 1024
+    assert renderer.enable_dirty_rects is False
+    # Other performance settings remain intact
+    assert renderer.resampling == Image.Resampling.NEAREST
+    assert renderer.enable_stage_cache is True
+
+
+def test_render_preset_debug_forces_full_repaints() -> None:
+    """Debug preset disables caching and dirty rects, forcing full repaints."""
+    renderer = PILRenderer(1280, 720, preset="debug")
+    comp = StageCompositor()
+    comp.set_background("bg/room", transition="cut")
+
+    # Frame 1: Full repaint
+    renderer.render_compositor(comp, 1280, 720)
+    info1 = renderer.debug_info()
+    assert "Preset: debug" in renderer.debug_repr()
+    assert info1["tuning"]["preset"] == "debug"
+    assert info1["stage_caching"]["last_render_path"] == "Full Repaint"
+    assert info1["stage_caching"]["bg_cached"] is False
+    assert info1["stage_caching"]["stage_cached"] is False
+
+    # Frame 2 with same compositor: still Full Repaint because dirty rects & stage cache are disabled
+    renderer.render_compositor(comp, 1280, 720)
+    info2 = renderer.debug_info()
+    assert info2["stage_caching"]["last_render_path"] == "Full Repaint"
+    assert info2["stage_caching"]["bg_cached"] is False
+    assert info2["stage_caching"]["stage_cached"] is False
+
+
+
 
 
 

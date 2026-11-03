@@ -71,7 +71,13 @@ from eager_graphics.renderers.null import NullRenderer
 from eager_graphics.stage import ElementState, Layer, Stage, StageElement
 from eager_graphics.theme import Theme
 from eager_graphics.timeline import Timeline, Tween
-from eager_graphics.types import Anchor, DebugOverlayMode, ScaleMode, TransitionKind
+from eager_graphics.types import (
+    Anchor,
+    DebugOverlayMode,
+    RenderPreset,
+    ScaleMode,
+    TransitionKind,
+)
 from eager_graphics.ui_components import (
     ChoiceMenu,
     ChoiceMenuStyle,
@@ -130,6 +136,7 @@ __all__ = [
     "Rect",
     "RenderBackend",
     "RenderItem",
+    "RenderPreset",
     "ScaleMode",
     "Stage",
     "StageCompositor",

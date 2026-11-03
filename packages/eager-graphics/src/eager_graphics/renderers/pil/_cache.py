@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections import OrderedDict
 from typing import Any
 
@@ -18,29 +19,42 @@ class _ImageLRU(OrderedDict):  # type: ignore[type-arg]
         self.max_bytes = max_bytes
         self.nbytes = 0
         self._sizes: dict[Any, int] = {}
+        self._lock: threading.Lock = threading.Lock()
+
+    @property
+    def enabled(self) -> bool:
+        """Whether caching is active (budget and entry limits are positive)."""
+        return self.max_items > 0 and self.max_bytes > 0
 
     def lookup(self, key: Any) -> Any:
         """Return the cached value (marking it most-recently used) or ``None``."""
-        value = self.get(key)
-        if value is not None:
-            self.move_to_end(key)
-        return value
+        if not self.enabled:
+            return None
+        with self._lock:
+            value = self.get(key)
+            if value is not None:
+                self.move_to_end(key)
+            return value
 
     def put(self, key: Any, value: Any, nbytes: int) -> None:
         """Insert *value*, evicting least-recently-used entries over budget."""
-        self.nbytes -= self._sizes.pop(key, 0)
-        self[key] = value
-        self.move_to_end(key)
-        self._sizes[key] = nbytes
-        self.nbytes += nbytes
-        while len(self) > 1 and (len(self) > self.max_items or self.nbytes > self.max_bytes):
-            old_key, _ = self.popitem(last=False)
-            self.nbytes -= self._sizes.pop(old_key, 0)
+        if not self.enabled:
+            return
+        with self._lock:
+            self.nbytes -= self._sizes.pop(key, 0)
+            self[key] = value
+            self.move_to_end(key)
+            self._sizes[key] = nbytes
+            self.nbytes += nbytes
+            while len(self) > 0 and (len(self) > self.max_items or self.nbytes > self.max_bytes):
+                old_key, _ = self.popitem(last=False)
+                self.nbytes -= self._sizes.pop(old_key, 0)
 
     def clear(self) -> None:
-        super().clear()
-        self._sizes.clear()
-        self.nbytes = 0
+        with self._lock:
+            super().clear()
+            self._sizes.clear()
+            self.nbytes = 0
 
 
 class _CachedSprite:
@@ -94,8 +108,11 @@ class _CachedSprite:
         if self.color is None:
             raise RuntimeError("Empty sprite")
         if self.mask is None or self.mask is self.color:
-            self._image = self.color
-            return self.color
+            if self.color.mode == "RGB":
+                self._image = self.color.convert("RGBA")
+            else:
+                self._image = self.color
+            return self._image
         img = self.color.copy()
         img.putalpha(self.mask)
         self._image = img
