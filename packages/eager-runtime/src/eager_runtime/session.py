@@ -6,6 +6,7 @@ import datetime
 from pathlib import Path
 from typing import Any
 
+from eager_core.dispatcher import EventDispatcher
 from eager_core.events import (
     AppendEvent,
     ChoicePromptEvent,
@@ -29,7 +30,6 @@ from eager_core.protocols import (
 )
 from eager_core.storage import get_default_save_dir
 
-from eager_runtime.dispatcher import EventDispatcher
 from eager_runtime.headless import (
     NullCompositor,
     NullScreenManager,
@@ -84,8 +84,13 @@ def _resolve_theme(config: Any) -> Any:
         try:
             return factory(**kwargs)
         except (TypeError, ValueError, AttributeError):
-            return None
-    return kwargs
+            pass
+    try:
+        from eager_core.theme import Theme
+
+        return Theme(**kwargs)
+    except (TypeError, ValueError, AttributeError):
+        return kwargs
 
 
 def _create_default_ui(width: int = 1280, height: int = 720, theme: Any = None) -> Any:

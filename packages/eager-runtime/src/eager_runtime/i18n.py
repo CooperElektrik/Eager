@@ -7,7 +7,8 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from eager_core.i18n import TranslationCatalog
+from eager_core.hooks import is_input_hook, parse_input_hook
+from eager_core.i18n import TranslationCatalog, strip_explicit_id
 from eager_script import (
     ParsedAppend,
     ParsedChoiceSet,
@@ -16,7 +17,6 @@ from eager_script import (
     ParsedHook,
     ParsedNarration,
 )
-from eager_script.hooks import is_input_hook, parse_input_hook
 
 if TYPE_CHECKING:
     from eager_script.graph import SceneGraph
@@ -29,13 +29,6 @@ __all__ = [
     "strip_explicit_id",
     "validate_catalog",
 ]
-
-
-def strip_explicit_id(text: str) -> str:
-    """Strip inline {id=...} beat ID metadata tag from dialogue or narration text."""
-    if not text or "{id=" not in text:
-        return text
-    return re.sub(r"\s*\{id=[a-zA-Z0-9_-]+\}\s*", " ", text).strip()
 
 
 def _get_item_content_key(item: Any) -> str:

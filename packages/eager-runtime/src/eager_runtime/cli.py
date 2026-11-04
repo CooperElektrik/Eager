@@ -545,7 +545,10 @@ def _cmd_play(args: argparse.Namespace) -> int:
 
 def _cmd_render(args: argparse.Namespace) -> int:
     """Run a story to completion in headless mode (NullRenderer)."""
-    _ensure_graphics()
+    try:
+        _ensure_graphics()
+    except (ImportError, RuntimeError):
+        pass
 
     from eager_runtime.session import GameSession
 

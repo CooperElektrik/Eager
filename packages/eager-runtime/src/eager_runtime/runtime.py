@@ -31,6 +31,7 @@ from eager_core.events import (
     StoryEndEvent,
     StoryEvent,
 )
+from eager_core.hooks import parse_input_hook
 from eager_core.i18n import TranslationManager
 from eager_script import (
     ParsedAppend,
@@ -48,7 +49,6 @@ from eager_script import (
     ParsedSet,
 )
 from eager_script.expr import ExprError, compile_expr
-from eager_script.hooks import parse_input_hook
 
 from eager_runtime.i18n import compute_beat_id, get_beat_occurrence, strip_explicit_id
 from eager_runtime.state import CallFrame, StorySnapshot

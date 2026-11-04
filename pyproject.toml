@@ -249,7 +249,6 @@ modules = [
     "eager_core.easing",
     "eager_core.events",
     "eager_core.input",
-    "eager_core.protocols",
     "eager_core.storage",
     "eager_core.timing",
     "eager_core.types",

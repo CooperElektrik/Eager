@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,9 +15,17 @@ from eager_core.storage import atomic_write_json, safe_read_json
 __all__ = [
     "TranslationCatalog",
     "TranslationManager",
+    "strip_explicit_id",
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def strip_explicit_id(text: str) -> str:
+    """Strip inline {id=...} beat ID metadata tag from dialogue or narration text."""
+    if not text or "{id=" not in text:
+        return text
+    return re.sub(r"\s*\{id=[a-zA-Z0-9_-]+\}\s*", " ", text).strip()
 
 
 @dataclass

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from eager_core.events import ChoicePromptEvent
-from eager_core.input import InputAction, Keymap
+from eager_core.input import InputAction, Keymap, normalize_keysym
 
 from eager_graphics.types import DebugOverlayMode, ScaleMode
 from eager_graphics.ui_components import UIOverlay
@@ -213,20 +213,7 @@ class BasePlayer:
     @staticmethod
     def normalize_keysym(raw_key: str) -> str:
         """Normalize platform/backend keysym strings to canonical Eager key names."""
-        k = raw_key.lower()
-        if k.startswith("_") and len(k) == 2 and k[1].isdigit():
-            return k[1]
-        if k.startswith("num_") and len(k) == 5 and k[4].isdigit():
-            return k[4]
-        if k in ("return", "num_enter"):
-            return "enter"
-        if k == "prior":
-            return "pageup"
-        if k == "next":
-            return "pagedown"
-        if k in ("control_l", "control_r", "lctrl", "rctrl"):
-            return "ctrl"
-        return k
+        return normalize_keysym(raw_key)
 
     def handle_key_press(
         self,

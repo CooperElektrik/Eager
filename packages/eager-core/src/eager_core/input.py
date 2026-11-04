@@ -9,9 +9,28 @@ from typing import ClassVar
 __all__ = [
     "InputAction",
     "Keymap",
+    "normalize_keysym",
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_keysym(raw_key: str) -> str:
+    """Normalize platform/backend keysym strings to canonical Eager key names."""
+    k = raw_key.lower()
+    if k.startswith("_") and len(k) == 2 and k[1].isdigit():
+        return k[1]
+    if k.startswith("num_") and len(k) == 5 and k[4].isdigit():
+        return k[4]
+    if k in ("return", "num_enter"):
+        return "enter"
+    if k == "prior":
+        return "pageup"
+    if k == "next":
+        return "pagedown"
+    if k in ("control_l", "control_r", "lctrl", "rctrl"):
+        return "ctrl"
+    return k
 
 
 class InputAction(str, Enum):
@@ -103,7 +122,7 @@ class Keymap:
         Returns:
             Bound InputAction or None if key is not mapped.
         """
-        return self.bindings.get(key_name.lower())
+        return self.bindings.get(normalize_keysym(key_name))
 
     def bind(self, key_name: str, action: InputAction) -> None:
         """Bind a key name to an InputAction.

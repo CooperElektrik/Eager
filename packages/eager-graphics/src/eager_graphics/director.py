@@ -18,8 +18,8 @@ from eager_core.events import (
     SceneExitEvent,
     StoryEndEvent,
 )
+from eager_core.hooks import parse_hook_args
 from eager_core.types import BLACK, WHITE, Color, Vec2
-from eager_script import HookArgs, parse_hook_args
 
 from eager_graphics.compositor import StageCompositor
 from eager_graphics.ui_state import NVLEntry, UIState
@@ -28,22 +28,6 @@ __all__ = [
     "CharacterConfig",
     "StageDirector",
 ]
-
-
-def _hook_color(args: HookArgs, key: str, default: Color) -> Color:
-    """Decode a hook argument into a :class:`Color`, falling back to *default*.
-
-    The hook-argument parser lives in ``eager_script`` and is rendering-agnostic
-    (it returns raw strings), so colour decoding happens here where the type
-    lives.
-    """
-    raw = args.get_str(key)
-    if raw is None:
-        return default
-    try:
-        return Color.from_hex(raw)
-    except ValueError:
-        return default
 
 
 @dataclass
@@ -413,21 +397,21 @@ class StageDirector:
         """Handle `~ fade_in [duration=X] [color=#000]`."""
         parsed = parse_hook_args(args)
         duration = parsed.get_float("duration", 1.0)
-        color = _hook_color(parsed, "color", BLACK)
+        color = parsed.get_color("color", BLACK)
         self.compositor.fade_in(duration=duration, color=color)
 
     def handle_fade_out(self, args: str) -> None:
         """Handle `~ fade_out [duration=X] [color=#000]`."""
         parsed = parse_hook_args(args)
         duration = parsed.get_float("duration", 1.0)
-        color = _hook_color(parsed, "color", BLACK)
+        color = parsed.get_color("color", BLACK)
         self.compositor.fade_out(duration=duration, color=color)
 
     def handle_flash(self, args: str) -> None:
         """Handle `~ flash [duration=X] [color=#fff]`."""
         parsed = parse_hook_args(args)
         duration = parsed.get_float("duration", 0.15)
-        color = _hook_color(parsed, "color", WHITE)
+        color = parsed.get_color("color", WHITE)
         self.compositor.flash(duration=duration, color=color)
 
     def handle_shake(self, args: str) -> None:

@@ -2,6 +2,7 @@
 
 import pytest
 from eager_core.audio import AudioMixer, NullAudioBackend
+from eager_core.dispatcher import EventDispatcher
 from eager_core.events import (
     AppendEvent,
     ChoiceOption,
@@ -16,7 +17,6 @@ from eager_core.events import (
     StoryEndEvent,
 )
 from eager_core.types import Color
-from eager_runtime.dispatcher import EventDispatcher
 
 from eager_graphics.compositor import StageCompositor
 from eager_graphics.director import StageDirector

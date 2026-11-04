@@ -27,12 +27,17 @@ Typical use::
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from eager_core.text import parse_text_tags
+from eager_core.text import (
+    _WRAP_CACHE,
+    TextAnchor,
+    _get_wrapped_lines,
+    parse_text_tags,
+    wrap_text,
+)
 from eager_core.types import Color
 
 from eager_graphics.theme import Theme
@@ -44,6 +49,7 @@ if TYPE_CHECKING:
     from eager_graphics.ui_state import UIState
 
 __all__ = [
+    "_WRAP_CACHE",
     "ChoiceMenu",
     "ChoiceMenuStyle",
     "DialogueBox",
@@ -54,6 +60,7 @@ __all__ = [
     "TextAnchor",
     "TextboxStyle",
     "UIOverlay",
+    "_get_wrapped_lines",
     "wrap_text",
 ]
 
@@ -82,17 +89,6 @@ _CINEMATIC_CHOICE_DISABLED_BORDER = Color(1.0, 1.0, 1.0, 0.05)
 _END_BANNER_FILL = Color(0.04, 0.05, 0.07, 0.78)
 _END_TEXT = Color(0.85, 0.88, 0.92, 0.85)
 _TRANSPARENT = Color(0.0, 0.0, 0.0, 0.0)
-
-
-class TextAnchor:
-    """Namespace of the anchor strings accepted by :class:`UIDrawBackend`."""
-
-    LEFT = "left"
-    CENTER = "center"
-    RIGHT = "right"
-    TOP = "top"
-    MIDDLE = "middle"
-    BOTTOM = "bottom"
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,153 +141,6 @@ class TextboxStyle:
     def from_theme(cls, theme: Theme, **overrides: Any) -> TextboxStyle:
         """Create a TextboxStyle aligned with a visual Theme configuration."""
         return theme.to_textbox_style(**overrides)
-
-
-def wrap_text(
-    text: str,
-    max_width: float,
-    measure: Any,
-    *,
-    font_size: int = 14,
-    font_family: str | None = None,
-) -> list[tuple[str, int, int]]:
-    """Wrap text to fit within max_width using greedy word-wrapping.
-
-    Respects explicit newlines and breaks overlong words that cannot fit on a single line.
-    Returns a list of (line_str, start_char_idx, end_char_idx) character spans.
-    """
-    if not text or max_width <= 0:
-        return []
-
-    lines: list[tuple[str, int, int]] = []
-    pos = 0
-    paragraphs: list[tuple[str, int, int]] = []
-    for m in re.finditer(r"\r\n|\r|\n", text):
-        paragraphs.append((text[pos:m.start()], pos, m.start()))
-        pos = m.end()
-    paragraphs.append((text[pos:], pos, len(text)))
-
-    for para_text, para_start, para_end in paragraphs:
-        if not para_text:
-            lines.append(("", para_start, para_end))
-            continue
-
-        word_matches = list(re.finditer(r"\S+", para_text))
-        if not word_matches:
-            lines.append((para_text, para_start, para_end))
-            continue
-
-        cur_line_words: list[tuple[str, int, int]] = []
-
-        for wm in word_matches:
-            w_text = wm.group()
-            w_start = para_start + wm.start()
-            w_end = para_start + wm.end()
-
-            if not cur_line_words:
-                w, _ = measure(w_text, font_size=font_size)
-                if w <= max_width:
-                    cur_line_words.append((w_text, w_start, w_end))
-                else:
-                    # Break overlong single word
-                    sub_start = w_start
-                    sub_str = ""
-                    for ch in w_text:
-                        cand = sub_str + ch
-                        cw, _ = measure(cand, font_size=font_size)
-                        if cw <= max_width:
-                            sub_str = cand
-                        else:
-                            if sub_str:
-                                lines.append((sub_str, sub_start, sub_start + len(sub_str)))
-                                sub_start = sub_start + len(sub_str)
-                            sub_str = ch
-                    if sub_str:
-                        cur_line_words.append((sub_str, sub_start, sub_start + len(sub_str)))
-            else:
-                line_start = cur_line_words[0][1]
-                candidate = text[line_start:w_end]
-                w, _ = measure(candidate, font_size=font_size)
-                if w <= max_width:
-                    cur_line_words.append((w_text, w_start, w_end))
-                else:
-                    l_start = cur_line_words[0][1]
-                    l_end = cur_line_words[-1][2]
-                    lines.append((text[l_start:l_end], l_start, l_end))
-                    cur_line_words = []
-
-                    ww, _ = measure(w_text, font_size=font_size)
-                    if ww <= max_width:
-                        cur_line_words.append((w_text, w_start, w_end))
-                    else:
-                        sub_start = w_start
-                        sub_str = ""
-                        for ch in w_text:
-                            cand = sub_str + ch
-                            cw, _ = measure(cand, font_size=font_size)
-                            if cw <= max_width:
-                                sub_str = cand
-                            else:
-                                if sub_str:
-                                    lines.append((sub_str, sub_start, sub_start + len(sub_str)))
-                                    sub_start = sub_start + len(sub_str)
-                                sub_str = ch
-                        if sub_str:
-                            cur_line_words.append((sub_str, sub_start, sub_start + len(sub_str)))
-
-        if cur_line_words:
-            l_start = cur_line_words[0][1]
-            l_end = cur_line_words[-1][2]
-            lines.append((text[l_start:l_end], l_start, l_end))
-
-    return lines
-
-
-def _get_backend_key(measure: Any) -> str:
-    backend = getattr(measure, "__self__", None)
-    if backend is not None:
-        return f"{backend.__class__.__module__}.{backend.__class__.__qualname__}"
-    return f"{getattr(measure, '__module__', '')}.{getattr(measure, '__qualname__', type(measure).__name__)}"
-
-
-def _get_font_family(measure: Any, font_family: str | None = None) -> str:
-    if font_family is not None:
-        return font_family
-    backend = getattr(measure, "__self__", None)
-    if backend is not None:
-        if hasattr(backend, "_ui_font_name") and callable(backend._ui_font_name):
-            try:
-                return str(backend._ui_font_name())
-            except Exception:  # noqa: BLE001, S110
-                pass
-        if hasattr(backend, "font_family"):
-            return str(backend.font_family)
-        if hasattr(backend, "font_name"):
-            return str(backend.font_name)
-    return "default"
-
-
-# Cache for wrap_text results: (text, max_width, font_size, backend_type, font_family) -> list[tuple[str, int, int]]
-_WRAP_CACHE: dict[tuple[str, float, int, str, str], list[tuple[str, int, int]]] = {}
-
-
-def _get_wrapped_lines(
-    text: str,
-    max_width: float,
-    measure: Any,
-    font_size: int = 14,
-    font_family: str | None = None,
-) -> list[tuple[str, int, int]]:
-    backend_key = _get_backend_key(measure)
-    font_key = _get_font_family(measure, font_family)
-    key = (text, max_width, font_size, backend_key, font_key)
-    if key in _WRAP_CACHE:
-        return _WRAP_CACHE[key]
-    res = wrap_text(text, max_width, measure, font_size=font_size, font_family=font_family)
-    if len(_WRAP_CACHE) > 500:
-        _WRAP_CACHE.clear()
-    _WRAP_CACHE[key] = res
-    return res
 
 
 @dataclass(frozen=True, slots=True)
