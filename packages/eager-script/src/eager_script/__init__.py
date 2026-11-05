@@ -24,6 +24,7 @@ IF_PATTERN = re.compile(r"^@if\s+(.+)$")
 ELIF_PATTERN = re.compile(r"^@elif\s+(.+)$")
 ELSE_PATTERN = re.compile(r"^@else\s*$")
 END_PATTERN = re.compile(r"^@end\s*$")
+INCLUDE_PATTERN = re.compile(r"^@include\s+(?:\"([^\"]+)\"|'([^']+)')\s*$")
 
 
 class ParseError(Exception):
@@ -34,6 +35,50 @@ class ParseError(Exception):
     def __init__(self, message: str, line_number: int) -> None:
         super().__init__(f"Line {line_number}: {message}")
         self.line_number = line_number
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedInclude:
+    """Parsed @include directive."""
+
+    path: str
+    line_number: int
+
+    @property
+    def type(self) -> str:
+        """Node type discriminator string ('include')."""
+        return "include"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize include node to a dictionary."""
+        return {
+            "type": self.type,
+            "path": self.path,
+            "line_number": self.line_number,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedError:
+    """Parsed error node recorded during resilient parsing."""
+
+    message: str
+    line_number: int
+    line_text: str = ""
+
+    @property
+    def type(self) -> str:
+        """Node type discriminator string ('error')."""
+        return "error"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize error node to a dictionary."""
+        return {
+            "type": self.type,
+            "message": self.message,
+            "line_number": self.line_number,
+            "line_text": self.line_text,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -584,6 +629,8 @@ ParsedItem: TypeAlias = (
     | ParsedElif
     | ParsedElse
     | ParsedEnd
+    | ParsedInclude
+    | ParsedError
     | ParsedCondJump
     | ParsedLocalJump
 )
@@ -709,7 +756,8 @@ class ScreenplayParser:
     beats, voice tags, and explicit label identifiers.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, recovery: bool = False) -> None:
+        self.recovery = recovery
         self._narration_buffer: list[str] = []
         self._narration_line: int = 0
         self._choice_buffer: list[ParsedChoiceOption] = []
@@ -841,6 +889,12 @@ class ScreenplayParser:
                 if not END_PATTERN.match(line):
                     raise ParseError("Invalid @end syntax. Expected '@end'", idx)
                 return ParsedEnd(line_number=idx)
+            elif line.startswith("@include"):
+                match = INCLUDE_PATTERN.match(line)
+                if not match:
+                    raise ParseError("Invalid @include syntax. Expected '@include \"filename.es\"'", idx)
+                path = match.group(1) or match.group(2)
+                return ParsedInclude(path=path.strip(), line_number=idx)
             else:
                 raise ParseError(f"Unknown directive '{line.split()[0]}'", idx)
         return None  # e.g. bare '<' — not a control sequence
@@ -943,87 +997,93 @@ class ScreenplayParser:
                     yield from self._flush_all()
                     continue
 
-            # ── Choice (?) ──────────────────────────────────────────
-            if c0 == "?":
-                if self._narration_buffer:
-                    yield from self._flush_narration()
-                choice_opt = self._build_choice(clean, idx)
-                choice_indent = _leading_indent(raw_line)
+            try:
+                # ── Choice (?) ──────────────────────────────────────────
+                if c0 == "?":
+                    if self._narration_buffer:
+                        yield from self._flush_narration()
+                    choice_opt = self._build_choice(clean, idx)
+                    choice_indent = _leading_indent(raw_line)
 
-                # Look ahead for an indented inline block attached to this option
-                block: list[tuple[int, str]] = []
-                leading_blanks: list[tuple[int, str]] = []
-                while True:
-                    nxt = next(line_iter, None)
-                    if nxt is None:
-                        break
-                    nidx, nraw = nxt
-                    nclean = nraw.strip()
-                    if not nclean:
-                        if block:
+                    # Look ahead for an indented inline block attached to this option
+                    block: list[tuple[int, str]] = []
+                    leading_blanks: list[tuple[int, str]] = []
+                    while True:
+                        nxt = next(line_iter, None)
+                        if nxt is None:
+                            break
+                        nidx, nraw = nxt
+                        nclean = nraw.strip()
+                        if not nclean:
+                            if block:
+                                block.append((nidx, nraw))
+                            else:
+                                leading_blanks.append((nidx, nraw))
+                            continue
+                        if _leading_indent(nraw) > choice_indent:
+                            if leading_blanks:
+                                block.extend(leading_blanks)
+                                leading_blanks.clear()
                             block.append((nidx, nraw))
                         else:
-                            leading_blanks.append((nidx, nraw))
-                        continue
-                    if _leading_indent(nraw) > choice_indent:
-                        if leading_blanks:
-                            block.extend(leading_blanks)
-                            leading_blanks.clear()
-                        block.append((nidx, nraw))
+                            pending = (nidx, nraw)
+                            break
+
+                    while block and not block[-1][1].strip():
+                        block.pop()
+
+                    if block:
+                        if choice_opt.target is not None:
+                            raise ParseError(
+                                f"Choice option '{choice_opt.text}' cannot combine a '(target)' with an indented block",
+                                choice_opt.line_number,
+                            )
+                        body_items = self._parse_inline_block(block)
+                        self._choice_buffer.append(choice_opt)
+                        self._choice_bodies.append(list(body_items))
                     else:
-                        pending = (nidx, nraw)
-                        break
-
-                while block and not block[-1][1].strip():
-                    block.pop()
-
-                if block:
-                    if choice_opt.target is not None:
-                        raise ParseError(
-                            f"Choice option '{choice_opt.text}' cannot combine a '(target)' with an indented block",
-                            choice_opt.line_number,
-                        )
-                    body_items = self._parse_inline_block(block)
-                    self._choice_buffer.append(choice_opt)
-                    self._choice_bodies.append(list(body_items))
-                else:
-                    if choice_opt.target is None:
-                        raise ParseError(
-                            f"Invalid choice syntax: option '{choice_opt.text}' needs a '(target)' or an indented block",
-                            choice_opt.line_number,
-                        )
-                    self._choice_buffer.append(choice_opt)
-                    self._choice_bodies.append([])
-                continue
-
-            # ── Flush choices before processing non-choice lines ──
-            if self._choice_buffer:
-                yield from self._flush_choices()
-
-            # ── Prefixed control lines (## >> << > ~ - / $ @) ─────
-            if c0 in "#><~-/$@":
-                item = self._parse_prefixed(clean, idx)
-                if item is not None:
-                    if self._narration_buffer:
-                        yield from self._flush_narration()
-                    yield item
+                        if choice_opt.target is None:
+                            raise ParseError(
+                                f"Invalid choice syntax: option '{choice_opt.text}' needs a '(target)' or an indented block",
+                                choice_opt.line_number,
+                            )
+                        self._choice_buffer.append(choice_opt)
+                        self._choice_bodies.append([])
                     continue
 
-            # ── Dialogue (Speaker: text) ───────────────────────────
-            if ":" in clean:
-                match = SPEAKER_PATTERN.match(clean)
-                if match:
-                    speaker, emotion, raw_text = match.groups()
-                    if self._narration_buffer:
-                        yield from self._flush_narration()
-                    text_content = (raw_text or "").strip()
-                    yield _parse_dialogue(speaker.strip(), text_content, emotion, idx)
-                    continue
+                # ── Flush choices before processing non-choice lines ──
+                if self._choice_buffer:
+                    yield from self._flush_choices()
 
-            # ── Narration ──────────────────────────────────────────
-            if not self._narration_buffer:
-                self._narration_line = idx
-            self._narration_buffer.append(clean)
+                # ── Prefixed control lines (## >> << > ~ - / $ @) ─────
+                if c0 in "#><~-/$@":
+                    item = self._parse_prefixed(clean, idx)
+                    if item is not None:
+                        if self._narration_buffer:
+                            yield from self._flush_narration()
+                        yield item
+                        continue
+
+                # ── Dialogue (Speaker: text) ───────────────────────────
+                if ":" in clean:
+                    match = SPEAKER_PATTERN.match(clean)
+                    if match:
+                        speaker, emotion, raw_text = match.groups()
+                        if self._narration_buffer:
+                            yield from self._flush_narration()
+                        text_content = (raw_text or "").strip()
+                        yield _parse_dialogue(speaker.strip(), text_content, emotion, idx)
+                        continue
+
+                # ── Narration ──────────────────────────────────────────
+                if not self._narration_buffer:
+                    self._narration_line = idx
+                self._narration_buffer.append(clean)
+            except ParseError as pe:
+                if self.recovery:
+                    yield ParsedError(message=str(pe), line_number=pe.line_number, line_text=clean)
+                    continue
+                raise
 
         yield from self._flush_all()
 
@@ -1036,14 +1096,14 @@ class ScreenplayParser:
         return self._parse(text)
 
 
-def parse(text: str) -> list[ParsedItem]:
+def parse(text: str, *, recovery: bool = False) -> list[ParsedItem]:
     """Parse screenplay text into AST items."""
-    return ScreenplayParser().parse(text)
+    return ScreenplayParser(recovery=recovery).parse(text)
 
 
-def parse_iter(text: str) -> Iterator[ParsedItem]:
+def parse_iter(text: str, *, recovery: bool = False) -> Iterator[ParsedItem]:
     """Stream screenplay text into AST items with O(1) memory."""
-    return ScreenplayParser().parse_iter(text)
+    return ScreenplayParser(recovery=recovery).parse_iter(text)
 
 
 def to_dict(items: Sequence[ParsedItem]) -> list[dict[str, Any]]:
@@ -1076,6 +1136,7 @@ from eager_script.hooks import (
 from eager_script.validator import ValidationError, ValidationResult, validate
 
 __all__ = [
+    "INCLUDE_PATTERN",
     "HookArgs",
     "InputHookArgs",
     "ParseError",
@@ -1090,9 +1151,11 @@ __all__ = [
     "ParsedElif",
     "ParsedElse",
     "ParsedEnd",
+    "ParsedError",
     "ParsedFreshBox",
     "ParsedHook",
     "ParsedIf",
+    "ParsedInclude",
     "ParsedItem",
     "ParsedJump",
     "ParsedLabel",

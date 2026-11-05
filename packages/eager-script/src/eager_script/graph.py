@@ -590,6 +590,9 @@ def to_graph(items: Sequence[ParsedItem] | Iterable[ParsedItem]) -> SceneGraph:
     current_body: list[ParsedItem] = []
 
     for item in items:
+        if getattr(item, "type", "") == "error":
+            continue
+
         if type(item) is ParsedLabel:
             if first_label is None:
                 first_label = item

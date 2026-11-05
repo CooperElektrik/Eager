@@ -19,7 +19,6 @@ from eager_script import (
     SPEAKER_PATTERN,
     ParsedItem,
     ParsedLabel,
-    ParseError,
     SceneGraph,
     slugify,
     to_graph,
@@ -1623,41 +1622,35 @@ class ScriptDocument:
             )
 
     def _recover_ast(self, sanitized_lines: list[str]) -> None:
-        """Attempt to parse AST items, performing error recovery if needed."""
-        max_attempts = 30
-        current_lines = list(sanitized_lines)
-
-        for _ in range(max_attempts):
-            text_to_parse = "\n".join(current_lines)
-            try:
-                self.ast_items = eager_script.parse(text_to_parse)
-                break
-            except ParseError as pe:
-                err_line_1 = pe.line_number
-                err_line_0 = max(0, err_line_1 - 1)
-                # Check if we already noted this error
-                already_recorded = any(
-                    err.line == err_line_0 for err in self.syntax_errors
-                )
-                if not already_recorded:
-                    raw_len = len(self.lines[err_line_0]) if err_line_0 < len(self.lines) else 0
-                    self.syntax_errors.append(
-                        SyntaxIssue(
-                            message=str(pe).replace(f"Line {err_line_1}: ", ""),
-                            line=err_line_0,
-                            start_col=0,
-                            end_col=raw_len,
-                        )
+        """Attempt to parse AST items, performing resilient error recovery if needed."""
+        text_to_parse = "\n".join(sanitized_lines)
+        try:
+            items = eager_script.parse(text_to_parse, recovery=True)
+            error_count = len(self.syntax_errors)
+            for it in items:
+                if getattr(it, "type", "") == "error":
+                    if error_count >= 30:
+                        break
+                    err_line_1 = getattr(it, "line_number", 1)
+                    err_line_0 = max(0, err_line_1 - 1)
+                    already_recorded = any(
+                        err.line == err_line_0 for err in self.syntax_errors
                     )
-                # Neutralize problematic line and retry
-                if err_line_0 < len(current_lines):
-                    line_raw = current_lines[err_line_0]
-                    indent_prefix = line_raw[: len(line_raw) - len(line_raw.lstrip(" \t"))]
-                    current_lines[err_line_0] = f"{indent_prefix}# <parse error recovery>"
-                else:
-                    break
-            except Exception:  # noqa: BLE001
-                break
+                    if not already_recorded:
+                        raw_len = len(self.lines[err_line_0]) if err_line_0 < len(self.lines) else 0
+                        msg = getattr(it, "message", "Syntax error")
+                        self.syntax_errors.append(
+                            SyntaxIssue(
+                                message=str(msg).replace(f"Line {err_line_1}: ", ""),
+                                line=err_line_0,
+                                start_col=0,
+                                end_col=raw_len,
+                            )
+                        )
+                        error_count += 1
+            self.ast_items = [it for it in items if getattr(it, "type", "") != "error"]
+        except Exception:  # noqa: BLE001
+            self.ast_items = []
 
         # Attempt to build SceneGraph from recovered items
         if self.ast_items:
