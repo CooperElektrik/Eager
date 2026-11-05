@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from eager_core.dispatcher import EventDispatcher
 from eager_core.events import (
@@ -319,7 +319,7 @@ class GameSession:
             if hasattr(listener, "on_request_fullscreen"):
                 listener.on_request_fullscreen()
             elif hasattr(listener, "toggle_fullscreen"):
-                getattr(listener, "toggle_fullscreen")()
+                cast(Any, listener).toggle_fullscreen()
         if hasattr(self.renderer, "toggle_fullscreen"):
             self.renderer.toggle_fullscreen()
 
@@ -333,7 +333,7 @@ class GameSession:
                 listener.on_request_quit()
                 handled = True
             elif hasattr(listener, "close"):
-                getattr(listener, "close")()
+                cast(Any, listener).close()
                 handled = True
         return handled
 
