@@ -11,10 +11,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
+from eager_core.characters import CharacterConfig
 from eager_core.dispatcher import EventDispatcher
 from eager_core.types import WHITE, Anchor, Color
 
 __all__ = [
+    "CharacterRegistryProtocol",
     "HostLifecycleListener",
     "RenderBackend",
     "RenderItem",
@@ -97,6 +99,35 @@ class StageProtocol(Protocol):
 
     def load_visual_state(self, state: dict[str, object]) -> None:
         """Restore visual stage state from serialized checkpoint data."""
+        ...
+
+
+@runtime_checkable
+class CharacterRegistryProtocol(Protocol):
+    """Protocol for stages or registries that manage character definitions."""
+
+    def register_character(
+        self,
+        character_id: str,
+        *,
+        name: str | None = None,
+        asset_prefix: str | None = None,
+        default_expression: str = "default",
+        default_position: str = "center",
+        side_image: str | None = None,
+        color: Any = None,
+        expressions: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Register character attributes, colors, and expression aliases."""
+        ...
+
+    def find_character(self, speaker: str | None) -> CharacterConfig | None:
+        """Find CharacterConfig matching character ID or display name."""
+        ...
+
+    def resolve_side_image(self, speaker: str | None, expression: str | None = None) -> str | None:
+        """Resolve the active side image asset ID for a character and expression."""
         ...
 
 

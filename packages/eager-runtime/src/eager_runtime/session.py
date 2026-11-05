@@ -1310,11 +1310,19 @@ class GameSession:
                 raw_text, _ = self.vm._translate_beat(cid, item.text)
                 final_text = self.vm._interpolate(raw_text)
 
-                char_cfg = getattr(self.director, "_find_character_config", lambda s: None)(interp_speaker)
-                if char_cfg is None and raw_speaker != interp_speaker:
-                    char_cfg = getattr(self.director, "_find_character_config", lambda s: None)(raw_speaker)
-                if char_cfg is None and display_speaker != interp_speaker:
-                    char_cfg = getattr(self.director, "_find_character_config", lambda s: None)(display_speaker)
+                char_cfg = None
+                if hasattr(self.director, "find_character"):
+                    char_cfg = self.director.find_character(interp_speaker)
+                    if char_cfg is None and raw_speaker != interp_speaker:
+                        char_cfg = self.director.find_character(raw_speaker)
+                    if char_cfg is None and display_speaker != interp_speaker:
+                        char_cfg = self.director.find_character(display_speaker)
+                elif hasattr(self.director, "_find_character_config"):
+                    char_cfg = self.director._find_character_config(interp_speaker)
+                    if char_cfg is None and raw_speaker != interp_speaker:
+                        char_cfg = self.director._find_character_config(raw_speaker)
+                    if char_cfg is None and display_speaker != interp_speaker:
+                        char_cfg = self.director._find_character_config(display_speaker)
 
                 char_color = (
                     getattr(char_cfg, "color", None)
@@ -1325,7 +1333,12 @@ class GameSession:
                 self.director.ui_state.speaker = interp_speaker
                 self.director.ui_state.text = final_text
                 self.director.ui_state.emotion = item.emotion
-                if hasattr(self.director, "_resolve_side_image"):
+                if hasattr(self.director, "resolve_side_image"):
+                    side = self.director.resolve_side_image(interp_speaker, item.emotion)
+                    if not side and raw_speaker != interp_speaker:
+                        side = self.director.resolve_side_image(raw_speaker, item.emotion)
+                    self.director.ui_state.side_image = side
+                elif hasattr(self.director, "_resolve_side_image"):
                     side = self.director._resolve_side_image(interp_speaker, item.emotion)
                     if not side and raw_speaker != interp_speaker:
                         side = self.director._resolve_side_image(raw_speaker, item.emotion)

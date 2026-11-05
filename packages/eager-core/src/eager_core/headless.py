@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from eager_core.characters import CharacterConfig
+
 from eager_core.events import (
     AppendEvent,
     ChoicePromptEvent,
@@ -285,7 +287,7 @@ class NullStage(StageProtocol):
     def __init__(self, virtual_width: int = 1920, virtual_height: int = 1080) -> None:
         self.ui_state = UIState()
         self.compositor = NullCompositor(virtual_width, virtual_height)
-        self.characters: dict[str, dict[str, Any]] = {}
+        self.characters: dict[str, CharacterConfig] = {}
 
     def register_character(
         self,
@@ -313,26 +315,47 @@ class NullStage(StageProtocol):
             if isinstance(v, str):
                 exprs[k] = v
 
-        self.characters[cid] = {
-            "name": name,
-            "asset_prefix": asset_prefix,
-            "default_expression": default_expression,
-            "default_position": default_position,
-            "side_image": side_image,
-            "color": parsed_color,
-            "expressions": exprs,
-        }
+        self.characters[cid] = CharacterConfig(
+            character_id=cid,
+            name=name,
+            asset_prefix=asset_prefix,
+            default_expression=default_expression,
+            default_position=default_position,
+            side_image=side_image,
+            color=parsed_color,
+            expressions=exprs,
+        )
 
-    def _find_character_config(self, speaker: str | None) -> dict[str, Any] | None:
+    def find_character(self, speaker: str | None) -> CharacterConfig | None:
+        """Find CharacterConfig matching character ID or display name."""
         if not speaker:
             return None
         sid = speaker.strip().lower()
         if sid in self.characters:
             return self.characters[sid]
         for cinfo in self.characters.values():
-            if cinfo.get("name") and str(cinfo["name"]).strip().lower() == sid:
+            if cinfo.name and cinfo.name.strip().lower() == sid:
                 return cinfo
         return None
+
+    def _find_character_config(self, speaker: str | None) -> CharacterConfig | None:
+        return self.find_character(speaker)
+
+    def resolve_side_image(self, speaker: str | None, expression: str | None = None) -> str | None:
+        """Resolve the active side image asset ID for a character and expression."""
+        if not speaker:
+            return None
+        cfg = self.find_character(speaker)
+        if cfg and cfg.side_image:
+            return cfg.side_image
+        if cfg and cfg.asset_prefix:
+            expr = expression.strip().lower() if expression else cfg.default_expression
+            expr = cfg.resolve_expression(expr)
+            return f"{cfg.asset_prefix}_{expr}"
+        return None
+
+    def _resolve_side_image(self, speaker: str | None, expression: str | None = None) -> str | None:
+        return self.resolve_side_image(speaker, expression)
 
     def bind(self, dispatcher: Any) -> None:
         dispatcher.on_event(DialogueEvent)(self._on_dialogue)
@@ -343,23 +366,13 @@ class NullStage(StageProtocol):
         dispatcher.on_event(StoryEndEvent)(self._on_story_end)
 
     def _on_dialogue(self, event: DialogueEvent) -> None:
-        char_info: dict[str, Any] | None = None
-        if event.speaker:
-            sid = event.speaker.strip().lower()
-            if sid in self.characters:
-                char_info = self.characters[sid]
-            else:
-                for cinfo in self.characters.values():
-                    if cinfo.get("name") and str(cinfo["name"]).strip().lower() == sid:
-                        char_info = cinfo
-                        break
-
+        char_info = self.find_character(event.speaker)
         self.ui_state.speaker = event.speaker
         self.ui_state.text = event.text
         self.ui_state.emotion = event.emotion
         self.ui_state.visible_chars = None
-        self.ui_state.speaker_color = char_info.get("color") if char_info else None
-        self.ui_state.side_image = char_info.get("side_image") if char_info else None
+        self.ui_state.speaker_color = char_info.color if char_info else None
+        self.ui_state.side_image = self.resolve_side_image(event.speaker, event.emotion)
         self.ui_state.clear_choices()
 
     def _on_narration(self, event: NarrationEvent) -> None:

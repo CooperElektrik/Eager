@@ -18,6 +18,7 @@ from eager_core.events import (
     SceneExitEvent,
     StoryEndEvent,
 )
+from eager_core.characters import CharacterConfig
 from eager_core.hooks import parse_hook_args
 from eager_core.types import BLACK, WHITE, Color, Vec2
 
@@ -28,50 +29,6 @@ __all__ = [
     "CharacterConfig",
     "StageDirector",
 ]
-
-
-@dataclass
-class CharacterConfig:
-    """Registration metadata for a story character."""
-
-    character_id: str
-    name: str | None = None
-    asset_prefix: str | None = None
-    default_expression: str = "default"
-    default_position: str = "center"
-    side_image: str | None = None
-    color: Color | None = None
-    expressions: dict[str, str] = field(default_factory=dict)
-
-    def resolve_expression(self, expr: str) -> str:
-        """Resolve an expression string, expanding any aliases configured for the character.
-
-        Supports single expressions, comma-separated, and plus-separated layer combinations.
-        Aliases defined in `expressions` are expanded recursively.
-        """
-        expr_clean = expr.strip()
-        if not expr_clean:
-            return expr_clean
-
-        if expr_clean in self.expressions:
-            return self.expressions[expr_clean]
-
-        if "," in expr_clean or "+" in expr_clean:
-            parts = [
-                pt.strip()
-                for pt in expr_clean.replace(",", "+").split("+")
-                if pt.strip()
-            ]
-            expanded: list[str] = []
-            for pt in parts:
-                resolved = self.expressions.get(pt, pt)
-                for sub in resolved.split("+"):
-                    s = sub.strip()
-                    if s and s not in expanded:
-                        expanded.append(s)
-            return "+".join(expanded) if expanded else expr_clean
-
-        return expr_clean
 
 
 class StageDirector:
@@ -180,6 +137,10 @@ class StageDirector:
             color=parsed_color,
             expressions=exprs,
         )
+
+    def find_character(self, speaker: str | None) -> CharacterConfig | None:
+        """Find CharacterConfig matching character_id or display name."""
+        return self._find_character_config(speaker)
 
     def _find_character_config(self, speaker: str | None) -> CharacterConfig | None:
         """Find CharacterConfig matching character_id or display name."""
@@ -540,6 +501,10 @@ class StageDirector:
     # =========================================================================
     # Narrative Event Handlers
     # =========================================================================
+
+    def resolve_side_image(self, speaker: str | None, emotion: str | None = None) -> str | None:
+        """Resolve the active side image asset ID for a character and expression."""
+        return self._resolve_side_image(speaker, emotion)
 
     def _resolve_side_image(self, speaker: str | None, emotion: str | None) -> str | None:
         if not speaker:

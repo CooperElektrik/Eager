@@ -13,6 +13,9 @@ from eager_core.backlog import (
     Backlog,
     BacklogEntry,
 )
+from eager_core.characters import (
+    CharacterConfig,
+)
 from eager_core.dispatcher import (
     EventDispatcher,
 )
@@ -177,6 +180,7 @@ __all__ = [
     "BaseAudioBackend",
     "CallFrame",
     "ChannelState",
+    "CharacterConfig",
     "Checkpoint",
     "CheckpointHistory",
     "ChoiceOption",
