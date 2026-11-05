@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any
 
@@ -445,7 +446,8 @@ def _get_font_family(measure: Any, font_family: str | None = None) -> str:
     return "default"
 
 
-_WRAP_CACHE: dict[tuple[str, float, int, str, str], list[tuple[str, int, int]]] = {}
+_WRAP_CACHE: OrderedDict[tuple[str, float, int, str, str], list[tuple[str, int, int]]] = OrderedDict()
+_MAX_WRAP_CACHE_SIZE = 512
 
 
 def _get_wrapped_lines(
@@ -459,9 +461,10 @@ def _get_wrapped_lines(
     font_key = _get_font_family(measure, font_family)
     key = (text, max_width, font_size, backend_key, font_key)
     if key in _WRAP_CACHE:
+        _WRAP_CACHE.move_to_end(key)
         return _WRAP_CACHE[key]
     res = wrap_text(text, max_width, measure, font_size=font_size, font_family=font_family)
-    if len(_WRAP_CACHE) > 500:
-        _WRAP_CACHE.clear()
+    if len(_WRAP_CACHE) >= _MAX_WRAP_CACHE_SIZE:
+        _WRAP_CACHE.popitem(last=False)
     _WRAP_CACHE[key] = res
     return res

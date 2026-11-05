@@ -8,7 +8,7 @@ from eager_graphics.screens.builtin import (
     TitleScreen,
 )
 from eager_graphics.screens.screen import Screen, ScreenManager
-from eager_graphics.screens.widgets import Button, Grid, Label, Slider
+from eager_graphics.screens.widgets import Button, Grid, Label, SaveSlotButton, Slider
 
 __all__ = [
     "Button",
@@ -18,6 +18,7 @@ __all__ = [
     "Label",
     "PreferencesScreen",
     "SaveLoadScreen",
+    "SaveSlotButton",
     "Screen",
     "ScreenManager",
     "Slider",

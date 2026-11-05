@@ -67,43 +67,97 @@ class Button:
             line_spacing = font_size * 1.35
             total_text_h = len(lines) * line_spacing
             start_y = self.rect.y + (self.rect.height - total_text_h) / 2.0 + (font_size * 0.4)
-            tx = self.rect.x + max(12.0, 16.0 * (font_size / 16.0))
+            tx = self.rect.x + self.rect.width / 2
             for idx, line in enumerate(lines):
                 line_y = start_y + idx * line_spacing
-                if idx == 0:
-                    backend.draw_text(
-                        tx,
-                        line_y,
-                        line,
-                        color=text_color,
-                        font_size=font_size,
-                        anchor_x=TextAnchor.LEFT,
-                        anchor_y=TextAnchor.MIDDLE,
-                    )
-                elif idx == 1:
-                    sub_col = Color(text_color.r * 0.75, text_color.g * 0.75, text_color.b * 0.75, text_color.a)
-                    sub_font_size = max(10, round(font_size * (13.0 / 16.0)))
-                    backend.draw_text(
-                        tx,
-                        line_y,
-                        line,
-                        color=sub_col,
-                        font_size=sub_font_size,
-                        anchor_x=TextAnchor.LEFT,
-                        anchor_y=TextAnchor.MIDDLE,
-                    )
-                else:
-                    snip_col = Color(text_color.r * 0.88, text_color.g * 0.88, text_color.b * 0.88, text_color.a)
-                    snip_font_size = max(11, round(font_size * (14.0 / 16.0)))
-                    backend.draw_text(
-                        tx,
-                        line_y,
-                        line,
-                        color=snip_col,
-                        font_size=snip_font_size,
-                        anchor_x=TextAnchor.LEFT,
-                        anchor_y=TextAnchor.MIDDLE,
-                    )
+                backend.draw_text(
+                    tx,
+                    line_y,
+                    line,
+                    color=text_color,
+                    font_size=font_size,
+                    anchor_x=TextAnchor.CENTER,
+                    anchor_y=TextAnchor.MIDDLE,
+                )
+
+
+@dataclass
+class SaveSlotButton(Button):
+    """Specialized button for displaying save/load slot cards with metadata formatting."""
+
+    def draw(
+        self,
+        backend: UIDrawBackend,
+        fill_color: Color,
+        hover_color: Color,
+        text_color: Color,
+        border_color: Color,
+        *,
+        font_size: int = 16,
+    ) -> None:
+        """Render save slot button rectangle and formatted metadata lines."""
+        lines = self.text.split("\n")
+        if len(lines) <= 1:
+            super().draw(
+                backend,
+                fill_color,
+                hover_color,
+                text_color,
+                border_color,
+                font_size=font_size,
+            )
+            return
+
+        col = hover_color if self.hovered else fill_color
+        backend.draw_rect(
+            self.rect.x,
+            self.rect.y,
+            self.rect.width,
+            self.rect.height,
+            col,
+            border_color=border_color,
+            border_width=1.0,
+        )
+        line_spacing = font_size * 1.35
+        total_text_h = len(lines) * line_spacing
+        start_y = self.rect.y + (self.rect.height - total_text_h) / 2.0 + (font_size * 0.4)
+        tx = self.rect.x + max(12.0, 16.0 * (font_size / 16.0))
+        for idx, line in enumerate(lines):
+            line_y = start_y + idx * line_spacing
+            if idx == 0:
+                backend.draw_text(
+                    tx,
+                    line_y,
+                    line,
+                    color=text_color,
+                    font_size=font_size,
+                    anchor_x=TextAnchor.LEFT,
+                    anchor_y=TextAnchor.MIDDLE,
+                )
+            elif idx == 1:
+                sub_col = Color(text_color.r * 0.75, text_color.g * 0.75, text_color.b * 0.75, text_color.a)
+                sub_font_size = max(10, round(font_size * (13.0 / 16.0)))
+                backend.draw_text(
+                    tx,
+                    line_y,
+                    line,
+                    color=sub_col,
+                    font_size=sub_font_size,
+                    anchor_x=TextAnchor.LEFT,
+                    anchor_y=TextAnchor.MIDDLE,
+                )
+            else:
+                snip_col = Color(text_color.r * 0.88, text_color.g * 0.88, text_color.b * 0.88, text_color.a)
+                snip_font_size = max(11, round(font_size * (14.0 / 16.0)))
+                backend.draw_text(
+                    tx,
+                    line_y,
+                    line,
+                    color=snip_col,
+                    font_size=snip_font_size,
+                    anchor_x=TextAnchor.LEFT,
+                    anchor_y=TextAnchor.MIDDLE,
+                )
 
 
 @dataclass
@@ -215,4 +269,4 @@ class Grid:
         return self.cell_rect(row, col)
 
 
-__all__ = ["Button", "Grid", "Label", "Slider"]
+__all__ = ["Button", "Grid", "Label", "SaveSlotButton", "Slider"]

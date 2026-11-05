@@ -10,7 +10,7 @@ from eager_core.types import Color, Rect
 
 from eager_graphics.protocol import UIDrawBackend
 from eager_graphics.screens.screen import Screen
-from eager_graphics.screens.widgets import Button, Grid, Label, Slider
+from eager_graphics.screens.widgets import Button, Grid, Label, SaveSlotButton, Slider
 from eager_graphics.theme import Theme
 from eager_graphics.ui_components import TextAnchor
 
@@ -339,7 +339,7 @@ class SaveLoadScreen(Screen):
                     return load_action
 
             self.buttons.append(
-                Button(
+                SaveSlotButton(
                     cell,
                     label,
                     action=make_action(slot_name),
@@ -927,7 +927,9 @@ class HistoryScreen(Screen):
                             color=self.theme.muted_text_color,
                             font_size=entry_font_size,
                         )
-                curr_y += step_y
+                rendered_lines = min(len(lines), 3)
+                entry_height = max(step_y, (rendered_lines * line_h) + vh * (15.0 / 720.0))
+                curr_y += entry_height
 
         for b in self.buttons:
             b.draw(

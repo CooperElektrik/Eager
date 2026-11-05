@@ -390,6 +390,19 @@ height = 720
         assert "Subtitle Line" in drawn_texts
         assert "Snippet Line" in drawn_texts
 
+    def test_save_slot_button_multiline_draw(self):
+        from eager_graphics.screens import SaveSlotButton
+
+        btn = SaveSlotButton(Rect(10, 10, 200, 100), "Slot 1\n2026-11-05 12:00\nLast words")
+        backend = MockUIDrawBackend()
+        btn.draw(
+            backend, Color(0, 0, 0, 1), Color(1, 1, 1, 1), Color(1, 1, 1, 1), Color(1, 1, 1, 1)
+        )
+        drawn_texts = [t[0] for t in backend.texts]
+        assert "Slot 1" in drawn_texts
+        assert "2026-11-05 12:00" in drawn_texts
+        assert "Last words" in drawn_texts
+
     def test_history_screen_voice_replay_speaker_buttons(self):
         from eager_graphics.screens import HistoryScreen
 

@@ -225,6 +225,20 @@ def test_wrap_cache_distinguishes_backends_and_fonts() -> None:
     assert res_a != res_b
 
 
+def test_wrap_cache_bounded_lru_eviction() -> None:
+    from eager_graphics.ui_components import _WRAP_CACHE, _get_wrapped_lines
+
+    _WRAP_CACHE.clear()
+
+    def dummy_measure(text: str, font_size: int = 14) -> tuple[float, float]:
+        return (len(text) * 10.0, 14.0)
+
+    for i in range(520):
+        _get_wrapped_lines(f"test line {i}", 100.0, dummy_measure, font_size=14)
+
+    assert len(_WRAP_CACHE) == 512
+
+
 
 def test_dialogue_box_respects_viewport_changes() -> None:
     box = DialogueBox(1280, 720)
