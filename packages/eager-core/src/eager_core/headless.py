@@ -270,6 +270,9 @@ class NullCompositor:
     def finish_animations(self) -> None:
         pass
 
+    def clear(self, color: Color | None = None) -> None:
+        pass
+
     def render_list(self) -> list[Any]:
         return []
 

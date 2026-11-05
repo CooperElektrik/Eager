@@ -90,9 +90,8 @@ class SaveSlotButton(Button):
         backend: UIDrawBackend,
         fill_color: Color,
         hover_color: Color,
-        text_color: Color,
         border_color: Color,
-        *,
+        text_color: Color,
         font_size: int = 16,
     ) -> None:
         """Render save slot button rectangle and formatted metadata lines."""
@@ -102,8 +101,8 @@ class SaveSlotButton(Button):
                 backend,
                 fill_color,
                 hover_color,
-                text_color,
                 border_color,
+                text_color,
                 font_size=font_size,
             )
             return

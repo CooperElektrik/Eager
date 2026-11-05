@@ -319,7 +319,7 @@ class GameSession:
             if hasattr(listener, "on_request_fullscreen"):
                 listener.on_request_fullscreen()
             elif hasattr(listener, "toggle_fullscreen"):
-                listener.toggle_fullscreen()
+                getattr(listener, "toggle_fullscreen")()
         if hasattr(self.renderer, "toggle_fullscreen"):
             self.renderer.toggle_fullscreen()
 
@@ -333,7 +333,7 @@ class GameSession:
                 listener.on_request_quit()
                 handled = True
             elif hasattr(listener, "close"):
-                listener.close()
+                getattr(listener, "close")()
                 handled = True
         return handled
 
@@ -1096,8 +1096,14 @@ class GameSession:
             opts = self.active_choice_prompt.options
             opts_count = len(opts)
             enabled_indices = [i for i, opt in enumerate(opts) if opt.enabled]
+            menu = getattr(self.overlay, "choice_menu", None)
+            cur_choice = (
+                self.overlay.get_selected_choice()
+                if hasattr(self.overlay, "get_selected_choice")
+                else (menu.selected_index if menu is not None else None)
+            )
             if action == InputAction.NAV_UP and enabled_indices:
-                cur = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else getattr(self.overlay, "choice_menu", None).selected_index
+                cur = cur_choice
                 if cur in enabled_indices:
                     pos = enabled_indices.index(cur)
                     new_idx = enabled_indices[(pos - 1) % len(enabled_indices)]
@@ -1105,11 +1111,11 @@ class GameSession:
                     new_idx = enabled_indices[-1]
                 if hasattr(self.overlay, "set_selected_choice"):
                     self.overlay.set_selected_choice(new_idx)
-                elif getattr(self.overlay, "choice_menu", None) is not None:
-                    self.overlay.choice_menu.selected_index = new_idx
+                elif menu is not None:
+                    menu.selected_index = new_idx
                 return True
             elif action == InputAction.NAV_DOWN and enabled_indices:
-                cur = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else getattr(self.overlay, "choice_menu", None).selected_index
+                cur = cur_choice
                 if cur in enabled_indices:
                     pos = enabled_indices.index(cur)
                     new_idx = enabled_indices[(pos + 1) % len(enabled_indices)]
@@ -1117,16 +1123,16 @@ class GameSession:
                     new_idx = enabled_indices[0]
                 if hasattr(self.overlay, "set_selected_choice"):
                     self.overlay.set_selected_choice(new_idx)
-                elif getattr(self.overlay, "choice_menu", None) is not None:
-                    self.overlay.choice_menu.selected_index = new_idx
+                elif menu is not None:
+                    menu.selected_index = new_idx
                 return True
             elif action in (InputAction.ADVANCE, InputAction.CONFIRM):
-                idx = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else getattr(self.overlay, "choice_menu", None).selected_index
+                idx = cur_choice
                 if idx is not None:
                     if hasattr(self.overlay, "set_selected_choice"):
                         self.overlay.set_selected_choice(None)
-                    elif getattr(self.overlay, "choice_menu", None) is not None:
-                        self.overlay.choice_menu.selected_index = None
+                    elif menu is not None:
+                        menu.selected_index = None
                     if 0 <= idx < opts_count and opts[idx].enabled:
                         return self.choose(idx)
                     return False
