@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from eager_core.characters import CharacterConfig
-
 from eager_core.events import (
     AppendEvent,
     ChoicePromptEvent,

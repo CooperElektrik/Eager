@@ -308,3 +308,18 @@ Narrator: Coins: [persistent.coins] and normal: [normal_coins]
     assert vm.get_variable("normal_coins") == 100
     assert vm.get_variable("persistent.coins") == 999
     assert p_data.coins == 999
+
+
+def test_persistent_property_and_vm_isolation(tmp_path: Path) -> None:
+    p_file = tmp_path / "persistent.json"
+    p_data = PersistentData(p_file)
+    p_data.coins = 50
+    vm = StoryVM(eager_script.parse_graph("## Scene\nNarrator: hi"), persistent=p_data)
+    assert vm.persistent is p_data
+    assert vm.get_variable("persistent") is p_data
+    assert "persistent" not in vm.variables
+    snap = vm.save()
+    assert "persistent" not in snap.variables
+    vm.load(snap)
+    assert vm.persistent is p_data
+    assert "persistent" not in vm.variables

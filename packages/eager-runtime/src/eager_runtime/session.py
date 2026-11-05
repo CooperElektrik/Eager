@@ -618,6 +618,13 @@ class GameSession:
         self.skip_mode = True
         step_count = 0
 
+        seen_beats = self.persistent.get("seen_beats")
+        if not isinstance(seen_beats, list):
+            seen_beats = []
+            self.persistent["seen_beats"] = seen_beats
+        seen_beats_set: set[str] = set(seen_beats)
+        dirty_persistent = False
+
         while not self.vm.is_ended and step_count < max_steps:
             step_count += 1
             event = self.vm.step()
@@ -632,14 +639,10 @@ class GameSession:
             self._last_event = event
 
             beat_id = getattr(event, "beat_id", None)
-            if beat_id:
-                seen_beats = self.persistent.get("seen_beats")
-                if not isinstance(seen_beats, list):
-                    seen_beats = []
-                    self.persistent["seen_beats"] = seen_beats
-                if beat_id not in seen_beats:
-                    seen_beats.append(beat_id)
-                    self.persistent.save()
+            if beat_id and beat_id not in seen_beats_set:
+                seen_beats_set.add(beat_id)
+                seen_beats.append(beat_id)
+                dirty_persistent = True
 
             if isinstance(event, DialogueEvent):
                 self.backlog.add(event.speaker, event.text, voice=event.voice, emotion=event.emotion)
@@ -686,6 +689,9 @@ class GameSession:
                 val = event.default or "Player"
                 self.vm.set_variable(event.var_name, val)
                 self.vm._pending_input = None
+
+        if dirty_persistent:
+            self.persistent.save()
 
         if self.vm.current_scene_id != target_scene:
             self.vm.jump(target_scene)

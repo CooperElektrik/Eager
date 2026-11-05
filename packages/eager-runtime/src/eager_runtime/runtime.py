@@ -90,11 +90,11 @@ class StoryVM:
         self._call_stack: list[CallFrame] = []
         self._variables: dict[str, Any] = {}
         if persistent is not None:
-            self._variables["persistent"] = persistent
+            self._persistent: Any = persistent
         else:
             from eager_runtime.persistent import PersistentData
 
-            self._variables["persistent"] = PersistentData()
+            self._persistent = PersistentData()
         if initial_variables:
             self._variables.update(initial_variables)
         self._visited_scenes: set[str] = set()
@@ -114,6 +114,16 @@ class StoryVM:
             self.load(initial_state)
         elif self._graph.entry:
             self._enter_scene(self._graph.entry)
+
+    @property
+    def persistent(self) -> Any:
+        """Persistent story data object across playthroughs."""
+        return self._persistent
+
+    @persistent.setter
+    def persistent(self, val: Any) -> None:
+        """Set the persistent data object."""
+        self._persistent = val
 
     @property
     def translation_manager(self) -> TranslationManager:
@@ -167,6 +177,7 @@ class StoryVM:
     def _get_eval_env(self) -> dict[str, Any]:
         """Build evaluation environment for expression evaluation."""
         env = dict(self._variables)
+        env["persistent"] = self._persistent
         env["visited"] = lambda scene_id: scene_id in self._visited_scenes
         env["seen"] = lambda scene_id: scene_id in self._visited_scenes
         env["random"] = lambda a=0, b=1: self._rng.randint(a, b) if isinstance(a, int) and isinstance(b, int) else self._rng.uniform(a, b)
@@ -197,9 +208,12 @@ class StoryVM:
                 parts = var_name.split(".")
                 if any(p.startswith("_") for p in parts):
                     return f"[{var_name}]"
-                if parts[0] not in self._variables:
+                if parts[0] == "persistent":
+                    curr: Any = self._persistent
+                elif parts[0] in self._variables:
+                    curr = self._variables.get(parts[0])
+                else:
                     return f"[{var_name}]"
-                curr: Any = self._variables.get(parts[0])
                 for p in parts[1:]:
                     if isinstance(curr, dict) or hasattr(curr, "get"):
                         curr = curr.get(p)
@@ -316,12 +330,12 @@ class StoryVM:
         return set(self._visited_scenes)
 
     def _set_persistent_var(self, key: str, value: Any) -> None:
-        p = self._variables.get("persistent")
+        p = self._persistent
         if p is None:
             from eager_runtime.persistent import PersistentData
 
             p = PersistentData()
-            self._variables["persistent"] = p
+            self._persistent = p
         if hasattr(p, "__setitem__"):
             p[key] = value
         else:
@@ -333,7 +347,7 @@ class StoryVM:
                 pass
 
     def _get_persistent_var(self, key: str, default: Any = None) -> Any:
-        p = self._variables.get("persistent")
+        p = self._persistent
         if p is None:
             return default
         if hasattr(p, "get") and callable(p.get):
@@ -342,6 +356,9 @@ class StoryVM:
 
     def set_variable(self, name: str, value: Any) -> None:
         """Set a story variable value."""
+        if name == "persistent":
+            self._persistent = value
+            return
         if name.startswith("persistent."):
             key = name[len("persistent."):]
             self._set_persistent_var(key, value)
@@ -362,6 +379,8 @@ class StoryVM:
 
     def get_variable(self, name: str, default: Any = None) -> Any:
         """Retrieve a story variable value."""
+        if name == "persistent":
+            return self._persistent
         if name.startswith("persistent."):
             key = name[len("persistent."):]
             return self._get_persistent_var(key, default)
@@ -490,18 +509,11 @@ class StoryVM:
         self._current_scene_id = snapshot.current_scene
         self._beat_index = snapshot.beat_index
         self._call_stack = list(snapshot.call_stack)
-        persistent_obj = self._variables.get("persistent")
         self._variables = {
             k: copy.deepcopy(v)
             for k, v in snapshot.variables.items()
-            if not k.startswith("persistent.")
+            if k != "persistent" and not k.startswith("persistent.")
         }
-        if persistent_obj is not None:
-            self._variables["persistent"] = persistent_obj
-        else:
-            from eager_runtime.persistent import PersistentData
-
-            self._variables["persistent"] = PersistentData()
         self._visited_scenes = set(snapshot.visited_scenes)
 
         if snapshot.rng_state is not None:

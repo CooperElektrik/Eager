@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import functools
 import operator
 import re
 from collections.abc import Callable
@@ -86,6 +87,7 @@ class CompiledExpr:
         return _eval_node(self.tree, env)
 
 
+@functools.lru_cache(maxsize=1024)
 def compile_expr(src: str) -> CompiledExpr:
     """Compile and validate an expression string against the node whitelist.
 

@@ -194,3 +194,12 @@ def test_undefined_variable_raises_expr_error() -> None:
     with pytest.raises(ExprError, match="Variable 'missing_var' is not defined"):
         compiled.evaluate({})
 
+
+def test_compile_expr_lru_cache() -> None:
+    compile_expr.cache_clear()
+    e1 = compile_expr("1 + 2")
+    e2 = compile_expr("1 + 2")
+    assert e1 is e2
+    info = compile_expr.cache_info()
+    assert info.hits >= 1
+

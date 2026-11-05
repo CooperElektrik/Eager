@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 from typing import TYPE_CHECKING, Any
 
 from eager_core.events import ChoicePromptEvent

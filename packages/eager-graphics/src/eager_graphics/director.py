@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any
 
 from eager_core.audio import AudioMixer
+from eager_core.characters import CharacterConfig
 from eager_core.events import (
     AppendEvent,
     ChoiceOption,
@@ -18,7 +18,6 @@ from eager_core.events import (
     SceneExitEvent,
     StoryEndEvent,
 )
-from eager_core.characters import CharacterConfig
 from eager_core.hooks import parse_hook_args
 from eager_core.types import BLACK, WHITE, Color, Vec2
 
