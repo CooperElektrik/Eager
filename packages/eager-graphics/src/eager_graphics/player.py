@@ -41,9 +41,8 @@ class BasePlayer:
         uncapped: bool = False,
     ) -> None:
         self.session: Any = session
-        if session is not None:
-            with contextlib.suppress(AttributeError, TypeError):
-                session._player = self
+        if session is not None and hasattr(session, "add_lifecycle_listener"):
+            session.add_lifecycle_listener(self)
         self.width: int = width
         self.height: int = height
         self.title: str = title
@@ -209,8 +208,20 @@ class BasePlayer:
         self.active_input_prompt = self.session.active_input_prompt
         self.is_finished = self.session.is_finished
 
+    def on_request_fullscreen(self) -> None:
+        """Handle fullscreen toggle request from session input."""
+        if hasattr(self, "toggle_fullscreen"):
+            self.toggle_fullscreen()
+
+    def on_request_quit(self) -> None:
+        """Handle quit request from session input."""
+        if hasattr(self, "close"):
+            self.close()
+
     def close(self) -> None:
-        """Release audio mixer resources."""
+        """Release session listener and audio mixer resources."""
+        if self.session is not None and hasattr(self.session, "remove_lifecycle_listener"):
+            self.session.remove_lifecycle_listener(self)
         if self.audio is not None:
             self.audio.shutdown()
 

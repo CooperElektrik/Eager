@@ -15,6 +15,7 @@ from eager_core.dispatcher import EventDispatcher
 from eager_core.types import WHITE, Anchor, Color
 
 __all__ = [
+    "HostLifecycleListener",
     "RenderBackend",
     "RenderItem",
     "ScreenManagerFactory",
@@ -164,6 +165,19 @@ class UIProtocol(Protocol):
 
     def set_hovered_quick_action(self, action: str | None) -> None:
         """Update the hovered quick action identifier."""
+        ...
+
+
+@runtime_checkable
+class HostLifecycleListener(Protocol):
+    """Protocol for host environments (such as window players) receiving lifecycle requests."""
+
+    def on_request_fullscreen(self) -> None:
+        """Handle fullscreen toggle request."""
+        ...
+
+    def on_request_quit(self) -> None:
+        """Handle application quit request."""
         ...
 
 

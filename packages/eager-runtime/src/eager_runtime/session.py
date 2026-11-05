@@ -19,6 +19,7 @@ from eager_core.events import (
 )
 from eager_core.input import InputAction, Keymap
 from eager_core.protocols import (
+    HostLifecycleListener,
     ScreenManagerProtocol,
     StageProtocol,
     UIProtocol,
@@ -300,6 +301,50 @@ class GameSession:
             self.watcher: FileWatcher | None = FileWatcher(getattr(self, "_project_scripts", [self.script_path]))
         else:
             self.watcher = None
+        self._lifecycle_listeners: list[HostLifecycleListener] = []
+
+    def add_lifecycle_listener(self, listener: HostLifecycleListener) -> None:
+        """Register a host environment listener for lifecycle requests (fullscreen, quit)."""
+        if listener not in self._lifecycle_listeners:
+            self._lifecycle_listeners.append(listener)
+
+    def remove_lifecycle_listener(self, listener: HostLifecycleListener) -> None:
+        """Unregister a host environment lifecycle listener."""
+        if listener in self._lifecycle_listeners:
+            self._lifecycle_listeners.remove(listener)
+
+    def request_fullscreen(self) -> None:
+        """Notify registered host listeners to toggle fullscreen."""
+        for listener in list(self._lifecycle_listeners):
+            if hasattr(listener, "on_request_fullscreen"):
+                listener.on_request_fullscreen()
+            elif hasattr(listener, "toggle_fullscreen"):
+                listener.toggle_fullscreen()
+        if hasattr(self.renderer, "toggle_fullscreen"):
+            self.renderer.toggle_fullscreen()
+
+    def request_quit(self) -> bool:
+        """Notify registered host listeners to terminate the application."""
+        if not self._lifecycle_listeners:
+            return False
+        handled = False
+        for listener in list(self._lifecycle_listeners):
+            if hasattr(listener, "on_request_quit"):
+                listener.on_request_quit()
+                handled = True
+            elif hasattr(listener, "close"):
+                listener.close()
+                handled = True
+        return handled
+
+    @property
+    def _player(self) -> Any:
+        return self._lifecycle_listeners[0] if self._lifecycle_listeners else None
+
+    @_player.setter
+    def _player(self, player: Any) -> None:
+        if player is not None:
+            self.add_lifecycle_listener(player)
 
     @property
     def playtime(self) -> float:
@@ -1046,7 +1091,7 @@ class GameSession:
             opts_count = len(opts)
             enabled_indices = [i for i, opt in enumerate(opts) if opt.enabled]
             if action == InputAction.NAV_UP and enabled_indices:
-                cur = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else self.overlay.choice_menu.selected_index
+                cur = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else getattr(self.overlay, "choice_menu", None).selected_index
                 if cur in enabled_indices:
                     pos = enabled_indices.index(cur)
                     new_idx = enabled_indices[(pos - 1) % len(enabled_indices)]
@@ -1054,11 +1099,11 @@ class GameSession:
                     new_idx = enabled_indices[-1]
                 if hasattr(self.overlay, "set_selected_choice"):
                     self.overlay.set_selected_choice(new_idx)
-                else:
+                elif getattr(self.overlay, "choice_menu", None) is not None:
                     self.overlay.choice_menu.selected_index = new_idx
                 return True
             elif action == InputAction.NAV_DOWN and enabled_indices:
-                cur = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else self.overlay.choice_menu.selected_index
+                cur = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else getattr(self.overlay, "choice_menu", None).selected_index
                 if cur in enabled_indices:
                     pos = enabled_indices.index(cur)
                     new_idx = enabled_indices[(pos + 1) % len(enabled_indices)]
@@ -1066,15 +1111,15 @@ class GameSession:
                     new_idx = enabled_indices[0]
                 if hasattr(self.overlay, "set_selected_choice"):
                     self.overlay.set_selected_choice(new_idx)
-                else:
+                elif getattr(self.overlay, "choice_menu", None) is not None:
                     self.overlay.choice_menu.selected_index = new_idx
                 return True
             elif action in (InputAction.ADVANCE, InputAction.CONFIRM):
-                idx = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else self.overlay.choice_menu.selected_index
+                idx = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else getattr(self.overlay, "choice_menu", None).selected_index
                 if idx is not None:
                     if hasattr(self.overlay, "set_selected_choice"):
                         self.overlay.set_selected_choice(None)
-                    else:
+                    elif getattr(self.overlay, "choice_menu", None) is not None:
                         self.overlay.choice_menu.selected_index = None
                     if 0 <= idx < opts_count and opts[idx].enabled:
                         return self.choose(idx)
@@ -1160,18 +1205,10 @@ class GameSession:
         elif action == InputAction.HISTORY:
             return self.screens.show("history", self)
         elif action == InputAction.FULLSCREEN:
-            player: Any = getattr(self, "_player", None)
-            if player is not None and hasattr(player, "toggle_fullscreen"):
-                player.toggle_fullscreen()
-            elif hasattr(self.renderer, "toggle_fullscreen"):
-                self.renderer.toggle_fullscreen()
+            self.request_fullscreen()
             return True
         elif action == InputAction.QUIT:
-            player: Any = getattr(self, "_player", None)
-            if player is not None and hasattr(player, "close"):
-                player.close()
-                return True
-            return False
+            return self.request_quit()
         elif action == InputAction.RELOAD:
             return self.hot_reload()
         elif action == InputAction.SCREENSHOT:
@@ -1212,21 +1249,21 @@ class GameSession:
             # Choice menu hover update
             if self.active_choice_prompt is not None:
                 idx = self.overlay.hit_test_choice(x, y)
-                cur_idx = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else getattr(self.overlay.choice_menu, "selected_index", None)
+                cur_idx = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else getattr(getattr(self.overlay, "choice_menu", None), "selected_index", None)
                 if cur_idx != idx:
                     if hasattr(self.overlay, "set_selected_choice"):
                         self.overlay.set_selected_choice(idx)
-                    else:
+                    elif getattr(self.overlay, "choice_menu", None) is not None:
                         self.overlay.choice_menu.selected_index = idx
                     hover_changed = True
             # Quick menu hover update
             if not self.ui_hidden:
                 qa = self.overlay.hit_test_quick_action(x, y)
-                cur_qa = self.overlay.get_hovered_quick_action() if hasattr(self.overlay, "get_hovered_quick_action") else getattr(self.overlay.quick_menu, "hovered_action", None)
+                cur_qa = self.overlay.get_hovered_quick_action() if hasattr(self.overlay, "get_hovered_quick_action") else getattr(getattr(self.overlay, "quick_menu", None), "hovered_action", None)
                 if cur_qa != qa:
                     if hasattr(self.overlay, "set_hovered_quick_action"):
                         self.overlay.set_hovered_quick_action(qa)
-                    else:
+                    elif getattr(self.overlay, "quick_menu", None) is not None:
                         self.overlay.quick_menu.hovered_action = qa
                     hover_changed = True
             return hover_changed
