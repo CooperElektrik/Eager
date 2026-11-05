@@ -7,7 +7,7 @@ import importlib.metadata
 try:
     __version__ = importlib.metadata.version("eager-script-lsp")
 except (importlib.metadata.PackageNotFoundError, ImportError):
-    __version__ = "0.7.0"
+    __version__ = "0.8.0"
 
 from eager_script_lsp.document import (
     ScriptDocument,

@@ -160,3 +160,39 @@ rg -C 10 "PatternName" packages/ --glob "!**/__pycache__/**"
 uv run mkdocs build          # Build the docs site
 uv run mkdocs serve          # Serve docs locally (http://127.0.0.1:8000)
 ```
+
+---
+
+## 6. Version bump protocol
+
+When performing a version bump (e.g. from `0.7.0` to `0.8.0`), all of the following components must be updated atomically:
+
+1. **Package & Root Manifests (`version = "X.Y.Z"`):**
+   - Root `pyproject.toml`
+   - `packages/eager-core/pyproject.toml`
+   - `packages/eager-graphics/pyproject.toml`
+   - `packages/eager-runtime/pyproject.toml`
+   - `packages/eager-script/pyproject.toml`
+   - `packages/eager-script-lsp/pyproject.toml`
+
+2. **Intra-monorepo Minimum Dependency Bounds (`eager-* >= X.Y.Z`):**
+   - `packages/eager-graphics/pyproject.toml` (`dependencies` and `dev` optional-dependencies)
+   - `packages/eager-runtime/pyproject.toml` (`dependencies`, `graphics`, `lsp`, and `dev` optional-dependencies)
+   - `packages/eager-script-lsp/pyproject.toml` (`dependencies`)
+
+3. **Runtime `__version__` Attributes (`__version__ = "X.Y.Z"`):**
+   - `packages/eager-*/src/eager_*/__init__.py` across all 5 packages.
+
+4. **Packaging & Editor Extension Manifests:**
+   - `editors/vscode/package.json` and `editors/vscode/package-lock.json` (`"version": "X.Y.Z"`)
+   - `editors/vscode/README.md` (VSIX install command version)
+   - `packaging/debian/DEBIAN/control` (`Version: X.Y.Z`)
+   - `packaging/windows/eager.iss` (`#define AppVersion "X.Y.Z"`)
+
+5. **Changelogs Synchronization:**
+   - Convert `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` and add a fresh `## [Unreleased]` in root `CHANGELOG.md` and all 5 `packages/*/CHANGELOG.md`.
+   - Update comparison links at the footer (`[Unreleased]`: `vX.Y.Z...HEAD`, `[X.Y.Z]`: `vPREV...vX.Y.Z`).
+
+6. **Lockfile & Verification:**
+   - Run `uv lock` followed by `uv sync`.
+   - Run the full verification checklist (Section 4): `pytest`, `ruff check`, `lint-imports`, `basedpyright` across all 5 packages, and `mkdocs build`.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eager-graphics"
-version = "0.7.0"
+version = "0.8.0"
 description = "Renderer-agnostic, resolution-independent Graphics & Stage Compositor for Eager narrative runtimes."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -35,15 +35,15 @@ keywords = [
 ]
 
 dependencies = [
-    "eager-core >= 0.7.0",
-    "eager-script >= 0.7.0",
+    "eager-core >= 0.8.0",
+    "eager-script >= 0.8.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "ruff>=0.4.0",
-    "eager-runtime >= 0.7.0",
+    "eager-runtime >= 0.8.0",
     "miniaudio>=0.12.4",
 ]
 hardware = [

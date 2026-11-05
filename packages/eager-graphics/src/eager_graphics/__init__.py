@@ -89,7 +89,7 @@ from eager_graphics.ui_components import (
     UIOverlay,
 )
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 __all__ = [
     "BLACK",

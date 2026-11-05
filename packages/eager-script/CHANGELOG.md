@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.8.0] - 2026-11-05
+
+### Added
+
+- Native `@include` directive:
+  - Added native `@include "path/to/script.es"` screenplay directive in `ScreenplayParser` and scene graph builder.
+  - Added resilient parse error recovery and unclosed block handling during incremental parsing.
+- Precise AST source spans:
+  - Enriched all 22 AST node types with exact 0-based `start_col` and `end_col` columns.
+
+### Changed
+
+- Architectural decomposition:
+  - Decomposed monolithic `__init__.py` (1,100+ lines) into dedicated modules: `eager_script.ast` (AST node definitions) and `eager_script.parser` (`ScreenplayParser`), with clean API re-exports in `__init__.py`.
+  - Consolidated canonical engine hook definitions in `eager_script.hooks`.
+- Expression evaluation:
+  - Decoupled persistent state access in expression evaluation (`persistent.<var>`).
+
+### Removed
+
+- Cleaned up unused parser state attributes (`_choice_indent`).
+
 ## [0.7.0] - 2026-10-30
 
 ### Added
@@ -65,7 +89,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.7.0
 [0.5.0]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...v0.4.0

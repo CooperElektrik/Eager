@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.8.0] - 2026-11-05
+
+### Added
+
+- Storage and narrative state subsystems:
+  - Extracted `eager_core.state` (`CallFrame`, `StorySnapshot`) for immutable narrative checkpoints and call stack serialization.
+  - Extracted `eager_core.saves` (`SaveMetadata`, `SaveData`, `SaveManager`) providing save/load slot management, autosaves, and automated forensic corrupted save backup.
+  - Extracted `eager_core.persistent` (`PersistentData`) for cross-playthrough global state persistence.
+  - Extracted `eager_core.preferences` (`Preferences`) managing audio volume, text display speeds, and window presentation settings.
+- Presentation, character, and layout subsystems:
+  - Extracted `eager_core.characters` (`CharacterConfig`) supporting character display names, color styling, voice configuration, side image mapping, and recursive composite expression resolution (`resolve_expression`).
+  - Extracted `eager_core.layout` (`LayoutBox`, `Anchor`, `Alignment`) for coordinate calculations and UI positioning algebra.
+  - Extracted `eager_core.lighting` (`LightSource`, `AmbientLight`, `LightmapConfig`) defining 2D lighting models.
+  - Extracted `eager_core.theme` (`Theme`, `ThemeStyle`, `ThemePreset`) for UI component theming.
+  - Extracted `eager_core.timeline` (`Timeline`, `Keyframe`, `Interpolation`) for keyframed parameter transitions.
+  - Extracted `eager_core.types` (`ScaleMode`, `BlendMode`, `TransitionType`, `Transform`, `Box`, `Rect`).
+  - Extracted `eager_core.ui_state` (`UIState`, `DialogueBoxState`, `ChoiceBoxState`, `InputPromptState`).
+- Headless execution and decoupled host protocols:
+  - Extracted `eager_core.headless` (`HeadlessPlayer`) for headless screenplay execution, CI test automation, and CLI script evaluation.
+  - Extracted `eager_core.backlog` (`BacklogEntry`, `BacklogManager`) for dialogue history tracking.
+  - Extracted `eager_core.dispatcher` (`ActionDispatcher`) for decoupled event dispatching.
+  - Extracted `eager_core.watcher` (`FileWatcher`, `FileChangeHandler`) for filesystem change monitoring and live reloading.
+  - Added `PlayerHostProtocol`, `StageDirectorProtocol`, and UI presentation protocols in `eager_core.protocols` for decoupled host lifecycle communication.
+- Multi-line text measurement helpers in `eager_core.text` (`measure_text_lines`) supporting dynamic UI layouts.
+
+### Changed
+
+- Tightened method signatures and type annotations across protocol interfaces.
+
+### Removed
+
+- Removed duplicate `eager_core.hooks`, consolidating hook parsing in canonical `eager_script.hooks`.
+- Removed legacy migration hooks from `SaveManager` and `StorySnapshot`.
+
 ## [0.7.0] - 2026-10-30
 
 ### Added
@@ -60,7 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.7.0
 [0.5.0]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/CooperElektrik/Eager/compare/v0.3.0...v0.4.0

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-05
+
 ### Added
 
 - Composite / layered sprite rendering:
@@ -14,6 +16,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added layered image compositing with caching in `PILAssetResolver` (`_load_layered_image`), combining multiple sprite layers into a single RGBA buffer.
   - Added multi-layer sprite composite texture caching and hardware drawing support in `PygletAssetResolver` and `PygletRenderer`.
   - Added unit and integration test coverage for composite sprite compositing and size normalization (`tests/test_composite_sprites.py`).
+- Expressive visual effects and particle systems:
+  - Added `eager_graphics.particles` module featuring flat-array `ParticleEmitter`, `ParticleArray`, discrete particle stamp LUTs (`ParticleStampLUT` with pre-baked quantized rotation, scale, and alpha masks), and high-throughput batch primitive `draw_particles`.
+  - Added screen-space low-resolution lightmap rendering (`render_lightmap`) with multi-mode compositing (multiply / screen) for expressive atmosphere and tinted lighting.
+- PIL Renderer multi-threading & presets:
+  - Added `eager_graphics.renderers.pil._parallel` module featuring `_RenderPool`, `resize_strips`, and `affine_strips` supporting parallel horizontal strip resampling for large assets.
+  - Added `RenderPreset` enum (`QUALITY`, `PERFORMANCE`, `DEBUG`) and preset configuration in `PILRenderer`, enabling zero-cache budgets and motion bypass for debug profiling.
+- In-game pause menu and screens:
+  - Added `GameMenuScreen` in `screens/builtin.py` with in-game pause options: Resume, Save, Load, History, Preferences, Title, Quit.
+  - Horizontally centered UI button stacks across `TitleScreen`, `GameMenuScreen`, and `SaveLoadScreen`.
+  - Specialized `SaveSlotButton` widget displaying slot indices, dynamic thumbnails, dates, and screenplay titles.
+  - Added dynamic multi-line dialogue text wrapping in `HistoryScreen` backlog viewer.
+
+### Changed
+
+- Audio backends reorganization:
+  - Relocated Miniaudio (`eager_graphics.audio.miniaudio`) and Pyglet (`eager_graphics.audio.pyglet`) backends from `eager_graphics.renderers` to dedicated `eager_graphics.audio` package.
+- PIL Renderer 60+ FPS performance optimizations:
+  - Tier-2 base scene cache (`_base_cache`) snapshotting before weather, foreground effects, and particle passes.
+  - Multi-rect disjoint dirty restoration (`_cluster_dirty_boxes`) with area threshold fast early bailouts.
+  - Quantized sub-pixel motion geometry tracking in `render_compositor` to maintain BILINEAR filtering during idle breathing animations without thrashing caches.
+  - Continuous rotation and morphing cache-thrashing bypass directly routing transformed rendering.
+  - Accelerated compositing pipeline: concurrent actor preparation, opaque 3-channel RGB background fast path decoding, direct `im.paste` without alpha blending for opaque regions, scanline C rectangle alpha blending, and vectorized gradient computations.
+  - Direct canvas text rasterization avoiding intermediate surface allocations.
+- UI & Window lifecycle:
+  - Prevented dismissing `TitleScreen` into a black void via Escape/Cancel.
+  - Wired screen quit buttons directly to `player.close()` for clean host shutdown.
+
+### Removed
+
+- Removed 6 legacy re-export shims for modules extracted to `eager-core` (`layout`, `protocol`, `theme`, `timeline`, `types`, `ui_state`).
+- Removed `benchmarks/pil_benchmark.py` harness and dead widget/cache code.
 
 ### Fixed
 
@@ -191,7 +224,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...v0.5.0

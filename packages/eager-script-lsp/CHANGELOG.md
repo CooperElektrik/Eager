@@ -7,10 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-05
+
 ### Added
 
 - Added `normalize_uri()` and exported it in `eager_script_lsp.workspace`.
 - Added URI normalization fallback in `WorkspaceIndex.get_document()` to ensure robust document lookup regardless of Windows drive letter casing differences (`file:///c:/` vs `file:///C:/`).
+- Integrated enriched AST spans:
+  - Updated `ScriptDocument` to consume enriched AST 0-based `start_col` and `end_col` node spans for precision hover, definition, and range calculations.
+- Integrated native `@include` directive:
+  - Added native `@include` resolution into document symbol indexing, cross-document reference resolution, and document links.
 
 ### Fixed
 
@@ -72,7 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Semantic Highlighting & Lenses**: Semantic tokens provider, color picker/decorator provider for `{color=...}` tags, inlay hints for character display names, and "Warp & Play" code lenses.
 - **CLI & Transport**: Standalone `eager-script-lsp` binary and `eager lsp` CLI integration supporting stdio, TCP socket, WebSocket, and a headless `--check` batch validator.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.7.0
 [0.5.0]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/CooperElektrik/Eager/releases/tag/v0.4.0

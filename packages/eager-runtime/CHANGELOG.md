@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-05
+
 ### Added
 
 - Composite / layered sprite asset validation:
@@ -15,6 +17,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom character expression aliases:
   - Wired screenplay character expression attributes (`@character <id> ... <alias>="<layers>"`) into `director.register_character()` in `GameSession.__init__` and `GameSession.hot_reload_screenplay()`.
   - Added `expressions` dictionary and `**kwargs` support to `NullStage.register_character()`.
+- Story lifecycle navigation:
+  - Added `GameSession.return_to_title()` and `GameSession.restart_story()` lifecycle transitions.
+  - Route save loading to clear active screen stack and immediately resume gameplay mode.
+  - Paced fast-forward skipping (`skip_mode`) in `GameSession.update()` for visible frame feedback during fast skips.
+- Protocol-driven host integration:
+  - Integrated `PlayerHostProtocol` for decoupled host lifecycle management and window actions.
+
+### Changed
+
+- Persistence decoupling:
+  - Decoupled `PersistentData` mutations from script execution; safe batch serialization during `warp()` and save operations.
+- Codebase modernization:
+  - Eliminated pervasive `hasattr`/`getattr` duck typing glue and legacy aliases on `GameSession`.
+  - Tightened type annotations and method signatures for host lifecycle dispatch.
+
+### Removed
+
+- Removed 8 backwards-compatible re-export shims for modules extracted to `eager-core` (`backlog`, `dispatcher`, `headless`, `persistent`, `preferences`, `saves`, `state`, `watcher`).
+- Removed over-engineered migration framework and legacy migration hooks in `SaveManager` and `StorySnapshot`.
+- Removed dead attributes (`skip_timer`).
 
 ### Fixed
 
@@ -153,7 +175,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...v0.5.0

@@ -7,19 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-05
+
 ### Added
 
-- **Graphics & Presentation**:
-  - Added composite / layered sprite support across `StageDirector`, `CharacterConfig`, and renderer backends.
-  - Implemented expression resolution and recursive alias expansion for character expressions in `StageDirector.register_character()`, `handle_show()`, and `handle_expression()`.
-  - Added multi-layer sprite compositing in `PILAssetResolver` / `PILRenderer`, layering constituent image parts (`base+uniform+smile` or comma/plus separated) onto composite buffers with caching.
-  - Added multi-layer sprite texture generation and rendering support in `PygletAssetResolver` / `PygletRenderer`.
+- **Graphics & Expressive Effects**:
+  - Composite / layered sprite rendering across PIL and Pyglet backends with recursive expression aliasing (`base+uniform+smile`).
+  - Added `eager_graphics.particles` module featuring flat-array `ParticleEmitter`, `ParticleArray`, discrete particle stamp LUTs (`ParticleStampLUT` with pre-baked quantized rotation, scale, and alpha masks), and high-throughput batch primitive `draw_particles`.
+  - Added screen-space low-resolution lightmap rendering (`render_lightmap`) with multi-mode compositing (multiply / screen) for expressive atmosphere and tinted lighting.
+  - Multi-threaded horizontal strip resampling for large assets in `PILRenderer` via `eager_graphics.renderers.pil._parallel` (`_RenderPool`, `resize_strips`, `affine_strips`).
+  - Added `RenderPreset` enum (`QUALITY`, `PERFORMANCE`, `DEBUG`) and preset configuration in `PILRenderer`, enabling zero-cache budgets and motion bypass for debug profiling.
+- **UI Screens & Lifecycle Navigation**:
+  - Added in-game pause `GameMenuScreen` in `screens/builtin.py` (Resume, Save, Load, History, Preferences, Title, Quit).
+  - Horizontally centered UI button stacks across `TitleScreen`, `GameMenuScreen`, and `SaveLoadScreen`.
+  - Specialized `SaveSlotButton` widget displaying slot indices, dynamic thumbnails, dates, and screenplay titles.
+  - Added dynamic multi-line dialogue text wrapping in `HistoryScreen` backlog viewer.
+  - Added `return_to_title()` and `restart_story()` lifecycle transitions in `GameSession`.
+  - Save loading clears active screen stack and immediately resumes gameplay mode.
+  - Paced fast-forward skipping (`skip_mode`) in `GameSession.update()` for visible frame feedback during fast skips.
+- **Screenplay Syntax, AST & Language Server (LSP)**:
+  - Enriched all 22 AST node types with exact 0-based `start_col` and `end_col` columns.
+  - Updated `eager-script-lsp` (`ScriptDocument`) to consume enriched AST source spans for precision hover, definition, and range calculations.
+  - Added native screenplay `@include "path/to/script.es"` directive with resilient error recovery and parser block flushing.
+  - Integrated `@include` directive into language server document symbol indexing, cross-document reference resolution, and document links.
+  - Added `normalize_uri()` and case-insensitive URI normalization fallback in `WorkspaceIndex.get_document()` across Windows drive letter casing differences.
+- **Core Architecture & Subsystems Extraction**:
+  - Extracted 12 core subsystems from `eager-runtime` and `eager-graphics` into `eager-core`: storage (`saves`, `persistent`, `preferences`), narrative state (`state`, `backlog`), presentation primitives (`layout`, `lighting`, `theme`, `timeline`, `types`, `ui_state`), headless simulation (`headless`), and event/file infrastructure (`dispatcher`, `watcher`).
+  - Extracted `CharacterConfig` to `eager_core.characters`, supporting character declaration styling, voice tags, side image mapping, and recursive composite expression resolution.
+  - Added `PlayerHostProtocol`, `StageDirectorProtocol`, and UI presentation protocols in `eager_core.protocols` for decoupled host lifecycle communication.
+  - Added multi-line text measurement helpers in `eager_core.text` (`measure_text_lines`) supporting dynamic UI layouts.
 - **Runtime**:
-  - Added composite character sprite path resolution and integrity validation in `check_assets()` and `resolve_candidate_paths()`, detecting missing individual constituent layer files.
+  - Added composite character sprite path resolution and constituent layer validation in `check_assets()` and `resolve_candidate_paths()`.
   - Wired custom character expression aliases from screenplay declarations (`@character ... expr="layer1+layer2"`) into `GameSession` director initialization and hot-reloading.
   - Supported `expressions` dictionary and arbitrary expression keyword attributes in `NullStage.register_character()`.
-- **Tooling & Language Server**:
-  - Added `normalize_uri()` and case-insensitive URI normalization in `WorkspaceIndex.get_document()` to robustly resolve documents across Windows drive letter casing and client variations.
+
+### Changed
+
+- **Audio Backends Reorganization**:
+  - Relocated Miniaudio (`eager_graphics.audio.miniaudio`) and Pyglet (`eager_graphics.audio.pyglet`) backends from `eager_graphics.renderers` to dedicated `eager_graphics.audio` package.
+- **PIL Renderer 60+ FPS Performance Optimizations**:
+  - Tier-2 base scene cache (`_base_cache`) snapshotting before weather, foreground effects, and particle passes.
+  - Multi-rect disjoint dirty restoration (`_cluster_dirty_boxes`) with area threshold fast early bailouts.
+  - Quantized sub-pixel motion geometry tracking in `render_compositor` to maintain BILINEAR filtering during idle breathing animations without thrashing caches.
+  - Continuous rotation and morphing cache-thrashing bypass directly routing transformed rendering.
+  - Accelerated compositing pipeline: concurrent actor preparation, opaque 3-channel RGB background fast path decoding, direct `im.paste` without alpha blending for opaque regions, scanline C rectangle alpha blending, and vectorized gradient computations.
+  - Direct canvas text rasterization avoiding intermediate surface allocations.
+- **Script & Architecture Modernization**:
+  - Decomposed monolithic `eager-script` `__init__.py` (1,100+ lines) into modular `ast.py`, `parser.py`, and clean re-exports.
+  - Consolidated canonical engine hook definitions in `eager_script.hooks`.
+  - Decoupled `PersistentData` mutations from script execution; safe batch serialization during `warp()` and save operations.
+  - Eliminated pervasive `hasattr`/`getattr` duck-typing glue and legacy aliases on `GameSession`.
+  - Prevented dismissing `TitleScreen` into a black void via Escape/Cancel.
+  - Wired screen quit buttons directly to `player.close()` for clean host shutdown.
+
+### Removed
+
+- **Legacy Shims & Dead Code**:
+  - Removed 16 backwards-compatible re-export shims across `eager-runtime` and `eager-graphics`, repointing internal imports directly to `eager_core.<submodule>`.
+  - Removed over-engineered migration framework and legacy migration hooks in `SaveManager` and `StorySnapshot`.
+  - Removed `benchmarks/pil_benchmark.py` harness and unused parser/session attributes (`_choice_indent`, `skip_timer`).
 
 ### Fixed
 
@@ -261,7 +307,8 @@ Consolidates all changes after the v0.1.0 release (initial commit `97609c1`, 202
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...v0.5.0

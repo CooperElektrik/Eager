@@ -58,7 +58,7 @@ if TYPE_CHECKING:
     )
     from eager_runtime.session import GameSession
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 __all__ = [
     "AppendEvent",
