@@ -1,11 +1,12 @@
-"""Built-in screens: TitleScreen, SaveLoadScreen, PreferencesScreen, HistoryScreen."""
+"""Built-in screens: TitleScreen, GameMenuScreen, SaveLoadScreen, PreferencesScreen, HistoryScreen."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
 
-from eager_core.types import Rect
+from eager_core.text import _get_wrapped_lines, parse_text_tags
+from eager_core.types import Color, Rect
 
 from eager_graphics.protocol import UIDrawBackend
 from eager_graphics.screens.screen import Screen
@@ -34,33 +35,57 @@ class TitleScreen(Screen):
         vw = float(self.viewport_width)
         vh = float(self.viewport_height)
 
-        margin_x = vw * (100.0 / 1280.0)
-        start_y = vh * (300.0 / 720.0)
-        btn_w = vw * (240.0 / 1280.0)
-        btn_h = vh * (50.0 / 720.0)
+        btn_w = vw * (300.0 / 1280.0)
+        btn_h = vh * (48.0 / 720.0)
+        btn_x = (vw - btn_w) / 2.0
+        start_y = vh * (280.0 / 720.0)
         spacing_y = vh * (60.0 / 720.0)
 
         def start_game() -> None:
             if hasattr(self.session, "screens"):
-                self.session.screens.hide(self.session)
-            if self.session is not None and hasattr(self.session, "advance"):
-                self.session.advance()
+                self.session.screens.hide_all(self.session)
+            if self.session is not None:
+                self.session.mode = "game"
+                if hasattr(self.session, "restart_story") and (
+                    getattr(self.session, "is_finished", False)
+                    or getattr(getattr(self.session, "vm", None), "_beat_index", 0) > 0
+                ):
+                    self.session.restart_story()
+                elif hasattr(self.session, "advance"):
+                    self.session.advance()
+
+        def quit_game() -> None:
+            if self.session is not None:
+                from eager_core.input import InputAction
+
+                if hasattr(self.session, "handle_input"):
+                    self.session.handle_input(InputAction.QUIT)
+                player = getattr(self.session, "_player", None)
+                if player is not None and hasattr(player, "close"):
+                    player.close()
+                elif hasattr(self.session, "close"):
+                    self.session.close()
 
         self.buttons = [
             Button(
-                Rect(margin_x, start_y, btn_w, btn_h),
+                Rect(btn_x, start_y, btn_w, btn_h),
                 "Start Game",
                 action=start_game,
             ),
             Button(
-                Rect(margin_x, start_y + spacing_y, btn_w, btn_h),
+                Rect(btn_x, start_y + spacing_y, btn_w, btn_h),
                 "Load Game",
                 action=lambda: getattr(self.session, "screens", None) and self.session.screens.show("load", self.session),
             ),
             Button(
-                Rect(margin_x, start_y + spacing_y * 2, btn_w, btn_h),
+                Rect(btn_x, start_y + spacing_y * 2, btn_w, btn_h),
                 "Preferences",
                 action=lambda: getattr(self.session, "screens", None) and self.session.screens.show("preferences", self.session),
+            ),
+            Button(
+                Rect(btn_x, start_y + spacing_y * 3, btn_w, btn_h),
+                "Quit",
+                action=quit_game,
             ),
         ]
 
@@ -97,16 +122,125 @@ class TitleScreen(Screen):
 
         # Title
         backend.draw_text(
-            vw * (100.0 / 1280.0),
-            vh * (150.0 / 720.0),
+            vw / 2.0,
+            vh * (160.0 / 720.0),
             self.title,
             color=self.theme.accent_color,
             font_size=self.scale_font_size(self.theme.title_font_size),
-            anchor_x=TextAnchor.LEFT,
+            anchor_x=TextAnchor.CENTER,
             anchor_y=TextAnchor.TOP,
         )
 
         # Buttons
+        for b in self.buttons:
+            b.draw(
+                backend,
+                fill_color=self.theme.button_fill,
+                hover_color=self.theme.button_hover,
+                border_color=self.theme.button_border,
+                text_color=self.theme.button_text,
+                font_size=self.scale_font_size(self.theme.font_size),
+            )
+
+
+class GameMenuScreen(Screen):
+    """In-game pause and navigation menu (Resume, Save, Load, History, Preferences, Title, Quit)."""
+
+    def __init__(
+        self,
+        theme: Theme | None = None,
+        viewport_width: int = 1280,
+        viewport_height: int = 720,
+    ) -> None:
+        super().__init__("game_menu", theme=theme, viewport_width=viewport_width, viewport_height=viewport_height)
+        self.session: Any = None
+        self.rebuild_layout()
+
+    def rebuild_layout(self) -> None:
+        """Recompute button dimensions and positions based on current viewport size."""
+        vw = float(self.viewport_width)
+        vh = float(self.viewport_height)
+
+        btn_w = vw * (300.0 / 1280.0)
+        btn_h = vh * (44.0 / 720.0)
+        btn_x = (vw - btn_w) / 2.0
+        start_y = vh * (175.0 / 720.0)
+        spacing_y = vh * (52.0 / 720.0)
+
+        def resume_game() -> None:
+            if hasattr(self.session, "screens"):
+                self.session.screens.hide(self.session)
+
+        def show_screen(name: str) -> Callable[[], None]:
+            return lambda: getattr(self.session, "screens", None) and self.session.screens.show(name, self.session)
+
+        def return_to_title() -> None:
+            if self.session is not None and hasattr(self.session, "return_to_title"):
+                self.session.return_to_title()
+
+        def quit_game() -> None:
+            if self.session is not None:
+                from eager_core.input import InputAction
+
+                if hasattr(self.session, "handle_input"):
+                    self.session.handle_input(InputAction.QUIT)
+                player = getattr(self.session, "_player", None)
+                if player is not None and hasattr(player, "close"):
+                    player.close()
+                elif hasattr(self.session, "close"):
+                    self.session.close()
+
+        self.buttons = [
+            Button(Rect(btn_x, start_y + spacing_y * 0, btn_w, btn_h), "Resume", action=resume_game),
+            Button(Rect(btn_x, start_y + spacing_y * 1, btn_w, btn_h), "Save Game", action=show_screen("save")),
+            Button(Rect(btn_x, start_y + spacing_y * 2, btn_w, btn_h), "Load Game", action=show_screen("load")),
+            Button(Rect(btn_x, start_y + spacing_y * 3, btn_w, btn_h), "Dialogue History", action=show_screen("history")),
+            Button(Rect(btn_x, start_y + spacing_y * 4, btn_w, btn_h), "Preferences", action=show_screen("preferences")),
+            Button(Rect(btn_x, start_y + spacing_y * 5, btn_w, btn_h), "Main Menu", action=return_to_title),
+            Button(Rect(btn_x, start_y + spacing_y * 6, btn_w, btn_h), "Quit Game", action=quit_game),
+        ]
+
+    def on_enter(self, session: Any) -> None:
+        """Handle screen presentation entry and initialize viewport.
+
+        Args:
+            session: Active GameSession instance.
+        """
+        super().on_enter(session)
+        self.session = session
+        if hasattr(session, "overlay") and session.overlay is not None:
+            ov = session.overlay
+            if getattr(ov, "width", None) and getattr(ov, "height", None):
+                self.viewport_width = ov.width
+                self.viewport_height = ov.height
+        self.rebuild_layout()
+
+    def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
+        """Render darkened modal scrim, menu header, and navigation buttons.
+
+        Args:
+            backend: UIDrawBackend primitive rendering interface.
+            width: Target render surface width in pixels.
+            height: Target render surface height in pixels.
+        """
+        super().draw(backend, width, height)
+
+        vw = float(self.viewport_width)
+        vh = float(self.viewport_height)
+
+        # Semi-transparent dark overlay scrim over gameplay stage
+        backend.draw_rect(0, 0, width, height, Color(0.04, 0.05, 0.08, 0.88))
+
+        backend.draw_text(
+            vw / 2.0,
+            vh * (100.0 / 720.0),
+            "Game Menu",
+            color=self.theme.accent_color,
+            font_size=self.scale_font_size(self.theme.title_font_size),
+            anchor_x=TextAnchor.CENTER,
+            anchor_y=TextAnchor.TOP,
+        )
+
         for b in self.buttons:
             b.draw(
                 backend,
@@ -140,12 +274,12 @@ class SaveLoadScreen(Screen):
         vw = float(self.viewport_width)
         vh = float(self.viewport_height)
 
-        grid_x = vw * (100.0 / 1280.0)
+        grid_w = vw * (840.0 / 1280.0)
+        grid_x = (vw - grid_w) / 2.0
         grid_y = vh * (110.0 / 720.0)
-        grid_w = vw * (720.0 / 1280.0)
-        grid_h = vh * (360.0 / 720.0)
-        spacing_x = vw * (24.0 / 1280.0)
-        spacing_y = vh * (20.0 / 720.0)
+        grid_h = vh * (380.0 / 720.0)
+        spacing_x = vw * (28.0 / 1280.0)
+        spacing_y = vh * (22.0 / 720.0)
 
         grid = Grid(
             Rect(grid_x, grid_y, grid_w, grid_h),
@@ -193,9 +327,15 @@ class SaveLoadScreen(Screen):
                             self.session is not None
                             and hasattr(self.session, "load_game")
                             and self.session.load_game(sname)
-                            and hasattr(self.session, "screens")
                         ):
-                            self.session.screens.hide(self.session)
+                            if hasattr(self.session, "screens"):
+                                self.session.screens.hide_all(self.session)
+                            self.session.mode = "game"
+                            self.session._ui_dirty = True
+                            player = getattr(self.session, "_player", None)
+                            if player is not None and hasattr(player, "_sync_state"):
+                                player._sync_state()
+                                player._mark_ui_dirty()
                     return load_action
 
             self.buttons.append(
@@ -207,7 +347,7 @@ class SaveLoadScreen(Screen):
             )
 
         # Back button
-        back_x = vw * (100.0 / 1280.0)
+        back_x = grid_x
         back_y = vh * (520.0 / 720.0)
         back_w = vw * (140.0 / 1280.0)
         back_h = vh * (40.0 / 720.0)
@@ -246,10 +386,12 @@ class SaveLoadScreen(Screen):
 
         vw = float(self.viewport_width)
         vh = float(self.viewport_height)
+        grid_w = vw * (840.0 / 1280.0)
+        grid_x = (vw - grid_w) / 2.0
 
         backend.draw_rect(0, 0, width, height, self.theme.bg_color)
         backend.draw_text(
-            vw * (100.0 / 1280.0),
+            grid_x,
             vh * (40.0 / 720.0),
             "Save Game" if self.mode == "save" else "Load Game",
             color=self.theme.text_color,
@@ -707,32 +849,84 @@ class HistoryScreen(Screen):
             curr_y = vh * (110.0 / 720.0)
             step_y = vh * (65.0 / 720.0)
             entry_x = vw * (100.0 / 1280.0)
-            char_w = 9.0 * (vw / 1280.0)
+            max_text_w = vw * (960.0 / 1280.0)
+            line_h = float(entry_font_size) * 1.35
 
             for entry in displayed_slice:
+                plain_text = parse_text_tags(entry.text).plain_text
                 if entry.speaker:
+                    speaker_name_w, _ = backend.measure_text(
+                        entry.speaker, font_size=entry_font_size, bold=True
+                    )
+                    if speaker_name_w <= 0.0:
+                        speaker_name_w = len(entry.speaker) * 9.0 * (vw / 1280.0)
+
+                    colon_w, _ = backend.measure_text(": ", font_size=entry_font_size)
+                    if colon_w <= 0.0:
+                        colon_w = 12.0 * (vw / 1280.0)
+
+                    speaker_total_w = speaker_name_w + colon_w
+                    avail_w = max(100.0, max_text_w - speaker_total_w)
+
                     backend.draw_text(
                         entry_x,
                         curr_y,
                         entry.speaker,
                         color=self.theme.accent_color,
                         font_size=entry_font_size,
+                        bold=True,
                     )
                     backend.draw_text(
-                        entry_x + len(entry.speaker) * char_w,
+                        entry_x + speaker_name_w,
                         curr_y,
-                        f": {entry.text}",
-                        color=self.theme.text_color,
+                        ": ",
+                        color=self.theme.accent_color,
                         font_size=entry_font_size,
                     )
+
+                    wrapped = _get_wrapped_lines(
+                        plain_text,
+                        avail_w,
+                        backend.measure_text,
+                        font_size=entry_font_size,
+                    )
+                    lines = [w[0] if isinstance(w, tuple) else w for w in wrapped]
+                    if not lines:
+                        lines = [plain_text]
+
+                    for line_idx, line_str in enumerate(lines):
+                        if line_idx >= 3:
+                            break
+                        ly = curr_y + (line_idx * line_h)
+                        backend.draw_text(
+                            entry_x + speaker_total_w,
+                            ly,
+                            line_str,
+                            color=self.theme.text_color,
+                            font_size=entry_font_size,
+                        )
                 else:
-                    backend.draw_text(
-                        entry_x,
-                        curr_y,
-                        entry.text,
-                        color=self.theme.muted_text_color,
+                    wrapped = _get_wrapped_lines(
+                        plain_text,
+                        max_text_w,
+                        backend.measure_text,
                         font_size=entry_font_size,
                     )
+                    lines = [w[0] if isinstance(w, tuple) else w for w in wrapped]
+                    if not lines:
+                        lines = [plain_text]
+
+                    for line_idx, line_str in enumerate(lines):
+                        if line_idx >= 3:
+                            break
+                        ly = curr_y + (line_idx * line_h)
+                        backend.draw_text(
+                            entry_x,
+                            ly,
+                            line_str,
+                            color=self.theme.muted_text_color,
+                            font_size=entry_font_size,
+                        )
                 curr_y += step_y
 
         for b in self.buttons:
@@ -746,4 +940,4 @@ class HistoryScreen(Screen):
             )
 
 
-__all__ = ["HistoryScreen", "PreferencesScreen", "SaveLoadScreen", "TitleScreen"]
+__all__ = ["GameMenuScreen", "HistoryScreen", "PreferencesScreen", "SaveLoadScreen", "TitleScreen"]

@@ -202,6 +202,8 @@ class ScreenManager:
         """Forward key events to active screen or dismiss with escape/cancel."""
         if self.active_screen is not None and self.active_screen.visible:
             if key_name.lower() in ("escape", "cancel"):
+                if getattr(self.active_screen, "name", "") == "title":
+                    return True
                 self.hide(session)
                 return True
             return self.active_screen.handle_key(key_name, session)

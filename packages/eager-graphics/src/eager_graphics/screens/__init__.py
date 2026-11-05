@@ -1,6 +1,7 @@
 """Screens package exports."""
 
 from eager_graphics.screens.builtin import (
+    GameMenuScreen,
     HistoryScreen,
     PreferencesScreen,
     SaveLoadScreen,
@@ -11,6 +12,7 @@ from eager_graphics.screens.widgets import Button, Grid, Label, Slider
 
 __all__ = [
     "Button",
+    "GameMenuScreen",
     "Grid",
     "HistoryScreen",
     "Label",

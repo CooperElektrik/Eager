@@ -319,11 +319,12 @@ Alice: Another day, another adventure.
     # Open / close menus via InputAction
     session.handle_input(InputAction.GAME_MENU)
     assert session.screens.is_active
-    assert session.screens.active_screen.name == "save"
+    assert session.screens.active_screen.name == "game_menu"
 
-    # Pointer click on Back button in save screen
-    back_btn = session.screens.active_screen.buttons[-1]
-    session.handle_input(InputAction.POINTER_CLICK, x=back_btn.rect.x + 5, y=back_btn.rect.y + 5)
+    # Pointer click on Resume button in game menu
+    resume_btn = session.screens.active_screen.buttons[0]
+    assert resume_btn.text == "Resume"
+    session.handle_input(InputAction.POINTER_CLICK, x=resume_btn.rect.x + 5, y=resume_btn.rect.y + 5)
     assert not session.screens.is_active
 
     # Open history screen via InputAction.HISTORY
@@ -1396,6 +1397,92 @@ h: Hello {id=greeting}
     assert session.director.ui_state.speaker == "Hoshiko Reloaded"
     assert session.director.ui_state.text == "Hola amigo!"
     assert session.director.ui_state.speaker_color == Color.from_hex("#112233")
+
+
+def test_session_restart_story_and_return_to_title(tmp_path: Path) -> None:
+    """GameSession.restart_story must reset VM, stage, backlog, and checkpoints to the beginning."""
+    script = """
+## Start --- start
+Alice: Hello from line 1.
+Alice: Hello from line 2.
+Alice: Hello from line 3.
+"""
+    script_file = tmp_path / "game.es"
+    script_file.write_text(script, encoding="utf-8")
+    session = GameSession(script_file)
+
+    session.advance()
+    assert session.director.ui_state.text == "Hello from line 1."
+    session.advance()
+    assert session.director.ui_state.text == "Hello from line 2."
+    assert len(session.backlog.entries) >= 2
+    assert session.checkpoints.can_rollback
+
+    # Return to title
+    assert session.return_to_title() is True
+    assert session.mode == "title"
+    assert session.screens.active_screen.name == "title"
+
+    # Restart story from title
+    ev = session.restart_story()
+    assert ev is not None
+    assert session.mode == "game"
+    assert not session.screens.is_active
+    assert session.director.ui_state.text == "Hello from line 1."
+    assert len(session.backlog.entries) == 1
+
+
+def test_session_story_concluded_routes_to_title(tmp_path: Path) -> None:
+    """When the story finishes, advancing or clicking must return to the Title screen."""
+    script = """
+## Start --- start
+Alice: Final words.
+"""
+    script_file = tmp_path / "game.es"
+    script_file.write_text(script, encoding="utf-8")
+    session = GameSession(script_file)
+
+    session.advance()
+    assert session.director.ui_state.text == "Final words."
+    session.advance()
+    assert session.is_finished is True
+    assert session.mode == "ended"
+
+    # Advance after conclusion routes to title screen
+    res = session.handle_input(InputAction.ADVANCE)
+    assert res is True
+    assert session.mode == "title"
+    assert session.screens.active_screen.name == "title"
+
+
+def test_session_paced_skip_mode_timing(tmp_path: Path) -> None:
+    """Paced skip mode must pace advancement according to skip_interval rather than running unbounded."""
+    script = """
+## Start --- start
+Alice: Beat 1
+Alice: Beat 2
+Alice: Beat 3
+Alice: Beat 4
+"""
+    script_file = tmp_path / "game.es"
+    script_file.write_text(script, encoding="utf-8")
+    session = GameSession(script_file)
+    session.preferences.skip_unseen = True
+    session.advance()
+    assert session.director.ui_state.text == "Beat 1"
+
+    session.skip_mode = True
+    session.skip_interval = 0.05  # 50ms per beat
+
+    # Update with 0.02s: not enough time to advance a beat
+    session.update(0.02)
+    assert session.director.ui_state.text == "Beat 1"
+    assert session.skip_mode is True
+
+    # Update with additional 0.04s (total 0.06s >= 0.05s): advances exactly 1 beat!
+    session.update(0.04)
+    assert session.director.ui_state.text == "Beat 2"
+    assert session.skip_mode is True
 
 
 

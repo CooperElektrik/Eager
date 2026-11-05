@@ -110,6 +110,14 @@ class StageDirector:
         """Immediately complete active stage animations."""
         self.compositor.finish_animations()
 
+    def clear_stage(self) -> None:
+        """Clear all stage compositor elements, sprite state, and dialogue UI."""
+        self.compositor.clear()
+        self._sprite_base_y.clear()
+        self.ui_state.clear_dialogue()
+        self.ui_state.clear_choices()
+        self.ui_state.clear_nvl()
+
     def save_ui_state(self) -> dict[str, Any]:
         """Serialize current UI state."""
         return self.ui_state.to_dict()

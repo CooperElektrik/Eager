@@ -833,7 +833,7 @@ class InputBox:
 class EndNotice:
     """Bottom banner announcing that the story has concluded."""
 
-    DEFAULT_MESSAGE = "Story Concluded — Press Esc or Q to Exit"
+    DEFAULT_MESSAGE = "Story Concluded — Click or Press Enter to Return to Title"
 
     def __init__(
         self,

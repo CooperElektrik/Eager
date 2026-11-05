@@ -135,6 +135,7 @@ def build_parser() -> argparse.ArgumentParser:
     play_p.add_argument("--asset-dir", default=None, help="Directory containing sprite/background assets.")
     play_p.add_argument("--warp", default=None, help="Fast-forward / jump directly to scene label.")
     play_p.add_argument("--no-warp-sim", action="store_true", help="Bypass state simulation and jump directly when warping.")
+    play_p.add_argument("--skip-title", action="store_true", help="Bypass title screen and start story immediately.")
     play_p.add_argument("--no-audio", action="store_true", help="Disable audio playback (use NullAudioBackend).")
     play_p.add_argument("--watch", "--hot-reload", dest="watch", action="store_true", help="Automatically hot-reload when script changes on disk.")
     play_p.set_defaults(func=run_play)
@@ -207,6 +208,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_p.add_argument("project_dir", nargs="?", default=".", help="Project directory (default: current directory)")
     run_p.add_argument("--backend", choices=["pyglet", "pil"], default="pil", help="Rendering backend")
+    run_p.add_argument("--skip-title", action="store_true", help="Bypass title screen and start story immediately.")
     run_p.add_argument("--no-audio", action="store_true", help="Disable audio playback (use NullAudioBackend).")
     run_p.add_argument("--watch", "--hot-reload", dest="watch", action="store_true", help="Automatically hot-reload when script changes on disk.")
     run_p.set_defaults(func=_cmd_run)
@@ -536,6 +538,9 @@ def _cmd_play(args: argparse.Namespace) -> int:
             sys.stderr.write(f"Warped directly to scene '{target_scene}'.\n")
         else:
             sys.stderr.write(f"Warning: Warp target '{target_scene}' not found in script.\n")
+    elif not getattr(args, "skip_title", False) and hasattr(session.screens, "show"):
+        session.screens.show("title", session)
+        session.mode = "title"
 
     sys.stderr.write(f"Launching Eager visual novel ({args.backend})...\n")
     _run_interactive_player(session, backend=args.backend)
@@ -649,6 +654,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
         auto_reload=getattr(args, "watch", False),
         config=cfg,
     )
+    if not getattr(args, "skip_title", False) and hasattr(session.screens, "show"):
+        session.screens.show("title", session)
+        session.mode = "title"
+
     _run_interactive_player(session, backend=args.backend)
     return 0
 

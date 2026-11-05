@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING, Any
 
 from eager_core.events import ChoicePromptEvent
@@ -40,6 +41,9 @@ class BasePlayer:
         uncapped: bool = False,
     ) -> None:
         self.session: Any = session
+        if session is not None:
+            with contextlib.suppress(AttributeError, TypeError):
+                session._player = self
         self.width: int = width
         self.height: int = height
         self.title: str = title

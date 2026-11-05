@@ -250,6 +250,7 @@ def register_providers() -> None:
 
     def _default_screens_factory(config: Any, session: Any) -> Any:
         from eager_graphics.screens import (
+            GameMenuScreen,
             HistoryScreen,
             PreferencesScreen,
             SaveLoadScreen,
@@ -275,6 +276,7 @@ def register_providers() -> None:
                 viewport_height=h,
             )
         )
+        mgr.register(GameMenuScreen(theme=theme, viewport_width=w, viewport_height=h))
         mgr.register(SaveLoadScreen("save", theme=theme, viewport_width=w, viewport_height=h))
         mgr.register(SaveLoadScreen("load", theme=theme, viewport_width=w, viewport_height=h))
         mgr.register(PreferencesScreen(theme=theme, viewport_width=w, viewport_height=h))

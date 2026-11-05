@@ -281,6 +281,8 @@ class GameSession:
         # State flags
         self.mode: str = "game"  # "title", "game", "menu", "ended"
         self.skip_mode: bool = False
+        self._skip_timer: float = 0.0
+        self.skip_interval: float = 0.03
         self.auto_mode: bool = False
         self.auto_timer: float = 0.0
         self.ui_hidden: bool = False
@@ -768,6 +770,61 @@ class GameSession:
         self.director.ui_state.visible_chars = None
         return True
 
+    def restart_story(self) -> StoryEvent | None:
+        """Reset the session to the beginning of the screenplay and advance the initial beat."""
+        self.vm = StoryVM(
+            self.graph,
+            translation_manager=self.translation_manager,
+            persistent=self.persistent,
+        )
+        if hasattr(self.director, "clear_stage"):
+            self.director.clear_stage()
+        elif hasattr(getattr(self.director, "compositor", None), "clear"):
+            self.director.compositor.clear()
+        if hasattr(self.director, "clear_dialogue"):
+            self.director.clear_dialogue()
+        elif hasattr(self.director, "ui_state"):
+            from eager_core.ui_state import UIState
+
+            self.director.ui_state = UIState()
+
+        if hasattr(self.audio, "stop_all"):
+            self.audio.stop_all()
+
+        self.checkpoints.clear()
+        self.backlog.clear()
+        self.is_finished = False
+        self.mode = "game"
+        self.skip_mode = False
+        self._skip_timer = 0.0
+        self.auto_mode = False
+        self.auto_timer = 0.0
+        self.active_choice_prompt = None
+        self.active_input_prompt = None
+        self.input_text = ""
+        self.text_reveal = None
+        self._last_event = None
+        self._current_beat_previously_seen = False
+        self._ui_dirty = True
+
+        if hasattr(self.screens, "hide"):
+            self.screens.hide(self)
+
+        return self.advance()
+
+    def return_to_title(self) -> bool:
+        """Halt story execution and return to the main TitleScreen."""
+        if hasattr(self.audio, "stop_all"):
+            self.audio.stop_all()
+        self.skip_mode = False
+        self._skip_timer = 0.0
+        self.auto_mode = False
+        self.mode = "title"
+        self._ui_dirty = True
+        if hasattr(self.screens, "show"):
+            return bool(self.screens.show("title", self))
+        return False
+
     def is_current_beat_read(self) -> bool:
         """Return True if the current beat was already seen in a previous playthrough."""
         if self._last_event is None:
@@ -811,26 +868,35 @@ class GameSession:
             elif getattr(self.overlay, "input_box", None) is not None:
                 self.overlay.input_box.update(dt)
 
-        # Skip mode advances immediately until player choices, input prompt, or story ends
+        # Skip mode advances at a fast, paced interval until player choices, input prompt, or story ends
         if self.skip_mode and not self.is_finished:
             if self.text_reveal is not None:
                 self.text_reveal.complete_immediately()
                 self.director.ui_state.visible_chars = None
-            while (
-                self.skip_mode
-                and not self.is_finished
-                and self.active_choice_prompt is None
-                and self.active_input_prompt is None
-            ):
-                # If skip_unseen is False, check whether the current line was seen before advancing further
-                if not getattr(self.preferences, "skip_unseen", False) and not self._current_beat_previously_seen:
-                    self.skip_mode = False
-                    break
+            if self.active_choice_prompt is not None or self.active_input_prompt is not None:
+                self.skip_mode = False
+            else:
+                self._skip_timer += dt
+                step_interval = getattr(self, "skip_interval", 0.03)
+                if step_interval <= 0.0:
+                    step_interval = 0.001
+                while (
+                    self.skip_mode
+                    and not self.is_finished
+                    and self.active_choice_prompt is None
+                    and self.active_input_prompt is None
+                    and self._skip_timer >= step_interval
+                ):
+                    self._skip_timer -= step_interval
+                    # If skip_unseen is False, check whether the current line was seen before advancing further
+                    if not getattr(self.preferences, "skip_unseen", False) and not self._current_beat_previously_seen:
+                        self.skip_mode = False
+                        break
 
-                self.advance()
-                if not getattr(self.preferences, "skip_unseen", False) and not self._current_beat_previously_seen:
-                    self.skip_mode = False
-                    break
+                    self.advance()
+                    if not getattr(self.preferences, "skip_unseen", False) and not self._current_beat_previously_seen:
+                        self.skip_mode = False
+                        break
         elif self.auto_mode and not self.is_finished and self.active_choice_prompt is None and self.active_input_prompt is None:
             reveal_done = (self.text_reveal is None or self.text_reveal.is_complete)
             voice_playing = self.audio.is_playing("voice")
@@ -942,6 +1008,8 @@ class GameSession:
         # 1. Screen active intercepts:
         if self.screens.is_active:
             if action in (InputAction.GAME_MENU, InputAction.CANCEL):
+                if getattr(self.screens.active_screen, "name", "") == "title":
+                    return True
                 self.screens.hide(self)
                 return True
             if action in (InputAction.ROLLBACK, InputAction.NAV_UP):
@@ -1051,6 +1119,8 @@ class GameSession:
                     self.overlay.dialogue_box.visible_chars = None
                     self.overlay.dialogue_box.show_advance_arrow = (self.active_choice_prompt is None)
                 return True
+            if self.is_finished:
+                return self.return_to_title()
             if self.active_choice_prompt is None and self.active_input_prompt is None:
                 return self.advance()
         elif action == InputAction.ROLLBACK:
@@ -1081,6 +1151,11 @@ class GameSession:
         elif action == InputAction.QUICK_LOAD:
             return self.quickload()
         elif action == InputAction.GAME_MENU:
+            if hasattr(self.screens, "is_active") and self.screens.is_active:
+                self.screens.hide(self)
+                return True
+            if hasattr(self.screens, "screens") and "game_menu" in self.screens.screens:
+                return self.screens.show("game_menu", self)
             return self.screens.show("save", self)
         elif action == InputAction.HISTORY:
             return self.screens.show("history", self)
@@ -1091,6 +1166,12 @@ class GameSession:
             elif hasattr(self.renderer, "toggle_fullscreen"):
                 self.renderer.toggle_fullscreen()
             return True
+        elif action == InputAction.QUIT:
+            player: Any = getattr(self, "_player", None)
+            if player is not None and hasattr(player, "close"):
+                player.close()
+                return True
+            return False
         elif action == InputAction.RELOAD:
             return self.hot_reload()
         elif action == InputAction.SCREENSHOT:
@@ -1120,6 +1201,8 @@ class GameSession:
                     self.overlay.dialogue_box.show_advance_arrow = (self.active_choice_prompt is None)
                 return True
             # Otherwise advance
+            if self.is_finished:
+                return self.return_to_title()
             if self.active_choice_prompt is None and self.active_input_prompt is None:
                 return self.advance()
         elif action == InputAction.POINTER_MOVE:

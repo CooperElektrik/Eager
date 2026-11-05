@@ -392,6 +392,12 @@ class NullStage(StageProtocol):
     def finish_animations(self) -> None:
         self.compositor.finish_animations()
 
+    def clear_stage(self) -> None:
+        self.compositor.clear(Color(0, 0, 0, 1))
+        self.ui_state.clear_dialogue()
+        self.ui_state.clear_choices()
+        self.ui_state.clear_nvl()
+
     def save_visual_state(self) -> dict[str, Any]:
         return {
             "compositor": self.compositor.save_state(),

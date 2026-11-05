@@ -127,8 +127,11 @@ class TestScreensAndProject:
         assert mgr.active_screen.name == "title"
 
         # Click first button (Start Game)
-        mgr.active_screen.handle_mouse_move(150, 320)
-        assert mgr.active_screen.handle_mouse_click(150, 320)
+        btn0 = mgr.active_screen.buttons[0]
+        click_x = btn0.rect.x + btn0.rect.width / 2.0
+        click_y = btn0.rect.y + btn0.rect.height / 2.0
+        mgr.active_screen.handle_mouse_move(click_x, click_y)
+        assert mgr.active_screen.handle_mouse_click(click_x, click_y)
 
     def test_screen_draw(self):
         screen = TitleScreen("Awesome Game")
@@ -667,3 +670,243 @@ height = 720
         new_theme = Theme(name="new_theme", font_size=18, title_font_size=36)
         mgr.set_theme(new_theme)
         assert title.theme.name == "new_theme"
+
+    def test_game_menu_screen_layout_and_actions(self):
+        """GameMenuScreen must provide Resume, Save, Load, History, Preferences, Title, and Quit buttons."""
+        from eager_graphics.screens import GameMenuScreen, ScreenManager
+
+        class DummySession:
+            def __init__(self):
+                self.screens = ScreenManager()
+                self.title_returned = False
+                self.closed = False
+                self.handled_inputs = []
+
+            def return_to_title(self):
+                self.title_returned = True
+
+            def handle_input(self, action):
+                self.handled_inputs.append(action)
+
+            def close(self):
+                self.closed = True
+
+        session = DummySession()
+        menu = GameMenuScreen(viewport_width=1280, viewport_height=720)
+        session.screens.register(menu)
+        session.screens.show("game_menu", session)
+
+        btn_labels = [b.text for b in menu.buttons]
+        assert btn_labels == [
+            "Resume",
+            "Save Game",
+            "Load Game",
+            "Dialogue History",
+            "Preferences",
+            "Main Menu",
+            "Quit Game",
+        ]
+
+        # Draw call records scrim rect and title text
+        backend = MockUIDrawBackend()
+        menu.draw(backend, 1280, 720)
+        assert any(t[0] == "Game Menu" for t in backend.texts)
+
+        # Test Resume button action hides the menu
+        resume_btn = menu.buttons[0]
+        resume_btn.action()
+        assert not session.screens.is_active
+
+        # Test Main Menu action calls session.return_to_title
+        title_btn = next(b for b in menu.buttons if b.text == "Main Menu")
+        title_btn.action()
+        assert session.title_returned is True
+
+        # Test Quit Game action calls session.handle_input(QUIT)
+        from eager_core.input import InputAction
+        quit_btn = next(b for b in menu.buttons if b.text == "Quit Game")
+        quit_btn.action()
+        assert InputAction.QUIT in session.handled_inputs
+
+    def test_title_screen_escape_cannot_dismiss(self):
+        """TitleScreen must not be dismissed by pressing Escape into a blank void."""
+        from eager_graphics.screens import ScreenManager, TitleScreen
+
+        mgr = ScreenManager()
+        title = TitleScreen()
+        mgr.register(title)
+        mgr.show("title", None)
+
+        assert mgr.is_active
+        assert mgr.active_screen is not None
+        assert mgr.active_screen.name == "title"
+
+        # Pressing escape while title is active must consume the key and retain title screen
+        assert mgr.handle_key("escape", None) is True
+        assert mgr.is_active
+        assert mgr.active_screen is not None
+        assert mgr.active_screen.name == "title"
+
+    def test_centered_layout_title_and_game_menu(self):
+        """Buttons on TitleScreen and GameMenuScreen must be centered horizontally."""
+        from eager_graphics.screens import GameMenuScreen, TitleScreen
+
+        class DummySession:
+            def __init__(self):
+                self.screens = ScreenManager()
+
+        session = DummySession()
+        vw = 1280
+
+        # Title screen
+        title = TitleScreen()
+        session.screens.register(title)
+        session.screens.show("title", session)
+        for btn in title.buttons:
+            btn_center_x = btn.rect.x + (btn.rect.width / 2.0)
+            assert abs(btn_center_x - (vw / 2.0)) < 1.0
+
+        # Game menu screen
+        menu = GameMenuScreen()
+        session.screens.register(menu)
+        session.screens.show("game_menu", session)
+        for btn in menu.buttons:
+            btn_center_x = btn.rect.x + (btn.rect.width / 2.0)
+            assert abs(btn_center_x - (vw / 2.0)) < 1.0
+
+    def test_quit_game_calls_player_close(self):
+        """Quit buttons on TitleScreen and GameMenuScreen should close the player window."""
+        from eager_core.input import InputAction
+
+        from eager_graphics.screens import GameMenuScreen, ScreenManager, TitleScreen
+
+        class DummyPlayer:
+            def __init__(self):
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        class DummySession:
+            def __init__(self):
+                self.screens = ScreenManager()
+                self._player = DummyPlayer()
+                self.handled_inputs = []
+
+            def handle_input(self, action):
+                self.handled_inputs.append(action)
+                if action == InputAction.QUIT:
+                    self._player.close()
+                    return True
+                return False
+
+        session = DummySession()
+
+        # TitleScreen Quit button
+        title = TitleScreen()
+        session.screens.register(title)
+        session.screens.show("title", session)
+        quit_btn = next(b for b in title.buttons if b.text == "Quit")
+        quit_btn.action()
+        assert session._player.closed is True
+
+        # GameMenuScreen Quit Game button
+        session._player.closed = False
+        menu = GameMenuScreen()
+        session.screens.register(menu)
+        session.screens.show("game_menu", session)
+        quit_menu_btn = next(b for b in menu.buttons if b.text == "Quit Game")
+        quit_menu_btn.action()
+        assert session._player.closed is True
+
+    def test_saveload_screen_load_action_clears_stack_and_resumes(self):
+        """SaveLoadScreen load action must hide all screens, switch to game mode, and sync UI."""
+        from eager_graphics.screens import SaveLoadScreen, ScreenManager
+
+        class DummyPlayer:
+            def __init__(self):
+                self.synced = False
+                self.dirty = False
+
+            def _sync_state(self):
+                self.synced = True
+
+            def _mark_ui_dirty(self):
+                self.dirty = True
+
+        class DummySaveManager:
+            def load_slot(self, slot_name: str):
+                return True
+
+            def get_slot_metadata(self, slot_name: str):
+                return None
+
+        class DummySession:
+            def __init__(self):
+                self.screens = ScreenManager()
+                self.save_manager = DummySaveManager()
+                self.mode = "screen"
+                self._ui_dirty = False
+                self._player = DummyPlayer()
+
+            def load_game(self, slot_name: str) -> bool:
+                return self.save_manager.load_slot(slot_name)
+
+        session = DummySession()
+        saveload = SaveLoadScreen(mode="load")
+        session.screens.register(saveload)
+        session.screens.show("load", session)
+        assert session.screens.is_active
+
+        # Slot 1 is button index 1 (button 0 is Back)
+        slot_btn = saveload.buttons[1]
+        assert slot_btn.action is not None
+        slot_btn.action()
+        assert not session.screens.is_active
+        assert session.mode == "game"
+        assert session._ui_dirty is True
+        assert session._player.synced is True
+        assert session._player.dirty is True
+
+    def test_history_screen_multiline_text_wrapping(self):
+        """HistoryScreen must wrap long dialogue lines into multiple lines."""
+        from eager_graphics.screens import HistoryScreen, ScreenManager
+
+        class DummyEntry:
+            def __init__(self, speaker, text):
+                self.speaker = speaker
+                self.text = text
+                self.voice = None
+
+        class DummyBacklog:
+            def __init__(self, entries):
+                self.entries = entries
+
+        class DummySession:
+            def __init__(self, entries):
+                self.backlog = DummyBacklog(entries)
+                self.screens = ScreenManager()
+
+        long_speech = (
+            "This is an exceptionally long paragraph of dialogue meant to simulate an "
+            "extended exposition beat in a visual novel scene where a character explains "
+            "the intricate backstory of their world across several wrapped lines."
+        )
+        entries = [
+            DummyEntry("Narrator", long_speech),
+            DummyEntry(None, "A short narration sentence."),
+        ]
+        session = DummySession(entries)
+        screen = HistoryScreen(viewport_width=1280, viewport_height=720)
+        session.screens.register(screen)
+        session.screens.show("history", session)
+
+        backend = MockUIDrawBackend()
+        screen.draw(backend, 1280, 720)
+
+        # Ensure speaker label was drawn
+        assert any(t[0] == "Narrator" for t in backend.texts)
+        # Ensure multiple text lines were drawn for the wrapped long speech
+        # (plain text was split into pieces, each shorter than full length)
+        narrator_pieces = [t for t in backend.texts if len(t[0]) > 10 and t[0] in long_speech]
+        assert len(narrator_pieces) >= 2
