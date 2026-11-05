@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from eager_graphics.protocol import UIDrawBackend
+from eager_core.protocols import UIDrawBackend
+from eager_core.theme import Theme
+
 from eager_graphics.screens.widgets import Button, Label, Slider
-from eager_graphics.theme import Theme
 
 __all__ = [
     "Screen",

@@ -1,5 +1,5 @@
-# eager_graphics.timeline
+# eager_core.timeline
 
 Animation timeline, tweens, keyframes, and camera shake operations.
 
-::: eager_graphics.timeline
+::: eager_core.timeline

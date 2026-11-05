@@ -6,8 +6,9 @@ import importlib.util
 
 import pytest
 from eager_core.events import ChoiceOption
+from eager_core.headless import NullRenderer
+from eager_core.ui_state import UIState
 
-from eager_graphics.renderers.null import NullRenderer
 from eager_graphics.ui_components import (
     ChoiceMenu,
     ChoiceMenuStyle,
@@ -20,7 +21,6 @@ from eager_graphics.ui_components import (
     TextboxStyle,
     UIOverlay,
 )
-from eager_graphics.ui_state import UIState
 
 # ── DialogueBox ────────────────────────────────────────────────────────────
 
@@ -875,9 +875,9 @@ def test_input_box_modal_rendering() -> None:
 
 def test_theme_and_styles_unification() -> None:
     """Theme must bridge cleanly to TextboxStyle and ChoiceMenuStyle."""
+    from eager_core.theme import Theme
     from eager_core.types import Color
 
-    from eager_graphics.theme import Theme
     from eager_graphics.ui_components import (
         ChoiceMenu,
         ChoiceMenuStyle,
@@ -1070,7 +1070,7 @@ def test_ui_overlay_delegation_methods() -> None:
 
 
 def test_ui_overlay_draw_nvl_markup_scaling_and_overflow() -> None:
-    from eager_graphics.ui_state import NVLEntry, UIState
+    from eager_core.ui_state import NVLEntry, UIState
 
     overlay = UIOverlay(1280, 720)
     ui_state = UIState()

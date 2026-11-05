@@ -16,11 +16,11 @@ from eager_core.events import (
     SceneExitEvent,
     StoryEndEvent,
 )
+from eager_core.headless import NullRenderer
 from eager_core.types import Color
 
 from eager_graphics.compositor import StageCompositor
 from eager_graphics.director import StageDirector
-from eager_graphics.renderers.null import NullRenderer
 from eager_graphics.ui_components import UIOverlay
 
 
@@ -445,15 +445,15 @@ def test_side_image_resolution():
     director.register_character("bob", asset_prefix="char/bob")
 
     # Alice has explicit side_image
-    side_alice = director._resolve_side_image("alice", "happy")
+    side_alice = director.resolve_side_image("alice", "happy")
     assert side_alice == "side/alice"
 
     # Bob falls back to asset_prefix + emotion
-    side_bob = director._resolve_side_image("bob", "smile")
+    side_bob = director.resolve_side_image("bob", "smile")
     assert side_bob == "char/bob_smile"
 
     # Unknown speaker has no side image
-    assert director._resolve_side_image("unknown", None) is None
+    assert director.resolve_side_image("unknown", None) is None
 
 
 def test_nvl_mode_and_overlay():

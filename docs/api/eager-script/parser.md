@@ -1,5 +1,5 @@
-# eager_script
+# eager_script.parser
 
-Screenplay parser, tokenization, line parsing, and AST construction.
+Screenplay DSL parser for Eager-Script.
 
-::: eager_script
+::: eager_script.parser

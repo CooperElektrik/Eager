@@ -7,16 +7,15 @@ from collections.abc import Callable
 from typing import Any
 
 from eager_core.easing import get_easing
+from eager_core.layout import LayoutResolver, ViewportTransform
+from eager_core.lighting import LightmapState, PointLight
+from eager_core.protocols import RenderBackend, RenderItem
+from eager_core.timeline import Timeline
 from eager_core.timing import FrameClock
-from eager_core.types import BLACK, WHITE, Color, Vec2
+from eager_core.types import BLACK, WHITE, Anchor, Color, TransitionKind, Vec2
 
-from eager_graphics.layout import LayoutResolver, ViewportTransform
-from eager_graphics.lighting import LightmapState, PointLight
 from eager_graphics.particles import ParticleBatch, ParticleEmitter
-from eager_graphics.protocol import RenderBackend, RenderItem
 from eager_graphics.stage import ElementState, Stage, StageElement
-from eager_graphics.timeline import Timeline
-from eager_graphics.types import Anchor, TransitionKind
 
 __all__ = [
     "StageCompositor",

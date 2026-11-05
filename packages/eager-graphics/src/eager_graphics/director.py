@@ -18,16 +18,26 @@ from eager_core.events import (
     SceneExitEvent,
     StoryEndEvent,
 )
-from eager_core.hooks import parse_hook_args
 from eager_core.types import BLACK, WHITE, Color, Vec2
+from eager_core.ui_state import NVLEntry, UIState
+from eager_script.hooks import HookArgs, parse_hook_args
 
 from eager_graphics.compositor import StageCompositor
-from eager_graphics.ui_state import NVLEntry, UIState
 
 __all__ = [
     "CharacterConfig",
     "StageDirector",
 ]
+
+
+def _parse_hook_color(args: HookArgs, key: str, default: Color) -> Color:
+    raw = args.kwargs.get(key)
+    if raw is None:
+        return default
+    try:
+        return Color.from_hex(raw)
+    except (ValueError, TypeError):
+        return default
 
 
 class StageDirector:
@@ -138,10 +148,6 @@ class StageDirector:
         )
 
     def find_character(self, speaker: str | None) -> CharacterConfig | None:
-        """Find CharacterConfig matching character_id or display name."""
-        return self._find_character_config(speaker)
-
-    def _find_character_config(self, speaker: str | None) -> CharacterConfig | None:
         """Find CharacterConfig matching character_id or display name."""
         if not speaker:
             return None
@@ -272,7 +278,7 @@ class StageDirector:
             return
 
         raw_id = parsed.positional[0]
-        cfg = self._find_character_config(raw_id)
+        cfg = self.find_character(raw_id)
         char_id = cfg.character_id if cfg is not None else raw_id.strip().lower()
 
         # Expression
@@ -312,7 +318,7 @@ class StageDirector:
             return
 
         raw_id = parsed.positional[0]
-        cfg = self._find_character_config(raw_id)
+        cfg = self.find_character(raw_id)
         char_id = cfg.character_id if cfg is not None else raw_id.strip().lower()
         self._sprite_base_y.pop(char_id, None)
         transition = parsed.with_ or parsed.get_str("transition", "fade") or "fade"
@@ -331,7 +337,7 @@ class StageDirector:
             return
 
         raw_id = parsed.positional[0]
-        cfg = self._find_character_config(raw_id)
+        cfg = self.find_character(raw_id)
         char_id = cfg.character_id if cfg is not None else raw_id.strip().lower()
         self._sprite_base_y.pop(char_id, None)
         destination = parsed.to or (
@@ -354,7 +360,7 @@ class StageDirector:
             return
 
         raw_id = parsed.positional[0]
-        cfg = self._find_character_config(raw_id)
+        cfg = self.find_character(raw_id)
         char_id = cfg.character_id if cfg is not None else raw_id.strip().lower()
         expr = parsed.positional[1].strip().lower()
         if cfg is not None:
@@ -365,21 +371,21 @@ class StageDirector:
         """Handle `~ fade_in [duration=X] [color=#000]`."""
         parsed = parse_hook_args(args)
         duration = parsed.get_float("duration", 1.0)
-        color = parsed.get_color("color", BLACK)
+        color = _parse_hook_color(parsed, "color", BLACK)
         self.compositor.fade_in(duration=duration, color=color)
 
     def handle_fade_out(self, args: str) -> None:
         """Handle `~ fade_out [duration=X] [color=#000]`."""
         parsed = parse_hook_args(args)
         duration = parsed.get_float("duration", 1.0)
-        color = parsed.get_color("color", BLACK)
+        color = _parse_hook_color(parsed, "color", BLACK)
         self.compositor.fade_out(duration=duration, color=color)
 
     def handle_flash(self, args: str) -> None:
         """Handle `~ flash [duration=X] [color=#fff]`."""
         parsed = parse_hook_args(args)
         duration = parsed.get_float("duration", 0.15)
-        color = parsed.get_color("color", WHITE)
+        color = _parse_hook_color(parsed, "color", WHITE)
         self.compositor.flash(duration=duration, color=color)
 
     def handle_shake(self, args: str) -> None:
@@ -503,12 +509,9 @@ class StageDirector:
 
     def resolve_side_image(self, speaker: str | None, emotion: str | None = None) -> str | None:
         """Resolve the active side image asset ID for a character and expression."""
-        return self._resolve_side_image(speaker, emotion)
-
-    def _resolve_side_image(self, speaker: str | None, emotion: str | None) -> str | None:
         if not speaker:
             return None
-        cfg = self._find_character_config(speaker)
+        cfg = self.find_character(speaker)
         if cfg and cfg.side_image:
             return cfg.side_image
         if cfg and cfg.asset_prefix:
@@ -524,11 +527,11 @@ class StageDirector:
         emotion = event.emotion
         voice = getattr(event, "voice", None)
 
-        char_cfg = self._find_character_config(speaker)
+        char_cfg = self.find_character(speaker)
         self.ui_state.speaker = speaker
         self.ui_state.text = text
         self.ui_state.emotion = emotion
-        self.ui_state.side_image = self._resolve_side_image(speaker, emotion)
+        self.ui_state.side_image = self.resolve_side_image(speaker, emotion)
         self.ui_state.speaker_color = char_cfg.color if char_cfg else None
         self.ui_state.clear_choices()
 

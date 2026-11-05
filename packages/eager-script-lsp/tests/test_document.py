@@ -237,3 +237,28 @@ def test_scan_append_and_fresh_box_variants():
     assert len(fresh) == 2
 
 
+def test_get_item_at_position_and_enriched_syntax_errors():
+    text = """## Start --- start
+    Alice: Hello there!
+? Option 1 (start)
+"""
+    doc = ScriptDocument("file:///pos.es", text)
+    # Line 1: "    Alice: Hello there!" (start_col=4, end_col=23)
+    assert doc.get_item_at_position(1, 0) is None
+    item = doc.get_item_at_position(1, 4)
+    assert item is not None
+    assert getattr(item, "speaker", None) == "Alice"
+    assert doc.get_item_at_position(1, 15) is not None
+    assert doc.get_item_at_position(1, 30) is None
+
+    # Enriched syntax issue range from AST parser
+    bad_text = "    @unknown_directive bar\n"
+    bad_doc = ScriptDocument("file:///bad_dir.es", bad_text)
+    assert len(bad_doc.syntax_errors) >= 1
+    err = bad_doc.syntax_errors[0]
+    assert err.line == 0
+    assert err.start_col == 4
+    assert err.end_col == 26
+
+
+

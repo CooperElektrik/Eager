@@ -330,9 +330,11 @@ def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:
             item = items[i]
             if isinstance(item, ParsedIf):
                 # Start of if-structure
-                branches: list[tuple[str | None, list[Any], int]] = []
+                branches: list[tuple[str | None, list[Any], int, int, int]] = []
                 curr_cond: str | None = item.expr_src
                 curr_line = item.line_number
+                curr_start = item.start_col
+                curr_end = item.end_col
                 curr_branch_body: list[Any] = []
                 i += 1
                 closed = False
@@ -344,19 +346,23 @@ def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:
                         curr_branch_body.extend(nested_blocks)
                         i = next_i
                     elif isinstance(sub, ParsedElif):
-                        branches.append((curr_cond, curr_branch_body, curr_line))
+                        branches.append((curr_cond, curr_branch_body, curr_line, curr_start, curr_end))
                         curr_cond = sub.expr_src
                         curr_line = sub.line_number
+                        curr_start = sub.start_col
+                        curr_end = sub.end_col
                         curr_branch_body = []
                         i += 1
                     elif isinstance(sub, ParsedElse):
-                        branches.append((curr_cond, curr_branch_body, curr_line))
+                        branches.append((curr_cond, curr_branch_body, curr_line, curr_start, curr_end))
                         curr_cond = None
                         curr_line = sub.line_number
+                        curr_start = sub.start_col
+                        curr_end = sub.end_col
                         curr_branch_body = []
                         i += 1
                     elif isinstance(sub, ParsedEnd):
-                        branches.append((curr_cond, curr_branch_body, curr_line))
+                        branches.append((curr_cond, curr_branch_body, curr_line, curr_start, curr_end))
                         closed = True
                         i += 1
                         break
@@ -364,7 +370,7 @@ def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:
                         curr_branch_body.append(sub)
                         i += 1
                 if not closed and (curr_branch_body or curr_cond is not None):
-                    branches.append((curr_cond, curr_branch_body, curr_line))
+                    branches.append((curr_cond, curr_branch_body, curr_line, curr_start, curr_end))
                 out.append(("if_structure", branches))
             elif isinstance(item, (ParsedElif, ParsedElse, ParsedEnd)):
                 # Return out to parent if-block parser
@@ -392,18 +398,33 @@ def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:
                 #
                 # Notice we need indices, so we can do placeholder patching.
                 end_placeholder_patches: list[int] = []
-                for b_idx, (cond, b_body, line_no) in enumerate(branches):
+                for b_idx, (cond, b_body, line_no, start_col, end_col) in enumerate(branches):
                     is_last = (b_idx == len(branches) - 1)
                     cond_patch_idx: int | None = None
                     if cond is not None:
                         cond_patch_idx = len(flat)
-                        flat.append(ParsedCondJump(condition=cond, target_index=0, line_number=line_no))
+                        flat.append(
+                            ParsedCondJump(
+                                condition=cond,
+                                target_index=0,
+                                line_number=line_no,
+                                start_col=start_col,
+                                end_col=end_col,
+                            )
+                        )
                     
                     flatten(b_body)
 
                     if not is_last:
                         local_patch_idx = len(flat)
-                        flat.append(ParsedLocalJump(target_index=0, line_number=line_no))
+                        flat.append(
+                            ParsedLocalJump(
+                                target_index=0,
+                                line_number=line_no,
+                                start_col=start_col,
+                                end_col=end_col,
+                            )
+                        )
                         end_placeholder_patches.append(local_patch_idx)
 
                     # Next branch starts here at len(flat)
@@ -412,6 +433,8 @@ def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:
                             condition=flat[cond_patch_idx].condition,  # type: ignore[attr-defined]
                             target_index=len(flat),
                             line_number=flat[cond_patch_idx].line_number,  # type: ignore[attr-defined]
+                            start_col=flat[cond_patch_idx].start_col,  # type: ignore[attr-defined]
+                            end_col=flat[cond_patch_idx].end_col,  # type: ignore[attr-defined]
                         )
                 # All branches finish here: len(flat) is end
                 end_idx = len(flat)
@@ -419,6 +442,8 @@ def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:
                     flat[patch_idx] = ParsedLocalJump(
                         target_index=end_idx,
                         line_number=flat[patch_idx].line_number,  # type: ignore[attr-defined]
+                        start_col=flat[patch_idx].start_col,  # type: ignore[attr-defined]
+                        end_col=flat[patch_idx].end_col,  # type: ignore[attr-defined]
                     )
             else:
                 flat.append(elem)  # type: ignore[arg-type]

@@ -38,15 +38,13 @@ from eager_core.text import (
     parse_text_tags,
     wrap_text,
 )
+from eager_core.theme import Theme
 from eager_core.types import Color
-
-from eager_graphics.theme import Theme
 
 if TYPE_CHECKING:
     from eager_core.events import ChoiceOption
-
-    from eager_graphics.protocol import UIDrawBackend
-    from eager_graphics.ui_state import UIState
+    from eager_core.protocols import UIDrawBackend
+    from eager_core.ui_state import UIState
 
 __all__ = [
     "_WRAP_CACHE",
@@ -1348,28 +1346,26 @@ class UIOverlay:
 
     def get_selected_choice(self) -> int | None:
         """Return the index of the currently selected choice option, or None."""
-        if hasattr(self, "choice_menu") and self.choice_menu is not None:
-            return self.choice_menu.selected_index
-        return None
+        return self.choice_menu.selected_index if self.choice_menu is not None else None
 
     def set_selected_choice(self, index: int | None) -> None:
         """Update the selected choice option index."""
-        if hasattr(self, "choice_menu") and self.choice_menu is not None:
+        if self.choice_menu is not None:
             self.choice_menu.selected_index = index
 
     def set_choice_options(self, options: Any) -> None:
         """Update the displayed choice menu options."""
-        if hasattr(self, "choice_menu") and self.choice_menu is not None:
+        if self.choice_menu is not None:
             self.choice_menu.set_options(options)
 
     def set_input_text(self, text: str) -> None:
         """Update the text buffer displayed by the input box."""
-        if hasattr(self, "input_box") and self.input_box is not None:
+        if self.input_box is not None:
             self.input_box.text_buffer = text
 
     def update_input(self, dt: float) -> None:
         """Advance cursor animation or timers in the input box."""
-        if hasattr(self, "input_box") and self.input_box is not None:
+        if self.input_box is not None:
             self.input_box.update(dt)
 
     def set_dialogue_visible_chars(
@@ -1379,7 +1375,7 @@ class UIOverlay:
         show_arrow: bool = True,
     ) -> None:
         """Update visible character limit and advance indicator on the dialogue box."""
-        if hasattr(self, "dialogue_box") and self.dialogue_box is not None:
+        if self.dialogue_box is not None:
             self.dialogue_box.visible_chars = visible_chars
             self.dialogue_box.show_advance_arrow = show_arrow
 
@@ -1389,11 +1385,9 @@ class UIOverlay:
 
     def get_hovered_quick_action(self) -> str | None:
         """Return the currently hovered quick action identifier."""
-        if hasattr(self, "quick_menu") and self.quick_menu is not None:
-            return getattr(self.quick_menu, "hovered_action", None)
-        return None
+        return self.quick_menu.hovered_action if self.quick_menu is not None else None
 
     def set_hovered_quick_action(self, action: str | None) -> None:
         """Update the hovered quick action identifier."""
-        if hasattr(self, "quick_menu") and self.quick_menu is not None:
+        if self.quick_menu is not None:
             self.quick_menu.hovered_action = action

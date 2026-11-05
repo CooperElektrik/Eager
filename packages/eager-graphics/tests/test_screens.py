@@ -671,8 +671,9 @@ height = 720
 
     def test_screen_manager_and_screen_theme_propagation(self):
         """ScreenManager theme updates must propagate to registered screens."""
+        from eager_core.theme import Theme
+
         from eager_graphics.screens import ScreenManager, TitleScreen
-        from eager_graphics.theme import Theme
 
         custom_theme = Theme(name="custom_dark", font_size=20, title_font_size=40)
         mgr = ScreenManager(theme=custom_theme)

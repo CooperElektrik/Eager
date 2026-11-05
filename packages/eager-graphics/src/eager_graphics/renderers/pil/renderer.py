@@ -6,12 +6,10 @@ import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from eager_core.layout import ViewportTransform
+from eager_core.protocols import RenderBackend, RenderItem
 from eager_core.timing import FrameClock
-from eager_core.types import BLACK, WHITE, Color
-
-from eager_graphics.layout import ViewportTransform
-from eager_graphics.protocol import RenderBackend, RenderItem
-from eager_graphics.types import RenderPreset, ScaleMode
+from eager_core.types import BLACK, WHITE, Color, RenderPreset, ScaleMode
 
 from ._cache import _CachedSprite, _GeomEntry, _ImageLRU
 from ._compat import (
@@ -48,8 +46,9 @@ from ._parallel import _RenderPool, affine_strips, resize_strips, rotate_expand_
 from .assets import PILAssetResolver
 
 if TYPE_CHECKING:
+    from eager_core.lighting import LightmapState
+
     from eager_graphics.compositor import StageCompositor
-    from eager_graphics.lighting import LightmapState
     from eager_graphics.particles import ParticleBatch
 
 

@@ -151,7 +151,7 @@ Backends implement the lightweight `RenderBackend` protocol:
 
 ```python
 from typing import Protocol
-from eager_graphics.protocol import RenderItem
+from eager_core.protocols import RenderItem
 from eager_core.types import Color
 
 class RenderBackend(Protocol):
@@ -180,7 +180,7 @@ Backends additionally implement `UIDrawBackend`, used by the components in
 
 ```python
 from typing import Protocol
-from eager_graphics.protocol import UIDrawBackend
+from eager_core.protocols import UIDrawBackend
 
 class UIDrawBackend(Protocol):
     def draw_rect(self, x, y, width, height, color, *,

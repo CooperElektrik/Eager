@@ -9,11 +9,11 @@ import eager_script
 import pytest
 from eager_core.audio import NullAudioBackend
 from eager_core.events import AppendEvent, ChoiceOption, DialogueEvent, NarrationEvent
+from eager_core.headless import NullStage, NullUI
+from eager_core.persistent import PersistentData
 from eager_core.types import Color
 
 from eager_runtime import ChoicePromptEvent, GameSession, InputAction, InputPromptEvent
-from eager_runtime.headless import NullStage, NullUI
-from eager_runtime.persistent import PersistentData
 
 SAMPLE_STORY = """
 ## Intro --- intro

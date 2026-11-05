@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from eager_graphics.layout import ViewportTransform
+    from eager_core.layout import ViewportTransform
 
 __all__ = [
     "ParticleBatch",

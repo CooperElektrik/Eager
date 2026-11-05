@@ -40,10 +40,10 @@ from eager_core.events import (
 )
 from eager_graphics.compositor import StageCompositor
 from eager_graphics.director import StageDirector
-from eager_graphics.renderers.null import NullRenderer
-from eager_runtime.dispatcher import EventDispatcher
+from eager_core.headless import NullRenderer
+from eager_core.dispatcher import EventDispatcher
 from eager_runtime.runtime import StoryVM
-from eager_runtime.state import StorySnapshot
+from eager_core.state import StorySnapshot
 from eager_script.graph import parse_graph
 
 DEFAULT_SCRIPT = Path(__file__).resolve().parent / "demo_story.es"

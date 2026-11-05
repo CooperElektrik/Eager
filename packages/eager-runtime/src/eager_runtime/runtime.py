@@ -31,8 +31,8 @@ from eager_core.events import (
     StoryEndEvent,
     StoryEvent,
 )
-from eager_core.hooks import parse_input_hook
 from eager_core.i18n import TranslationManager
+from eager_core.state import CallFrame, StorySnapshot
 from eager_script import (
     ParsedAppend,
     ParsedCall,
@@ -49,9 +49,9 @@ from eager_script import (
     ParsedSet,
 )
 from eager_script.expr import ExprError, compile_expr
+from eager_script.hooks import parse_input_hook
 
 from eager_runtime.i18n import compute_beat_id, get_beat_occurrence, strip_explicit_id
-from eager_runtime.state import CallFrame, StorySnapshot
 
 if TYPE_CHECKING:
     from eager_script.graph import SceneGraph
@@ -92,7 +92,7 @@ class StoryVM:
         if persistent is not None:
             self._persistent: Any = persistent
         else:
-            from eager_runtime.persistent import PersistentData
+            from eager_core.persistent import PersistentData
 
             self._persistent = PersistentData()
         if initial_variables:
@@ -332,7 +332,7 @@ class StoryVM:
     def _set_persistent_var(self, key: str, value: Any) -> None:
         p = self._persistent
         if p is None:
-            from eager_runtime.persistent import PersistentData
+            from eager_core.persistent import PersistentData
 
             p = PersistentData()
             self._persistent = p

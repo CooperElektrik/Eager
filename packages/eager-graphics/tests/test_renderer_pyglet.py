@@ -703,9 +703,8 @@ Alice: Fullscreen test
 
 
 def test_pyglet_renderer_debug_info_and_player_cycle(tmp_path: Path) -> None:
+    from eager_core.types import DebugOverlayMode
     from eager_runtime import GameSession
-
-    from eager_graphics.types import DebugOverlayMode
 
     script = """
 ## Start --- start

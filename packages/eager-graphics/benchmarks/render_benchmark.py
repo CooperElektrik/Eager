@@ -61,10 +61,10 @@ for _pkg in ("eager-core", "eager-script", "eager-runtime", "eager-graphics"):
 
 from eager_core.events import ChoiceOption, ChoicePromptEvent
 from eager_core.types import Vec2
+from eager_core.ui_state import UIState
 
 from eager_graphics import Color, ScaleMode, StageCompositor
 from eager_graphics.ui_components import UIOverlay
-from eager_graphics.ui_state import UIState
 
 # --------------------------------------------------------------------------- #
 # Realistic Asset Generation
@@ -559,7 +559,7 @@ class NullBackendAdapter(BaseBackendAdapter):
     def initialize(
         self, width: int, height: int, asset_dir: Path | None, preset: str | None = None
     ) -> None:
-        from eager_graphics.renderers.null import NullRenderer
+        from eager_core.headless import NullRenderer
 
         self.width = width
         self.height = height

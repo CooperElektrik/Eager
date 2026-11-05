@@ -340,9 +340,6 @@ class NullStage(StageProtocol):
                 return cinfo
         return None
 
-    def _find_character_config(self, speaker: str | None) -> CharacterConfig | None:
-        return self.find_character(speaker)
-
     def resolve_side_image(self, speaker: str | None, expression: str | None = None) -> str | None:
         """Resolve the active side image asset ID for a character and expression."""
         if not speaker:
@@ -355,9 +352,6 @@ class NullStage(StageProtocol):
             expr = cfg.resolve_expression(expr)
             return f"{cfg.asset_prefix}_{expr}"
         return None
-
-    def _resolve_side_image(self, speaker: str | None, expression: str | None = None) -> str | None:
-        return self.resolve_side_image(speaker, expression)
 
     def bind(self, dispatcher: Any) -> None:
         dispatcher.on_event(DialogueEvent)(self._on_dialogue)

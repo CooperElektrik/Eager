@@ -37,7 +37,7 @@ class TestHardwareAudioBackends:
 
     def test_pyglet_audio_backend(self) -> None:
         pytest.importorskip("pyglet")
-        from eager_graphics.renderers.pyglet import PygletAudioBackend
+        from eager_graphics.audio.pyglet import PygletAudioBackend
 
         backend = PygletAudioBackend()
         backend.play("music", self.wav_path, loop=True, volume=0.8, loop_start=0.1, loop_end=0.4)
@@ -56,7 +56,7 @@ class TestHardwareAudioBackends:
 
     def test_miniaudio_audio_backend(self) -> None:
         pytest.importorskip("miniaudio")
-        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
+        from eager_graphics.audio.miniaudio import MiniaudioAudioBackend
 
         backend = MiniaudioAudioBackend()
         if backend._device is not None:
@@ -79,13 +79,13 @@ class TestHardwareAudioBackends:
 
     def test_pyglet_audio_backend_error_handling(self, caplog: pytest.LogCaptureFixture) -> None:
         pytest.importorskip("pyglet")
-        from eager_graphics.renderers.pyglet import PygletAudioBackend
+        from eager_graphics.audio.pyglet import PygletAudioBackend
 
         backend = PygletAudioBackend()
         missing_path = os.path.join(self.tmp_dir.name, "missing.wav")
 
         # Missing audio file should log warning and not crash
-        with caplog.at_level(logging.WARNING, logger="eager_graphics.renderers.pyglet"):
+        with caplog.at_level(logging.WARNING, logger="eager_graphics.audio.pyglet"):
             caplog.clear()
             backend.play("sfx", missing_path, loop=False)
             assert not backend.is_playing("sfx")
@@ -96,7 +96,7 @@ class TestHardwareAudioBackends:
         with open(corrupt_path, "wb") as f:
             f.write(b"invalid wave data")
 
-        with caplog.at_level(logging.WARNING, logger="eager_graphics.renderers.pyglet"):
+        with caplog.at_level(logging.WARNING, logger="eager_graphics.audio.pyglet"):
             caplog.clear()
             backend.play("music", corrupt_path, loop=True)
             assert not backend.is_playing("music")
@@ -106,7 +106,7 @@ class TestHardwareAudioBackends:
 
     def test_miniaudio_audio_backend_error_handling(self, caplog: pytest.LogCaptureFixture) -> None:
         pytest.importorskip("miniaudio")
-        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
+        from eager_graphics.audio.miniaudio import MiniaudioAudioBackend
 
         backend = MiniaudioAudioBackend()
         if backend._device is not None:
@@ -114,14 +114,14 @@ class TestHardwareAudioBackends:
         missing_path = os.path.join(self.tmp_dir.name, "missing.wav")
 
         # Missing file on streaming channel (music)
-        with caplog.at_level(logging.WARNING, logger="eager_graphics.renderers.miniaudio"):
+        with caplog.at_level(logging.WARNING, logger="eager_graphics.audio.miniaudio"):
             caplog.clear()
             backend.play("music", missing_path, loop=True)
             assert not backend.is_playing("music")
             assert any("missing.wav" in msg for msg in caplog.messages)
 
         # Missing file on decoded channel (sfx)
-        with caplog.at_level(logging.WARNING, logger="eager_graphics.renderers.miniaudio"):
+        with caplog.at_level(logging.WARNING, logger="eager_graphics.audio.miniaudio"):
             caplog.clear()
             backend.play("sfx", missing_path, loop=False)
             assert not backend.is_playing("sfx")
@@ -132,7 +132,7 @@ class TestHardwareAudioBackends:
         with open(corrupt_path, "wb") as f:
             f.write(b"invalid wave data")
 
-        with caplog.at_level(logging.WARNING, logger="eager_graphics.renderers.miniaudio"):
+        with caplog.at_level(logging.WARNING, logger="eager_graphics.audio.miniaudio"):
             caplog.clear()
             backend.play("sfx", corrupt_path, loop=False)
             assert not backend.is_playing("sfx")
@@ -142,7 +142,7 @@ class TestHardwareAudioBackends:
 
     def test_miniaudio_device_uninitialized_fallback(self) -> None:
         pytest.importorskip("miniaudio")
-        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
+        from eager_graphics.audio.miniaudio import MiniaudioAudioBackend
 
         backend = MiniaudioAudioBackend()
         if backend._device is not None:
@@ -164,7 +164,7 @@ class TestHardwareAudioBackends:
         except miniaudio.MiniaudioError:
             pytest.skip("No audio device available to initialize miniaudio backend")
 
-        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
+        from eager_graphics.audio.miniaudio import MiniaudioAudioBackend
 
         backend = MiniaudioAudioBackend()
         if backend._device is not None:
@@ -193,7 +193,7 @@ class TestHardwareAudioBackends:
         pytest.importorskip("miniaudio")
         import threading
 
-        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
+        from eager_graphics.audio.miniaudio import MiniaudioAudioBackend
 
         backend = MiniaudioAudioBackend()
         if backend._device is not None:
@@ -228,7 +228,7 @@ class TestHardwareAudioBackends:
 
     def test_miniaudio_stream_eof_non_loop(self) -> None:
         pytest.importorskip("miniaudio")
-        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend, _ChannelTrack
+        from eager_graphics.audio.miniaudio import MiniaudioAudioBackend, _ChannelTrack
 
         backend = MiniaudioAudioBackend()
         if backend._device is not None:
@@ -254,7 +254,7 @@ class TestHardwareAudioBackends:
 
     def test_miniaudio_stream_stop_and_shutdown_clears_is_playing(self) -> None:
         pytest.importorskip("miniaudio")
-        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend, _ChannelTrack
+        from eager_graphics.audio.miniaudio import MiniaudioAudioBackend, _ChannelTrack
 
         backend = MiniaudioAudioBackend()
         if backend._device is not None:
@@ -293,7 +293,7 @@ class TestHardwareAudioBackends:
     def test_miniaudio_stream_mid_playback_read_error(self, caplog: pytest.LogCaptureFixture) -> None:
         """A stream raising an unhandled read error mid-playback must log WARNING and stop playing."""
         pytest.importorskip("miniaudio")
-        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend, _ChannelTrack
+        from eager_graphics.audio.miniaudio import MiniaudioAudioBackend, _ChannelTrack
 
         backend = MiniaudioAudioBackend()
         if backend._device is not None:
@@ -328,7 +328,7 @@ class TestHardwareAudioBackends:
             assert track.is_playing
 
             # Second send triggers FaultyStream error and logs WARNING
-            with caplog.at_level(logging.WARNING, logger="eager_graphics.renderers.miniaudio"):
+            with caplog.at_level(logging.WARNING, logger="eager_graphics.audio.miniaudio"):
                 caplog.clear()
                 _ = generator.send(50)
                 assert not track.is_playing
@@ -338,14 +338,14 @@ class TestHardwareAudioBackends:
 
     def test_miniaudio_missing_library_fallback(self, caplog: pytest.LogCaptureFixture) -> None:
         """When miniaudio is not installed, MiniaudioAudioBackend must log warning and not crash."""
-        import eager_graphics.renderers.miniaudio as ma_mod
+        import eager_graphics.audio.miniaudio as ma_mod
 
         with (
             mock.patch.object(ma_mod, "MINIAUDIO_AVAILABLE", False),
             mock.patch.object(ma_mod, "miniaudio", None),
         ):
             ma_mod._WARNED_MISSING = False
-            with caplog.at_level(logging.WARNING, logger="eager_graphics.renderers.miniaudio"):
+            with caplog.at_level(logging.WARNING, logger="eager_graphics.audio.miniaudio"):
                 caplog.clear()
                 backend = ma_mod.MiniaudioAudioBackend()
                 assert not backend._active

@@ -154,6 +154,27 @@ class ScriptDocument:
 
         return search_items(self.ast_items)
 
+    def get_item_at_position(self, line_0: int, col_0: int) -> ParsedItem | None:
+        """Return the AST item covering 0-based line_0 and col_0, if any."""
+        target_line_1 = line_0 + 1
+
+        def search_items(items: Any) -> ParsedItem | None:
+            for item in items:
+                if getattr(item, "line_number", None) == target_line_1:
+                    start = getattr(item, "start_col", 0)
+                    end = getattr(item, "end_col", 0)
+                    if start <= col_0 <= end or end == 0:
+                        return item
+                if isinstance(item, eager_script.ParsedChoiceSet):
+                    for opt in item.options:
+                        if opt.body:
+                            found = search_items(opt.body)
+                            if found is not None:
+                                return found
+            return None
+
+        return search_items(self.ast_items)
+
     def get_scene_at_line(self, line_0: int) -> str | None:
         """Return the scene identifier active at 0-based line_0."""
         target_line_1 = line_0 + 1
@@ -1639,12 +1660,14 @@ class ScriptDocument:
                     if not already_recorded:
                         raw_len = len(self.lines[err_line_0]) if err_line_0 < len(self.lines) else 0
                         msg = getattr(it, "message", "Syntax error")
+                        s_col = getattr(it, "start_col", 0)
+                        e_col = getattr(it, "end_col", 0) or raw_len
                         self.syntax_errors.append(
                             SyntaxIssue(
                                 message=str(msg).replace(f"Line {err_line_1}: ", ""),
                                 line=err_line_0,
-                                start_col=0,
-                                end_col=raw_len,
+                                start_col=s_col,
+                                end_col=e_col,
                             )
                         )
                         error_count += 1

@@ -17,7 +17,8 @@ from eager_script.validator import validate_screenplay
 
 | Module | Description |
 |--------|-------------|
-| [parser](parser.md) | Screenplay parser, tokenization, line parsing, and AST generation. |
+| [ast](ast.md) | AST node definitions, serialization helpers (`to_dict`, `to_json`), and `ParseError`. |
+| [parser](parser.md) | Screenplay parser (`ScreenplayParser`, `parse`, `parse_iter`), tokenization, and line parsing. |
 | [expr](expr.md) | Safe, whitelisted expression compilation and evaluation (`compile_expr`). |
 | [graph](graph.md) | Scene graph representation, node branching, and anonymous choice scenes. |
 | [hooks](hooks.md) | Hook arguments parsing (`parse_hook_args`) for engine directives. |

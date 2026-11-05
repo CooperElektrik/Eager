@@ -6,7 +6,7 @@ import math
 import time
 from unittest.mock import patch
 
-from eager_core.types import Color, Vec2
+from eager_core.types import Anchor, Color, Vec2
 from PIL import Image
 
 from eager_graphics import (
@@ -19,7 +19,6 @@ from eager_graphics.particles import (
 )
 from eager_graphics.renderers.pil.renderer import PILRenderer
 from eager_graphics.stage import ElementState, StageElement
-from eager_graphics.types import Anchor
 
 
 def test_particle_stamp_lut_quantization_and_prebake() -> None:
@@ -257,7 +256,7 @@ def test_quantized_subpixel_idle_breathing() -> None:
 
 def test_null_renderer_particles_and_lighting() -> None:
     """Verify NullRenderer records particle batch and lightmap calls."""
-    from eager_graphics.renderers.null import NullRenderer
+    from eager_core.headless import NullRenderer
 
     comp = StageCompositor(1920, 1080)
     comp.set_background("bg/tavern", duration=0.0)

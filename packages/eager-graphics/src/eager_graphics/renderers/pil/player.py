@@ -6,8 +6,9 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from eager_core.types import DebugOverlayMode, RenderPreset, ScaleMode
+
 from eager_graphics.player import BasePlayer
-from eager_graphics.types import DebugOverlayMode, RenderPreset, ScaleMode
 
 from ._compat import PIL_AVAILABLE, TKINTER_AVAILABLE, _TclError, tk
 from .renderer import PILRenderer

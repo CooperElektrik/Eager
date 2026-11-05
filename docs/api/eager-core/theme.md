@@ -1,5 +1,5 @@
-# eager_graphics.theme
+# eager_core.theme
 
 Visual theme configurations, UI styling definitions, and aesthetic presets.
 
-::: eager_graphics.theme
+::: eager_core.theme

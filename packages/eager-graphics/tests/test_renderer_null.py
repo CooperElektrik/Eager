@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import pytest
+from eager_core.protocols import RenderItem
 from eager_core.types import BLACK, RED
 
 from eager_graphics import NullRenderer, StageCompositor
-from eager_graphics.protocol import RenderItem
 
 
 def _build_compositor() -> StageCompositor:
@@ -115,7 +115,7 @@ def test_nullrenderer_end_without_begin_raises() -> None:
 
 def test_nullrenderer_no_gpu_no_window() -> None:
     """The NullRenderer module must not directly import display/GPU libraries."""
-    import eager_graphics.renderers.null as null_mod
+    import eager_core.headless as null_mod
 
     # The module's own globals must not bind these names — i.e. NullRenderer
     # is pure-Python and never pulls in a display/GPU stack.

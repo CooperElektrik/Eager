@@ -17,9 +17,9 @@ from eager_core.events import (
     SceneExitEvent,
     StoryEndEvent,
 )
+from eager_core.state import Checkpoint, CheckpointHistory, StorySnapshot
 
 from eager_runtime.runtime import StoryVM
-from eager_runtime.state import Checkpoint, CheckpointHistory, StorySnapshot
 
 __all__ = [
     "TerminalPlayer",

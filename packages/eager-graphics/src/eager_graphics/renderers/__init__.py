@@ -15,10 +15,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from eager_core.headless import NullRenderer
+
 # The NullRenderer is pure-Python and dependency-free, so it is always
 # available — even when no graphical backend (e.g. Pyglet) is installed.
 from eager_graphics.player import BasePlayer
-from eager_graphics.renderers.null import NullRenderer
 
 __all__ = [
     "BasePlayer",
@@ -36,7 +37,7 @@ __all__ = [
 
 if TYPE_CHECKING:
     # For type-checkers only — the real names are resolved lazily at runtime.
-    from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
+    from eager_graphics.audio.miniaudio import MiniaudioAudioBackend
     from eager_graphics.renderers.pil import PILAssetResolver, PILPlayer, PILRenderer
     from eager_graphics.renderers.pyglet import (
         PygletAssetResolver,
@@ -49,9 +50,9 @@ if TYPE_CHECKING:
 # Map of lazy-backend class name → (module path, imported name).
 # Resolved on first access via ``__getattr__``.
 _LAZY: dict[str, tuple[str, str]] = {
-    "MiniaudioAudioBackend": ("eager_graphics.renderers.miniaudio", "MiniaudioAudioBackend"),
+    "MiniaudioAudioBackend": ("eager_graphics.audio.miniaudio", "MiniaudioAudioBackend"),
     "PygletAssetResolver": ("eager_graphics.renderers.pyglet", "PygletAssetResolver"),
-    "PygletAudioBackend": ("eager_graphics.renderers.pyglet", "PygletAudioBackend"),
+    "PygletAudioBackend": ("eager_graphics.audio.pyglet", "PygletAudioBackend"),
     "PygletPlayer": ("eager_graphics.renderers.pyglet", "PygletPlayer"),
     "PygletRenderer": ("eager_graphics.renderers.pyglet", "PygletRenderer"),
     "PILAssetResolver": ("eager_graphics.renderers.pil", "PILAssetResolver"),

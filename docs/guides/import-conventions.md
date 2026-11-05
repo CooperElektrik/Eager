@@ -18,8 +18,8 @@ from eager_script import parse_hook_args
 # eager-runtime
 from eager_runtime.runtime import StoryVM
 from eager_runtime.session import GameSession
-from eager_runtime.dispatcher import EventDispatcher
-from eager_runtime.saves import SaveManager
+from eager_core.dispatcher import EventDispatcher
+from eager_core.saves import SaveManager
 
 # eager-graphics
 from eager_graphics.compositor import StageCompositor

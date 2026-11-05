@@ -2,9 +2,8 @@
 
 import pytest
 from eager_core.easing import ease_out_quad
+from eager_core.timeline import Timeline
 from eager_core.types import Color, Vec2
-
-from eager_graphics.timeline import Timeline
 
 
 class DummyTarget:

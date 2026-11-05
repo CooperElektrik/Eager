@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 from eager_core.events import ChoicePromptEvent
 from eager_core.input import InputAction, Keymap, normalize_keysym
+from eager_core.types import DebugOverlayMode, ScaleMode
 
-from eager_graphics.types import DebugOverlayMode, ScaleMode
 from eager_graphics.ui_components import UIOverlay
 
 if TYPE_CHECKING:

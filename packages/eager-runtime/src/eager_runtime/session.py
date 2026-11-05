@@ -17,7 +17,15 @@ from eager_core.events import (
     StoryEndEvent,
     StoryEvent,
 )
+from eager_core.headless import (
+    NullCompositor,
+    NullScreenManager,
+    NullStage,
+    NullUI,
+)
 from eager_core.input import InputAction, Keymap
+from eager_core.persistent import PersistentData
+from eager_core.preferences import Preferences
 from eager_core.protocols import (
     HostLifecycleListener,
     ScreenManagerProtocol,
@@ -29,20 +37,12 @@ from eager_core.protocols import (
     get_ui_factory,
     load_providers,
 )
+from eager_core.saves import SaveManager
+from eager_core.state import Checkpoint, CheckpointHistory, StorySnapshot
 from eager_core.storage import get_default_save_dir
 
-from eager_runtime.headless import (
-    NullCompositor,
-    NullScreenManager,
-    NullStage,
-    NullUI,
-)
-from eager_runtime.persistent import PersistentData
-from eager_runtime.preferences import Preferences
 from eager_runtime.project import load_project_graph, resolve_project_scripts
 from eager_runtime.runtime import StoryVM
-from eager_runtime.saves import SaveManager
-from eager_runtime.state import Checkpoint, CheckpointHistory, StorySnapshot
 
 __all__ = [
     "GameSession",
@@ -275,7 +275,7 @@ class GameSession:
         else:
             self.screens = _create_default_screens(config, self)
 
-        from eager_runtime.backlog import Backlog
+        from eager_core.backlog import Backlog
 
         self.backlog = Backlog(max_entries=200)
 
@@ -296,7 +296,7 @@ class GameSession:
         self._last_event: StoryEvent | None = None
         self._current_beat_previously_seen: bool = False
         if self.script_path is not None:
-            from eager_runtime.watcher import FileWatcher
+            from eager_core.watcher import FileWatcher
 
             self.watcher: FileWatcher | None = FileWatcher(getattr(self, "_project_scripts", [self.script_path]))
         else:
@@ -464,9 +464,7 @@ class GameSession:
             # Cannot advance while awaiting text input
             return self.active_input_prompt
 
-        if hasattr(self.director, "finish_animations"):
-            self.director.finish_animations()
-        elif hasattr(self.stage, "finish_animations"):
+        if hasattr(self.stage, "finish_animations"):
             self.stage.finish_animations()
 
         self.auto_timer = 0.0
@@ -523,8 +521,6 @@ class GameSession:
                     self.active_choice_prompt = event
                     if hasattr(self.overlay, "set_choice_options"):
                         self.overlay.set_choice_options(event.options)
-                    elif getattr(self.overlay, "choice_menu", None) is not None:
-                        self.overlay.choice_menu.set_options(event.options)
                 elif isinstance(event, InputPromptEvent):
                     self.active_input_prompt = event
                     self.input_text = event.default
@@ -699,9 +695,7 @@ class GameSession:
         return self._finalize_warp(prev_skip=prev_skip)
 
     def _finalize_warp(self, prev_skip: bool = False) -> bool:
-        if hasattr(self.director, "finish_animations"):
-            self.director.finish_animations()
-        elif hasattr(self.stage, "finish_animations"):
+        if hasattr(self.stage, "finish_animations"):
             self.stage.finish_animations()
 
         if hasattr(self.director, "ui_state"):
@@ -828,19 +822,9 @@ class GameSession:
             translation_manager=self.translation_manager,
             persistent=self.persistent,
         )
-        if hasattr(self.director, "clear_stage"):
-            self.director.clear_stage()
-        elif hasattr(getattr(self.director, "compositor", None), "clear"):
-            self.director.compositor.clear()
-        if hasattr(self.director, "clear_dialogue"):
-            self.director.clear_dialogue()
-        elif hasattr(self.director, "ui_state"):
-            from eager_core.ui_state import UIState
-
-            self.director.ui_state = UIState()
-
-        if hasattr(self.audio, "stop_all"):
-            self.audio.stop_all()
+        if hasattr(self.stage, "clear_stage"):
+            self.stage.clear_stage()
+        self.audio.stop_all()
 
         self.checkpoints.clear()
         self.backlog.clear()
@@ -865,8 +849,7 @@ class GameSession:
 
     def return_to_title(self) -> bool:
         """Halt story execution and return to the main TitleScreen."""
-        if hasattr(self.audio, "stop_all"):
-            self.audio.stop_all()
+        self.audio.stop_all()
         self.skip_mode = False
         self._skip_timer = 0.0
         self.auto_mode = False
@@ -1091,16 +1074,14 @@ class GameSession:
         if (
             self.active_choice_prompt is not None
             and self.active_choice_prompt.options
-            and (hasattr(self.overlay, "get_selected_choice") or getattr(self.overlay, "choice_menu", None) is not None)
         ):
             opts = self.active_choice_prompt.options
             opts_count = len(opts)
             enabled_indices = [i for i, opt in enumerate(opts) if opt.enabled]
-            menu = getattr(self.overlay, "choice_menu", None)
             cur_choice = (
                 self.overlay.get_selected_choice()
                 if hasattr(self.overlay, "get_selected_choice")
-                else (menu.selected_index if menu is not None else None)
+                else None
             )
             if action == InputAction.NAV_UP and enabled_indices:
                 cur = cur_choice
@@ -1111,8 +1092,6 @@ class GameSession:
                     new_idx = enabled_indices[-1]
                 if hasattr(self.overlay, "set_selected_choice"):
                     self.overlay.set_selected_choice(new_idx)
-                elif menu is not None:
-                    menu.selected_index = new_idx
                 return True
             elif action == InputAction.NAV_DOWN and enabled_indices:
                 cur = cur_choice
@@ -1123,16 +1102,12 @@ class GameSession:
                     new_idx = enabled_indices[0]
                 if hasattr(self.overlay, "set_selected_choice"):
                     self.overlay.set_selected_choice(new_idx)
-                elif menu is not None:
-                    menu.selected_index = new_idx
                 return True
             elif action in (InputAction.ADVANCE, InputAction.CONFIRM):
                 idx = cur_choice
                 if idx is not None:
                     if hasattr(self.overlay, "set_selected_choice"):
                         self.overlay.set_selected_choice(None)
-                    elif menu is not None:
-                        menu.selected_index = None
                     if 0 <= idx < opts_count and opts[idx].enabled:
                         return self.choose(idx)
                     return False
@@ -1145,8 +1120,6 @@ class GameSession:
                     self.input_text += ch
                     if hasattr(self.overlay, "set_input_text"):
                         self.overlay.set_input_text(self.input_text)
-                    elif getattr(self.overlay, "input_box", None) is not None:
-                        self.overlay.input_box.text_buffer = self.input_text
                     self._ui_dirty = True
                     return True
             elif action == InputAction.TEXT_BACKSPACE:
@@ -1154,8 +1127,6 @@ class GameSession:
                     self.input_text = self.input_text[:-1]
                     if hasattr(self.overlay, "set_input_text"):
                         self.overlay.set_input_text(self.input_text)
-                    elif getattr(self.overlay, "input_box", None) is not None:
-                        self.overlay.input_box.text_buffer = self.input_text
                     self._ui_dirty = True
                     return True
             elif action == InputAction.CONFIRM:
@@ -1172,9 +1143,6 @@ class GameSession:
                 self.director.ui_state.visible_chars = None
                 if hasattr(self.overlay, "complete_dialogue_reveal"):
                     self.overlay.complete_dialogue_reveal(show_arrow=(self.active_choice_prompt is None))
-                elif getattr(self.overlay, "dialogue_box", None) is not None:
-                    self.overlay.dialogue_box.visible_chars = None
-                    self.overlay.dialogue_box.show_advance_arrow = (self.active_choice_prompt is None)
                 return True
             if self.is_finished:
                 return self.return_to_title()
@@ -1245,9 +1213,6 @@ class GameSession:
                 self.director.ui_state.visible_chars = None
                 if hasattr(self.overlay, "complete_dialogue_reveal"):
                     self.overlay.complete_dialogue_reveal(show_arrow=(self.active_choice_prompt is None))
-                elif getattr(self.overlay, "dialogue_box", None) is not None:
-                    self.overlay.dialogue_box.visible_chars = None
-                    self.overlay.dialogue_box.show_advance_arrow = (self.active_choice_prompt is None)
                 return True
             # Otherwise advance
             if self.is_finished:
@@ -1261,22 +1226,18 @@ class GameSession:
             # Choice menu hover update
             if self.active_choice_prompt is not None:
                 idx = self.overlay.hit_test_choice(x, y)
-                cur_idx = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else getattr(getattr(self.overlay, "choice_menu", None), "selected_index", None)
+                cur_idx = self.overlay.get_selected_choice() if hasattr(self.overlay, "get_selected_choice") else None
                 if cur_idx != idx:
                     if hasattr(self.overlay, "set_selected_choice"):
                         self.overlay.set_selected_choice(idx)
-                    elif getattr(self.overlay, "choice_menu", None) is not None:
-                        self.overlay.choice_menu.selected_index = idx
                     hover_changed = True
             # Quick menu hover update
             if not self.ui_hidden:
                 qa = self.overlay.hit_test_quick_action(x, y)
-                cur_qa = self.overlay.get_hovered_quick_action() if hasattr(self.overlay, "get_hovered_quick_action") else getattr(getattr(self.overlay, "quick_menu", None), "hovered_action", None)
+                cur_qa = self.overlay.get_hovered_quick_action() if hasattr(self.overlay, "get_hovered_quick_action") else None
                 if cur_qa != qa:
                     if hasattr(self.overlay, "set_hovered_quick_action"):
                         self.overlay.set_hovered_quick_action(qa)
-                    elif getattr(self.overlay, "quick_menu", None) is not None:
-                        self.overlay.quick_menu.hovered_action = qa
                     hover_changed = True
             return hover_changed
         return None
@@ -1329,12 +1290,6 @@ class GameSession:
                         char_cfg = self.director.find_character(raw_speaker)
                     if char_cfg is None and display_speaker != interp_speaker:
                         char_cfg = self.director.find_character(display_speaker)
-                elif hasattr(self.director, "_find_character_config"):
-                    char_cfg = self.director._find_character_config(interp_speaker)
-                    if char_cfg is None and raw_speaker != interp_speaker:
-                        char_cfg = self.director._find_character_config(raw_speaker)
-                    if char_cfg is None and display_speaker != interp_speaker:
-                        char_cfg = self.director._find_character_config(display_speaker)
 
                 char_color = (
                     getattr(char_cfg, "color", None)
@@ -1349,11 +1304,6 @@ class GameSession:
                     side = self.director.resolve_side_image(interp_speaker, item.emotion)
                     if not side and raw_speaker != interp_speaker:
                         side = self.director.resolve_side_image(raw_speaker, item.emotion)
-                    self.director.ui_state.side_image = side
-                elif hasattr(self.director, "_resolve_side_image"):
-                    side = self.director._resolve_side_image(interp_speaker, item.emotion)
-                    if not side and raw_speaker != interp_speaker:
-                        side = self.director._resolve_side_image(raw_speaker, item.emotion)
                     self.director.ui_state.side_image = side
                 elif isinstance(char_cfg, dict):
                     self.director.ui_state.side_image = char_cfg.get("side_image")

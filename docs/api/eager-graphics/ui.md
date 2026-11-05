@@ -8,4 +8,4 @@ UI components, dialogue boxes, choice overlays, NVL presentation, and interactio
 
 ## UI State
 
-::: eager_graphics.ui_state
+::: eager_core.ui_state

@@ -121,8 +121,6 @@ type = "independence"
 modules = [
     "eager_graphics.renderers.pil",
     "eager_graphics.renderers.pyglet",
-    "eager_graphics.renderers.null",
-    "eager_graphics.renderers.miniaudio",
 ]
 
 [[tool.importlinter.contracts]]
@@ -130,14 +128,9 @@ name = "eager-graphics core presentation does not depend on renderer backends"
 type = "forbidden"
 source_modules = [
     "eager_graphics.stage",
-    "eager_graphics.layout",
     "eager_graphics.compositor",
     "eager_graphics.director",
-    "eager_graphics.protocol",
-    "eager_graphics.types",
-    "eager_graphics.timeline",
     "eager_graphics.ui_components",
-    "eager_graphics.ui_state",
     "eager_graphics.screens",
 ]
 forbidden_modules = ["eager_graphics.renderers"]
@@ -169,9 +162,6 @@ name = "eager-runtime StoryVM does not depend on outer session or cli"
 type = "forbidden"
 source_modules = [
     "eager_runtime.runtime",
-    "eager_runtime.state",
-    "eager_runtime.headless",
-    "eager_runtime.dispatcher",
 ]
 forbidden_modules = [
     "eager_runtime.session",
@@ -183,14 +173,7 @@ name = "eager-runtime core modules do not depend on cli"
 type = "forbidden"
 source_modules = [
     "eager_runtime.runtime",
-    "eager_runtime.headless",
     "eager_runtime.session",
-    "eager_runtime.dispatcher",
-    "eager_runtime.state",
-    "eager_runtime.persistent",
-    "eager_runtime.preferences",
-    "eager_runtime.saves",
-    "eager_runtime.backlog",
     "eager_runtime.i18n",
     "eager_runtime.assets",
     "eager_runtime.player",

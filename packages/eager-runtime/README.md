@@ -26,8 +26,8 @@ from eager_core.events import DialogueEvent, ChoicePromptEvent, InputPromptEvent
 from eager_core.audio import NullAudioBackend
 from eager_runtime.runtime import StoryVM
 from eager_runtime.session import GameSession
-from eager_runtime.dispatcher import EventDispatcher
-from eager_runtime.saves import SaveManager
+from eager_core.dispatcher import EventDispatcher
+from eager_core.saves import SaveManager
 ```
 
 ---
@@ -80,7 +80,7 @@ while not vm.is_ended:
 
 ```python
 from eager_core.events import DialogueEvent, ChoicePromptEvent, InputPromptEvent, StoryEndEvent
-from eager_runtime.dispatcher import EventDispatcher
+from eager_core.dispatcher import EventDispatcher
 from eager_runtime.runtime import StoryVM
 
 dispatcher = EventDispatcher()
@@ -115,7 +115,7 @@ elif isinstance(pause_event, InputPromptEvent):
 
 ```python
 from pathlib import Path
-from eager_runtime.saves import SaveManager
+from eager_core.saves import SaveManager
 from eager_runtime.session import GameSession
 
 save_mgr = SaveManager(Path("./saves"))

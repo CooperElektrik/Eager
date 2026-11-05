@@ -1,6 +1,6 @@
 """Tests for graphics-specific types (Anchor, TransitionKind)."""
 
-from eager_graphics.types import Anchor, TransitionKind
+from eager_core.types import Anchor, TransitionKind
 
 
 def test_anchor_offsets_and_parsing() -> None:

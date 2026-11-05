@@ -28,3 +28,14 @@ from eager_core.text import parse_text_tags, TextReveal
 | [i18n](i18n.md) | Internationalization, translation catalogs, and string localization. |
 | [protocols](protocols.md) | Core protocols for renderers, audio backends, and engine lifecycles. |
 | [exceptions](exceptions.md) | Base exception hierarchy for all Eager subsystems. |
+| [dispatcher](dispatcher.md) | Event dispatcher (`EventDispatcher`), hook routing, and execution loop (`run_until_pause`). |
+| [saves](saves.md) | Save manager (`SaveManager`), atomic checkpointing, save slots, and state serialization. |
+| [state](state.md) | Runtime execution state, checkpoints, and call frames. |
+| [persistent](persistent.md) | Cross-session persistent data (`PersistentData`) for global unlocks and seen flags. |
+| [preferences](preferences.md) | User preferences (`Preferences`) for audio volume, text speed, and auto-forwarding. |
+| [headless](headless.md) | Headless runner stubs and mocks for automated playthroughs, scripting, and CI tests. |
+| [backlog](backlog.md) | Dialogue history backlog (`Backlog`) and rewind state tracking. |
+| [layout](layout.md) | Virtual coordinate layout system, relative positioning, and anchor alignment. |
+| [timeline](timeline.md) | Animation timeline, tweens, keyframes, and camera shake effects. |
+| [theme](theme.md) | Theme definitions, UI styling, and aesthetic presets. |
+| [watcher](watcher.md) | File watcher (`FileWatcher`) for hot reloading screenplay changes during development. |

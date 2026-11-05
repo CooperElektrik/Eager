@@ -11,7 +11,9 @@ from eager_script import (
     ParsedCall,
     ParsedCharacter,
     ParsedChoiceSet,
+    ParsedDefault,
     ParsedDialogue,
+    ParsedError,
     ParsedFreshBox,
     ParsedHook,
     ParsedJump,
@@ -789,3 +791,117 @@ def test_parser_unicode_to_dict_to_json_roundtrip() -> None:
     decoded = json.loads(json_str)
     assert decoded[0]["speaker"] == "Alice"
     assert decoded[0]["text"] == "こんにちは！ 🌸"
+
+
+def test_ast_source_span_tracking() -> None:
+    """AST items track exact 0-based column ranges (start_col, end_col)."""
+    script = """\
+    ## Start --- start_label
+    Alice (happy): Hello world! # greeting
+        Bob: Hey Alice.
+    A quiet breeze passes through the trees.
+    ? Choose red (red_scene)
+    ? Choose blue (blue_scene)
+    > next_scene
+    >> subroutine_call
+    <<
+    ~ fade_in
+    - continued speech
+    / fresh text box
+    $ score += 10
+    @default affinity = 5
+    @character hero "Protagonist" class=mage
+    """
+    items = parse(script)
+    label = items[0]
+    assert isinstance(label, ParsedLabel)
+    assert label.start_col == 4
+    assert label.end_col == 28
+
+    alice = items[1]
+    assert isinstance(alice, ParsedDialogue)
+    assert alice.start_col == 4
+    assert alice.end_col == 31  # before inline comment
+
+    bob = items[2]
+    assert isinstance(bob, ParsedDialogue)
+    assert bob.start_col == 8
+    assert bob.end_col == 23
+
+    narration = items[3]
+    assert isinstance(narration, ParsedNarration)
+    assert narration.start_col == 4
+    assert narration.end_col == 44
+
+    choices = items[4]
+    assert isinstance(choices, ParsedChoiceSet)
+    assert choices.start_col == 4
+    assert choices.options[0].start_col == 4
+    assert choices.options[0].end_col == 28
+    assert choices.options[1].start_col == 4
+    assert choices.options[1].end_col == 30
+
+    jump = items[5]
+    assert isinstance(jump, ParsedJump)
+    assert jump.start_col == 4
+    assert jump.end_col == 16
+
+    call = items[6]
+    assert isinstance(call, ParsedCall)
+    assert call.start_col == 4
+    assert call.end_col == 22
+
+    ret = items[7]
+    assert isinstance(ret, ParsedReturn)
+    assert ret.start_col == 4
+    assert ret.end_col == 6
+
+    hook = items[8]
+    assert isinstance(hook, ParsedHook)
+    assert hook.start_col == 4
+    assert hook.end_col == 13
+
+    append = items[9]
+    assert isinstance(append, ParsedAppend)
+    assert append.start_col == 4
+    assert append.end_col == 22
+
+    fresh = items[10]
+    assert isinstance(fresh, ParsedFreshBox)
+    assert fresh.start_col == 4
+    assert fresh.end_col == 20
+
+    set_stmt = items[11]
+    assert isinstance(set_stmt, ParsedSet)
+    assert set_stmt.start_col == 4
+    assert set_stmt.end_col == 17
+
+    default_stmt = items[12]
+    assert isinstance(default_stmt, ParsedDefault)
+    assert default_stmt.start_col == 4
+    assert default_stmt.end_col == 25
+
+    char_stmt = items[13]
+    assert isinstance(char_stmt, ParsedCharacter)
+    assert char_stmt.start_col == 4
+    assert char_stmt.end_col == 44
+
+    # Verify to_dict includes start_col and end_col
+    d = alice.to_dict()
+    assert d["start_col"] == 4
+    assert d["end_col"] == 31
+
+
+def test_ast_recovery_error_spans() -> None:
+    """Recovery mode populates start_col and end_col on ParsedError."""
+    script = "    @unknown_directive foo"
+    items = parse(script, recovery=True)
+    assert len(items) == 1
+    err = items[0]
+    assert isinstance(err, ParsedError)
+    assert err.start_col == 4
+    assert err.end_col == 26
+    d = err.to_dict()
+    assert d["start_col"] == 4
+    assert d["end_col"] == 26
+

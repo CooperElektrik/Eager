@@ -5,13 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from eager_core.protocols import UIDrawBackend
 from eager_core.text import _get_wrapped_lines, parse_text_tags
+from eager_core.theme import Theme
 from eager_core.types import Color, Rect
 
-from eager_graphics.protocol import UIDrawBackend
 from eager_graphics.screens.screen import Screen
 from eager_graphics.screens.widgets import Button, Grid, Label, SaveSlotButton, Slider
-from eager_graphics.theme import Theme
 from eager_graphics.ui_components import TextAnchor
 
 
@@ -60,11 +60,8 @@ class TitleScreen(Screen):
 
                 if hasattr(self.session, "handle_input"):
                     self.session.handle_input(InputAction.QUIT)
-                player = getattr(self.session, "_player", None)
-                if player is not None and hasattr(player, "close"):
-                    player.close()
-                elif hasattr(self.session, "close"):
-                    self.session.close()
+                elif hasattr(self.session, "request_quit"):
+                    self.session.request_quit()
 
         self.buttons = [
             Button(
@@ -184,11 +181,8 @@ class GameMenuScreen(Screen):
 
                 if hasattr(self.session, "handle_input"):
                     self.session.handle_input(InputAction.QUIT)
-                player = getattr(self.session, "_player", None)
-                if player is not None and hasattr(player, "close"):
-                    player.close()
-                elif hasattr(self.session, "close"):
-                    self.session.close()
+                elif hasattr(self.session, "request_quit"):
+                    self.session.request_quit()
 
         self.buttons = [
             Button(Rect(btn_x, start_y + spacing_y * 0, btn_w, btn_h), "Resume", action=resume_game),

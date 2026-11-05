@@ -265,7 +265,7 @@ A pure-Python, zero-dependency renderer that implements the `RenderBackend` prot
 
 ### `NullRenderer`
 ```python
-from eager_graphics.renderers.null import NullRenderer
+from eager_core.headless import NullRenderer
 
 backend = NullRenderer()
 ```

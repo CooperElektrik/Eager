@@ -7,7 +7,6 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from eager_core.hooks import is_input_hook, parse_input_hook
 from eager_core.i18n import TranslationCatalog, strip_explicit_id
 from eager_script import (
     ParsedAppend,
@@ -17,6 +16,7 @@ from eager_script import (
     ParsedHook,
     ParsedNarration,
 )
+from eager_script.hooks import is_input_hook, parse_input_hook
 
 if TYPE_CHECKING:
     from eager_script.graph import SceneGraph

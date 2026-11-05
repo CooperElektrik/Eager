@@ -7,10 +7,10 @@ from pathlib import Path
 
 import eager_script
 from eager_core.input import InputAction
+from eager_core.watcher import FileWatcher
 
 from eager_runtime.runtime import StoryVM
 from eager_runtime.session import GameSession
-from eager_runtime.watcher import FileWatcher
 
 
 def test_story_vm_hot_reload_capping_beat_index() -> None:

@@ -109,8 +109,20 @@ nav:
       - i18n: api/eager-core/i18n.md
       - Protocols: api/eager-core/protocols.md
       - Exceptions: api/eager-core/exceptions.md
+      - Dispatcher: api/eager-core/dispatcher.md
+      - Saves: api/eager-core/saves.md
+      - State: api/eager-core/state.md
+      - Persistent Data: api/eager-core/persistent.md
+      - Preferences: api/eager-core/preferences.md
+      - Headless: api/eager-core/headless.md
+      - Backlog: api/eager-core/backlog.md
+      - Layout: api/eager-core/layout.md
+      - Timeline: api/eager-core/timeline.md
+      - Theme: api/eager-core/theme.md
+      - Watcher: api/eager-core/watcher.md
     - eager-script:
       - Overview: api/eager-script/index.md
+      - AST: api/eager-script/ast.md
       - Parser: api/eager-script/parser.md
       - Expressions: api/eager-script/expr.md
       - Scene Graph: api/eager-script/graph.md
@@ -121,17 +133,9 @@ nav:
       - Overview: api/eager-runtime/index.md
       - Story VM: api/eager-runtime/runtime.md
       - Session: api/eager-runtime/session.md
-      - Dispatcher: api/eager-runtime/dispatcher.md
-      - Saves: api/eager-runtime/saves.md
-      - State: api/eager-runtime/state.md
-      - Persistent Data: api/eager-runtime/persistent.md
-      - Preferences: api/eager-runtime/preferences.md
-      - Headless Runner: api/eager-runtime/headless.md
       - Assets: api/eager-runtime/assets.md
-      - Backlog: api/eager-runtime/backlog.md
       - Terminal Player: api/eager-runtime/player.md
       - Project: api/eager-runtime/project.md
-      - Watcher: api/eager-runtime/watcher.md
       - i18n: api/eager-runtime/i18n.md
       - CLI: api/eager-runtime/cli.md
     - eager-graphics:
@@ -139,12 +143,7 @@ nav:
       - Compositor: api/eager-graphics/compositor.md
       - Director: api/eager-graphics/director.md
       - Stage: api/eager-graphics/stage.md
-      - Layout: api/eager-graphics/layout.md
-      - Timeline: api/eager-graphics/timeline.md
-      - Types: api/eager-graphics/types.md
-      - Protocol: api/eager-graphics/protocol.md
       - UI Components: api/eager-graphics/ui.md
-      - Theme: api/eager-graphics/theme.md
       - Fonts: api/eager-graphics/fonts.md
       - Player: api/eager-graphics/player.md
       - Screens:
@@ -152,12 +151,15 @@ nav:
         - Screen Base: api/eager-graphics/screens/screen.md
         - Builtin Screens: api/eager-graphics/screens/builtin.md
         - Widgets: api/eager-graphics/screens/widgets.md
+      - Audio:
+        - Overview: api/eager-graphics/audio/index.md
+        - Miniaudio Backend: api/eager-graphics/audio/miniaudio.md
+        - Pyglet Backend: api/eager-graphics/audio/pyglet.md
       - Renderers:
         - Overview: api/eager-graphics/renderers/index.md
         - Null Renderer: api/eager-graphics/renderers/null.md
         - PIL Renderer: api/eager-graphics/renderers/pil.md
         - Pyglet Renderer: api/eager-graphics/renderers/pyglet.md
-        - Miniaudio Backend: api/eager-graphics/renderers/miniaudio.md
     - eager-script-lsp:
       - Overview: api/eager-script-lsp/index.md
       - Server: api/eager-script-lsp/server.md

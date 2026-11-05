@@ -8,14 +8,13 @@ pytest.importorskip("pyglet")
 pytest.importorskip("PIL")
 
 import pyglet
-from eager_core.types import BLACK, WHITE, Color
+from eager_core.types import BLACK, WHITE, Color, ScaleMode
 from PIL import Image, ImageChops, ImageStat
 from pyglet.window import Window
 
 from eager_graphics.compositor import StageCompositor
 from eager_graphics.renderers.pil.renderer import PILRenderer
 from eager_graphics.renderers.pyglet import PygletRenderer
-from eager_graphics.types import ScaleMode
 
 
 @pytest.fixture

@@ -1,10 +1,10 @@
 """Tests for StageCompositor visual composition, transitions, and render lists."""
 
 import pytest
+from eager_core.headless import NullRenderer
 from eager_core.types import BLACK, Vec2
 
 from eager_graphics.compositor import StageCompositor
-from eager_graphics.renderers.null import NullRenderer
 from eager_graphics.renderers.pil import PIL_AVAILABLE, PILRenderer
 
 

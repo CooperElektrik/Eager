@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from eager_core.dispatcher import EventDispatcher
 from eager_core.events import (
     AppendEvent,
     ChoiceOption,
@@ -26,36 +27,36 @@ from eager_core.events import (
     StoryEvent,
 )
 from eager_core.input import InputAction, Keymap
+from eager_core.state import CallFrame, Checkpoint, CheckpointHistory, StorySnapshot
 
-from eager_runtime.dispatcher import EventDispatcher
 from eager_runtime.player import TerminalPlayer
 from eager_runtime.runtime import StoryRuntimeError, StoryVM
-from eager_runtime.state import CallFrame, Checkpoint, CheckpointHistory, StorySnapshot
 
 if TYPE_CHECKING:
+    from eager_core.backlog import Backlog, BacklogEntry
+    from eager_core.persistent import PersistentData
+    from eager_core.preferences import Preferences
+    from eager_core.saves import (
+        SaveData,
+        SaveManager,
+        SaveMetadata,
+        SaveMigrationError,
+    )
+    from eager_core.watcher import FileWatcher
+
     from eager_runtime.assets import (
         AssetCheckReport,
         AssetReference,
         MissingAssetIssue,
         check_assets,
     )
-    from eager_runtime.backlog import Backlog, BacklogEntry
-    from eager_runtime.persistent import PersistentData
-    from eager_runtime.preferences import Preferences
     from eager_runtime.project import (
         ProjectConfig,
         load_project_graph,
         merge_graphs,
         resolve_project_scripts,
     )
-    from eager_runtime.saves import (
-        SaveData,
-        SaveManager,
-        SaveMetadata,
-        SaveMigrationError,
-    )
     from eager_runtime.session import GameSession
-    from eager_runtime.watcher import FileWatcher
 
 __version__ = "0.7.0"
 
@@ -109,15 +110,15 @@ _LAZY_EXPORTS = {
     "MissingAssetIssue": "eager_runtime.assets",
     "check_assets": "eager_runtime.assets",
     "GameSession": "eager_runtime.session",
-    "SaveManager": "eager_runtime.saves",
-    "SaveMetadata": "eager_runtime.saves",
-    "SaveData": "eager_runtime.saves",
-    "SaveMigrationError": "eager_runtime.saves",
-    "PersistentData": "eager_runtime.persistent",
-    "Preferences": "eager_runtime.preferences",
-    "Backlog": "eager_runtime.backlog",
-    "BacklogEntry": "eager_runtime.backlog",
-    "FileWatcher": "eager_runtime.watcher",
+    "SaveManager": "eager_core.saves",
+    "SaveMetadata": "eager_core.saves",
+    "SaveData": "eager_core.saves",
+    "SaveMigrationError": "eager_core.saves",
+    "PersistentData": "eager_core.persistent",
+    "Preferences": "eager_core.preferences",
+    "Backlog": "eager_core.backlog",
+    "BacklogEntry": "eager_core.backlog",
+    "FileWatcher": "eager_core.watcher",
     "ProjectConfig": "eager_runtime.project",
     "load_project_graph": "eager_runtime.project",
     "merge_graphs": "eager_runtime.project",

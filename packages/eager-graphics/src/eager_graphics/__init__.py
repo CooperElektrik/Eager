@@ -30,6 +30,15 @@ from eager_core.easing import (
     get_easing,
     linear,
 )
+from eager_core.headless import NullRenderer
+from eager_core.layout import LayoutResolver, ViewportTransform
+from eager_core.lighting import (
+    AmbientLight,
+    LightKind,
+    LightmapState,
+    PointLight,
+)
+from eager_core.protocols import RenderBackend, RenderItem, UIDrawBackend
 from eager_core.text import (
     FormattedText,
     PausePoint,
@@ -37,6 +46,8 @@ from eager_core.text import (
     TextSegment,
     parse_text_tags,
 )
+from eager_core.theme import Theme
+from eager_core.timeline import Timeline, Tween
 from eager_core.timing import FrameClock
 from eager_core.types import (
     BLACK,
@@ -45,20 +56,19 @@ from eager_core.types import (
     RED,
     TRANSPARENT,
     WHITE,
+    Anchor,
     Color,
+    DebugOverlayMode,
     Rect,
+    RenderPreset,
+    ScaleMode,
+    TransitionKind,
     Vec2,
 )
+from eager_core.ui_state import UIState
 
 from eager_graphics.compositor import StageCompositor
 from eager_graphics.director import CharacterConfig, StageDirector
-from eager_graphics.layout import LayoutResolver, ViewportTransform
-from eager_graphics.lighting import (
-    AmbientLight,
-    LightKind,
-    LightmapState,
-    PointLight,
-)
 from eager_graphics.particles import (
     ParticleBatch,
     ParticleEmitter,
@@ -66,18 +76,7 @@ from eager_graphics.particles import (
     ParticleStampLUT,
 )
 from eager_graphics.player import BasePlayer
-from eager_graphics.protocol import RenderBackend, RenderItem, UIDrawBackend
-from eager_graphics.renderers.null import NullRenderer
 from eager_graphics.stage import ElementState, Layer, Stage, StageElement
-from eager_graphics.theme import Theme
-from eager_graphics.timeline import Timeline, Tween
-from eager_graphics.types import (
-    Anchor,
-    DebugOverlayMode,
-    RenderPreset,
-    ScaleMode,
-    TransitionKind,
-)
 from eager_graphics.ui_components import (
     ChoiceMenu,
     ChoiceMenuStyle,
@@ -89,7 +88,6 @@ from eager_graphics.ui_components import (
     TextboxStyle,
     UIOverlay,
 )
-from eager_graphics.ui_state import UIState
 
 __version__ = "0.7.0"
 
@@ -218,7 +216,7 @@ def register_providers() -> None:
     )
 
     def _default_theme_factory(**kwargs: Any) -> Any:
-        from eager_graphics.theme import Theme
+        from eager_core.theme import Theme
 
         return Theme(**kwargs)
 
@@ -238,7 +236,8 @@ def register_providers() -> None:
         return StageDirector(compositor, audio=audio, skip_mode_cb=skip_mode_cb)
 
     def _default_ui_factory(width: int = 1280, height: int = 720, theme: Any = None) -> Any:
-        from eager_graphics.theme import Theme
+        from eager_core.theme import Theme
+
         from eager_graphics.ui_components import UIOverlay
 
         if isinstance(theme, dict):
@@ -249,6 +248,8 @@ def register_providers() -> None:
         return UIOverlay(width=width, height=height, theme=theme)
 
     def _default_screens_factory(config: Any, session: Any) -> Any:
+        from eager_core.theme import Theme
+
         from eager_graphics.screens import (
             GameMenuScreen,
             HistoryScreen,
@@ -257,7 +258,6 @@ def register_providers() -> None:
             ScreenManager,
             TitleScreen,
         )
-        from eager_graphics.theme import Theme
 
         w = getattr(getattr(session, "overlay", None), "width", 1280) or 1280
         h = getattr(getattr(session, "overlay", None), "height", 720) or 720
@@ -284,12 +284,12 @@ def register_providers() -> None:
         return mgr
 
     def _pyglet_audio_factory() -> Any:
-        from eager_graphics.renderers.pyglet import PygletAudioBackend
+        from eager_graphics.audio.pyglet import PygletAudioBackend
 
         return PygletAudioBackend()
 
     def _miniaudio_audio_factory() -> Any:
-        from eager_graphics.renderers.miniaudio import MiniaudioAudioBackend
+        from eager_graphics.audio.miniaudio import MiniaudioAudioBackend
 
         return MiniaudioAudioBackend()
 
