@@ -5,10 +5,14 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, TypeAlias
+from typing import Any, Protocol, TypeAlias, runtime_checkable
 
 
-class ParseError(Exception):
+class EagerScriptError(Exception):
+    """Base exception for all errors raised within eager-script."""
+
+
+class ParseError(EagerScriptError):
     """Raised when screenplay syntax is invalid."""
 
     line_number: int
@@ -22,8 +26,26 @@ class ParseError(Exception):
         self.end_col = end_col
 
 
+@runtime_checkable
+class AstNode(Protocol):
+    """Protocol for all parsed Eager-Script AST nodes."""
+
+    line_number: int
+    start_col: int
+    end_col: int
+
+    @property
+    def type(self) -> str:
+        """Node type discriminator string."""
+        ...
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize AST node to a dictionary."""
+        ...
+
+
 @dataclass(frozen=True, slots=True)
-class ParsedInclude:
+class ParsedInclude(AstNode):
     """Parsed @include directive."""
 
     path: str
@@ -48,7 +70,7 @@ class ParsedInclude:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedError:
+class ParsedError(AstNode):
     """Parsed error node recorded during resilient parsing."""
 
     message: str
@@ -75,7 +97,7 @@ class ParsedError:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedLabel:
+class ParsedLabel(AstNode):
     """Parsed section label."""
 
     name: str
@@ -106,7 +128,7 @@ class ParsedLabel:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedDialogue:
+class ParsedDialogue(AstNode):
     """Parsed character dialogue beat."""
 
     speaker: str
@@ -141,7 +163,7 @@ class ParsedDialogue:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedAppend:
+class ParsedAppend(AstNode):
     """Parsed append beat ('-')."""
 
     text: str
@@ -170,7 +192,7 @@ class ParsedAppend:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedFreshBox:
+class ParsedFreshBox(AstNode):
     """Parsed fresh box beat ('/')."""
 
     text: str
@@ -199,7 +221,7 @@ class ParsedFreshBox:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedNarration:
+class ParsedNarration(AstNode):
     """Parsed speakerless narration."""
 
     text: str
@@ -228,7 +250,7 @@ class ParsedNarration:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedChoiceOption:
+class ParsedChoiceOption(AstNode):
     """Parsed choice menu option ('? Text (target)' or '? Text' + indented block).
 
     A named option carries a ``target`` scene label.  An *inline* option omits the
@@ -273,7 +295,7 @@ class ParsedChoiceOption:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedChoiceSet:
+class ParsedChoiceSet(AstNode):
     """Parsed collection of consecutive choice options."""
 
     options: tuple[ParsedChoiceOption, ...]
@@ -302,7 +324,7 @@ class ParsedChoiceSet:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedJump:
+class ParsedJump(AstNode):
     """Parsed unconditional jump ('>')."""
 
     target: str
@@ -331,7 +353,7 @@ class ParsedJump:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedCall:
+class ParsedCall(AstNode):
     """Parsed subroutine call ('>>')."""
 
     target: str
@@ -360,7 +382,7 @@ class ParsedCall:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedReturn:
+class ParsedReturn(AstNode):
     """Parsed subroutine return ('<<')."""
 
     line_number: int
@@ -387,7 +409,7 @@ class ParsedReturn:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedHook:
+class ParsedHook(AstNode):
     """Parsed hook invocation ('~')."""
 
     hook_name: str
@@ -416,7 +438,7 @@ class ParsedHook:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedSet:
+class ParsedSet(AstNode):
     """Parsed variable set/mutation statement ('$ target op expr')."""
 
     target: str
@@ -449,7 +471,7 @@ class ParsedSet:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedDefault:
+class ParsedDefault(AstNode):
     """Parsed default variable definition ('@default name = expr')."""
 
     name: str
@@ -480,7 +502,7 @@ class ParsedDefault:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedCharacter:
+class ParsedCharacter(AstNode):
     """Parsed character definition ('@character id \"name\" ...')."""
 
     id: str
@@ -513,7 +535,7 @@ class ParsedCharacter:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedIf:
+class ParsedIf(AstNode):
     """Parsed '@if expr'."""
 
     expr_src: str
@@ -542,7 +564,7 @@ class ParsedIf:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedElif:
+class ParsedElif(AstNode):
     """Parsed '@elif expr'."""
 
     expr_src: str
@@ -571,7 +593,7 @@ class ParsedElif:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedElse:
+class ParsedElse(AstNode):
     """Parsed '@else'."""
 
     line_number: int
@@ -598,7 +620,7 @@ class ParsedElse:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedEnd:
+class ParsedEnd(AstNode):
     """Parsed '@end'."""
 
     line_number: int
@@ -625,7 +647,7 @@ class ParsedEnd:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedCondJump:
+class ParsedCondJump(AstNode):
     """Internal lowered conditional jump (jumps to target_index in scene if condition is false)."""
 
     condition: str
@@ -656,7 +678,7 @@ class ParsedCondJump:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedLocalJump:
+class ParsedLocalJump(AstNode):
     """Internal lowered unconditional local jump within a scene."""
 
     target_index: int
@@ -690,6 +712,7 @@ ParsedItem: TypeAlias = (
     | ParsedAppend
     | ParsedFreshBox
     | ParsedNarration
+    | ParsedChoiceOption
     | ParsedChoiceSet
     | ParsedJump
     | ParsedCall
@@ -719,7 +742,220 @@ def to_json(items: Sequence[ParsedItem], *, indent: int | None = 2) -> str:
     return json.dumps(to_dict(items), indent=indent)
 
 
+def from_dict(data: dict[str, Any]) -> ParsedItem:
+    """Polymorphically deserialize a dictionary to a ParsedItem AST node."""
+    if not isinstance(data, dict):
+        raise TypeError(f"AST node data must be a dict, got {type(data).__name__}")
+    node_type = data.get("type")
+    line_number = int(data.get("line_number", 0))
+    start_col = int(data.get("start_col", 0))
+    end_col = int(data.get("end_col", 0))
+
+    match node_type:
+        case "include":
+            return ParsedInclude(
+                path=str(data["path"]),
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "error":
+            return ParsedError(
+                message=str(data["message"]),
+                line_number=line_number,
+                line_text=str(data.get("line_text", "")),
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "label":
+            return ParsedLabel(
+                name=str(data["name"]),
+                display_name=str(data.get("display_name", "")),
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "dialogue":
+            return ParsedDialogue(
+                speaker=str(data["speaker"]),
+                text=str(data["text"]),
+                voice=data.get("voice"),
+                line_number=line_number,
+                emotion=data.get("emotion"),
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "append":
+            return ParsedAppend(
+                text=str(data["text"]),
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "fresh_box":
+            return ParsedFreshBox(
+                text=str(data["text"]),
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "narration":
+            return ParsedNarration(
+                text=str(data["text"]),
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "choice_option":
+            body = tuple(from_dict(item) for item in data.get("body", []))
+            return ParsedChoiceOption(
+                text=str(data["text"]),
+                target=data.get("target"),
+                line_number=line_number,
+                condition=data.get("condition"),
+                body=body,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "choice_set":
+            options = tuple(
+                ParsedChoiceOption(
+                    text=str(opt["text"]),
+                    target=opt.get("target"),
+                    line_number=int(opt.get("line_number", 0)),
+                    condition=opt.get("condition"),
+                    body=tuple(from_dict(item) for item in opt.get("body", [])),
+                    start_col=int(opt.get("start_col", 0)),
+                    end_col=int(opt.get("end_col", 0)),
+                )
+                if isinstance(opt, dict)
+                else opt
+                for opt in data.get("options", [])
+            )
+            return ParsedChoiceSet(
+                options=options,
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "jump":
+            return ParsedJump(
+                target=str(data["target"]),
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "call":
+            return ParsedCall(
+                target=str(data["target"]),
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "return":
+            return ParsedReturn(
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "hook":
+            return ParsedHook(
+                hook_name=str(data.get("hook_name") or data.get("name", "")),
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "set":
+            return ParsedSet(
+                target=str(data.get("target") or data.get("name", "")),
+                op=str(data.get("op", "=")),
+                expr_src=str(data["expr_src"]),
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "default":
+            return ParsedDefault(
+                name=str(data["name"]),
+                expr_src=str(data["expr_src"]),
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "character":
+            attrs_raw = data.get("attrs", ())
+            if isinstance(attrs_raw, dict):
+                attrs = tuple((str(k), str(v)) for k, v in attrs_raw.items())
+            else:
+                attrs = tuple(
+                    (str(pair[0]), str(pair[1]))
+                    for pair in attrs_raw
+                    if isinstance(pair, (list, tuple)) and len(pair) >= 2
+                )
+            return ParsedCharacter(
+                id=str(data.get("id") or data.get("identifier", "")),
+                name=str(data.get("name", "")),
+                attrs=attrs,
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "if":
+            return ParsedIf(
+                expr_src=str(data.get("expr_src") or data.get("condition", "")),
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "elif":
+            return ParsedElif(
+                expr_src=str(data.get("expr_src") or data.get("condition", "")),
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "else":
+            return ParsedElse(
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "end":
+            return ParsedEnd(
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "cond_jump":
+            return ParsedCondJump(
+                condition=str(data["condition"]),
+                target_index=int(data["target_index"]),
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case "local_jump":
+            return ParsedLocalJump(
+                target_index=int(data["target_index"]),
+                line_number=line_number,
+                start_col=start_col,
+                end_col=end_col,
+            )
+        case _:
+            raise ValueError(f"Unknown AST node type: {node_type!r}")
+
+
+def from_json(json_str: str) -> list[ParsedItem]:
+    """Deserialize a JSON string into a list of ParsedItem AST nodes."""
+    raw = json.loads(json_str)
+    if not isinstance(raw, list):
+        raise TypeError(f"Expected list in JSON for AST items, got {type(raw).__name__}")
+    return [from_dict(item) for item in raw]
+
+
 __all__ = [
+    "AstNode",
+    "EagerScriptError",
     "ParseError",
     "ParsedAppend",
     "ParsedCall",
@@ -744,6 +980,8 @@ __all__ = [
     "ParsedNarration",
     "ParsedReturn",
     "ParsedSet",
+    "from_dict",
+    "from_json",
     "to_dict",
     "to_json",
 ]

@@ -392,3 +392,23 @@ Alice: Hello
     dialogues = [b for b in main_node.body if hasattr(b, "text")]
     assert any(getattr(b, "text", "") == "Inside unclosed if" for b in dialogues)
 
+
+def test_edge_kind_enum_parity() -> None:
+    from eager_script import EdgeKind
+
+    script = """
+## Main --- main
+? Opt 1 (scene_a)
+> scene_b
+>> scene_c
+"""
+    graph = parse_graph(script)
+    kinds = [e.kind for e in graph.edges]
+    assert EdgeKind.CHOICE in kinds
+    assert EdgeKind.JUMP in kinds
+    assert EdgeKind.CALL in kinds
+    # String parity
+    assert "choice" in kinds
+    assert "jump" in kinds
+    assert "call" in kinds
+

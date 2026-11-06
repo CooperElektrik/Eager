@@ -905,3 +905,60 @@ def test_ast_recovery_error_spans() -> None:
     assert d["start_col"] == 4
     assert d["end_col"] == 26
 
+
+def test_ast_node_subclass_and_bidirectional_serialization() -> None:
+    from eager_script import (
+        AstNode,
+        EagerScriptError,
+        ParseError,
+        from_json,
+        to_dict,
+        to_json,
+    )
+    from eager_script.expr import ExprError
+
+    assert issubclass(ParseError, EagerScriptError)
+    assert issubclass(ExprError, EagerScriptError)
+
+    script = """\
+@character alice "Alice" asset_prefix=char/alice
+@default score = 10
+## Intro --- intro
+Alice (happy): Welcome to the demonstration!
++ And then some more text.
+* fresh box text
+Narrator: Just a narrator line.
+~ play bgm track.ogg
+$ score = score + 5
+@if score > 10
+    > win
+@elif score == 10
+    >> sub_scene
+@else
+    @end
+? Option 1
+    Alice: You picked option 1.
+    > label_1
+? Option 2 (label_2)
+<<
+"""
+    items = parse(script)
+    for item in items:
+        assert isinstance(item, AstNode)
+        assert hasattr(item, "line_number")
+        assert hasattr(item, "start_col")
+        assert hasattr(item, "end_col")
+
+    dicts = to_dict(items)
+    assert len(dicts) == len(items)
+    json_str = to_json(items)
+
+    restored = from_json(json_str)
+    assert len(restored) == len(items)
+    for orig, res in zip(items, restored):
+        assert type(orig) is type(res)
+        assert orig.to_dict() == res.to_dict()
+        assert res.line_number == orig.line_number
+        assert res.start_col == orig.start_col
+        assert res.end_col == orig.end_col
+

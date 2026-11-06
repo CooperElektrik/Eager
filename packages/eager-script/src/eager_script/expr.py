@@ -9,6 +9,8 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from eager_script.ast import EagerScriptError
+
 __all__ = [
     "CompiledExpr",
     "ExprError",
@@ -16,7 +18,7 @@ __all__ = [
 ]
 
 
-class ExprError(Exception):
+class ExprError(EagerScriptError):
     """Raised when an expression fails to compile or evaluate safely."""
 
 

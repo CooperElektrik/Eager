@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from eager_script.ast import (
+    AstNode,
+    EagerScriptError,
     ParsedAppend,
     ParsedCall,
     ParsedCharacter,
@@ -27,10 +29,13 @@ from eager_script.ast import (
     ParsedReturn,
     ParsedSet,
     ParseError,
+    from_dict,
+    from_json,
     to_dict,
     to_json,
 )
 from eager_script.graph import (
+    EdgeKind,
     SceneEdge,
     SceneGraph,
     SceneNode,
@@ -82,6 +87,9 @@ __all__ = [
     "INCLUDE_PATTERN",
     "SET_PATTERN",
     "SPEAKER_PATTERN",
+    "AstNode",
+    "EagerScriptError",
+    "EdgeKind",
     "HookArgs",
     "InputHookArgs",
     "ParseError",
@@ -115,6 +123,8 @@ __all__ = [
     "ValidationError",
     "ValidationResult",
     "__version__",
+    "from_dict",
+    "from_json",
     "is_input_hook",
     "parse",
     "parse_graph",

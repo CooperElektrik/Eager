@@ -5,18 +5,28 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from eager_script import ParsedItem
 
 __all__ = [
+    "EdgeKind",
     "SceneEdge",
     "SceneGraph",
     "SceneNode",
     "parse_graph",
     "to_graph",
 ]
+
+
+class EdgeKind(str, Enum):
+    """Transition kind for directed scene transitions."""
+
+    JUMP = "jump"
+    CALL = "call"
+    CHOICE = "choice"
 
 
 def _anon_scene_id(scene_id: str, line_number: int) -> str:
@@ -57,17 +67,18 @@ class SceneEdge:
 
     source: str
     target: str
-    kind: str  # "jump" | "call" | "choice"
+    kind: EdgeKind | str
     label: str | None
     line_number: int
     condition: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert edge to a dictionary."""
+        kind_str = self.kind.value if isinstance(self.kind, EdgeKind) else str(self.kind)
         data: dict[str, Any] = {
             "source": self.source,
             "target": self.target,
-            "kind": self.kind,
+            "kind": kind_str,
             "label": self.label,
             "line_number": self.line_number,
         }
@@ -387,66 +398,62 @@ def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:
 
     def flatten(elements: list[Any]) -> None:
         for elem in elements:
-            if isinstance(elem, tuple) and elem[0] == "if_structure":
-                branches = elem[1]
-                # For each branch:
-                # branch_k:
-                #   if cond_k is not None:
-                #     ParsedCondJump(cond_k, target = start of branch_{k+1} or end)
-                #   body_k
-                #   if not last branch: ParsedLocalJump(end)
-                #
-                # Notice we need indices, so we can do placeholder patching.
-                end_placeholder_patches: list[int] = []
-                for b_idx, (cond, b_body, line_no, start_col, end_col) in enumerate(branches):
-                    is_last = (b_idx == len(branches) - 1)
-                    cond_patch_idx: int | None = None
-                    if cond is not None:
-                        cond_patch_idx = len(flat)
-                        flat.append(
-                            ParsedCondJump(
-                                condition=cond,
-                                target_index=0,
-                                line_number=line_no,
-                                start_col=start_col,
-                                end_col=end_col,
+            if isinstance(elem, tuple):
+                if elem[0] == "if_structure":
+                    branches = elem[1]
+                    end_placeholder_patches: list[int] = []
+                    for b_idx, (cond, b_body, line_no, start_col, end_col) in enumerate(branches):
+                        is_last = (b_idx == len(branches) - 1)
+                        cond_patch_idx: int | None = None
+                        if cond is not None:
+                            cond_patch_idx = len(flat)
+                            flat.append(
+                                ParsedCondJump(
+                                    condition=cond,
+                                    target_index=0,
+                                    line_number=line_no,
+                                    start_col=start_col,
+                                    end_col=end_col,
+                                    )
                             )
-                        )
-                    
-                    flatten(b_body)
+                        
+                        flatten(b_body)
 
-                    if not is_last:
-                        local_patch_idx = len(flat)
-                        flat.append(
-                            ParsedLocalJump(
-                                target_index=0,
-                                line_number=line_no,
-                                start_col=start_col,
-                                end_col=end_col,
+                        if not is_last:
+                            local_patch_idx = len(flat)
+                            flat.append(
+                                ParsedLocalJump(
+                                    target_index=0,
+                                    line_number=line_no,
+                                    start_col=start_col,
+                                    end_col=end_col,
+                                )
                             )
-                        )
-                        end_placeholder_patches.append(local_patch_idx)
+                            end_placeholder_patches.append(local_patch_idx)
 
-                    # Next branch starts here at len(flat)
-                    if cond_patch_idx is not None:
-                        flat[cond_patch_idx] = ParsedCondJump(
-                            condition=flat[cond_patch_idx].condition,  # type: ignore[attr-defined]
-                            target_index=len(flat),
-                            line_number=flat[cond_patch_idx].line_number,  # type: ignore[attr-defined]
-                            start_col=flat[cond_patch_idx].start_col,  # type: ignore[attr-defined]
-                            end_col=flat[cond_patch_idx].end_col,  # type: ignore[attr-defined]
+                        # Next branch starts here at len(flat)
+                        if cond_patch_idx is not None:
+                            target_cond = flat[cond_patch_idx]
+                            if isinstance(target_cond, ParsedCondJump):
+                                flat[cond_patch_idx] = ParsedCondJump(
+                                    condition=target_cond.condition,
+                                    target_index=len(flat),
+                                    line_number=target_cond.line_number,
+                                    start_col=target_cond.start_col,
+                                    end_col=target_cond.end_col,
+                                )
+                    # All branches finish here: len(flat) is end
+                    end_idx = len(flat)
+                    for patch_idx in end_placeholder_patches:
+                        target_local = flat[patch_idx]
+                        flat[patch_idx] = ParsedLocalJump(
+                            target_index=end_idx,
+                            line_number=target_local.line_number,
+                            start_col=target_local.start_col,
+                            end_col=target_local.end_col,
                         )
-                # All branches finish here: len(flat) is end
-                end_idx = len(flat)
-                for patch_idx in end_placeholder_patches:
-                    flat[patch_idx] = ParsedLocalJump(
-                        target_index=end_idx,
-                        line_number=flat[patch_idx].line_number,  # type: ignore[attr-defined]
-                        start_col=flat[patch_idx].start_col,  # type: ignore[attr-defined]
-                        end_col=flat[patch_idx].end_col,  # type: ignore[attr-defined]
-                    )
             else:
-                flat.append(elem)  # type: ignore[arg-type]
+                flat.append(elem)
 
     flatten(structured_items)
     return tuple(flat)
@@ -513,10 +520,10 @@ def _process_scene_body(
     for item in body:
         if isinstance(item, ParsedJump):
             flat_append(item)
-            edges.append(SceneEdge(scene_id, item.target, "jump", None, item.line_number, condition=_active_cond()))
+            edges.append(SceneEdge(scene_id, item.target, EdgeKind.JUMP, None, item.line_number, condition=_active_cond()))
         elif isinstance(item, ParsedCall):
             flat_append(item)
-            edges.append(SceneEdge(scene_id, item.target, "call", None, item.line_number, condition=_active_cond()))
+            edges.append(SceneEdge(scene_id, item.target, EdgeKind.CALL, None, item.line_number, condition=_active_cond()))
         elif isinstance(item, ParsedChoiceSet):
             active = _active_cond()
             resolved_options: list[Any] = []
@@ -527,7 +534,7 @@ def _process_scene_body(
                 if opt.body:
                     anon_id = _anon_scene_id(scene_id, opt.line_number)
                     edges.append(
-                        SceneEdge(scene_id, anon_id, "choice", opt.text, opt.line_number, condition=opt_cond)
+                        SceneEdge(scene_id, anon_id, EdgeKind.CHOICE, opt.text, opt.line_number, condition=opt_cond)
                     )
                     anon_body, anon_speakers, anon_hooks = _process_scene_body(
                         list(opt.body), anon_id, nodes, edges
@@ -545,7 +552,7 @@ def _process_scene_body(
                     resolved_options.append(replace(opt, target=anon_id))
                 elif opt.target is not None:
                     edges.append(
-                        SceneEdge(scene_id, opt.target, "choice", opt.text, opt.line_number, condition=opt_cond)
+                        SceneEdge(scene_id, opt.target, EdgeKind.CHOICE, opt.text, opt.line_number, condition=opt_cond)
                     )
                     resolved_options.append(opt)
                 else:
