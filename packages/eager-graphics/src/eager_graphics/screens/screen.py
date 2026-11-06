@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from eager_core.protocols import UIDrawBackend
+from eager_core.protocols import GameSessionProtocol, UIDrawBackend
 from eager_core.theme import Theme
 
 from eager_graphics.screens.widgets import Button, Label, Slider
@@ -54,11 +54,11 @@ class Screen:
     def rebuild_layout(self) -> None:
         """Recompute layout/geometry of widgets based on current viewport dimensions."""
 
-    def on_enter(self, session: Any) -> None:
+    def on_enter(self, session: GameSessionProtocol) -> None:
         """Called when screen is displayed."""
         self.visible = True
 
-    def on_exit(self, session: Any) -> None:
+    def on_exit(self, session: GameSessionProtocol) -> None:
         """Called when screen is hidden."""
         self.visible = False
 
@@ -85,7 +85,7 @@ class Screen:
                 return True
         return False
 
-    def handle_key(self, key_name: str, session: Any = None) -> bool:
+    def handle_key(self, key_name: str, session: GameSessionProtocol | None = None) -> bool:
         """Process key event on the active screen."""
         return False
 
@@ -116,15 +116,13 @@ class ScreenManager:
         self.viewport_width = width
         self.viewport_height = height
         for screen in self.screens.values():
-            if hasattr(screen, "set_viewport"):
-                screen.set_viewport(width, height)
+            screen.set_viewport(width, height)
 
     def set_theme(self, theme: Theme) -> None:
         """Update visual theme across all registered screens."""
         self.theme = theme
         for screen in self.screens.values():
-            if hasattr(screen, "set_theme"):
-                screen.set_theme(theme)
+            screen.set_theme(theme)
 
     def register(self, screen: Screen) -> None:
         """Register a Screen instance into the screen registry.
@@ -135,15 +133,14 @@ class ScreenManager:
         if self.theme is not None and (screen.theme is None or screen.theme.name == "default"):
             screen.set_theme(self.theme)
         self.screens[screen.name] = screen
-        if hasattr(screen, "set_viewport"):
-            screen.set_viewport(self.viewport_width, self.viewport_height)
+        screen.set_viewport(self.viewport_width, self.viewport_height)
 
     @property
     def is_active(self) -> bool:
         """True if there is an active screen currently visible."""
         return self.active_screen is not None and self.active_screen.visible
 
-    def show(self, name: str, session: Any) -> bool:
+    def show(self, name: str, session: GameSessionProtocol) -> bool:
         """Activate and display the screen identified by name.
 
         Args:
@@ -160,12 +157,11 @@ class ScreenManager:
                 self._history_stack.append(self.active_screen.name)
             self.active_screen.on_exit(session)
         self.active_screen = self.screens[name]
-        if hasattr(self.active_screen, "set_viewport"):
-            self.active_screen.set_viewport(self.viewport_width, self.viewport_height)
+        self.active_screen.set_viewport(self.viewport_width, self.viewport_height)
         self.active_screen.on_enter(session)
         return True
 
-    def hide(self, session: Any) -> None:
+    def hide(self, session: GameSessionProtocol) -> None:
         """Hide current screen and pop previous screen from history if present."""
         if self.active_screen is not None:
             self.active_screen.on_exit(session)
@@ -174,13 +170,12 @@ class ScreenManager:
                 prev_screen = self.screens.get(prev_name)
                 if prev_screen is not None:
                     self.active_screen = prev_screen
-                    if hasattr(self.active_screen, "set_viewport"):
-                        self.active_screen.set_viewport(self.viewport_width, self.viewport_height)
+                    self.active_screen.set_viewport(self.viewport_width, self.viewport_height)
                     self.active_screen.on_enter(session)
                     return
             self.active_screen = None
 
-    def hide_all(self, session: Any) -> None:
+    def hide_all(self, session: GameSessionProtocol) -> None:
         """Hide all screens and clear navigation history stack."""
         if self.active_screen is not None:
             self.active_screen.on_exit(session)
@@ -199,11 +194,11 @@ class ScreenManager:
             return self.active_screen.handle_mouse_click(x, y)
         return False
 
-    def handle_key(self, key_name: str, session: Any = None) -> bool:
+    def handle_key(self, key_name: str, session: GameSessionProtocol | Any = None) -> bool:
         """Forward key events to active screen or dismiss with escape/cancel."""
         if self.active_screen is not None and self.active_screen.visible:
             if key_name.lower() in ("escape", "cancel"):
-                if getattr(self.active_screen, "name", "") == "title":
+                if self.active_screen.name == "title":
                     return True
                 self.hide(session)
                 return True

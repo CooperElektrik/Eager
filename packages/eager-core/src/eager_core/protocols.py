@@ -324,8 +324,12 @@ class GameSessionProtocol(Protocol):
     mode: str
     is_finished: bool
     input_text: str
+    active_choice_prompt: Any | None
+    active_input_prompt: Any | None
+    text_reveal: Any
+    _ui_dirty: bool
 
-    def advance(self) -> None:
+    def advance(self) -> Any:
         """Advance story execution by one beat."""
         ...
 
@@ -349,12 +353,64 @@ class GameSessionProtocol(Protocol):
         """Apply active preferences to audio, locale, and display subsystems."""
         ...
 
+    def request_fullscreen(self) -> None:
+        """Request host environment fullscreen toggle."""
+        ...
+
     def request_quit(self) -> bool:
         """Request host environment quit."""
         ...
 
     def play_audio(self, channel: str, track: str) -> None:
         """Play audio asset on given channel."""
+        ...
+
+    def play_voice(self, voice_path: str) -> None:
+        """Play voice asset."""
+        ...
+
+    def set_language(self, locale: str) -> None:
+        """Set active translation locale."""
+        ...
+
+    def is_current_beat_read(self) -> bool:
+        """Return True if current beat has been read."""
+        ...
+
+    def rollback(self) -> bool:
+        """Roll back narrative by one beat."""
+        ...
+
+    def roll_forward(self) -> bool:
+        """Roll forward through redo stack by one beat."""
+        ...
+
+    def hot_reload(self, script_path: Any = None) -> bool:
+        """Hot-reload script from disk."""
+        ...
+
+    def return_to_title(self) -> None:
+        """Return to title screen."""
+        ...
+
+    def update(self, dt: float) -> None:
+        """Advance session timers, audio, and state."""
+        ...
+
+    def draw(self, ui_backend: Any, width: int, height: int) -> None:
+        """Draw current stage and overlay to renderer."""
+        ...
+
+    def handle_input(self, action: Any, *args: Any, **kwargs: Any) -> bool:
+        """Process input action."""
+        ...
+
+    def add_lifecycle_listener(self, listener: HostLifecycleListener) -> None:
+        """Register lifecycle listener."""
+        ...
+
+    def remove_lifecycle_listener(self, listener: HostLifecycleListener) -> None:
+        """Unregister lifecycle listener."""
         ...
 
 

@@ -945,12 +945,12 @@ class StageCompositor:
             self.step(dt)
             steps += 1
 
-            if render:
-                render_backend.begin_frame()  # type: ignore[union-attr]
-                render_backend.clear(BLACK)  # type: ignore[union-attr]
+            if render and render_backend is not None:
+                render_backend.begin_frame()
+                render_backend.clear(BLACK)
                 for item in self.render_list():
-                    render_backend.draw_item(item)  # type: ignore[union-attr]
-                render_backend.end_frame()  # type: ignore[union-attr]
+                    render_backend.draw_item(item)
+                render_backend.end_frame()
 
         return steps
 
@@ -1010,53 +1010,68 @@ class StageCompositor:
         serialized snapshot so checkpoints and rollback do not store transitory
         mid-transition states, while live animations continue undisturbed.
         """
+        stage_dict = self.stage.to_dict()
         if not self.timeline.has_tweens():
             return {
-                "stage": self.stage.to_dict(),
+                "stage": stage_dict,
                 "virtual_width": self.virtual_width,
                 "virtual_height": self.virtual_height,
             }
 
-        # Preserve live animation state before evaluating settled tweens for snapshot
-        saved_props: list[tuple[Any, str, Any]] = []
+        # Build mapping from ElementState id to (layer_name, element_id)
+        state_map: dict[int, tuple[str, str]] = {}
+        for layer_name, layer in self.stage.layers.items():
+            for elem_id, elem in layer.elements.items():
+                state_map[id(elem.state)] = (layer_name, elem_id)
+
+        layers_dict: dict[str, Any] = stage_dict.get("layers", {})
+        elements_to_remove: set[tuple[str, str]] = set()
+
         for t in self.timeline._tweens:
-            val = (
-                getattr(t.target, t.property_name, None)
-                if hasattr(t.target, t.property_name)
-                else (t.target.get(t.property_name) if isinstance(t.target, dict) else None)
-            )
-            if isinstance(val, Vec2):
-                val = Vec2(val.x, val.y)
-            elif isinstance(val, Color):
-                val = Color(val.r, val.g, val.b, val.a)
-            saved_props.append((t.target, t.property_name, val))
+            target_key = state_map.get(id(t.target))
+            if target_key is None:
+                continue
 
-        layers_elements = {
-            layer_name: dict(layer.elements)
-            for layer_name, layer in self.stage.layers.items()
-        }
-        live_tweens = list(self.timeline._tweens)
+            layer_name, elem_id = target_key
+            layer_data = layers_dict.get(layer_name)
+            if not layer_data:
+                continue
+            elements_data = layer_data.get("elements", {})
+            elem_data = elements_data.get(elem_id)
+            if not elem_data:
+                continue
 
-        try:
-            self.timeline.finish_all()
-            stage_dict = self.stage.to_dict()
-        finally:
-            # Restore live stage elements and property values
-            for layer_name, elems in layers_elements.items():
-                if layer_name in self.stage.layers:
-                    self.stage.layers[layer_name].elements = elems
-                    self.stage.layers[layer_name]._sorted_cache = None
-            for (target, prop, orig_val), t in zip(saved_props, live_tweens):
-                if hasattr(target, prop):
-                    setattr(target, prop, orig_val)
-                elif isinstance(target, dict):
-                    target[prop] = orig_val
-                if t.on_update is not None:
-                    t.on_update(orig_val)
-            for t in live_tweens:
-                t.finished = False
-            self.timeline._tweens = live_tweens
-            self.stage._sorted_cache = None
+            elem_state_dict = elem_data.get("state", elem_data)
+
+            # If tween ends with removal (e.g. hide_character, clear_background, or fade out with on_complete)
+            if t.property_name == "opacity" and t.end_value == 0.0 and t.on_complete is not None:
+                elements_to_remove.add((layer_name, elem_id))
+                continue
+
+            end_val = t.end_value
+            if isinstance(end_val, (Vec2, Color)):
+                elem_state_dict[t.property_name] = end_val.to_dict()
+            else:
+                elem_state_dict[t.property_name] = end_val
+
+        # Handle background transition cleanup if an incoming background is present
+        bg_layer_data = layers_dict.get("background")
+        if bg_layer_data:
+            bg_elements = bg_layer_data.get("elements", {})
+            if "bg_incoming" in bg_elements:
+                incoming_data = bg_elements.pop("bg_incoming")
+                incoming_data["element_id"] = "bg_main"
+                incoming_state = incoming_data.get("state", incoming_data)
+                incoming_state["opacity"] = 1.0
+                incoming_state["z_index"] = 0
+                bg_elements.clear()
+                bg_elements["bg_main"] = incoming_data
+
+        # Remove elements scheduled for deletion upon tween completion
+        for layer_name, elem_id in elements_to_remove:
+            layer_data = layers_dict.get(layer_name)
+            if layer_data and elem_id in layer_data.get("elements", {}):
+                del layer_data["elements"][elem_id]
 
         return {
             "stage": stage_dict,

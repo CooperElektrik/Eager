@@ -38,7 +38,7 @@ from eager_core.lighting import (
     LightmapState,
     PointLight,
 )
-from eager_core.protocols import RenderBackend, RenderItem, UIDrawBackend
+from eager_core.protocols import ProviderRegistry, RenderBackend, RenderItem, UIDrawBackend
 from eager_core.text import (
     FormattedText,
     PausePoint,
@@ -69,6 +69,12 @@ from eager_core.ui_state import UIState
 
 from eager_graphics.compositor import StageCompositor
 from eager_graphics.director import CharacterConfig, StageDirector
+from eager_graphics.exceptions import (
+    AssetSecurityError,
+    EagerGraphicsError,
+    RenderError,
+    ScreenError,
+)
 from eager_graphics.particles import (
     ParticleBatch,
     ParticleEmitter,
@@ -100,6 +106,7 @@ __all__ = [
     "WHITE",
     "AmbientLight",
     "Anchor",
+    "AssetSecurityError",
     "BasePlayer",
     "CharacterConfig",
     "ChoiceMenu",
@@ -108,6 +115,7 @@ __all__ = [
     "DebugOverlayMode",
     "DialogueBox",
     "DialogueBoxLayout",
+    "EagerGraphicsError",
     "EasingFunc",
     "ElementState",
     "EndNotice",
@@ -133,9 +141,11 @@ __all__ = [
     "PygletRenderer",
     "Rect",
     "RenderBackend",
+    "RenderError",
     "RenderItem",
     "RenderPreset",
     "ScaleMode",
+    "ScreenError",
     "Stage",
     "StageCompositor",
     "StageDirector",
@@ -201,19 +211,15 @@ if TYPE_CHECKING:
     )
 
 
-def register_providers() -> None:
+def register_providers(registry: ProviderRegistry | None = None) -> None:
     """Register eager-graphics presentation factories with eager-core protocols."""
     from typing import Any
 
     from eager_core.protocols import (
-        register_audio_backend,
-        register_player,
-        register_renderer,
-        register_screen_manager_factory,
-        register_stage_factory,
-        register_theme_factory,
-        register_ui_factory,
+        get_default_registry,
     )
+
+    reg = registry or get_default_registry()
 
     def _default_theme_factory(**kwargs: Any) -> Any:
         from eager_core.theme import Theme
@@ -306,20 +312,16 @@ def register_providers() -> None:
 
         return PygletPlayer(*args, **kwargs)
 
-    register_stage_factory(_default_stage_factory)
-    register_ui_factory(_default_ui_factory)
-    register_theme_factory(_default_theme_factory)
-    register_screen_manager_factory(_default_screens_factory)
-    register_player("pil", _pil_player_factory)
-    register_player("pyglet", _pyglet_player_factory)
-    register_audio_backend("pyglet", _pyglet_audio_factory)
-    register_audio_backend("pil", _miniaudio_audio_factory)
-    register_audio_backend("miniaudio", _miniaudio_audio_factory)
-    register_renderer("null", _null_renderer_factory)
-
-
-# Automatically register on import
-register_providers()
+    reg.register_stage_factory(_default_stage_factory)
+    reg.register_ui_factory(_default_ui_factory)
+    reg.register_theme_factory(_default_theme_factory)
+    reg.register_screen_manager_factory(_default_screens_factory)
+    reg.register_player("pil", _pil_player_factory)
+    reg.register_player("pyglet", _pyglet_player_factory)
+    reg.register_audio_backend("pyglet", _pyglet_audio_factory)
+    reg.register_audio_backend("pil", _miniaudio_audio_factory)
+    reg.register_audio_backend("miniaudio", _miniaudio_audio_factory)
+    reg.register_renderer("null", _null_renderer_factory)
 
 
 def __getattr__(name: str) -> object:

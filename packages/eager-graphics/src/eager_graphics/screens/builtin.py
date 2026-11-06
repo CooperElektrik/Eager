@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
 
-from eager_core.protocols import UIDrawBackend
-from eager_core.text import _get_wrapped_lines, parse_text_tags
+from eager_core.protocols import GameSessionProtocol, UIDrawBackend
+from eager_core.text import get_wrapped_lines, parse_text_tags
 from eager_core.theme import Theme
 from eager_core.types import Color, Rect
 
@@ -27,7 +26,7 @@ class TitleScreen(Screen):
     ) -> None:
         super().__init__("title", theme=theme, viewport_width=viewport_width, viewport_height=viewport_height)
         self.title: str = title
-        self.session: Any = None
+        self.session: GameSessionProtocol | None = None
         self.rebuild_layout()
 
     def rebuild_layout(self) -> None:
@@ -42,23 +41,22 @@ class TitleScreen(Screen):
         spacing_y = vh * (60.0 / 720.0)
 
         def start_game() -> None:
-            if hasattr(self.session, "screens"):
-                self.session.screens.hide_all(self.session)
             if self.session is not None:
-                self.session.mode = "game"
-                if hasattr(self.session, "restart_story") and (
-                    getattr(self.session, "is_finished", False)
-                    or getattr(getattr(self.session, "vm", None), "_beat_index", 0) > 0
-                ):
+                screens = getattr(self.session, "screens", None)
+                if screens is not None:
+                    screens.hide_all(self.session)
+                if hasattr(self.session, "mode"):
+                    self.session.mode = "game"
+                if getattr(self.session, "is_finished", False):
                     self.session.restart_story()
                 elif hasattr(self.session, "advance"):
                     self.session.advance()
 
         def quit_game() -> None:
             if self.session is not None:
-                from eager_core.input import InputAction
-
                 if hasattr(self.session, "handle_input"):
+                    from eager_core.input import InputAction
+
                     self.session.handle_input(InputAction.QUIT)
                 elif hasattr(self.session, "request_quit"):
                     self.session.request_quit()
@@ -72,12 +70,12 @@ class TitleScreen(Screen):
             Button(
                 Rect(btn_x, start_y + spacing_y, btn_w, btn_h),
                 "Load Game",
-                action=lambda: getattr(self.session, "screens", None) and self.session.screens.show("load", self.session),
+                action=lambda: self.session.screens.show("load", self.session) if self.session is not None and self.session.screens is not None else None,
             ),
             Button(
                 Rect(btn_x, start_y + spacing_y * 2, btn_w, btn_h),
                 "Preferences",
-                action=lambda: getattr(self.session, "screens", None) and self.session.screens.show("preferences", self.session),
+                action=lambda: self.session.screens.show("preferences", self.session) if self.session is not None and self.session.screens is not None else None,
             ),
             Button(
                 Rect(btn_x, start_y + spacing_y * 3, btn_w, btn_h),
@@ -86,7 +84,7 @@ class TitleScreen(Screen):
             ),
         ]
 
-    def on_enter(self, session: Any) -> None:
+    def on_enter(self, session: GameSessionProtocol) -> None:
         """Handle screen presentation entry and initialize viewport.
 
         Args:
@@ -94,11 +92,10 @@ class TitleScreen(Screen):
         """
         super().on_enter(session)
         self.session = session
-        if hasattr(session, "overlay") and session.overlay is not None:
-            ov = session.overlay
-            if getattr(ov, "width", None) and getattr(ov, "height", None):
-                self.viewport_width = ov.width
-                self.viewport_height = ov.height
+        ov = getattr(session, "overlay", None)
+        if ov is not None and hasattr(ov, "width") and hasattr(ov, "height"):
+            self.viewport_width = ov.width
+            self.viewport_height = ov.height
         self.rebuild_layout()
 
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
@@ -150,7 +147,7 @@ class GameMenuScreen(Screen):
         viewport_height: int = 720,
     ) -> None:
         super().__init__("game_menu", theme=theme, viewport_width=viewport_width, viewport_height=viewport_height)
-        self.session: Any = None
+        self.session: GameSessionProtocol | None = None
         self.rebuild_layout()
 
     def rebuild_layout(self) -> None:
@@ -165,21 +162,27 @@ class GameMenuScreen(Screen):
         spacing_y = vh * (52.0 / 720.0)
 
         def resume_game() -> None:
-            if hasattr(self.session, "screens"):
+            if self.session is not None and self.session.screens is not None:
                 self.session.screens.hide(self.session)
 
         def show_screen(name: str) -> Callable[[], None]:
-            return lambda: getattr(self.session, "screens", None) and self.session.screens.show(name, self.session)
+            def _show() -> None:
+                if self.session is not None and self.session.screens is not None:
+                    self.session.screens.show(name, self.session)
+            return _show
 
         def return_to_title() -> None:
-            if self.session is not None and hasattr(self.session, "return_to_title"):
-                self.session.return_to_title()
+            if self.session is not None:
+                if hasattr(self.session, "return_to_title"):
+                    self.session.return_to_title()
+                elif self.session.screens is not None:
+                    self.session.screens.show("title", self.session)
 
         def quit_game() -> None:
             if self.session is not None:
-                from eager_core.input import InputAction
-
                 if hasattr(self.session, "handle_input"):
+                    from eager_core.input import InputAction
+
                     self.session.handle_input(InputAction.QUIT)
                 elif hasattr(self.session, "request_quit"):
                     self.session.request_quit()
@@ -194,7 +197,7 @@ class GameMenuScreen(Screen):
             Button(Rect(btn_x, start_y + spacing_y * 6, btn_w, btn_h), "Quit Game", action=quit_game),
         ]
 
-    def on_enter(self, session: Any) -> None:
+    def on_enter(self, session: GameSessionProtocol) -> None:
         """Handle screen presentation entry and initialize viewport.
 
         Args:
@@ -202,11 +205,11 @@ class GameMenuScreen(Screen):
         """
         super().on_enter(session)
         self.session = session
-        if hasattr(session, "overlay") and session.overlay is not None:
-            ov = session.overlay
-            if getattr(ov, "width", None) and getattr(ov, "height", None):
-                self.viewport_width = ov.width
-                self.viewport_height = ov.height
+        ov = getattr(session, "overlay", None)
+        if ov is not None and hasattr(ov, "width") and hasattr(ov, "height"):
+            self.viewport_width = ov.width
+            self.viewport_height = ov.height
+        self.rebuild_layout()
         self.rebuild_layout()
 
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
@@ -258,7 +261,7 @@ class SaveLoadScreen(Screen):
     ) -> None:
         super().__init__(mode, theme=theme, viewport_width=viewport_width, viewport_height=viewport_height)
         self.mode: str = mode  # "save" or "load"
-        self.session: Any = None
+        self.session: GameSessionProtocol | None = None
         self.rebuild_layout()
 
     def rebuild_layout(self) -> None:
@@ -310,26 +313,29 @@ class SaveLoadScreen(Screen):
             def make_action(sname: str):
                 if self.mode == "save":
                     def save_action() -> None:
-                        if self.session is not None and hasattr(self.session, "save_game"):
+                        if self.session is not None:
                             self.session.save_game(sname)
                         # Refresh current screen button texts
                         self.rebuild_layout()
                     return save_action
                 else:
                     def load_action() -> None:
-                        if (
-                            self.session is not None
-                            and hasattr(self.session, "load_game")
-                            and self.session.load_game(sname)
-                        ):
-                            if hasattr(self.session, "screens"):
-                                self.session.screens.hide_all(self.session)
-                            self.session.mode = "game"
-                            self.session._ui_dirty = True
+                        if self.session is not None and self.session.load_game(sname):
+                            screens = getattr(self.session, "screens", None)
+                            if screens is not None:
+                                screens.hide_all(self.session)
+                            if hasattr(self.session, "mode"):
+                                self.session.mode = "game"
+                            if hasattr(self.session, "_ui_dirty"):
+                                self.session._ui_dirty = True
                             player = getattr(self.session, "_player", None)
-                            if player is not None and hasattr(player, "_sync_state"):
-                                player._sync_state()
-                                player._mark_ui_dirty()
+                            if player is not None:
+                                if hasattr(player, "on_state_restored"):
+                                    player.on_state_restored()
+                                if hasattr(player, "_sync_state"):
+                                    player._sync_state()
+                                if hasattr(player, "_mark_ui_dirty"):
+                                    player._mark_ui_dirty()
                     return load_action
 
             self.buttons.append(
@@ -349,11 +355,11 @@ class SaveLoadScreen(Screen):
             Button(
                 Rect(back_x, back_y, back_w, back_h),
                 "Back",
-                action=lambda: getattr(self.session, "screens", None) and self.session.screens.hide(self.session),
+                action=lambda: self.session.screens.hide(self.session) if self.session is not None and self.session.screens is not None else None,
             )
         )
 
-    def on_enter(self, session: Any) -> None:
+    def on_enter(self, session: GameSessionProtocol) -> None:
         """Handle screen presentation entry and initialize viewport.
 
         Args:
@@ -361,11 +367,11 @@ class SaveLoadScreen(Screen):
         """
         super().on_enter(session)
         self.session = session
-        if hasattr(session, "overlay") and session.overlay is not None:
-            ov = session.overlay
-            if getattr(ov, "width", None) and getattr(ov, "height", None):
-                self.viewport_width = ov.width
-                self.viewport_height = ov.height
+        ov = getattr(session, "overlay", None)
+        if ov is not None and hasattr(ov, "width") and hasattr(ov, "height"):
+            self.viewport_width = ov.width
+            self.viewport_height = ov.height
+        self.rebuild_layout()
         self.rebuild_layout()
 
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
@@ -414,7 +420,7 @@ class PreferencesScreen(Screen):
         viewport_height: int = 720,
     ) -> None:
         super().__init__("preferences", theme=theme, viewport_width=viewport_width, viewport_height=viewport_height)
-        self.session: Any = None
+        self.session: GameSessionProtocol | None = None
         self.rebuild_layout()
 
     def rebuild_layout(self) -> None:
@@ -432,7 +438,7 @@ class PreferencesScreen(Screen):
             def cb(val: float) -> None:
                 if prefs is not None:
                     setattr(prefs, field_name, val)
-                    if self.session is not None and hasattr(self.session, "apply_preferences"):
+                    if self.session is not None:
                         self.session.apply_preferences()
             return cb
 
@@ -532,7 +538,7 @@ class PreferencesScreen(Screen):
             Button(
                 Rect(back_x, back_y, back_w, back_h),
                 "Back",
-                action=lambda: getattr(self.session, "screens", None) and self.session.screens.hide(self.session),
+                action=lambda: self.session.screens.hide(self.session) if self.session is not None and self.session.screens is not None else None,
             )
         )
 
@@ -579,7 +585,7 @@ class PreferencesScreen(Screen):
                 )
             )
 
-    def on_enter(self, session: Any) -> None:
+    def on_enter(self, session: GameSessionProtocol) -> None:
         """Handle preferences screen entry and sync controls.
 
         Args:
@@ -587,11 +593,10 @@ class PreferencesScreen(Screen):
         """
         super().on_enter(session)
         self.session = session
-        if hasattr(session, "overlay") and session.overlay is not None:
-            ov = session.overlay
-            if getattr(ov, "width", None) and getattr(ov, "height", None):
-                self.viewport_width = ov.width
-                self.viewport_height = ov.height
+        ov = getattr(session, "overlay", None)
+        if ov is not None and hasattr(ov, "width") and hasattr(ov, "height"):
+            self.viewport_width = ov.width
+            self.viewport_height = ov.height
         self.rebuild_layout()
 
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
@@ -645,14 +650,14 @@ class HistoryScreen(Screen):
         viewport_height: int = 720,
     ) -> None:
         super().__init__("history", theme=theme, viewport_width=viewport_width, viewport_height=viewport_height)
-        self.session: Any = None
+        self.session: GameSessionProtocol | None = None
         self.scroll_offset: int = 0
         self._last_built_scroll_offset: int | None = None
         self._last_built_entry_count: int | None = None
         self._last_built_viewport: tuple[int, int] | None = None
         self._rebuild_buttons()
 
-    def on_enter(self, session: Any) -> None:
+    def on_enter(self, session: GameSessionProtocol) -> None:
         """Handle history screen entry, resetting scroll offset.
 
         Args:
@@ -660,11 +665,10 @@ class HistoryScreen(Screen):
         """
         super().on_enter(session)
         self.session = session
-        if hasattr(session, "overlay") and session.overlay is not None:
-            ov = session.overlay
-            if getattr(ov, "width", None) and getattr(ov, "height", None):
-                self.viewport_width = ov.width
-                self.viewport_height = ov.height
+        ov = getattr(session, "overlay", None)
+        if ov is not None and hasattr(ov, "width") and hasattr(ov, "height"):
+            self.viewport_width = ov.width
+            self.viewport_height = ov.height
         self.scroll_offset = 0
         self._rebuild_buttons()
 
@@ -681,6 +685,9 @@ class HistoryScreen(Screen):
             return
         if hasattr(self.session, "play_voice") and callable(self.session.play_voice):
             self.session.play_voice(voice)
+            return
+        if hasattr(self.session, "play_audio"):
+            self.session.play_audio("voice", voice)
             return
 
         audio = getattr(self.session, "audio", None) or getattr(getattr(self.session, "director", None), "audio", None)
@@ -723,7 +730,7 @@ class HistoryScreen(Screen):
             Button(
                 Rect(back_x, back_y, back_w, back_h),
                 "Back",
-                action=lambda: getattr(self.session, "screens", None) and self.session.screens.hide(self.session) if self.session is not None else None,
+                action=lambda: self.session.screens.hide(self.session) if self.session is not None and self.session.screens is not None else None,
             )
         )
 
@@ -878,7 +885,7 @@ class HistoryScreen(Screen):
                         font_size=entry_font_size,
                     )
 
-                    wrapped = _get_wrapped_lines(
+                    wrapped = get_wrapped_lines(
                         plain_text,
                         avail_w,
                         backend.measure_text,
@@ -900,7 +907,7 @@ class HistoryScreen(Screen):
                             font_size=entry_font_size,
                         )
                 else:
-                    wrapped = _get_wrapped_lines(
+                    wrapped = get_wrapped_lines(
                         plain_text,
                         max_text_w,
                         backend.measure_text,

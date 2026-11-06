@@ -520,7 +520,7 @@ class StageDirector:
             return f"{cfg.asset_prefix}_{expr}"
         return None
 
-    def handle_dialogue_event(self, event: Any) -> None:
+    def handle_dialogue_event(self, event: DialogueEvent) -> None:
         """Update UI state, sync sprite, and play dialogue voice audio on the voice channel."""
         speaker = event.speaker
         text = event.text
@@ -687,7 +687,7 @@ class StageDirector:
                             else:
                                 elem.state.position = target_pos
 
-    def handle_append_event(self, event: Any) -> None:
+    def handle_append_event(self, event: AppendEvent) -> None:
         """Append text to current UI dialogue buffer."""
         add_text = event.text
         current = self.ui_state.text or ""
@@ -698,7 +698,7 @@ class StageDirector:
             last = self.ui_state.nvl_entries[-1]
             last.text = f"{last.text} {add_text}".strip()
 
-    def handle_fresh_box_event(self, event: Any) -> None:
+    def handle_fresh_box_event(self, event: FreshBoxEvent) -> None:
         """Clear textbox content but preserve speaker for fresh box."""
         self.ui_state.text = event.text
         self.ui_state.clear_choices()
@@ -706,7 +706,7 @@ class StageDirector:
         if self.ui_state.nvl_mode:
             self.ui_state.nvl_entries.append(NVLEntry(speaker=self.ui_state.speaker, text=self.ui_state.text, emotion=self.ui_state.emotion))
 
-    def handle_narration_event(self, event: Any) -> None:
+    def handle_narration_event(self, event: NarrationEvent) -> None:
         """Update UI state with narration text and stop active voice."""
         self.ui_state.speaker = None
         self.ui_state.text = event.text
@@ -723,14 +723,14 @@ class StageDirector:
         if self.audio is not None:
             self.audio.stop("voice")
 
-    def handle_scene_enter_event(self, event: Any) -> None:
+    def handle_scene_enter_event(self, event: SceneEnterEvent) -> None:
         """Trigger registered background transitions when entering new scenes."""
         scene_id = event.scene_id
         if scene_id and scene_id in self.scene_backgrounds:
             asset_id, trans, dur = self.scene_backgrounds[scene_id]
             self.compositor.set_background(asset_id, transition=trans, duration=dur)
 
-    def handle_scene_exit_event(self, event: Any) -> None:
+    def handle_scene_exit_event(self, event: SceneExitEvent) -> None:
         """Clear dialogue and choices on scene exit and stop voice channel."""
         self.ui_state.clear_dialogue()
         self.ui_state.clear_choices()
@@ -738,7 +738,7 @@ class StageDirector:
         if self.audio is not None:
             self.audio.stop("voice")
 
-    def handle_choice_prompt_event(self, event: Any) -> None:
+    def handle_choice_prompt_event(self, event: ChoicePromptEvent) -> None:
         """Populate UI state choices from ChoicePromptEvent."""
         self.ui_state.choices = [
             ChoiceOption(
@@ -751,11 +751,11 @@ class StageDirector:
             for opt in event.options
         ]
 
-    def handle_input_prompt_event(self, event: Any) -> None:
+    def handle_input_prompt_event(self, event: InputPromptEvent) -> None:
         """Record active input prompt on UI state."""
         self.ui_state.active_input_prompt = event
 
-    def handle_story_end_event(self, event: Any) -> None:
+    def handle_story_end_event(self, event: StoryEndEvent) -> None:
         """Mark UI state as finished and stop voice channel."""
         self.ui_state.is_finished = True
         if self.audio is not None:

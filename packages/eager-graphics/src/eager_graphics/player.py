@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from eager_core.events import ChoicePromptEvent
 from eager_core.input import InputAction, Keymap, normalize_keysym
+from eager_core.protocols import GameSessionProtocol
 from eager_core.types import DebugOverlayMode, ScaleMode
 
 from eager_graphics.ui_components import UIOverlay
@@ -28,7 +29,7 @@ class BasePlayer:
 
     def __init__(
         self,
-        session: Any,
+        session: GameSessionProtocol,
         width: int = 1280,
         height: int = 720,
         title: str = "Eager-Graphics Visual Novel",
@@ -39,7 +40,7 @@ class BasePlayer:
         show_fps: bool | str | DebugOverlayMode = True,
         uncapped: bool = False,
     ) -> None:
-        self.session: Any = session
+        self.session: GameSessionProtocol = session
         if session is not None and hasattr(session, "add_lifecycle_listener"):
             session.add_lifecycle_listener(self)
         self.width: int = width
@@ -181,7 +182,8 @@ class BasePlayer:
 
     def step_initial_beat(self) -> None:
         """Step first beat if not starting in an active menu screen."""
-        has_active_screen = getattr(getattr(self.session, "screens", None), "is_active", False)
+        screens = getattr(self.session, "screens", None)
+        has_active_screen = screens.is_active if screens is not None else False
         if not has_active_screen:
             self.advance_story()
 
@@ -216,6 +218,11 @@ class BasePlayer:
         """Handle quit request from session input."""
         if hasattr(self, "close"):
             self.close()
+
+    def on_state_restored(self) -> None:
+        """Handle session checkpoint/state restoration."""
+        self._mark_ui_dirty()
+        self._sync_state()
 
     def close(self) -> None:
         """Release session listener and audio mixer resources."""
