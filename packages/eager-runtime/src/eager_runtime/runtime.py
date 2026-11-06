@@ -57,12 +57,17 @@ if TYPE_CHECKING:
     from eager_script.graph import SceneGraph
 
 __all__ = [
+    "EagerRuntimeError",
     "StoryRuntimeError",
     "StoryVM",
 ]
 
 
-class StoryRuntimeError(Exception):
+class EagerRuntimeError(Exception):
+    """Base exception for all errors raised within eager-runtime."""
+
+
+class StoryRuntimeError(EagerRuntimeError):
     """Raised when an illegal operation or invalid state occurs during story execution."""
 
 
@@ -166,13 +171,17 @@ class StoryVM:
             return self._translation_manager.translate_speaker(speaker)
         return speaker
 
-    def _apply_graph_defaults(self) -> None:
+    def apply_graph_defaults(self) -> None:
         """Evaluate graph defaults if not already set."""
         if self._graph.defaults:
             for d in self._graph.defaults:
                 if isinstance(d, ParsedDefault) and d.name not in self._variables:
                     val = self._evaluate_expr(d.expr_src)
                     self.set_variable(d.name, val)
+
+    def _apply_graph_defaults(self) -> None:
+        """Backward-compatible alias for apply_graph_defaults."""
+        self.apply_graph_defaults()
 
     def _get_eval_env(self) -> dict[str, Any]:
         """Build evaluation environment for expression evaluation."""

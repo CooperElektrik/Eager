@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import eager_script
 from eager_script import (
@@ -18,13 +18,12 @@ from eager_script import (
     ParsedItem,
     parse_hook_args,
 )
-
-if TYPE_CHECKING:
-    from eager_script.graph import SceneGraph
+from eager_script.graph import SceneGraph
 
 __all__ = [  # noqa: RUF022
     "AUDIO_EXTENSIONS",
     "AssetCheckReport",
+    "AssetKind",
     "AssetReference",
     "IMAGE_EXTENSIONS",
     "MissingAssetIssue",
@@ -37,11 +36,21 @@ IMAGE_EXTENSIONS = ("", ".png", ".jpg", ".jpeg", ".webp", ".bmp")
 AUDIO_EXTENSIONS = ("", ".ogg", ".wav", ".mp3", ".flac", ".opus", ".m4a")
 
 
+class AssetKind(str, Enum):
+    """Classification of external assets referenced in screenplays."""
+
+    BACKGROUND = "background"
+    CHARACTER = "character"
+    AUDIO = "audio"
+    VOICE = "voice"
+    IMAGE = "image"
+
+
 @dataclass(frozen=True, slots=True)
 class AssetReference:
     """A reference to an external asset found within a screenplay."""
 
-    kind: str  # "background" | "character" | "audio" | "voice" | "image"
+    kind: AssetKind | str
     identifier: str
     line_number: int
     scene_id: str | None = None
@@ -92,8 +101,8 @@ def extract_asset_references(
                         collect_items(opt.body, sc_id)
 
     # Check if this is a SceneGraph
-    if hasattr(graph_or_items, "nodes") and hasattr(graph_or_items, "preamble"):
-        graph: SceneGraph = graph_or_items  # type: ignore[assignment]
+    if isinstance(graph_or_items, SceneGraph):
+        graph = graph_or_items
         # Preamble items
         collect_items(graph.preamble, None)
         # Scene nodes
@@ -112,7 +121,7 @@ def extract_asset_references(
                         attrs_dict["name"] = str(cdef["name"])
                 character_configs[c_id] = attrs_dict
     else:
-        collect_items(graph_or_items, None)  # type: ignore[arg-type]
+        collect_items(graph_or_items, None)
 
     # First pass: collect all character definitions from items_to_scan
     for item, _ in items_to_scan:

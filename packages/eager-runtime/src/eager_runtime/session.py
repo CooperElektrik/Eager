@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from eager_core.dispatcher import EventDispatcher
 from eager_core.events import (
@@ -27,14 +27,13 @@ from eager_core.input import InputAction, Keymap
 from eager_core.persistent import PersistentData
 from eager_core.preferences import Preferences
 from eager_core.protocols import (
+    CharacterRegistryProtocol,
     HostLifecycleListener,
+    ProviderRegistry,
     ScreenManagerProtocol,
     StageProtocol,
     UIProtocol,
-    get_screen_manager_factory,
-    get_stage_factory,
-    get_theme_factory,
-    get_ui_factory,
+    get_default_registry,
     load_providers,
 )
 from eager_core.saves import SaveManager
@@ -54,9 +53,15 @@ def _create_default_stage(
     virtual_height: int,
     audio: Any,
     skip_mode_cb: Any,
+    *,
+    registry: ProviderRegistry | None = None,
 ) -> Any:
-    load_providers()
-    factory = get_stage_factory()
+    reg = registry or get_default_registry()
+    if registry is not None and registry is not get_default_registry():
+        reg.load_providers()
+    else:
+        load_providers()
+    factory = reg.get_stage_factory()
     if factory is not None:
         return factory(
             virtual_width=virtual_width,
@@ -67,7 +72,7 @@ def _create_default_stage(
     return NullStage(virtual_width=virtual_width, virtual_height=virtual_height)
 
 
-def _resolve_theme(config: Any) -> Any:
+def _resolve_theme(config: Any, *, registry: ProviderRegistry | None = None) -> Any:
     """Instantiate a Theme object or options dict from ProjectConfig."""
     if config is None:
         return None
@@ -75,8 +80,12 @@ def _resolve_theme(config: Any) -> Any:
     theme_overrides = getattr(config, "theme_overrides", {}) or {}
     if not theme_name and not theme_overrides:
         return None
-    load_providers()
-    factory = get_theme_factory()
+    reg = registry or get_default_registry()
+    if registry is not None and registry is not get_default_registry():
+        reg.load_providers()
+    else:
+        load_providers()
+    factory = reg.get_theme_factory()
     kwargs: dict[str, Any] = {}
     if theme_name:
         kwargs["name"] = theme_name
@@ -94,9 +103,19 @@ def _resolve_theme(config: Any) -> Any:
         return kwargs
 
 
-def _create_default_ui(width: int = 1280, height: int = 720, theme: Any = None) -> Any:
-    load_providers()
-    factory = get_ui_factory()
+def _create_default_ui(
+    width: int = 1280,
+    height: int = 720,
+    theme: Any = None,
+    *,
+    registry: ProviderRegistry | None = None,
+) -> Any:
+    reg = registry or get_default_registry()
+    if registry is not None and registry is not get_default_registry():
+        reg.load_providers()
+    else:
+        load_providers()
+    factory = reg.get_ui_factory()
     if factory is not None:
         try:
             return factory(width=width, height=height, theme=theme)
@@ -105,9 +124,18 @@ def _create_default_ui(width: int = 1280, height: int = 720, theme: Any = None) 
     return NullUI(width=width, height=height)
 
 
-def _create_default_screens(config: Any, session: Any) -> Any:
-    load_providers()
-    factory = get_screen_manager_factory()
+def _create_default_screens(
+    config: Any,
+    session: Any,
+    *,
+    registry: ProviderRegistry | None = None,
+) -> Any:
+    reg = registry or get_default_registry()
+    if registry is not None and registry is not get_default_registry():
+        reg.load_providers()
+    else:
+        load_providers()
+    factory = reg.get_screen_manager_factory()
     if factory is not None:
         return factory(config=config, session=session)
     return NullScreenManager()
@@ -147,7 +175,9 @@ class GameSession:
         screens: ScreenManagerProtocol | None = None,
         headless: bool = False,
         renderer: Any = None,
+        registry: ProviderRegistry | None = None,
     ) -> None:
+        self.registry: ProviderRegistry = registry or get_default_registry()
         self.script_path = Path(project_or_script) if isinstance(project_or_script, (str, Path)) else None
         self.backend = backend
         self.asset_dir = Path(asset_dir) if asset_dir is not None else None
@@ -226,6 +256,7 @@ class GameSession:
                 virtual_height=virtual_height,
                 audio=self.audio,
                 skip_mode_cb=lambda: self.skip_mode,
+                registry=self.registry,
             )
         self.director: Any = self.stage
         self.compositor: Any = getattr(self.stage, "compositor", None)
@@ -258,13 +289,13 @@ class GameSession:
 
         self.checkpoints = CheckpointHistory(max_history=rollback_limit)
         self.keymap = Keymap()
-        resolved_theme = _resolve_theme(config) if config is not None else None
+        resolved_theme = _resolve_theme(config, registry=self.registry) if config is not None else None
         if ui is not None:
             self.ui: Any = ui
         elif headless:
             self.ui = NullUI(width=1280, height=720)
         else:
-            self.ui = _create_default_ui(width=1280, height=720, theme=resolved_theme)
+            self.ui = _create_default_ui(width=1280, height=720, theme=resolved_theme, registry=self.registry)
         self.overlay: Any = self.ui
 
         # Screens and Theme
@@ -273,7 +304,7 @@ class GameSession:
         elif headless:
             self.screens = NullScreenManager()
         else:
-            self.screens = _create_default_screens(config, self)
+            self.screens = _create_default_screens(config, self, registry=self.registry)
 
         from eager_core.backlog import Backlog
 
@@ -316,10 +347,7 @@ class GameSession:
     def request_fullscreen(self) -> None:
         """Notify registered host listeners to toggle fullscreen."""
         for listener in list(self._lifecycle_listeners):
-            if hasattr(listener, "on_request_fullscreen"):
-                listener.on_request_fullscreen()
-            elif hasattr(listener, "toggle_fullscreen"):
-                cast(Any, listener).toggle_fullscreen()
+            listener.on_request_fullscreen()
         if hasattr(self.renderer, "toggle_fullscreen"):
             self.renderer.toggle_fullscreen()
 
@@ -327,15 +355,9 @@ class GameSession:
         """Notify registered host listeners to terminate the application."""
         if not self._lifecycle_listeners:
             return False
-        handled = False
         for listener in list(self._lifecycle_listeners):
-            if hasattr(listener, "on_request_quit"):
-                listener.on_request_quit()
-                handled = True
-            elif hasattr(listener, "close"):
-                cast(Any, listener).close()
-                handled = True
-        return handled
+            listener.on_request_quit()
+        return True
 
     @property
     def _player(self) -> Any:
@@ -368,6 +390,10 @@ class GameSession:
     def play_voice(self, voice_path: str) -> None:
         """Replay a voice clip on the voice channel."""
         self.audio.play("voice", str(voice_path), loop=False)
+
+    def play_audio(self, channel: str, track: str) -> None:
+        """Play an audio track on a specified channel."""
+        self.audio.play(channel, track)
 
     def _capture_checkpoint(self) -> Checkpoint:
         """Generate a unified checkpoint of the current session state."""
@@ -424,6 +450,10 @@ class GameSession:
 
         self.is_finished = self.vm.is_ended
         self.mode = "ended" if self.is_finished else "game"
+
+        for listener in list(self._lifecycle_listeners):
+            if hasattr(listener, "on_state_restored"):
+                listener.on_state_restored()
 
     def _setup_text_reveal(self, text: str, initial_visible_chars: int = 0) -> None:
         """Initialize typewriter text reveal based on user preferences."""
@@ -1374,7 +1404,8 @@ class GameSession:
             if locales_dir.is_dir():
                 self.translation_manager.load_directory(locales_dir)
 
-        if hasattr(self.director, "register_character") and new_graph.characters:
+        director = self.director
+        if isinstance(director, CharacterRegistryProtocol) and new_graph.characters:
             known_keys = {
                 "asset_prefix",
                 "default_expression",
@@ -1386,7 +1417,7 @@ class GameSession:
                 attrs = cinfo.get("attrs", {}) if isinstance(cinfo, dict) else {}
                 name = cinfo.get("name") if isinstance(cinfo, dict) else None
                 custom_expressions = {k: v for k, v in attrs.items() if k not in known_keys}
-                self.director.register_character(
+                director.register_character(
                     cid,
                     name=name,
                     asset_prefix=attrs.get("asset_prefix"),
@@ -1397,8 +1428,7 @@ class GameSession:
                     expressions=custom_expressions,
                 )
 
-        if hasattr(self.vm, "_apply_graph_defaults"):
-            self.vm._apply_graph_defaults()
+        self.vm.apply_graph_defaults()
 
         # 4. Reconcile State
         if cur_scene_id is not None and cur_scene_id in new_graph.nodes:

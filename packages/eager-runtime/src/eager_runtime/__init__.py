@@ -30,7 +30,7 @@ from eager_core.input import InputAction, Keymap
 from eager_core.state import CallFrame, Checkpoint, CheckpointHistory, StorySnapshot
 
 from eager_runtime.player import TerminalPlayer
-from eager_runtime.runtime import StoryRuntimeError, StoryVM
+from eager_runtime.runtime import EagerRuntimeError, StoryRuntimeError, StoryVM
 
 if TYPE_CHECKING:
     from eager_core.backlog import Backlog, BacklogEntry
@@ -46,6 +46,7 @@ if TYPE_CHECKING:
 
     from eager_runtime.assets import (
         AssetCheckReport,
+        AssetKind,
         AssetReference,
         MissingAssetIssue,
         check_assets,
@@ -63,6 +64,7 @@ __version__ = "0.8.0"
 __all__ = [
     "AppendEvent",
     "AssetCheckReport",
+    "AssetKind",
     "AssetReference",
     "Backlog",
     "BacklogEntry",
@@ -72,6 +74,7 @@ __all__ = [
     "ChoiceOption",
     "ChoicePromptEvent",
     "DialogueEvent",
+    "EagerRuntimeError",
     "EventDispatcher",
     "FileWatcher",
     "FreshBoxEvent",
@@ -106,6 +109,7 @@ __all__ = [
 
 _LAZY_EXPORTS = {
     "AssetCheckReport": "eager_runtime.assets",
+    "AssetKind": "eager_runtime.assets",
     "AssetReference": "eager_runtime.assets",
     "MissingAssetIssue": "eager_runtime.assets",
     "check_assets": "eager_runtime.assets",

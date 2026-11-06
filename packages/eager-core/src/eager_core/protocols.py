@@ -362,7 +362,10 @@ class GameSessionProtocol(Protocol):
 class StoryVMProtocol(Protocol):
     """Protocol for story virtual machine step execution."""
 
-    is_ended: bool
+    @property
+    def is_ended(self) -> bool:
+        """Return True if story execution has ended."""
+        ...
 
     def step(self) -> Any:
         """Advance VM by one narrative beat and return the resulting StoryEvent."""
