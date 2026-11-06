@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 from lsprotocol import types
 from pygls.lsp.server import LanguageServer
@@ -49,7 +50,7 @@ __all__ = [
 class EagerLanguageServer(LanguageServer):
     """Eager-Script Language Server."""
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__("eager-script-lsp", __version__, *args, **kwargs)
         self.workspace_index: WorkspaceIndex = WorkspaceIndex(Path.cwd())
 
