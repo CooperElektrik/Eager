@@ -115,6 +115,9 @@ class DummyScreenManager:
     def hide(self, session: Any) -> None:
         pass
 
+    def hide_all(self, session: Any) -> None:
+        pass
+
     def draw(self, *args: Any, **kwargs: Any) -> None:
         pass
 
@@ -122,6 +125,9 @@ class DummyScreenManager:
         return False
 
     def handle_mouse_move(self, x: float, y: float) -> bool:
+        return False
+
+    def handle_key(self, key_name: str, session: Any = None) -> bool:
         return False
 
 
@@ -204,3 +210,15 @@ def test_provider_registry():
     assert get_stage_factory() is None
     assert get_theme_factory() is None
     assert list_players() == []
+
+
+def test_provider_registry_instance():
+    from eager_core.protocols import ProviderRegistry
+
+    registry = ProviderRegistry()
+    assert registry.get_stage_factory() is None
+    registry.register_player("local_player", object)
+    assert registry.get_player("local_player") is object
+    assert registry.list_players() == ["local_player"]
+    registry.reset()
+    assert registry.list_players() == []

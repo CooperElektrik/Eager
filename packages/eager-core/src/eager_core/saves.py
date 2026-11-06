@@ -129,14 +129,7 @@ class SaveData:
         return {
             "version": self.version,
             "metadata": self.metadata.to_dict(),
-            "checkpoint": {
-                "story": self.checkpoint.story,
-                "visual": self.checkpoint.visual,
-                "audio": self.checkpoint.audio,
-                "backlog_len": self.checkpoint.backlog_len,
-                "ui": self.checkpoint.ui,
-                "active_input_prompt": self.checkpoint.active_input_prompt,
-            },
+            "checkpoint": self.checkpoint.to_dict(),
         }
 
     @classmethod
@@ -157,24 +150,7 @@ class SaveData:
         if not isinstance(cp_raw, dict):
             raise TypeError(f"SaveData 'checkpoint' must be a dict, got {type(cp_raw).__name__}")
 
-        backlog_raw = cp_raw.get("backlog_len", 0)
-        backlog_len = int(0 if backlog_raw is None else backlog_raw)
-
-        story = cp_raw.get("story")
-        visual = cp_raw.get("visual")
-        audio = cp_raw.get("audio")
-        ui = cp_raw.get("ui")
-
-        cp = Checkpoint(
-            story=story if isinstance(story, dict) else {},
-            visual=visual if isinstance(visual, dict) else {},
-            audio=audio if isinstance(audio, dict) else {},
-            backlog_len=backlog_len,
-            ui=ui if isinstance(ui, dict) else {},
-            active_input_prompt=cp_raw.get("active_input_prompt")
-            if isinstance(cp_raw.get("active_input_prompt"), dict)
-            else None,
-        )
+        cp = Checkpoint.from_dict(cp_raw)
         return cls(metadata=meta, checkpoint=cp, version=version)
 
 

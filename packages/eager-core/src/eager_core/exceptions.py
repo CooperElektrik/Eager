@@ -20,29 +20,17 @@ class EagerCoreError(Exception):
             setattr(self, key, value)
 
 
-class AudioError(EagerCoreError, ValueError):
-    """Raised when an audio operation, asset resolution, or backend fails.
-
-    Inherits from ValueError for backward compatibility with existing path traversal guards.
-    """
+class AudioError(EagerCoreError):
+    """Raised when an audio operation, asset resolution, or backend fails."""
 
 
-class ColorParseError(EagerCoreError, ValueError):
-    """Raised when parsing or constructing a Color fails.
-
-    Inherits from ValueError for backward compatibility with Color.from_hex callers.
-    """
+class ColorParseError(EagerCoreError):
+    """Raised when parsing or constructing a Color fails."""
 
 
-class StorageError(EagerCoreError, OSError):
-    """Raised when atomic write or persistent storage operations fail.
-
-    Inherits from OSError for backward compatibility with disk I/O exception handlers.
-    """
+class StorageError(EagerCoreError):
+    """Raised when atomic write or persistent storage operations fail."""
 
 
-class I18nError(EagerCoreError, ValueError):
-    """Raised when translation catalog operations or locale switching fails.
-
-    Inherits from ValueError for backward compatibility.
-    """
+class I18nError(EagerCoreError):
+    """Raised when translation catalog operations or locale switching fails."""

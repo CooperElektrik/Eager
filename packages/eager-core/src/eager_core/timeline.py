@@ -4,15 +4,31 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from eager_core.easing import EasingFunc, linear
 from eager_core.types import Color, Vec2
 
 __all__ = [
+    "IdentifiableAsset",
+    "IdentifiableElement",
     "Timeline",
     "Tween",
 ]
+
+
+@runtime_checkable
+class IdentifiableElement(Protocol):
+    """Protocol for targets with an element_id attribute."""
+
+    element_id: str
+
+
+@runtime_checkable
+class IdentifiableAsset(Protocol):
+    """Protocol for targets with an asset_id attribute."""
+
+    asset_id: str
 
 
 @dataclass
@@ -109,12 +125,10 @@ class Timeline:
             remaining = max(0.0, tween.duration - (tween.elapsed - tween.delay))
 
             target = tween.target
-            if hasattr(target, "element_id"):
-                target_id = target.element_id  # type: ignore[attr-defined]
-            elif hasattr(target, "asset_id"):
-                target_id = target.asset_id  # type: ignore[attr-defined]
-            elif hasattr(target, "__dict__") and "element_id" in target.__dict__:
-                target_id = target.__dict__["element_id"]  # type: ignore[index]
+            if isinstance(target, IdentifiableElement):
+                target_id = target.element_id
+            elif isinstance(target, IdentifiableAsset):
+                target_id = target.asset_id
             else:
                 target_id = repr(target)[:80]
 

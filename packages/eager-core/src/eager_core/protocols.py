@@ -9,27 +9,38 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from eager_core.characters import CharacterConfig
-from eager_core.dispatcher import EventDispatcher
 from eager_core.types import WHITE, Anchor, Color
 
+if TYPE_CHECKING:
+    from eager_core.dispatcher import EventDispatcher
+
 __all__ = [
+    "AudioBackendFactory",
     "CharacterRegistryProtocol",
+    "GameSessionProtocol",
     "HostLifecycleListener",
+    "PlayerFactory",
+    "PlayerProtocol",
+    "ProviderRegistry",
     "RenderBackend",
     "RenderItem",
+    "RendererFactory",
     "ScreenManagerFactory",
     "ScreenManagerProtocol",
+    "ScreenProtocol",
     "StageFactory",
     "StageProtocol",
+    "StoryVMProtocol",
     "ThemeFactory",
     "UIDrawBackend",
     "UIFactory",
     "UIProtocol",
     "UIStateProtocol",
     "get_audio_backend",
+    "get_default_registry",
     "get_player",
     "get_renderer",
     "get_screen_manager_factory",
@@ -211,32 +222,80 @@ class HostLifecycleListener(Protocol):
         """Handle application quit request."""
         ...
 
+    def on_state_restored(self) -> None:
+        """Handle narrative state restoration (load game, rollback)."""
+        ...
+
+
+@runtime_checkable
+class ScreenProtocol(Protocol):
+    """Protocol for visual novel modal/full-screen UI menus."""
+
+    name: str
+    visible: bool
+
+    def set_viewport(self, width: int, height: int) -> None:
+        """Update viewport dimensions for layout calculation."""
+        ...
+
+    def set_theme(self, theme: Any) -> None:
+        """Update visual theme across widgets."""
+        ...
+
+    def on_enter(self, session: Any) -> None:
+        """Called when screen is displayed."""
+        ...
+
+    def on_exit(self, session: Any) -> None:
+        """Called when screen is hidden."""
+        ...
+
+    def handle_mouse_move(self, x: float, y: float) -> bool:
+        """Update hover state on widgets."""
+        ...
+
+    def handle_mouse_click(self, x: float, y: float) -> bool:
+        """Process mouse click event."""
+        ...
+
+    def handle_key(self, key_name: str, session: Any = None) -> bool:
+        """Process keyboard shortcut event."""
+        ...
+
+    def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
+        """Render screen contents to drawing surface."""
+        ...
+
 
 @runtime_checkable
 class ScreenManagerProtocol(Protocol):
     """Protocol for menu screen stack and registry management."""
 
-    screens: dict[str, object]
-    active_screen: object
+    screens: dict[str, Any]
+    active_screen: Any
 
     @property
     def is_active(self) -> bool:
         """Return True if a screen is currently active/visible."""
         ...
 
-    def register(self, screen: object) -> None:
+    def register(self, screen: Any) -> None:
         """Register a screen under its name."""
         ...
 
-    def show(self, name: str, session: object) -> bool:
+    def show(self, name: str, session: Any) -> bool:
         """Display the screen with the given name."""
         ...
 
-    def hide(self, session: object) -> None:
+    def hide(self, session: Any) -> None:
         """Dismiss the active screen."""
         ...
 
-    def draw(self, *args: object, **kwargs: object) -> None:
+    def hide_all(self, session: Any) -> None:
+        """Dismiss all screens and clear navigation stack."""
+        ...
+
+    def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
         """Render the active screen."""
         ...
 
@@ -246,6 +305,80 @@ class ScreenManagerProtocol(Protocol):
 
     def handle_mouse_move(self, x: float, y: float) -> bool:
         """Forward mouse move to active screen."""
+        ...
+
+    def handle_key(self, key_name: str, session: Any = None) -> bool:
+        """Forward key event to active screen."""
+        ...
+
+
+@runtime_checkable
+class GameSessionProtocol(Protocol):
+    """Protocol for narrative game session host managing story state and presentation."""
+
+    backlog: Any
+    preferences: Any
+    save_manager: Any
+    translation_manager: Any
+    screens: ScreenManagerProtocol | None
+    mode: str
+    is_finished: bool
+    input_text: str
+
+    def advance(self) -> None:
+        """Advance story execution by one beat."""
+        ...
+
+    def choose(self, choice_index: int) -> None:
+        """Make branching story choice by index."""
+        ...
+
+    def restart_story(self) -> None:
+        """Restart story from beginning."""
+        ...
+
+    def save_game(self, slot_name: str) -> bool:
+        """Save game to named slot."""
+        ...
+
+    def load_game(self, slot_name: str) -> bool:
+        """Load game from named slot."""
+        ...
+
+    def apply_preferences(self) -> None:
+        """Apply active preferences to audio, locale, and display subsystems."""
+        ...
+
+    def request_quit(self) -> bool:
+        """Request host environment quit."""
+        ...
+
+    def play_audio(self, channel: str, track: str) -> None:
+        """Play audio asset on given channel."""
+        ...
+
+
+@runtime_checkable
+class StoryVMProtocol(Protocol):
+    """Protocol for story virtual machine step execution."""
+
+    is_ended: bool
+
+    def step(self) -> Any:
+        """Advance VM by one narrative beat and return the resulting StoryEvent."""
+        ...
+
+
+@runtime_checkable
+class PlayerProtocol(Protocol):
+    """Protocol for interactive player runner."""
+
+    def run(self) -> None:
+        """Execute player main frame loop until termination."""
+        ...
+
+    def close(self) -> None:
+        """Close window or terminate player resources."""
         ...
 
 
@@ -415,218 +548,225 @@ StageFactory = Callable[..., StageProtocol]
 UIFactory = Callable[..., UIProtocol]
 ScreenManagerFactory = Callable[..., ScreenManagerProtocol]
 ThemeFactory = Callable[..., Any]
+PlayerFactory = Callable[..., Any]
+AudioBackendFactory = Callable[..., Any]
+RendererFactory = Callable[..., Any]
 
-_stage_factory: StageFactory | None = None
-_ui_factory: UIFactory | None = None
-_screen_manager_factory: ScreenManagerFactory | None = None
-_theme_factory: ThemeFactory | None = None
 
-_player_factories: dict[str, Any] = {}
-_audio_backends: dict[str, Any] = {}
-_renderer_factories: dict[str, Any] = {}
+class ProviderRegistry:
+    """Registry container for IoC provider factories (stages, UI, screens, players, audio, renderers)."""
 
-_providers_loaded: bool = False
+    def __init__(self) -> None:
+        self._stage_factory: StageFactory | None = None
+        self._ui_factory: UIFactory | None = None
+        self._screen_manager_factory: ScreenManagerFactory | None = None
+        self._theme_factory: ThemeFactory | None = None
+        self._player_factories: dict[str, PlayerFactory] = {}
+        self._audio_backends: dict[str, AudioBackendFactory] = {}
+        self._renderer_factories: dict[str, RendererFactory] = {}
+        self._providers_loaded: bool = False
+
+    def register_stage_factory(self, factory: StageFactory | None) -> None:
+        """Register factory callable returning a StageProtocol instance."""
+        logger.debug("Registering stage factory: %s", factory)
+        self._stage_factory = factory
+
+    def get_stage_factory(self) -> StageFactory | None:
+        """Return registered stage factory callable, if any."""
+        return self._stage_factory
+
+    def register_ui_factory(self, factory: UIFactory | None) -> None:
+        """Register factory callable returning a UIProtocol instance."""
+        logger.debug("Registering UI factory: %s", factory)
+        self._ui_factory = factory
+
+    def get_ui_factory(self) -> UIFactory | None:
+        """Return registered UI factory callable, if any."""
+        return self._ui_factory
+
+    def register_screen_manager_factory(self, factory: ScreenManagerFactory | None) -> None:
+        """Register factory callable returning a ScreenManagerProtocol instance."""
+        logger.debug("Registering screen manager factory: %s", factory)
+        self._screen_manager_factory = factory
+
+    def get_screen_manager_factory(self) -> ScreenManagerFactory | None:
+        """Return registered screen manager factory callable, if any."""
+        return self._screen_manager_factory
+
+    def register_theme_factory(self, factory: ThemeFactory | None) -> None:
+        """Register factory callable returning a theme instance."""
+        logger.debug("Registering theme factory: %s", factory)
+        self._theme_factory = factory
+
+    def get_theme_factory(self) -> ThemeFactory | None:
+        """Return registered theme factory callable, if any."""
+        return self._theme_factory
+
+    def register_player(self, backend: str, player_cls: PlayerFactory) -> None:
+        """Register interactive player implementation for backend."""
+        logger.debug("Registering player backend %r: %s", backend, player_cls)
+        self._player_factories[backend.lower()] = player_cls
+
+    def get_player(self, backend: str) -> PlayerFactory | None:
+        """Retrieve interactive player implementation by backend name."""
+        return self._player_factories.get(backend.lower())
+
+    def list_players(self) -> list[str]:
+        """Return sorted list of registered player backend names."""
+        return sorted(self._player_factories.keys())
+
+    def register_audio_backend(self, backend: str, audio_factory: AudioBackendFactory) -> None:
+        """Register audio backend factory for backend."""
+        logger.debug("Registering audio backend %r: %s", backend, audio_factory)
+        self._audio_backends[backend.lower()] = audio_factory
+
+    def get_audio_backend(self, backend: str) -> AudioBackendFactory | None:
+        """Retrieve audio backend factory by backend name."""
+        return self._audio_backends.get(backend.lower())
+
+    def register_renderer(self, backend: str, renderer_factory: RendererFactory) -> None:
+        """Register renderer backend factory."""
+        logger.debug("Registering renderer backend %r: %s", backend, renderer_factory)
+        self._renderer_factories[backend.lower()] = renderer_factory
+
+    def get_renderer(self, backend: str) -> RendererFactory | None:
+        """Retrieve renderer backend factory by name."""
+        factory = self._renderer_factories.get(backend.lower())
+        if factory is None and backend.lower() == "null":
+            from eager_core.headless import NullRenderer
+
+            return NullRenderer
+        return factory
+
+    def load_providers(self) -> None:
+        """Discover and execute provider entry points registered under 'eager.providers'."""
+        if self._providers_loaded:
+            return
+        self._providers_loaded = True
+        try:
+            import importlib.metadata
+
+            eps = importlib.metadata.entry_points()
+            selected: Any
+            if hasattr(eps, "select"):
+                selected = eps.select(group="eager.providers")
+            else:
+                selected = eps.get("eager.providers", [])
+            for ep in selected:
+                try:
+                    fn = ep.load()
+                    if callable(fn):
+                        logger.debug("Loading provider entry point %r", ep.name)
+                        try:
+                            fn(self)
+                        except TypeError:
+                            fn()
+                except Exception:
+                    logger.warning("Failed to load provider entry point %r", ep.name, exc_info=True)
+        except Exception:
+            logger.warning("Failed to discover eager.providers entry points", exc_info=True)
+
+    def reset(self) -> None:
+        """Reset all registered factories and providers in this registry."""
+        self._stage_factory = None
+        self._ui_factory = None
+        self._screen_manager_factory = None
+        self._theme_factory = None
+        self._player_factories.clear()
+        self._audio_backends.clear()
+        self._renderer_factories.clear()
+        self._providers_loaded = False
+
+
+_default_registry = ProviderRegistry()
+
+
+def get_default_registry() -> ProviderRegistry:
+    """Return the global default ProviderRegistry instance."""
+    return _default_registry
 
 
 def register_stage_factory(factory: StageFactory | None) -> None:
-    """Register a global factory callable returning a StageProtocol instance.
-
-    Args:
-        factory: Callable that creates a StageProtocol, or None to unregister.
-    """
-    logger.debug("Registering stage factory: %s", factory)
-    global _stage_factory
-    _stage_factory = factory
+    """Register a global factory callable returning a StageProtocol instance."""
+    _default_registry.register_stage_factory(factory)
 
 
 def get_stage_factory() -> StageFactory | None:
-    """Return the registered stage factory callable, if any.
-
-    Returns:
-        Registered StageFactory callable or None.
-    """
-    return _stage_factory
+    """Return the registered stage factory callable, if any."""
+    return _default_registry.get_stage_factory()
 
 
 def register_ui_factory(factory: UIFactory | None) -> None:
-    """Register a global factory callable returning a UIProtocol instance.
-
-    Args:
-        factory: Callable that creates a UIProtocol, or None to unregister.
-    """
-    logger.debug("Registering UI factory: %s", factory)
-    global _ui_factory
-    _ui_factory = factory
+    """Register a global factory callable returning a UIProtocol instance."""
+    _default_registry.register_ui_factory(factory)
 
 
 def get_ui_factory() -> UIFactory | None:
-    """Return the registered UI factory callable, if any.
-
-    Returns:
-        Registered UIFactory callable or None.
-    """
-    return _ui_factory
+    """Return the registered UI factory callable, if any."""
+    return _default_registry.get_ui_factory()
 
 
 def register_screen_manager_factory(factory: ScreenManagerFactory | None) -> None:
-    """Register a global factory callable returning a ScreenManagerProtocol instance.
-
-    Args:
-        factory: Callable that creates a ScreenManagerProtocol, or None to unregister.
-    """
-    logger.debug("Registering screen manager factory: %s", factory)
-    global _screen_manager_factory
-    _screen_manager_factory = factory
+    """Register a global factory callable returning a ScreenManagerProtocol instance."""
+    _default_registry.register_screen_manager_factory(factory)
 
 
 def get_screen_manager_factory() -> ScreenManagerFactory | None:
-    """Return the registered screen manager factory callable, if any.
-
-    Returns:
-        Registered ScreenManagerFactory callable or None.
-    """
-    return _screen_manager_factory
+    """Return the registered screen manager factory callable, if any."""
+    return _default_registry.get_screen_manager_factory()
 
 
 def register_theme_factory(factory: ThemeFactory | None) -> None:
-    """Register a global factory callable returning a theme instance.
-
-    Args:
-        factory: Callable that creates a Theme, or None to unregister.
-    """
-    logger.debug("Registering theme factory: %s", factory)
-    global _theme_factory
-    _theme_factory = factory
+    """Register a global factory callable returning a theme instance."""
+    _default_registry.register_theme_factory(factory)
 
 
 def get_theme_factory() -> ThemeFactory | None:
-    """Return the registered theme factory callable, if any.
-
-    Returns:
-        Registered ThemeFactory callable or None.
-    """
-    return _theme_factory
+    """Return the registered theme factory callable, if any."""
+    return _default_registry.get_theme_factory()
 
 
-def register_player(backend: str, player_cls: Any) -> None:
-    """Register an interactive player implementation for *backend* (e.g. 'pil', 'pyglet').
-
-    Args:
-        backend: Name of the backend identifier (e.g. 'pil', 'pyglet').
-        player_cls: Class or factory implementing the interactive player runner.
-    """
-    logger.debug("Registering player backend %r: %s", backend, player_cls)
-    _player_factories[backend.lower()] = player_cls
+def register_player(backend: str, player_cls: PlayerFactory) -> None:
+    """Register an interactive player implementation for *backend* (e.g. 'pil', 'pyglet')."""
+    _default_registry.register_player(backend, player_cls)
 
 
-def get_player(backend: str) -> Any | None:
-    """Retrieve an interactive player implementation by backend name.
-
-    Args:
-        backend: Name of the backend identifier.
-
-    Returns:
-        Registered player class/factory, or None if not registered.
-    """
-    return _player_factories.get(backend.lower())
+def get_player(backend: str) -> PlayerFactory | None:
+    """Retrieve an interactive player implementation by backend name."""
+    return _default_registry.get_player(backend)
 
 
 def list_players() -> list[str]:
-    """Return list of registered player backend names.
-
-    Returns:
-        Sorted list of registered player backend names.
-    """
-    return sorted(_player_factories.keys())
+    """Return list of registered player backend names."""
+    return _default_registry.list_players()
 
 
-def register_audio_backend(backend: str, audio_factory: Any) -> None:
-    """Register an audio backend factory for *backend* (e.g. 'pyglet', 'miniaudio').
-
-    Args:
-        backend: Name of the audio backend identifier.
-        audio_factory: Factory or class constructing an AudioBackend instance.
-    """
-    logger.debug("Registering audio backend %r: %s", backend, audio_factory)
-    _audio_backends[backend.lower()] = audio_factory
+def register_audio_backend(backend: str, audio_factory: AudioBackendFactory) -> None:
+    """Register an audio backend factory for *backend* (e.g. 'pyglet', 'miniaudio')."""
+    _default_registry.register_audio_backend(backend, audio_factory)
 
 
-def get_audio_backend(backend: str) -> Any | None:
-    """Retrieve an audio backend factory by backend name.
-
-    Args:
-        backend: Name of the audio backend identifier.
-
-    Returns:
-        Registered audio backend class/factory, or None.
-    """
-    return _audio_backends.get(backend.lower())
+def get_audio_backend(backend: str) -> AudioBackendFactory | None:
+    """Retrieve an audio backend factory by backend name."""
+    return _default_registry.get_audio_backend(backend)
 
 
-def register_renderer(backend: str, renderer_factory: Any) -> None:
-    """Register a renderer backend factory (e.g. 'null', 'pil', 'pyglet').
-
-    Args:
-        backend: Name of the renderer backend identifier.
-        renderer_factory: Factory or class constructing a RenderBackend instance.
-    """
-    logger.debug("Registering renderer backend %r: %s", backend, renderer_factory)
-    _renderer_factories[backend.lower()] = renderer_factory
+def register_renderer(backend: str, renderer_factory: RendererFactory) -> None:
+    """Register a renderer backend factory (e.g. 'null', 'pil', 'pyglet')."""
+    _default_registry.register_renderer(backend, renderer_factory)
 
 
-def get_renderer(backend: str) -> Any | None:
-    """Retrieve a renderer backend factory by name.
-
-    Args:
-        backend: Name of the renderer backend identifier.
-
-    Returns:
-        Registered renderer class/factory, or None.
-    """
-    factory = _renderer_factories.get(backend.lower())
-    if factory is None and backend.lower() == "null":
-        from eager_core.headless import NullRenderer
-
-        return NullRenderer
-    return factory
+def get_renderer(backend: str) -> RendererFactory | None:
+    """Retrieve a renderer backend factory by name."""
+    return _default_registry.get_renderer(backend)
 
 
 def load_providers() -> None:
     """Discover and execute provider entry points registered under 'eager.providers'."""
-    global _providers_loaded
-    if _providers_loaded:
-        return
-    _providers_loaded = True
-    try:
-        import importlib.metadata
-
-        eps = importlib.metadata.entry_points()
-        selected: Any
-        if hasattr(eps, "select"):
-            selected = eps.select(group="eager.providers")
-        else:
-            selected = eps.get("eager.providers", [])
-        for ep in selected:
-            try:
-                fn = ep.load()
-                if callable(fn):
-                    logger.debug("Loading provider entry point %r", ep.name)
-                    fn()
-            except Exception:
-                logger.warning("Failed to load provider entry point %r", ep.name, exc_info=True)
-    except Exception:
-        logger.warning("Failed to discover eager.providers entry points", exc_info=True)
+    _default_registry.load_providers()
 
 
 def reset_providers() -> None:
     """Reset all registered factories and providers (primarily for unit testing)."""
-    global _stage_factory, _ui_factory, _screen_manager_factory, _theme_factory, _providers_loaded
-    _stage_factory = None
-    _ui_factory = None
-    _screen_manager_factory = None
-    _theme_factory = None
-    _player_factories.clear()
-    _audio_backends.clear()
-    _renderer_factories.clear()
-    _providers_loaded = False
+    _default_registry.reset()
 

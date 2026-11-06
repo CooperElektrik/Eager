@@ -11,13 +11,13 @@ from typing import Any
 from eager_core.types import Color
 
 __all__ = [
-    "_WRAP_CACHE",
     "FormattedText",
     "PausePoint",
     "TextAnchor",
     "TextReveal",
     "TextSegment",
-    "_get_wrapped_lines",
+    "clear_wrap_cache",
+    "get_wrapped_lines",
     "parse_text_tags",
     "wrap_text",
 ]
@@ -450,13 +450,19 @@ _WRAP_CACHE: OrderedDict[tuple[str, float, int, str, str], list[tuple[str, int, 
 _MAX_WRAP_CACHE_SIZE = 512
 
 
-def _get_wrapped_lines(
+def clear_wrap_cache() -> None:
+    """Clear cached wrapped dialogue line layouts."""
+    _WRAP_CACHE.clear()
+
+
+def get_wrapped_lines(
     text: str,
     max_width: float,
     measure: Any,
     font_size: int = 14,
     font_family: str | None = None,
 ) -> list[tuple[str, int, int]]:
+    """Return cached wrapped lines for *text* fitting within *max_width*."""
     backend_key = _get_backend_key(measure)
     font_key = _get_font_family(measure, font_family)
     key = (text, max_width, font_size, backend_key, font_key)
@@ -468,3 +474,7 @@ def _get_wrapped_lines(
         _WRAP_CACHE.popitem(last=False)
     _WRAP_CACHE[key] = res
     return res
+
+
+# Backward-compatible internal alias
+_get_wrapped_lines = get_wrapped_lines

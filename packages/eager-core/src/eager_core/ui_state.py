@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from eager_core.events import ChoiceOption
+from eager_core.events import ChoiceOption, InputPromptEvent
 from eager_core.types import Color
 
 __all__ = [
@@ -54,7 +54,7 @@ class UIState:
     nvl_entries: list[NVLEntry] = field(default_factory=list)
     visible_chars: int | float | None = None
     speaker_color: Color | None = None
-    active_input_prompt: Any | None = None
+    active_input_prompt: InputPromptEvent | None = None
 
     def clear_dialogue(self) -> None:
         """Clear active dialogue and speaker information."""
@@ -80,10 +80,7 @@ class UIState:
             "speaker": self.speaker,
             "text": self.text,
             "emotion": self.emotion,
-            "choices": [
-                choice.to_dict() if hasattr(choice, "to_dict") else choice
-                for choice in self.choices
-            ],
+            "choices": [choice.to_dict() for choice in self.choices],
             "is_finished": self.is_finished,
             "side_image": self.side_image,
             "nvl_mode": self.nvl_mode,

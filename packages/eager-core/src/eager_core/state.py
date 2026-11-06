@@ -129,6 +129,39 @@ class Checkpoint:
     ui: dict[str, Any]
     active_input_prompt: dict[str, Any] | None = None
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize checkpoint to a JSON-compatible dictionary."""
+        return {
+            "story": copy.deepcopy(self.story),
+            "visual": copy.deepcopy(self.visual),
+            "audio": copy.deepcopy(dict(self.audio)),
+            "backlog_len": self.backlog_len,
+            "ui": copy.deepcopy(self.ui),
+            "active_input_prompt": copy.deepcopy(self.active_input_prompt),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Checkpoint:
+        """Restore a Checkpoint from a dictionary."""
+        if not isinstance(data, dict):
+            raise TypeError(f"Checkpoint data must be a dict, got {type(data).__name__}")
+        story = data.get("story")
+        visual = data.get("visual")
+        audio = data.get("audio")
+        ui = data.get("ui")
+        backlog_raw = data.get("backlog_len", 0)
+        backlog_len = int(0 if backlog_raw is None else backlog_raw)
+        return cls(
+            story=story if isinstance(story, dict) else {},
+            visual=visual if isinstance(visual, dict) else {},
+            audio=audio if isinstance(audio, dict) else {},
+            backlog_len=backlog_len,
+            ui=ui if isinstance(ui, dict) else {},
+            active_input_prompt=data.get("active_input_prompt")
+            if isinstance(data.get("active_input_prompt"), dict)
+            else None,
+        )
+
 
 class CheckpointHistory:
     """Bounded history stack for interactive story checkpoints with redo support."""

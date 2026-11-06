@@ -12,6 +12,7 @@ from eager_core.events import (
     StoryEndEvent,
     StoryEvent,
 )
+from eager_core.protocols import StoryVMProtocol
 
 __all__ = [
     "EventDispatcher",
@@ -77,7 +78,7 @@ class EventDispatcher:
                 for handler in list(self._hook_handlers[event.hook_name]):
                     handler(event.args)
 
-    def run_until_pause(self, vm: Any) -> StoryEvent | None:
+    def run_until_pause(self, vm: StoryVMProtocol) -> StoryEvent | None:
         """Step the VM and dispatch events until a ChoicePromptEvent, InputPromptEvent, or StoryEndEvent is encountered."""
         while not vm.is_ended:
             event = vm.step()

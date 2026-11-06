@@ -17,16 +17,16 @@ from eager_core.types import Color
 
 def test_exception_inheritance_hierarchy():
     assert issubclass(AudioError, EagerCoreError)
-    assert issubclass(AudioError, ValueError)
+    assert not issubclass(AudioError, ValueError)
 
     assert issubclass(ColorParseError, EagerCoreError)
-    assert issubclass(ColorParseError, ValueError)
+    assert not issubclass(ColorParseError, ValueError)
 
     assert issubclass(StorageError, EagerCoreError)
-    assert issubclass(StorageError, OSError)
+    assert not issubclass(StorageError, OSError)
 
     assert issubclass(I18nError, EagerCoreError)
-    assert issubclass(I18nError, ValueError)
+    assert not issubclass(I18nError, ValueError)
 
 
 def test_exception_instantiation_with_informative_context():
@@ -56,10 +56,6 @@ def test_audio_error_on_path_traversal(tmp_path):
 
 def test_color_parse_error_on_invalid_hex():
     with pytest.raises(ColorParseError, match="Invalid hex color string"):
-        Color.from_hex("invalid-color")
-
-    # Verify backward compatibility with ValueError
-    with pytest.raises(ValueError):
         Color.from_hex("invalid-color")
 
 
