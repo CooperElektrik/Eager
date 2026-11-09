@@ -159,7 +159,7 @@ from eager_core.watcher import (
     FileWatcher,
 )
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 __all__ = [
     "BLACK",

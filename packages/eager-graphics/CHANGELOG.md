@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-09
+
+### Added
+
+- `EagerGraphicsError`, `RenderError`, `ScreenError`, and `AssetSecurityError` exceptions in `eager_graphics.exceptions`.
+- `HostLifecycleListener.on_state_restored()` implementation on `BasePlayer`.
+- Controlled `register_providers(registry: ProviderRegistry | None = None)`.
+
+### Changed
+
+- Non-destructive `StageCompositor.save_state()` computing settled visual states without active tween mutation.
+- Eliminated duck typing across screens and players, backed by `GameSessionProtocol` and `ScreenProtocol`.
+
 ## [0.8.0] - 2026-11-05
 
 ### Added
@@ -224,7 +237,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/CooperElektrik/Eager/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.6.0

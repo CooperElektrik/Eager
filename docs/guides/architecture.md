@@ -34,7 +34,26 @@ Expression compilation (`compile_expr`) uses whitelisted AST evaluation with zer
 
 ## State and persistence
 
-Rollback must restore story and UI/choice states together. `PersistentData` tracks global unlock/read states across runs and is never rolled back with normal checkpoints.
+Rollback must restore story and UI/choice states together. `PersistentData` tracks global unlock/read states across runs and is never rolled back with normal checkpoints. Checkpoint serialization is standardized across `Checkpoint.to_dict()` and `Checkpoint.from_dict()`.
+
+## Provider registry & decoupled contracts
+
+External presentation providers (stage, UI, screen manager, player, audio, and renderer) are decoupled from the headless narrative core via `ProviderRegistry`.
+- `GameSession` accepts an optional `registry: ProviderRegistry | None = None` parameter for dependency injection.
+- Presentation hosts and players implement `GameSessionProtocol`, `ScreenProtocol`, and `HostLifecycleListener`.
+- When session state is restored (e.g. on save load or rollback), `HostLifecycleListener.on_state_restored()` automatically synchronizes visual presentation without monkeypatching or state-probing.
+
+## Bidirectional AST serialization
+
+All 22 AST nodes implement the runtime-checkable `AstNode` protocol and support bidirectional serialization via `to_dict()`, `from_dict()`, `to_json()`, and `from_json()`, tagged with the node's `type` discriminator.
+
+## Exception hierarchies
+
+Each package maintains a clean, single-inheritance domain exception hierarchy:
+- `EagerCoreError` (`eager-core`)
+- `EagerScriptError` (`eager-script`)
+- `EagerRuntimeError` (`eager-runtime`)
+- `EagerGraphicsError` (`eager-graphics`)
 
 ## Graphics layers
 

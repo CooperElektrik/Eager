@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-09
+
+### Added
+
+- **Architecture & Protocols**:
+  - Introduced `ProviderRegistry` in `eager_core.protocols` allowing decoupled, dependency-injected presentation factories (stage, UI, screen manager, player, audio, and renderer) without module-level mutable globals.
+  - Defined strict structural protocol contracts: `GameSessionProtocol`, `ScreenProtocol`, `StoryVMProtocol`, and `PlayerProtocol`.
+  - Added `HostLifecycleListener.on_state_restored()` callback enabling reactive visual state resynchronization upon game load, rollback, or roll-forward.
+- **AST Modernization**:
+  - Introduced runtime-checkable `AstNode` protocol with bidirectional polymorphic serialization (`to_dict()`, `from_dict()`, `to_json()`, `from_json()`) across all 22 AST nodes.
+  - Added `EdgeKind` string enum (`JUMP`, `CALL`, `CHOICE`) for typed graph transitions.
+- **Runtime & Graphics Modernization**:
+  - Added `AssetKind` enum (`BACKGROUND`, `CHARACTER`, `AUDIO`, `VOICE`, `IMAGE`) for typed asset reference extraction.
+  - Added `registry` argument to `GameSession` and provider initialization helpers.
+  - Added domain exceptions: `EagerCoreError`, `EagerScriptError`, `EagerRuntimeError`, and `EagerGraphicsError` (`RenderError`, `ScreenError`, `AssetSecurityError`).
+  - Refactored `StageCompositor.save_state()` to compute settled visual state non-destructively without mutating active timeline tweens or firing transient callbacks.
+  - Publicized `eager_core.text.get_wrapped_lines` and `StoryVM.apply_graph_defaults`.
+
+### Changed
+
+- Decoupled `AudioError`, `ColorParseError`, `StorageError`, and `I18nError` to inherit cleanly from `EagerCoreError`.
+- Replaced duck typing and `hasattr`/`getattr` probing across screens, players, and session controllers with protocol-backed contracts.
+
 ## [0.8.0] - 2026-11-05
 
 ### Added
@@ -307,7 +330,8 @@ Consolidates all changes after the v0.1.0 release (initial commit `97609c1`, 202
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/CooperElektrik/Eager/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.6.0

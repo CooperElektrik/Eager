@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-09
+
+### Added
+
+- `ProviderRegistry` class for scoped presentation provider discovery and factory registration.
+- `GameSessionProtocol`, `ScreenProtocol`, `StoryVMProtocol`, and `PlayerProtocol` runtime-checkable contracts.
+- `HostLifecycleListener.on_state_restored()` callback.
+- Public `get_wrapped_lines()` and `clear_wrap_cache()` in `eager_core.text`.
+- `Checkpoint.to_dict()` and `Checkpoint.from_dict()` methods.
+
+### Changed
+
+- `AudioError`, `ColorParseError`, `StorageError`, and `I18nError` inherit cleanly from `EagerCoreError`.
+
 ## [0.8.0] - 2026-11-05
 
 ### Added
@@ -96,7 +110,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/CooperElektrik/Eager/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.7.0
 [0.5.0]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...v0.5.0

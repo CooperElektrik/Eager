@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-09
+
+### Added
+
+- `AstNode` protocol with bidirectional serialization (`to_dict()`, `from_dict()`, `to_json()`, `from_json()`) across all 22 AST nodes.
+- `EdgeKind` string enum (`JUMP`, `CALL`, `CHOICE`) for typed graph transitions.
+- `EagerScriptError` base exception and `ParseError(EagerScriptError)`.
+
+### Changed
+
+- `ExprError` inherits cleanly from `EagerScriptError`.
+
 ## [0.8.0] - 2026-11-05
 
 ### Added
@@ -89,7 +101,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/CooperElektrik/Eager/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.7.0
 [0.5.0]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...v0.5.0

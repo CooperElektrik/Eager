@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-09
+
+### Changed
+
+- Added explicit parameter typing for `EagerLanguageServer.__init__`.
+
 ## [0.8.0] - 2026-11-05
 
 ### Added
@@ -78,7 +84,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Semantic Highlighting & Lenses**: Semantic tokens provider, color picker/decorator provider for `{color=...}` tags, inlay hints for character display names, and "Warp & Play" code lenses.
 - **CLI & Transport**: Standalone `eager-script-lsp` binary and `eager lsp` CLI integration supporting stdio, TCP socket, WebSocket, and a headless `--check` batch validator.
 
-[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/CooperElektrik/Eager/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/CooperElektrik/Eager/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/CooperElektrik/Eager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/CooperElektrik/Eager/compare/v0.5.0...v0.7.0
 [0.5.0]: https://github.com/CooperElektrik/Eager/compare/v0.4.0...v0.5.0
