@@ -16,13 +16,13 @@ class EagerGraphicsError(EagerCoreError):
     """Base exception for all errors raised within eager-graphics."""
 
 
-class RenderError(EagerGraphicsError):
+class RenderError(EagerGraphicsError, RuntimeError):
     """Raised when a rendering or compositor operation fails."""
 
 
-class ScreenError(EagerGraphicsError):
+class ScreenError(EagerGraphicsError, RuntimeError):
     """Raised when an error occurs during screen navigation or lifecycle."""
 
 
-class AssetSecurityError(EagerGraphicsError):
+class AssetSecurityError(EagerGraphicsError, ValueError):
     """Raised when an asset path traversal or security violation is detected."""

@@ -181,7 +181,10 @@ class StageDirector:
         dispatcher.on_hook("bg")(_wrap_hook(self.handle_bg))
         dispatcher.on_hook("bg_clear")(_wrap_hook(self.handle_bg_clear))
         dispatcher.on_hook("scene")(_wrap_hook(self.handle_scene))
+        dispatcher.on_hook("scene_bg")(_wrap_hook(self.handle_scene_bg))
         dispatcher.on_hook("image")(_wrap_hook(self.handle_image))
+        dispatcher.on_hook("hide_image")(_wrap_hook(self.handle_hide_image))
+        dispatcher.on_hook("hide_element")(_wrap_hook(self.handle_hide_element))
         dispatcher.on_hook("show")(_wrap_hook(self.handle_show))
         dispatcher.on_hook("hide")(_wrap_hook(self.handle_hide))
         dispatcher.on_hook("move")(_wrap_hook(self.handle_move))
@@ -192,16 +195,41 @@ class StageDirector:
         dispatcher.on_hook("shake")(_wrap_hook(self.handle_shake))
         dispatcher.on_hook("play")(_wrap_hook(self.handle_play))
         dispatcher.on_hook("stop")(_wrap_hook(self.handle_stop))
+        dispatcher.on_hook("queue")(_wrap_hook(self.handle_queue))
+        dispatcher.on_hook("pause")(_wrap_hook(self.handle_pause))
+        dispatcher.on_hook("resume")(_wrap_hook(self.handle_resume))
         dispatcher.on_hook("volume")(_wrap_hook(self.handle_volume))
         dispatcher.on_hook("nvl")(_wrap_hook(self.handle_nvl))
         dispatcher.on_hook("nvl_clear")(_wrap_hook(self.handle_nvl_clear))
+        dispatcher.on_hook("speaker_highlight")(_wrap_hook(self.handle_speaker_highlight))
 
-        # Audio shorthands
+        # Audio play shorthands
         dispatcher.on_hook("play_bgm")(_wrap_hook(lambda a: self.handle_play(a, channel="music")))
         dispatcher.on_hook("play_music")(_wrap_hook(lambda a: self.handle_play(a, channel="music")))
         dispatcher.on_hook("play_sound")(_wrap_hook(lambda a: self.handle_play(a, channel="sound")))
         dispatcher.on_hook("play_sfx")(_wrap_hook(lambda a: self.handle_play(a, channel="sound")))
         dispatcher.on_hook("play_voice")(_wrap_hook(lambda a: self.handle_play(a, channel="voice")))
+
+        # Audio queue shorthands
+        dispatcher.on_hook("queue_bgm")(_wrap_hook(lambda a: self.handle_queue(a, channel="music")))
+        dispatcher.on_hook("queue_music")(_wrap_hook(lambda a: self.handle_queue(a, channel="music")))
+        dispatcher.on_hook("queue_sound")(_wrap_hook(lambda a: self.handle_queue(a, channel="sound")))
+        dispatcher.on_hook("queue_sfx")(_wrap_hook(lambda a: self.handle_queue(a, channel="sound")))
+        dispatcher.on_hook("queue_voice")(_wrap_hook(lambda a: self.handle_queue(a, channel="voice")))
+
+        # Audio pause shorthands
+        dispatcher.on_hook("pause_bgm")(_wrap_hook(lambda a: self.handle_pause(a, channel="music")))
+        dispatcher.on_hook("pause_music")(_wrap_hook(lambda a: self.handle_pause(a, channel="music")))
+        dispatcher.on_hook("pause_sound")(_wrap_hook(lambda a: self.handle_pause(a, channel="sound")))
+        dispatcher.on_hook("pause_sfx")(_wrap_hook(lambda a: self.handle_pause(a, channel="sound")))
+        dispatcher.on_hook("pause_voice")(_wrap_hook(lambda a: self.handle_pause(a, channel="voice")))
+
+        # Audio resume shorthands
+        dispatcher.on_hook("resume_bgm")(_wrap_hook(lambda a: self.handle_resume(a, channel="music")))
+        dispatcher.on_hook("resume_music")(_wrap_hook(lambda a: self.handle_resume(a, channel="music")))
+        dispatcher.on_hook("resume_sound")(_wrap_hook(lambda a: self.handle_resume(a, channel="sound")))
+        dispatcher.on_hook("resume_sfx")(_wrap_hook(lambda a: self.handle_resume(a, channel="sound")))
+        dispatcher.on_hook("resume_voice")(_wrap_hook(lambda a: self.handle_resume(a, channel="voice")))
 
         dispatcher.on_hook("stop_bgm")(_wrap_hook(lambda a: self.handle_stop(a, channel="music")))
         dispatcher.on_hook("stop_music")(_wrap_hook(lambda a: self.handle_stop(a, channel="music")))
@@ -275,7 +303,7 @@ class StageDirector:
         self.handle_bg(args)
 
     def handle_image(self, args: str) -> None:
-        """Handle `~ image name asset [at pos] [z=N]`: arbitrary image display on foreground layer."""
+        """Handle `~ image name asset [at pos] [z=N] [opacity=X] [duration=X] [tint=color] [layer=name]`."""
         parsed = parse_hook_args(args)
         if len(parsed.positional) < 2:
             return
@@ -283,18 +311,56 @@ class StageDirector:
         asset = parsed.positional[1].strip()
         pos = parsed.at or "center"
         z = parsed.get_int("z", 50)
-        fg_layer = self.compositor.stage.get_or_create_layer("foreground", z_order=200)
-        from eager_graphics.stage import ElementState, StageElement
-        resolved_pos = self.compositor.layout.resolve_position(pos)
-        elem = StageElement(
+        layer = parsed.get_str("layer", "foreground") or "foreground"
+        opacity = parsed.get_float("opacity", 1.0)
+        duration = parsed.get_float("duration", 0.0)
+        tint = _parse_hook_color(parsed, "tint", WHITE)
+        self.compositor.show_element(
+            layer=layer,
             element_id=name,
-            state=ElementState(
-                asset_id=asset,
-                position=resolved_pos,
-                z_index=z,
-            ),
+            asset_id=asset,
+            position=pos,
+            opacity=opacity,
+            duration=duration,
+            z_index=z,
+            tint=tint,
         )
-        fg_layer.add_element(elem)
+
+    def handle_hide_image(self, args: str) -> None:
+        """Handle `~ hide_image name [duration=X] [layer=name]`."""
+        parsed = parse_hook_args(args)
+        if not parsed.positional:
+            return
+        name = parsed.positional[0].strip()
+        layer = parsed.get_str("layer", "foreground") or "foreground"
+        duration = parsed.get_float("duration", 0.0)
+        self.compositor.hide_element(layer=layer, element_id=name, duration=duration)
+
+    def handle_hide_element(self, args: str) -> None:
+        """Handle `~ hide_element [layer] name [duration=X]`."""
+        parsed = parse_hook_args(args)
+        pos = parsed.positional
+        if len(pos) >= 2:
+            layer = pos[0].strip()
+            name = pos[1].strip()
+        elif len(pos) == 1:
+            layer = "foreground"
+            name = pos[0].strip()
+        else:
+            return
+        duration = parsed.get_float("duration", 0.0)
+        self.compositor.hide_element(layer=layer, element_id=name, duration=duration)
+
+    def handle_scene_bg(self, args: str) -> None:
+        """Handle `~ scene_bg scene_id asset [with transition] [duration=X]`."""
+        parsed = parse_hook_args(args)
+        if len(parsed.positional) < 2:
+            return
+        scene_id = parsed.positional[0].strip()
+        asset_id = parsed.positional[1].strip()
+        transition = parsed.with_ or "crossfade"
+        duration = parsed.get_float("duration", 0.5)
+        self.register_scene_bg(scene_id, asset_id, transition=transition, duration=duration)
 
     def handle_show(self, args: str) -> None:
         """Handle `~ show character [expression] [at position] [with transition] [duration=X]`."""
@@ -525,6 +591,92 @@ class StageDirector:
         except ValueError:
             pass
 
+    def handle_queue(self, args: str, channel: str | None = None) -> None:
+        """Handle `~ queue channel track` or `~ queue_<channel> track`."""
+        if self.audio is None:
+            return
+        parsed = parse_hook_args(args)
+        track_arg = parsed.get_str("track")
+        if channel is None:
+            if not parsed.positional:
+                return
+            target_channel = parsed.positional[0].strip().lower()
+            track = track_arg or (parsed.positional[1].strip() if len(parsed.positional) > 1 else "")
+        else:
+            target_channel = channel.strip().lower()
+            track = track_arg or (parsed.positional[0].strip() if parsed.positional else "")
+
+        if not track:
+            return
+
+        if self._is_skip_active() and (
+            target_channel in ("sound", "voice")
+            or target_channel.startswith(("sound_", "voice_"))
+        ):
+            return
+
+        self.audio.queue(target_channel, track)
+
+    def handle_pause(self, args: str, channel: str | None = None) -> None:
+        """Handle `~ pause [channel]` or `~ pause_<channel>`."""
+        if self.audio is None:
+            return
+        parsed = parse_hook_args(args)
+        if channel is not None:
+            target = channel.strip().lower()
+        elif parsed.positional:
+            target = parsed.positional[0].strip().lower()
+        else:
+            target = "all"
+
+        if target == "all":
+            if hasattr(self.audio, "pause_all"):
+                self.audio.pause_all()
+            else:
+                for c in list(self.audio.channels):
+                    self.audio.pause(c)
+        else:
+            self.audio.pause(target)
+
+    def handle_resume(self, args: str, channel: str | None = None) -> None:
+        """Handle `~ resume [channel]` or `~ resume_<channel>`."""
+        if self.audio is None:
+            return
+        parsed = parse_hook_args(args)
+        if channel is not None:
+            target = channel.strip().lower()
+        elif parsed.positional:
+            target = parsed.positional[0].strip().lower()
+        else:
+            target = "all"
+
+        if target == "all":
+            if hasattr(self.audio, "resume_all"):
+                self.audio.resume_all()
+            else:
+                for c in list(self.audio.channels):
+                    self.audio.resume(c)
+        else:
+            self.audio.resume(target)
+
+    def handle_speaker_highlight(self, args: str) -> None:
+        """Handle `~ speaker_highlight [on/off] [dim=color] [duration=X] [scale=X] [hop=X]`."""
+        parsed = parse_hook_args(args)
+        if parsed.positional:
+            flag = parsed.positional[0].strip().lower()
+            self.auto_highlight_speaker = flag not in ("off", "false", "0", "disable")
+        else:
+            self.auto_highlight_speaker = True
+
+        if "duration" in parsed.kwargs:
+            self.highlight_duration = parsed.get_float("duration", self.highlight_duration)
+        if "scale" in parsed.kwargs:
+            self.pop_scale = parsed.get_float("scale", self.pop_scale if self.pop_scale is not None else 1.05)
+        if "hop" in parsed.kwargs:
+            self.pop_hop = parsed.get_float("hop", self.pop_hop if self.pop_hop is not None else 10.0)
+        if "dim" in parsed.kwargs:
+            self.dim_color = _parse_hook_color(parsed, "dim", self.dim_color)
+
     def handle_weather(self, args: str) -> None:
         """Handle `~ weather preset [count=N]` or `~ weather clear`."""
         parsed = parse_hook_args(args)
@@ -534,8 +686,67 @@ class StageDirector:
             self.compositor.set_weather(preset, count=count)
 
     def handle_particles(self, args: str) -> None:
-        """Handle `~ particles preset [count=N]` or `~ particles clear`."""
-        self.handle_weather(args)
+        """Handle `~ particles [id_or_preset] [count=N] [shape=S] [color=C] [layer=L] [z=Z]` or `clear`."""
+        parsed = parse_hook_args(args)
+        if not parsed.positional and not parsed.kwargs:
+            self.compositor.clear_particle_emitters()
+            return
+
+        token = parsed.positional[0].strip().lower() if parsed.positional else ""
+        if token in ("clear", "reset", "off", "stop") and len(parsed.positional) == 1:
+            self.compositor.clear_particle_emitters()
+            return
+
+        if len(parsed.positional) >= 2 and parsed.positional[1].strip().lower() in ("clear", "remove", "off", "stop"):
+            self.compositor.remove_particle_emitter(token)
+            return
+
+        presets = ("rain", "snow", "sakura", "petals", "cherry", "embers", "fire", "sparks")
+        count = parsed.get_int("count", 150) or 150
+        layer = parsed.get_str("layer", "foreground") or "foreground"
+        z = parsed.get_int("z", 200000)
+        shape = parsed.get_str("shape")
+        size = parsed.get_int("size", 16)
+        color = _parse_hook_color(parsed, "color", WHITE) if "color" in parsed.kwargs else None
+
+        if token in presets:
+            preset = token
+            emitter_id = parsed.get_str("id") or f"particles_{preset}"
+        else:
+            emitter_id = token if token else "custom_particles"
+            preset = parsed.get_str("preset")
+
+        from eager_graphics.particles import ParticleEmitter, ParticleStampLUT
+
+        if shape or (preset is None and color is not None):
+            shape_name = shape or "circle"
+            c_tuple = (round(color.r * 255), round(color.g * 255), round(color.b * 255)) if color else (255, 255, 255)
+            lut = ParticleStampLUT.from_shape(shape=shape_name, base_size=size, color=c_tuple)
+            emitter = ParticleEmitter(
+                emitter_id,
+                lut,
+                max_particles=count,
+                layer=layer,
+                z_order=z,
+                preset=preset or shape_name,
+            )
+            self.compositor.add_particle_emitter(emitter)
+        elif preset:
+            p = preset.strip().lower()
+            if p == "rain":
+                emitter = ParticleEmitter.create_rain(emitter_id, count=count, layer=layer, z_order=z)
+            elif p == "snow":
+                emitter = ParticleEmitter.create_snow(emitter_id, count=count, layer=layer, z_order=z)
+            elif p in ("sakura", "petals", "cherry"):
+                emitter = ParticleEmitter.create_sakura(emitter_id, count=count, layer=layer, z_order=z)
+            elif p in ("embers", "fire", "sparks"):
+                emitter = ParticleEmitter.create_embers(emitter_id, count=count, layer=layer, z_order=z)
+            else:
+                emitter = ParticleEmitter.create_snow(emitter_id, count=count, layer=layer, z_order=z)
+            self.compositor.add_particle_emitter(emitter)
+        else:
+            emitter = ParticleEmitter.create_snow(emitter_id, count=count, layer=layer, z_order=z)
+            self.compositor.add_particle_emitter(emitter)
 
     def handle_ambient(self, args: str) -> None:
         """Handle `~ ambient color [intensity=X]` or `~ ambient clear`."""

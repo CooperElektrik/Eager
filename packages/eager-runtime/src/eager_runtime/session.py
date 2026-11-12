@@ -55,6 +55,7 @@ def _create_default_stage(
     skip_mode_cb: Any,
     *,
     registry: ProviderRegistry | None = None,
+    **kwargs: Any,
 ) -> Any:
     reg = registry or get_default_registry()
     if registry is not None and registry is not get_default_registry():
@@ -68,6 +69,7 @@ def _create_default_stage(
             virtual_height=virtual_height,
             audio=audio,
             skip_mode_cb=skip_mode_cb,
+            **kwargs,
         )
     return NullStage(virtual_width=virtual_width, virtual_height=virtual_height)
 
@@ -246,6 +248,12 @@ class GameSession:
         self.audio = AudioMixer(backend=audio_backend, asset_dir=self.asset_dir)
         self.apply_preferences()
 
+        stage_kwargs: dict[str, Any] = {}
+        if config is not None:
+            for k in ("auto_highlight_speaker", "dim_color", "highlight_duration", "pop_scale", "pop_hop"):
+                if hasattr(config, k) and getattr(config, k) is not None:
+                    stage_kwargs[k] = getattr(config, k)
+
         if stage is not None:
             self.stage: Any = stage
         elif headless:
@@ -257,12 +265,29 @@ class GameSession:
                 audio=self.audio,
                 skip_mode_cb=lambda: self.skip_mode,
                 registry=self.registry,
+                **stage_kwargs,
             )
         self.director: Any = self.stage
         self.compositor: Any = getattr(self.stage, "compositor", None)
         if self.compositor is None:
             self.compositor = NullCompositor(virtual_width=virtual_width, virtual_height=virtual_height)
         self.stage.bind(self.dispatcher)
+
+        if (
+            config is not None
+            and hasattr(config, "scene_backgrounds")
+            and config.scene_backgrounds
+            and hasattr(self.director, "register_scene_bg")
+        ):
+            for sc_id, bg_info in config.scene_backgrounds.items():
+                    if isinstance(bg_info, (tuple, list)) and len(bg_info) >= 3:
+                        self.director.register_scene_bg(
+                            sc_id, str(bg_info[0]), transition=str(bg_info[1]), duration=float(bg_info[2])
+                        )
+                    elif isinstance(bg_info, (tuple, list)) and len(bg_info) == 1:
+                        self.director.register_scene_bg(sc_id, str(bg_info[0]))
+                    elif isinstance(bg_info, str):
+                        self.director.register_scene_bg(sc_id, bg_info)
 
         if self.graph.characters:
             known_keys = {
@@ -382,6 +407,9 @@ class GameSession:
         self.audio.set_channel_volume("sound", self.preferences.sfx_volume)
         self.audio.set_channel_volume("voice", self.preferences.voice_volume)
         self.vm.set_locale(self.preferences.language)
+        player = getattr(self, "_player", None)
+        if player is not None and hasattr(player, "set_resolution_scale"):
+            player.set_resolution_scale(getattr(self.preferences, "resolution_scale", 1.0))
 
     def save_preferences(self) -> None:
         """Persist current preferences to preferences.json in save directory."""
@@ -400,6 +428,32 @@ class GameSession:
     def play_audio(self, channel: str, track: str) -> None:
         """Play an audio track on a specified channel."""
         self.audio.play(channel, track)
+
+    def queue_audio(self, channel: str, track: str) -> None:
+        """Queue an audio track to play after current playback completes."""
+        self.audio.queue(channel, track)
+
+    def pause_audio(self, channel: str | None = None) -> None:
+        """Pause playback on a specific channel, or all channels if channel is None."""
+        if channel is None:
+            if hasattr(self.audio, "pause_all"):
+                self.audio.pause_all()
+            else:
+                for c in list(self.audio.channels):
+                    self.audio.pause(c)
+        else:
+            self.audio.pause(channel)
+
+    def resume_audio(self, channel: str | None = None) -> None:
+        """Resume playback on a specific channel, or all channels if channel is None."""
+        if channel is None:
+            if hasattr(self.audio, "resume_all"):
+                self.audio.resume_all()
+            else:
+                for c in list(self.audio.channels):
+                    self.audio.resume(c)
+        else:
+            self.audio.resume(channel)
 
     def _capture_checkpoint(self) -> Checkpoint:
         """Generate a unified checkpoint of the current session state."""
@@ -1082,16 +1136,38 @@ class GameSession:
                     return True
                 self.screens.hide(self)
                 return True
+            if action == InputAction.SCROLL:
+                dy = float(payload.get("dy", 0.0))
+                active = self.screens.active_screen
+                if dy > 0 and hasattr(active, "scroll_up"):
+                    active.scroll_up()
+                    return True
+                elif dy < 0 and hasattr(active, "scroll_down"):
+                    active.scroll_down()
+                    return True
             if action in (InputAction.ROLLBACK, InputAction.NAV_UP):
                 active = self.screens.active_screen
                 if hasattr(active, "scroll_up"):
                     active.scroll_up()
                     return True
+                if hasattr(self.screens, "handle_key"):
+                    return self.screens.handle_key("nav_up", self)
             if action in (InputAction.ROLL_FORWARD, InputAction.NAV_DOWN):
                 active = self.screens.active_screen
                 if hasattr(active, "scroll_down"):
                     active.scroll_down()
                     return True
+                if hasattr(self.screens, "handle_key"):
+                    return self.screens.handle_key("nav_down", self)
+            if action in (InputAction.NAV_LEFT, InputAction.NAV_RIGHT, InputAction.CONFIRM) and hasattr(
+                self.screens, "handle_key"
+            ):
+                key_map = {
+                    InputAction.NAV_LEFT: "left",
+                    InputAction.NAV_RIGHT: "right",
+                    InputAction.CONFIRM: "confirm",
+                }
+                return self.screens.handle_key(key_map[action], self)
             if action == InputAction.POINTER_CLICK:
                 x = payload.get("x", 0.0)
                 y = payload.get("y", 0.0)
@@ -1103,9 +1179,19 @@ class GameSession:
                 return bool(changed)
             if action == InputAction.SCREENSHOT:
                 return self.take_screenshot(**payload)
+            if hasattr(self.screens, "handle_key"):
+                raw_key = payload.get("key") or str(action.value)
+                return self.screens.handle_key(raw_key, self)
             return None
 
         # 2. In-game interactions:
+        if action == InputAction.SCROLL:
+            dy = float(payload.get("dy", 0.0))
+            if dy > 0:
+                return self.rollback()
+            elif dy < 0:
+                return self.roll_forward()
+            return None
         # Choice menu keyboard navigation
         if (
             self.active_choice_prompt is not None

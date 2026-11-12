@@ -6,6 +6,8 @@ import hashlib
 import threading
 from pathlib import Path
 
+from eager_graphics.exceptions import AssetSecurityError
+
 from ._compat import Image, ImageChops, ImageDraw, _check_pil_available
 from ._constants import _EXTENSIONS, _PLACEHOLDER_GRAD_LUT
 from ._imaging import _resize_opaque
@@ -72,6 +74,27 @@ class PILAssetResolver:
                     f"{prefix}/{layer_names[0]}", default_width, default_height
                 )
 
+        # Direct absolute file path check (e.g., save slot thumbnails from save directory)
+        direct_path = Path(asset_id)
+        if direct_path.is_absolute() and direct_path.is_file():
+            try:
+                with Image.open(direct_path) as raw_img:
+                    is_opaque = raw_img.mode in ("RGB", "L", "1") or direct_path.suffix.lower() in (
+                        ".jpg",
+                        ".jpeg",
+                    )
+                    img = raw_img.convert("RGBA")
+                    if not is_opaque:
+                        extrema = img.getextrema()
+                        if len(extrema) >= 4 and extrema[3][0] == 255:
+                            is_opaque = True
+
+                self._image_cache[asset_id] = img
+                self._opaque_cache[asset_id] = is_opaque
+                return img
+            except (OSError, ValueError):
+                pass
+
         # 1. Attempt loading from disk if asset_dir configured
         if self.asset_dir is not None:
             resolved_base = self.asset_dir.resolve()
@@ -86,11 +109,11 @@ class PILAssetResolver:
             for cid in candidate_ids:
                 cand_path = (self.asset_dir / cid).resolve()
                 if not cand_path.is_relative_to(resolved_base):
-                    raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
+                    raise AssetSecurityError(f"Path traversal detected in asset ID: {asset_id}")
                 for ext in _EXTENSIONS:
                     file_path = (self.asset_dir / f"{cid}{ext}").resolve()
                     if not file_path.is_relative_to(resolved_base):
-                        raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
+                        raise AssetSecurityError(f"Path traversal detected in asset ID: {asset_id}")
                     if file_path.is_file():
                         try:
                             with Image.open(file_path) as raw_img:

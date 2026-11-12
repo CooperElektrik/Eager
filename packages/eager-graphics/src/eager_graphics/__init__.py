@@ -231,6 +231,7 @@ def register_providers(registry: ProviderRegistry | None = None) -> None:
         virtual_height: int,
         audio: Any,
         skip_mode_cb: Any,
+        **kwargs: Any,
     ) -> Any:
         from eager_graphics.compositor import StageCompositor
         from eager_graphics.director import StageDirector
@@ -239,7 +240,7 @@ def register_providers(registry: ProviderRegistry | None = None) -> None:
             virtual_width=virtual_width,
             virtual_height=virtual_height,
         )
-        return StageDirector(compositor, audio=audio, skip_mode_cb=skip_mode_cb)
+        return StageDirector(compositor, audio=audio, skip_mode_cb=skip_mode_cb, **kwargs)
 
     def _default_ui_factory(width: int = 1280, height: int = 720, theme: Any = None) -> Any:
         from eager_core.theme import Theme
@@ -302,6 +303,16 @@ def register_providers(registry: ProviderRegistry | None = None) -> None:
     def _null_renderer_factory() -> Any:
         return NullRenderer()
 
+    def _pil_renderer_factory(width: int = 1280, height: int = 720, **kwargs: Any) -> Any:
+        from eager_graphics.renderers.pil import PILRenderer
+
+        return PILRenderer(width=width, height=height, **kwargs)
+
+    def _pyglet_renderer_factory(width: int = 1280, height: int = 720, **kwargs: Any) -> Any:
+        from eager_graphics.renderers.pyglet import PygletRenderer
+
+        return PygletRenderer(width=width, height=height, **kwargs)
+
     def _pil_player_factory(*args: Any, **kwargs: Any) -> Any:
         from eager_graphics.renderers.pil import PILPlayer
 
@@ -322,6 +333,8 @@ def register_providers(registry: ProviderRegistry | None = None) -> None:
     reg.register_audio_backend("pil", _miniaudio_audio_factory)
     reg.register_audio_backend("miniaudio", _miniaudio_audio_factory)
     reg.register_renderer("null", _null_renderer_factory)
+    reg.register_renderer("pil", _pil_renderer_factory)
+    reg.register_renderer("pyglet", _pyglet_renderer_factory)
 
 
 def __getattr__(name: str) -> object:

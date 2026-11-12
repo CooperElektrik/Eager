@@ -35,6 +35,12 @@ class ProjectConfig:
     virtual_height: int = 1080
     theme: str = "default"
     theme_overrides: dict[str, Any] = field(default_factory=dict)
+    auto_highlight_speaker: bool = False
+    highlight_duration: float = 0.25
+    dim_color: Color | None = None
+    pop_scale: float | None = None
+    pop_hop: float | None = None
+    scene_backgrounds: dict[str, tuple[str, str, float]] = field(default_factory=dict)
 
     @classmethod
     def load(cls, toml_path: Path) -> ProjectConfig:
@@ -78,6 +84,31 @@ class ProjectConfig:
         else:
             theme_name = str(game_data.get("theme", "default"))
 
+        pres_section = data.get("presentation", {}) or data.get("stage", {})
+        auto_highlight = bool(pres_section.get("auto_highlight_speaker", False))
+        highlight_dur = float(pres_section.get("highlight_duration", 0.25))
+        dim_col: Color | None = None
+        raw_dim = pres_section.get("dim_color")
+        if isinstance(raw_dim, str):
+            try:
+                dim_col = Color.from_hex(raw_dim)
+            except (ValueError, TypeError):
+                pass
+        pop_scale = float(pres_section["pop_scale"]) if "pop_scale" in pres_section else None
+        pop_hop = float(pres_section["pop_hop"]) if "pop_hop" in pres_section else None
+
+        scene_bgs: dict[str, tuple[str, str, float]] = {}
+        scenes_sec = data.get("scenes", {})
+        if isinstance(scenes_sec, dict):
+            for sc_id, s_data in scenes_sec.items():
+                if isinstance(s_data, dict) and "background" in s_data:
+                    bg_asset = str(s_data["background"])
+                    trans = str(s_data.get("transition", "crossfade"))
+                    dur = float(s_data.get("duration", 0.5))
+                    scene_bgs[str(sc_id)] = (bg_asset, trans, dur)
+                elif isinstance(s_data, str):
+                    scene_bgs[str(sc_id)] = (s_data, "crossfade", 0.5)
+
         return cls(
             title=game_data.get("title", "Untitled Project"),
             version=game_data.get("version", "0.1.0"),
@@ -87,6 +118,12 @@ class ProjectConfig:
             virtual_height=int(window_data.get("height", 1080)),
             theme=theme_name,
             theme_overrides=theme_overrides,
+            auto_highlight_speaker=auto_highlight,
+            highlight_duration=highlight_dur,
+            dim_color=dim_col,
+            pop_scale=pop_scale,
+            pop_hop=pop_hop,
+            scene_backgrounds=scene_bgs,
         )
 
 

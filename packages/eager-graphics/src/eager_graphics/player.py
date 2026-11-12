@@ -273,6 +273,18 @@ class BasePlayer:
                 self._sync_state()
                 return True
 
+        # Forward to active screen if a screen is active
+        screens = getattr(self.session, "screens", None)
+        if (
+            screens is not None
+            and getattr(screens, "is_active", False)
+            and hasattr(screens, "handle_key")
+            and screens.handle_key(keysym, self.session)
+        ):
+            self._mark_ui_dirty()
+            self._sync_state()
+            return True
+
         combo = f"shift+{keysym}" if is_shift else keysym
         action = self.keymap.map_key(combo) or self.keymap.map_key(keysym)
         if action == InputAction.QUIT:

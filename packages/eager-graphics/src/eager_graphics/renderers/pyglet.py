@@ -27,6 +27,7 @@ from eager_core.timing import FrameClock
 from eager_core.types import BLACK, WHITE, Anchor, Color, DebugOverlayMode, ScaleMode
 
 from eager_graphics.audio.pyglet import PygletAudioBackend
+from eager_graphics.exceptions import AssetSecurityError, RenderError
 from eager_graphics.fonts import register_pyglet_default_font
 from eager_graphics.player import BasePlayer
 
@@ -114,25 +115,25 @@ class PygletAssetResolver:
         for cid in candidate_ids:
             cand_path = (self.asset_dir / cid).resolve()
             if not cand_path.is_relative_to(resolved_base):
-                raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
+                raise AssetSecurityError(f"Path traversal detected in asset ID: {asset_id}")
             if self._asset_index:
                 if cid in self._asset_index:
                     file_path = self._asset_index[cid].resolve()
                     if not file_path.is_relative_to(resolved_base):
-                        raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
+                        raise AssetSecurityError(f"Path traversal detected in asset ID: {asset_id}")
                     return file_path
                 for ext in extensions:
                     target = f"{cid}{ext}"
                     if target in self._asset_index:
                         file_path = self._asset_index[target].resolve()
                         if not file_path.is_relative_to(resolved_base):
-                            raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
+                            raise AssetSecurityError(f"Path traversal detected in asset ID: {asset_id}")
                         return file_path
             else:
                 for ext in extensions:
                     file_path = (self.asset_dir / f"{cid}{ext}").resolve()
                     if not file_path.is_relative_to(resolved_base):
-                        raise ValueError(f"Path traversal detected in asset ID: {asset_id}")
+                        raise AssetSecurityError(f"Path traversal detected in asset ID: {asset_id}")
                     if file_path.is_file():
                         return file_path
         return None
@@ -250,6 +251,16 @@ class PygletAssetResolver:
             tex = pyglet.image.ImageData(1, 1, "RGBA", bytes([255, 255, 255, 255]))
             self._cache[asset_id] = tex
             return tex
+
+        # Direct absolute file path check (e.g. save slot thumbnails from save directory)
+        direct_path = Path(asset_id)
+        if direct_path.is_absolute() and direct_path.is_file():
+            try:
+                tex = self._clamp_texture(pyglet.image.load(str(direct_path)).get_texture())
+                self._cache[asset_id] = tex
+                return tex
+            except (OSError, ImageDecodeException):
+                pass
 
         # Composite layered sprite resolution (e.g. "hoshiko/base+uniform+smile")
         if "+" in asset_id and "/" in asset_id:
@@ -466,6 +477,14 @@ class PygletRenderer(RenderBackend):
         self.frame_count: int = 0
         self.last_frame: list[RenderItem] = []
 
+        # Particle pooling & lightmap state
+        self._stamp_textures: dict[int, pyglet.image.AbstractImage] = {}
+        self._pooled_particle_sprites: list[pyglet.sprite.Sprite] = []
+        self._particle_cursor: int = 0
+        self._lightmap_sprite: pyglet.sprite.Sprite | None = None
+        self._active_lightmap: LightmapState | None = None
+        self.last_frame_particles: int = 0
+
         # Initial viewport & letterbox setup
         self._update_viewport_and_letterbox()
 
@@ -621,6 +640,9 @@ class PygletRenderer(RenderBackend):
         """Prepare for new frame rendering pass."""
         self._active_sprites.clear()
         self._sprite_cursor = 0
+        self._particle_cursor = 0
+        if self._lightmap_sprite is not None:
+            self._lightmap_sprite.visible = False
         self._rect_cursor = 0
         self._box_cursor = 0
         self._grad_cursor = 0
@@ -641,7 +663,7 @@ class PygletRenderer(RenderBackend):
         """Render a single compositor item using pooled, batched sprites."""
         if self._current_transform is None:
             msg = "draw_item called before render_compositor set the viewport transform"
-            raise RuntimeError(msg)
+            raise RenderError(msg)
 
         if item.opacity <= 0.0 or not (item.scale_x and item.scale_y):
             return
@@ -743,6 +765,12 @@ class PygletRenderer(RenderBackend):
         # Hide any unused stage sprites in the pool
         for i in range(self._sprite_cursor, len(self._pooled_stage_sprites)):
             sp = self._pooled_stage_sprites[i]
+            if sp.visible:
+                sp.visible = False
+
+        # Hide any unused particle sprites in the pool
+        for i in range(self._particle_cursor, len(self._pooled_particle_sprites)):
+            sp = self._pooled_particle_sprites[i]
             if sp.visible:
                 sp.visible = False
 
@@ -852,10 +880,133 @@ class PygletRenderer(RenderBackend):
         if self._current_transform is None:
             return
         self.last_frame_particles = len(batch.particles)
+        if not batch.particles:
+            return
+
+        lut = batch.lut
+        win_w = self.window.width if self.window is not None else self.width
+        win_h = self.window.height if self.window is not None else self.height
+        group = self._get_stage_group(batch.z_order)
+
+        for x, y, scale_idx, angle_idx, alpha_idx in batch.particles:
+            stamp = lut.get_stamp(scale_idx, angle_idx, alpha_idx)
+            dest_x = x + round(stamp.off_x)
+            dest_y = y + round(stamp.off_y)
+            sw, sh = stamp.width, stamp.height
+            if dest_x + sw <= 0 or dest_y + sh <= 0 or dest_x >= win_w or dest_y >= win_h:
+                continue
+
+            stamp_id = id(stamp)
+            tex = self._stamp_textures.get(stamp_id)
+            if tex is None:
+                from PIL import Image
+
+                rgba_img = Image.merge("RGBA", (*stamp.color.split(), stamp.mask))
+                tex = pyglet.image.ImageData(
+                    sw, sh, "RGBA", rgba_img.tobytes(), pitch=-sw * 4
+                ).get_texture()
+                PygletAssetResolver._clamp_texture(tex)
+                self._stamp_textures[stamp_id] = tex
+
+            fy = self._flip_y(float(dest_y), float(sh))
+            fx = float(dest_x)
+
+            if self._particle_cursor < len(self._pooled_particle_sprites):
+                sp = self._pooled_particle_sprites[self._particle_cursor]
+                if sp.image != tex:
+                    sp.image = tex
+                if sp.x != fx or sp.y != fy:
+                    sp.position = (fx, fy, 0)
+                if sp.group is not group:
+                    sp.group = group
+                if not sp.visible:
+                    sp.visible = True
+            else:
+                sp = pyglet.sprite.Sprite(
+                    tex,
+                    x=fx,
+                    y=fy,
+                    batch=self._stage_batch,
+                    group=group,
+                )
+                self._pooled_particle_sprites.append(sp)
+            self._particle_cursor += 1
 
     def render_lightmap(self, lightmap: LightmapState) -> None:
         """Composite a screen-space low-res lightmap onto the display buffer."""
         self._active_lightmap = lightmap
+        if not lightmap.enabled or (lightmap.ambient == WHITE and not lightmap.lights):
+            if self._lightmap_sprite is not None and self._lightmap_sprite.visible:
+                self._lightmap_sprite.visible = False
+            return
+
+        win_w = self.window.width if self.window is not None else self.width
+        win_h = self.window.height if self.window is not None else self.height
+
+        from PIL import Image, ImageDraw
+
+        low_w = max(16, win_w // 8)
+        low_h = max(9, win_h // 8)
+        amb = lightmap.ambient
+        amb_rgb = (round(amb.r * 255), round(amb.g * 255), round(amb.b * 255))
+        lightmap_img = Image.new("RGB", (low_w, low_h), amb_rgb)
+
+        transform = self._current_transform
+        sc_x = (transform.scale_x / 8.0) if transform else (1.0 / 8.0)
+        sc_y = (transform.scale_y / 8.0) if transform else (1.0 / 8.0)
+        off_x = (transform.offset_x / 8.0) if transform else 0.0
+        off_y = (transform.offset_y / 8.0) if transform else 0.0
+
+        if lightmap.lights:
+            draw = ImageDraw.Draw(lightmap_img)
+            for light in lightmap.lights:
+                lx = off_x + light.x * sc_x
+                ly = off_y + light.y * sc_y
+                lr = max(1.0, light.radius * sc_x)
+                col = light.color
+                c_rgb = (round(col.r * 255), round(col.g * 255), round(col.b * 255))
+                steps = max(2, min(8, round(lr)))
+                for s in range(steps, 0, -1):
+                    f = s / steps
+                    r_step = lr * f
+                    bx0 = round(lx - r_step)
+                    by0 = round(ly - r_step)
+                    bx1 = round(lx + r_step)
+                    by1 = round(ly + r_step)
+                    alpha_factor = (1.0 - f) * light.intensity
+                    r_val = round(amb_rgb[0] + (c_rgb[0] - amb_rgb[0]) * alpha_factor)
+                    g_val = round(amb_rgb[1] + (c_rgb[1] - amb_rgb[1]) * alpha_factor)
+                    b_val = round(amb_rgb[2] + (c_rgb[2] - amb_rgb[2]) * alpha_factor)
+                    fill_col = (
+                        max(0, min(255, r_val)),
+                        max(0, min(255, g_val)),
+                        max(0, min(255, b_val)),
+                    )
+                    draw.ellipse([bx0, by0, bx1, by1], fill=fill_col)
+
+        rgba_lightmap = lightmap_img.convert("RGBA")
+        tex = pyglet.image.ImageData(
+            low_w, low_h, "RGBA", rgba_lightmap.tobytes(), pitch=-low_w * 4
+        ).get_texture()
+        PygletAssetResolver._clamp_texture(tex)
+
+        blend_group = self._get_stage_group(999999)
+        if self._lightmap_sprite is None:
+            self._lightmap_sprite = pyglet.sprite.Sprite(
+                tex,
+                x=0,
+                y=0,
+                batch=self._stage_batch,
+                group=blend_group,
+            )
+        else:
+            self._lightmap_sprite.image = tex
+            self._lightmap_sprite.position = (0, 0, 0)
+            self._lightmap_sprite.group = blend_group
+            self._lightmap_sprite.visible = True
+
+        self._lightmap_sprite.scale_x = win_w / max(1, low_w)
+        self._lightmap_sprite.scale_y = win_h / max(1, low_h)
 
     # ------------------------------------------------------------------ #
     # Introspection

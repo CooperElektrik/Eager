@@ -570,27 +570,32 @@ class AudioMixer:
         chan.serial = self._serial_counter
         chan.current_asset = asset_path
         chan.loop = is_loop
-        chan.volume = max(0.0, min(1.0, volume))
+        target_vol = max(0.0, min(1.0, volume))
+        chan.volume = 0.0 if fade_in > 0.0 else target_vol
         chan.loop_start = loop_start
         chan.loop_end = loop_end
         chan.is_playing = True
         chan.is_paused = False
-        # A fresh playback cancels any pending fade-out automation; without
-        # this a reused/stolen slot would be silenced mid-playback when the
-        # stale fade completes in update().
+        # A fresh playback cancels any pending fade automation; if fade_in > 0.0,
+        # initialize fade-in ramp so update(dt) smoothly raises volume across all backends.
         chan.fade_timer = 0.0
-        chan.fade_duration = 0.0
-        chan.fade_start_vol = 0.0
-        chan.fade_target_vol = 0.0
+        if fade_in > 0.0:
+            chan.fade_duration = fade_in
+            chan.fade_start_vol = 0.0
+            chan.fade_target_vol = target_vol
+        else:
+            chan.fade_duration = 0.0
+            chan.fade_start_vol = 0.0
+            chan.fade_target_vol = 0.0
         chan.stop_on_fade_complete = False
 
         resolved = self._resolve_asset(asset_path)
-        final_vol = self._effective_volume(channel)
+        initial_vol = self._effective_volume(channel)
         self.backend.play(
             channel,
             resolved,
             loop=is_loop,
-            volume=final_vol,
+            volume=initial_vol,
             fade_in=fade_in,
             loop_start=loop_start,
             loop_end=loop_end,
@@ -656,6 +661,16 @@ class AudioMixer:
             if chan and chan.is_paused:
                 chan.is_paused = False
                 self.backend.resume(name)
+
+    def pause_all(self) -> None:
+        """Pause playback across all active audio channels."""
+        for name in list(self.channels):
+            self.pause(name)
+
+    def resume_all(self) -> None:
+        """Resume playback across all paused audio channels."""
+        for name in list(self.channels):
+            self.resume(name)
 
     def set_volume(self, channel: str, volume: float) -> None:
         """Set track volume for a channel (base names fan out to pool members)."""

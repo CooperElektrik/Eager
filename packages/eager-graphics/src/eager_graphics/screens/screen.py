@@ -33,6 +33,7 @@ class Screen:
         self.sliders: list[Slider] = []
         self.labels: list[Label] = []
         self.visible: bool = False
+        self._focused_button_index: int = -1
 
     def set_viewport(self, width: int, height: int) -> None:
         """Update viewport dimensions and recompute layout."""
@@ -65,11 +66,13 @@ class Screen:
     def handle_mouse_move(self, x: float, y: float) -> bool:
         """Update hover state on buttons. Returns True if any hover state changed."""
         changed = False
-        for b in self.buttons:
+        for idx, b in enumerate(self.buttons):
             new_hover = b.hit_test(x, y)
             if b.hovered != new_hover:
                 b.hovered = new_hover
                 changed = True
+            if new_hover and self._focused_button_index != idx:
+                self._focused_button_index = idx
         return changed
 
     def handle_mouse_click(self, x: float, y: float) -> bool:
@@ -86,7 +89,54 @@ class Screen:
         return False
 
     def handle_key(self, key_name: str, session: GameSessionProtocol | None = None) -> bool:
-        """Process key event on the active screen."""
+        """Process key event on the active screen, navigating buttons and sliders."""
+        k = key_name.strip().lower()
+        enabled_buttons = [i for i, b in enumerate(self.buttons) if b.enabled]
+
+        if k in ("up", "nav_up", "left", "nav_left", "shift+tab"):
+            if not enabled_buttons:
+                return False
+            if self._focused_button_index in enabled_buttons:
+                pos = enabled_buttons.index(self._focused_button_index)
+                new_idx = enabled_buttons[(pos - 1) % len(enabled_buttons)]
+            else:
+                new_idx = enabled_buttons[-1]
+            self._focused_button_index = new_idx
+            for i, b in enumerate(self.buttons):
+                b.hovered = (i == new_idx)
+            return True
+
+        if k in ("down", "nav_down", "right", "nav_right", "tab"):
+            if not enabled_buttons:
+                return False
+            if self._focused_button_index in enabled_buttons:
+                pos = enabled_buttons.index(self._focused_button_index)
+                new_idx = enabled_buttons[(pos + 1) % len(enabled_buttons)]
+            else:
+                new_idx = enabled_buttons[0]
+            self._focused_button_index = new_idx
+            for i, b in enumerate(self.buttons):
+                b.hovered = (i == new_idx)
+            return True
+
+        if k in ("enter", "return", "space", "confirm"):
+            if 0 <= self._focused_button_index < len(self.buttons):
+                btn = self.buttons[self._focused_button_index]
+                if btn.enabled and btn.action:
+                    btn.action()
+                    return True
+            return False
+
+        scroll_up_fn = getattr(self, "scroll_up", None)
+        if k in ("pageup", "scroll_up") and callable(scroll_up_fn):
+            scroll_up_fn()
+            return True
+
+        scroll_down_fn = getattr(self, "scroll_down", None)
+        if k in ("pagedown", "scroll_down") and callable(scroll_down_fn):
+            scroll_down_fn()
+            return True
+
         return False
 
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:

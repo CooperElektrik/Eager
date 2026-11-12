@@ -749,5 +749,62 @@ Alice: Debug overlay test
         player.close()
 
 
+def test_pyglet_draw_particles_and_render_lightmap(invisible_window: Window) -> None:
+    from eager_core.lighting import LightmapState, PointLight
+    from eager_core.types import WHITE
+
+    from eager_graphics.particles import ParticleEmitter
+
+    renderer = PygletRenderer(window=invisible_window)
+    comp = StageCompositor(1920, 1080)
+    transform = comp.layout.compute_viewport_transform(1280, 720)
+    renderer._current_transform = transform
+    emitter = ParticleEmitter.create_snow("test_snow", count=25)
+    batch = emitter.build_batch(transform)
+
+    renderer.begin_frame()
+    renderer.draw_particles(batch)
+    assert renderer.last_frame_particles == 25
+    assert len(renderer._pooled_particle_sprites) > 0
+    # Visible pooled sprites
+    assert any(sp.visible for sp in renderer._pooled_particle_sprites)
+
+    # Lighting
+    lightmap = LightmapState(
+        ambient=Color(0.2, 0.2, 0.4, 1.0),
+        lights=[PointLight(x=640, y=360, radius=200, color=WHITE, intensity=1.5)],
+        enabled=True,
+    )
+    renderer.render_lightmap(lightmap)
+    assert renderer._lightmap_sprite is not None
+    assert renderer._lightmap_sprite.visible is True
+
+    renderer.end_frame()
+
+
+def test_pyglet_render_error_and_asset_security_error(tmp_path: Path, invisible_window: Window) -> None:
+    from eager_core.types import WHITE
+
+    from eager_graphics.exceptions import AssetSecurityError, RenderError
+
+    renderer = PygletRenderer(window=invisible_window)
+    renderer._current_transform = None
+    item = RenderItem("test", "foreground", 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, Anchor.CENTER, WHITE, False, False, 10)
+    # draw_item without viewport transform raises RenderError (and RuntimeError)
+    with pytest.raises(RenderError):
+        renderer.draw_item(item)
+
+    with pytest.raises(RuntimeError):
+        renderer.draw_item(item)
+
+    # Path traversal raises AssetSecurityError (and ValueError)
+    resolver = PygletAssetResolver(asset_dir=tmp_path)
+    with pytest.raises(AssetSecurityError):
+        resolver.get_texture("../escape_attempt")
+    with pytest.raises(ValueError):
+        resolver.get_texture("../escape_attempt")
+
+
+
 
 

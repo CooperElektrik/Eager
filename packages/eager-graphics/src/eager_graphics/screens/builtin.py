@@ -338,11 +338,13 @@ class SaveLoadScreen(Screen):
                                     player._mark_ui_dirty()
                     return load_action
 
+            thumb_path = getattr(meta, "thumbnail_path", None) if meta else None
             self.buttons.append(
                 SaveSlotButton(
                     cell,
                     label,
                     action=make_action(slot_name),
+                    thumbnail_path=thumb_path,
                 )
             )
 
@@ -637,6 +639,46 @@ class PreferencesScreen(Screen):
                 action=toggle_skip_cb,
             )
         )
+
+        # Resolution Scale selector
+        scale_x = vw * (960.0 / 1280.0)
+        scale_y = base_y
+        current_scale = getattr(prefs, "resolution_scale", 1.0) if prefs else 1.0
+        self.labels.append(
+            Label(
+                "Scale",
+                scale_x,
+                scale_y + label_offset_y,
+                color=self.theme.text_color,
+                font_size=self.scale_font_size(18),
+            )
+        )
+        scale_options = [0.75, 1.0, 1.25, 1.5]
+        scale_btn_w = vw * (120.0 / 1280.0)
+        scale_btn_h = vh * (36.0 / 720.0)
+        for s_idx, sc_val in enumerate(scale_options):
+            s_btn_y = scale_y + lang_offset_y + s_idx * lang_step_y
+            is_cur = abs(current_scale - sc_val) < 0.05
+            s_label = f"[ {sc_val:.2f}x ]" if is_cur else f"  {sc_val:.2f}x  "
+
+            def make_scale_cb(val: float):
+                def cb() -> None:
+                    if prefs is not None:
+                        prefs.resolution_scale = val
+                        if self.session is not None and hasattr(self.session, "apply_preferences"):
+                            self.session.apply_preferences()
+                        if self.session is not None and hasattr(self.session, "save_preferences"):
+                            self.session.save_preferences()
+                    self.rebuild_layout()
+                return cb
+
+            self.buttons.append(
+                Button(
+                    Rect(scale_x, s_btn_y, scale_btn_w, scale_btn_h),
+                    s_label,
+                    action=make_scale_cb(sc_val),
+                )
+            )
 
     def on_enter(self, session: GameSessionProtocol) -> None:
         """Handle preferences screen entry and sync controls.

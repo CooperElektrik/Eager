@@ -839,6 +839,134 @@ class TestDirectorAudioHooks:
         assert new_comp.lighting.enabled is True
         assert new_comp.lighting.ambient == Color.from_hex("#223344")
 
+    def test_director_queue_pause_resume(self) -> None:
+        """Verify ~ queue, ~ pause, ~ resume hooks."""
+        from eager_core.audio import AudioMixer, NullAudioBackend
+        from eager_core.dispatcher import EventDispatcher
+        from eager_core.events import HookEvent
+
+        audio = AudioMixer(backend=NullAudioBackend())
+        comp = StageCompositor()
+        director = StageDirector(comp, audio=audio)
+        dispatcher = EventDispatcher()
+        director.bind(dispatcher)
+
+        # 1. Play and Queue
+        dispatcher.dispatch(HookEvent(hook_name="play_music", args="track1.ogg", line_number=1))
+        assert audio.channels["music"].current_asset == "track1.ogg"
+        assert audio.channels["music"].is_playing is True
+
+        dispatcher.dispatch(HookEvent(hook_name="queue_music", args="track2.ogg", line_number=2))
+        assert audio.channels["music"].queue == ["track2.ogg"]
+
+        # 2. Pause and Resume
+        dispatcher.dispatch(HookEvent(hook_name="pause_music", args="", line_number=3))
+        assert audio.channels["music"].is_paused is True
+
+        dispatcher.dispatch(HookEvent(hook_name="resume_music", args="", line_number=4))
+        assert audio.channels["music"].is_paused is False
+
+        # 3. Pause all and Resume all
+        dispatcher.dispatch(HookEvent(hook_name="pause", args="", line_number=5))
+        assert audio.channels["music"].is_paused is True
+
+        dispatcher.dispatch(HookEvent(hook_name="resume", args="", line_number=6))
+        assert audio.channels["music"].is_paused is False
+
+    def test_director_hide_image_and_hide_element(self) -> None:
+        """Verify ~ image, ~ hide_image, and ~ hide_element hooks."""
+        from eager_core.dispatcher import EventDispatcher
+        from eager_core.events import HookEvent
+
+        comp = StageCompositor()
+        director = StageDirector(comp)
+        dispatcher = EventDispatcher()
+        director.bind(dispatcher)
+
+        dispatcher.dispatch(HookEvent(hook_name="image", args="logo ui/logo at center z=50", line_number=1))
+        fg = comp.stage.get_layer("foreground")
+        assert fg is not None
+        assert fg.get_element("logo") is not None
+
+        dispatcher.dispatch(HookEvent(hook_name="hide_image", args="logo", line_number=2))
+        assert fg.get_element("logo") is None
+
+        # Arbitrary layer
+        dispatcher.dispatch(HookEvent(hook_name="image", args="icon ui/icon layer=custom_layer", line_number=3))
+        custom_layer = comp.stage.get_layer("custom_layer")
+        assert custom_layer is not None
+        assert custom_layer.get_element("icon") is not None
+
+        dispatcher.dispatch(HookEvent(hook_name="hide_element", args="custom_layer icon", line_number=4))
+        assert custom_layer.get_element("icon") is None
+
+    def test_director_scene_bg_and_speaker_highlight(self) -> None:
+        """Verify ~ scene_bg and ~ speaker_highlight hooks."""
+        from eager_core.dispatcher import EventDispatcher
+        from eager_core.events import HookEvent, SceneEnterEvent
+
+        comp = StageCompositor()
+        director = StageDirector(comp)
+        dispatcher = EventDispatcher()
+        director.bind(dispatcher)
+
+        # 1. scene_bg
+        dispatcher.dispatch(HookEvent(hook_name="scene_bg", args="intro bg/forest with dissolve duration=1.0", line_number=1))
+        assert "intro" in director.scene_backgrounds
+        assert director.scene_backgrounds["intro"] == ("bg/forest", "dissolve", 1.0)
+
+        # Trigger scene enter
+        dispatcher.dispatch(SceneEnterEvent(scene_id="intro", display_name="Intro", line_number=1))
+        comp.step(1.0)
+        bg_layer = comp.stage.get_layer("background")
+        assert bg_layer is not None
+        assert bg_layer.get_element("bg_main") is not None
+        assert bg_layer.get_element("bg_main").asset_id == "bg/forest"
+
+        # 2. speaker_highlight
+        dispatcher.dispatch(HookEvent(hook_name="speaker_highlight", args="on dim=#444444 duration=0.4 scale=1.05", line_number=2))
+        assert director.auto_highlight_speaker is True
+        assert director.highlight_duration == 0.4
+        assert director.pop_scale == 1.05
+        assert director.dim_color == Color.from_hex("#444444")
+
+        dispatcher.dispatch(HookEvent(hook_name="speaker_highlight", args="off", line_number=3))
+        assert director.auto_highlight_speaker is False
+
+    def test_director_custom_particles_and_weather_coexistence(self) -> None:
+        """Verify custom particle emitters do not overwrite active weather."""
+        from eager_core.dispatcher import EventDispatcher
+        from eager_core.events import HookEvent
+
+        comp = StageCompositor()
+        director = StageDirector(comp)
+        dispatcher = EventDispatcher()
+        director.bind(dispatcher)
+
+        # Start weather
+        dispatcher.dispatch(HookEvent(hook_name="weather", args="rain count=200", line_number=1))
+        assert comp.get_particle_emitter("weather") is not None
+        assert comp._active_weather_preset == "rain"
+
+        # Start custom particle emitter alongside weather
+        dispatcher.dispatch(HookEvent(hook_name="particles", args="snow count=50", line_number=2))
+        # Weather is still rain!
+        assert comp.get_particle_emitter("weather") is not None
+        assert comp._active_weather_preset == "rain"
+        # Custom snow emitter coexists!
+        assert comp.get_particle_emitter("particles_snow") is not None
+
+        # Custom shape emitter with custom ID
+        dispatcher.dispatch(HookEvent(hook_name="particles", args="my_sparks shape=spark count=30 color=#ffaa00", line_number=3))
+        assert comp.get_particle_emitter("my_sparks") is not None
+
+        # Remove specific emitter
+        dispatcher.dispatch(HookEvent(hook_name="particles", args="my_sparks clear", line_number=4))
+        assert comp.get_particle_emitter("my_sparks") is None
+        assert comp.get_particle_emitter("particles_snow") is not None
+        assert comp.get_particle_emitter("weather") is not None
+
+
 
 
 

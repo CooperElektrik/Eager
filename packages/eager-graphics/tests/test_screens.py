@@ -252,13 +252,15 @@ height = 720
         session.screens.register(pref_screen)
         session.screens.show("preferences", session)
 
-        # Button 0 is Back, Buttons 1..3 are languages (default, es, ja), Buttons 4..5 are options
-        assert len(pref_screen.buttons) == 6
+        # Button 0 is Back, Buttons 1..3 are languages (default, es, ja), Buttons 4..5 are options, Buttons 6..9 are scale
+        assert len(pref_screen.buttons) == 10
         assert "DEFAULT" in pref_screen.buttons[1].text
         assert "ES" in pref_screen.buttons[2].text
         assert "JA" in pref_screen.buttons[3].text
         assert "Fullscreen" in pref_screen.buttons[4].text
         assert "Skip Unseen" in pref_screen.buttons[5].text
+        assert "0.75x" in pref_screen.buttons[6].text
+        assert "1.00x" in pref_screen.buttons[7].text
 
         # Click Spanish (buttons[2])
         es_btn = pref_screen.buttons[2]
@@ -944,3 +946,84 @@ height = 720
         # (plain text was split into pieces, each shorter than full length)
         narrator_pieces = [t for t in backend.texts if len(t[0]) > 10 and t[0] in long_speech]
         assert len(narrator_pieces) >= 2
+
+    def test_save_slot_button_renders_thumbnail(self, tmp_path):
+        """SaveSlotButton must call backend.draw_image when thumbnail file exists."""
+        from eager_core.types import Rect
+
+        from eager_graphics.screens.widgets import SaveSlotButton
+
+        thumb_file = tmp_path / "thumb_slot_1.png"
+        thumb_file.write_bytes(b"mock_png_bytes")
+
+        btn = SaveSlotButton(
+            Rect(10, 10, 300, 150),
+            "Slot 1\n2026-10-13 15:30\n\"Some dialogue\"",
+            thumbnail_path=thumb_file,
+        )
+        backend = MockUIDrawBackend()
+        btn.draw(backend, Color.from_hex("#333333"), Color.from_hex("#555555"), Color.from_hex("#777777"), Color.from_hex("#ffffff"))
+
+        # Verify draw_image was called with the thumbnail file path
+        assert len(backend.images) == 1
+        assert backend.images[0][0] == str(thumb_file)
+
+    def test_screen_keyboard_navigation(self):
+        """Screen.handle_key allows navigating and activating buttons via keyboard."""
+        from eager_core.types import Rect
+
+        from eager_graphics.screens import Screen
+        from eager_graphics.screens.widgets import Button
+
+        screen = Screen("test_screen")
+        clicked = []
+        screen.buttons = [
+            Button(Rect(0, 0, 100, 40), "Btn 0", action=lambda: clicked.append(0)),
+            Button(Rect(0, 50, 100, 40), "Btn 1", action=lambda: clicked.append(1)),
+        ]
+
+        # Down arrow moves focus to Btn 0
+        assert screen.handle_key("down") is True
+        assert screen._focused_button_index == 0
+        assert screen.buttons[0].hovered is True
+        assert screen.buttons[1].hovered is False
+
+        # Down arrow moves focus to Btn 1
+        assert screen.handle_key("down") is True
+        assert screen._focused_button_index == 1
+        assert screen.buttons[0].hovered is False
+        assert screen.buttons[1].hovered is True
+
+        # Enter activates focused button
+        assert screen.handle_key("enter") is True
+        assert clicked == [1]
+
+        # Up arrow moves focus back to Btn 0
+        assert screen.handle_key("up") is True
+        assert screen._focused_button_index == 0
+
+        # Space activates focused button
+        assert screen.handle_key("space") is True
+        assert clicked == [1, 0]
+
+    def test_renderer_registration_in_provider_registry(self):
+        """register_providers registers pil and pyglet renderer factories."""
+        from eager_core.protocols import get_renderer
+
+        import eager_graphics
+
+        eager_graphics.register_providers()
+        pil_factory = get_renderer("pil")
+        assert pil_factory is not None
+        pil_r = pil_factory(width=800, height=600)
+        assert pil_r is not None
+        assert pil_r.width == 800
+        assert pil_r.height == 600
+
+        pyglet_factory = get_renderer("pyglet")
+        assert pyglet_factory is not None
+        pyglet_r = pyglet_factory(width=800, height=600)
+        assert pyglet_r is not None
+        assert pyglet_r.width == 800
+        assert pyglet_r.height == 600
+

@@ -11,6 +11,8 @@ from eager_core.protocols import RenderBackend, RenderItem
 from eager_core.timing import FrameClock
 from eager_core.types import BLACK, WHITE, Color, RenderPreset, ScaleMode
 
+from eager_graphics.exceptions import RenderError
+
 from ._cache import _CachedSprite, _GeomEntry, _ImageLRU
 from ._compat import (
     PIL,
@@ -574,7 +576,7 @@ class PILRenderer(RenderBackend):
         """Begin a new frame render pass."""
         if self._in_frame:
             msg = "begin_frame called without matching end_frame"
-            raise RuntimeError(msg)
+            raise RenderError(msg)
         self._frame_buffer = []
         self._in_frame = True
         self._ensure_buffer()
@@ -661,7 +663,7 @@ class PILRenderer(RenderBackend):
         """Render a pre-baked particle batch via zero-resample Image.paste."""
         if not self._in_frame:
             msg = "draw_particles called outside of begin_frame/end_frame block"
-            raise RuntimeError(msg)
+            raise RenderError(msg)
 
         lut = batch.lut
         canvas_im_paste = self._image.im.paste
@@ -768,7 +770,7 @@ class PILRenderer(RenderBackend):
         transform = self._current_transform
         if transform is None:
             msg = "draw_item called before render_compositor set the viewport transform"
-            raise RuntimeError(msg)
+            raise RenderError(msg)
 
         # Resolve base asset
         is_bg = item.layer == "background" or item.asset_id.startswith("bg/")
@@ -1008,7 +1010,7 @@ class PILRenderer(RenderBackend):
         """Render a single compositor item."""
         if not self._in_frame:
             msg = "draw_item called outside of begin_frame/end_frame block"
-            raise RuntimeError(msg)
+            raise RenderError(msg)
 
         self._frame_buffer.append(item)
         cached_sprite, anchor_s_x, anchor_s_y = self._prepare_item_sprite(item)
@@ -1283,7 +1285,7 @@ class PILRenderer(RenderBackend):
         """Conclude frame render pass, applying letterbox bars if necessary."""
         if not self._in_frame:
             msg = "end_frame called without matching begin_frame"
-            raise RuntimeError(msg)
+            raise RenderError(msg)
 
         if self._needs_clear:
             self._execute_clear()

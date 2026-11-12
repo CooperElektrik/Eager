@@ -86,11 +86,15 @@ def test_pil_asset_resolver_disk_load(tmp_path: Path) -> None:
 
 
 def test_pil_asset_resolver_path_traversal(tmp_path: Path) -> None:
+    from eager_graphics.exceptions import AssetSecurityError
+
     asset_dir = tmp_path / "assets"
     asset_dir.mkdir()
     resolver = PILAssetResolver(asset_dir=asset_dir)
 
-    with pytest.raises(ValueError, match="Path traversal detected"):
+    with pytest.raises(AssetSecurityError):
+        resolver.get_image("../../../secret")
+    with pytest.raises(ValueError):
         resolver.get_image("../../../secret")
 
 

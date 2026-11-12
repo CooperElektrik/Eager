@@ -155,8 +155,19 @@ def extract_asset_references(
             args = hook_str[len(hook_cmd) :].strip()
             parsed = parse_hook_args(args)
 
-            if hook_cmd in ("bg", "scene"):
-                if parsed.positional:
+            if hook_cmd in ("bg", "scene", "scene_bg"):
+                if hook_cmd == "scene_bg":
+                    if len(parsed.positional) >= 2:
+                        asset_id = parsed.positional[1].strip()
+                        references.append(
+                            AssetReference(
+                                kind="background",
+                                identifier=asset_id,
+                                line_number=item.line_number,
+                                scene_id=scene_id,
+                            )
+                        )
+                elif parsed.positional:
                     asset_id = parsed.positional[0].strip()
                     references.append(
                         AssetReference(
@@ -215,7 +226,7 @@ def extract_asset_references(
                         )
                     )
 
-            elif hook_cmd == "play":
+            elif hook_cmd in ("play", "queue"):
                 if len(parsed.positional) >= 2:
                     chan = parsed.positional[0].strip().lower()
                     track = parsed.positional[1].strip()
@@ -231,11 +242,23 @@ def extract_asset_references(
                     )
 
             elif (
-                hook_cmd in ("play_bgm", "play_sfx", "play_music", "play_sound", "play_voice")
+                hook_cmd
+                in (
+                    "play_bgm",
+                    "play_sfx",
+                    "play_music",
+                    "play_sound",
+                    "play_voice",
+                    "queue_bgm",
+                    "queue_sfx",
+                    "queue_music",
+                    "queue_sound",
+                    "queue_voice",
+                )
                 and parsed.positional
             ):
                 track = parsed.positional[0].strip()
-                chan = hook_cmd.replace("play_", "")
+                chan = hook_cmd.replace("play_", "").replace("queue_", "")
                 kind = "voice" if chan == "voice" else "audio"
                 references.append(
                     AssetReference(

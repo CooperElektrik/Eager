@@ -367,3 +367,40 @@ def test_audio_polyphonic_explicit_slot_inherits_base_volume() -> None:
     # An explicit volume still wins over the inheritance.
     mixer.play("sound_1", "bang.ogg", volume=0.9)
     assert mixer.channels["sound_1"].volume == pytest.approx(0.9)
+
+
+def test_audio_fade_in_software_ramp() -> None:
+    backend = NullAudioBackend()
+    mixer = AudioMixer(backend=backend)
+    mixer.play("music", "bgm.ogg", volume=0.8, fade_in=2.0)
+
+    # Initial volume starts at 0.0
+    assert mixer.channels["music"].volume == 0.0
+    assert mixer.channels["music"].fade_duration == 2.0
+    assert mixer.channels["music"].fade_target_vol == 0.8
+
+    # Advance 1.0 second (50% progress)
+    mixer.update(1.0)
+    assert mixer.channels["music"].volume == pytest.approx(0.4)
+
+    # Advance another 1.0 second (100% complete)
+    mixer.update(1.0)
+    assert mixer.channels["music"].volume == pytest.approx(0.8)
+    assert mixer.channels["music"].fade_duration == 0.0
+    assert mixer.channels["music"].is_playing is True
+
+
+def test_audio_pause_resume_all() -> None:
+    backend = NullAudioBackend()
+    mixer = AudioMixer(backend=backend)
+    mixer.play("music", "bgm.ogg")
+    mixer.play("ambient", "wind.ogg")
+
+    mixer.pause_all()
+    assert mixer.channels["music"].is_paused is True
+    assert mixer.channels["ambient"].is_paused is True
+
+    mixer.resume_all()
+    assert mixer.channels["music"].is_paused is False
+    assert mixer.channels["ambient"].is_paused is False
+
