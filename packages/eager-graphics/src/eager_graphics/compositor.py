@@ -266,14 +266,32 @@ class StageCompositor:
         duration: float = 0.3,
         z_index: int = 0,
         flip_h: bool = False,
+        flip_v: bool = False,
+        scale: float | Vec2 = 1.0,
+        scale_x: float | None = None,
+        scale_y: float | None = None,
+        rotation: float = 0.0,
+        tint: Color = WHITE,
+        asset_prefix: str | None = None,
     ) -> None:
         """Place or transition a character sprite on the stage."""
         char_layer = self.stage.get_or_create_layer("characters", z_order=100)
         target_pos = self.layout.resolve_position(position)
-        asset_id = f"{character_id}/{expression}"
+        prefix = asset_prefix or character_id
+        asset_id = f"{prefix}/{expression}"
         trans_kind = (
             TransitionKind.from_str(transition) if isinstance(transition, str) else transition
         )
+
+        if isinstance(scale, Vec2):
+            scale_vec = Vec2(
+                scale.x if scale_x is None else scale_x,
+                scale.y if scale_y is None else scale_y,
+            )
+        else:
+            sx = scale if scale_x is None else scale_x
+            sy = scale if scale_y is None else scale_y
+            scale_vec = Vec2(float(sx), float(sy))
 
         existing = char_layer.get_element(character_id)
 
@@ -282,7 +300,11 @@ class StageCompositor:
             self.timeline.cancel_tweens_for(existing.state)
             existing.asset_id = asset_id
             existing.state.flip_h = flip_h
+            existing.state.flip_v = flip_v
             existing.state.z_index = z_index
+            existing.state.scale = scale_vec
+            existing.state.rotation = rotation
+            existing.state.tint = tint
 
             if duration <= 0.0 or trans_kind == TransitionKind.CUT:
                 existing.position = target_pos
@@ -355,8 +377,12 @@ class StageCompositor:
             position=start_pos,
             anchor=Anchor.BOTTOM_CENTER,
             opacity=start_opacity,
+            scale=scale_vec,
+            rotation=rotation,
+            tint=tint,
             visible=True,
             flip_h=flip_h,
+            flip_v=flip_v,
             z_index=z_index,
         )
         element = StageElement(element_id=character_id, state=state)
@@ -386,12 +412,12 @@ class StageCompositor:
         duration: float = 0.3,
     ) -> None:
         """Fade out or remove a character from the stage."""
-        char_layer = self.stage.get_layer("characters")
-        if char_layer is None:
+        found = self.stage.find_element(character_id)
+        if found is None:
             return
-
-        elem = char_layer.get_element(character_id)
-        if elem is None:
+        layer_name, elem = found
+        target_layer = self.stage.get_layer(layer_name)
+        if target_layer is None:
             return
 
         trans_kind = (
@@ -401,11 +427,11 @@ class StageCompositor:
         self.timeline.cancel_tweens_for(elem.state)
 
         if duration <= 0.0 or trans_kind == TransitionKind.CUT:
-            char_layer.remove_element(character_id)
+            target_layer.remove_element(character_id)
             return
 
         def _remove() -> None:
-            char_layer.remove_element(character_id)
+            target_layer.remove_element(character_id)
 
         self.timeline.add_tween(
             target=elem.state,
@@ -442,13 +468,10 @@ class StageCompositor:
         easing: str = "ease_in_out_quad",
     ) -> None:
         """Smoothly slide an existing character to a new stage position."""
-        char_layer = self.stage.get_layer("characters")
-        if char_layer is None:
+        found = self.stage.find_element(character_id)
+        if found is None:
             return
-
-        elem = char_layer.get_element(character_id)
-        if elem is None:
-            return
+        _layer_name, elem = found
 
         target_pos = self.layout.resolve_position(position)
         self.timeline.cancel_tweens_for(elem.state, "position")
@@ -465,17 +488,20 @@ class StageCompositor:
             easing=get_easing(easing),
         )
 
-    def set_expression(self, character_id: str, expression: str) -> bool:
+    def set_expression(
+        self,
+        character_id: str,
+        expression: str,
+        *,
+        asset_prefix: str | None = None,
+    ) -> bool:
         """Update a character's expression if they are currently mounted on stage."""
-        char_layer = self.stage.get_layer("characters")
-        if char_layer is None:
+        prefix = asset_prefix or character_id
+        found = self.stage.find_element(character_id)
+        if found is None:
             return False
-
-        elem = char_layer.get_element(character_id)
-        if elem is None:
-            return False
-
-        elem.asset_id = f"{character_id}/{expression}"
+        _layer_name, elem = found
+        elem.asset_id = f"{prefix}/{expression}"
         return True
 
     # =========================================================================
@@ -1171,7 +1197,8 @@ class StageCompositor:
     def set_ambient_light(self, color: Color, intensity: float = 1.0) -> None:
         """Set ambient lighting color and intensity."""
         self.lighting.ambient = color
-        self.lighting.enabled = (color != WHITE) or bool(self.lighting.lights)
+        self.lighting.ambient_intensity = intensity
+        self.lighting.enabled = (color != WHITE) or bool(self.lighting.lights) or (intensity != 1.0)
 
     def add_light(self, light: PointLight) -> None:
         """Add a dynamic point light to the stage."""

@@ -11,6 +11,7 @@ from eager_core.events import (
     AppendEvent,
     ChoicePromptEvent,
     DialogueEvent,
+    FreshBoxEvent,
     InputPromptEvent,
     NarrationEvent,
     SceneEnterEvent,
@@ -337,6 +338,7 @@ class GameSession:
 
         # State flags
         self.mode: str = "game"  # "title", "game", "menu", "ended"
+        self._cli_args: Any = None
         self.skip_mode: bool = False
         self._skip_timer: float = 0.0
         self.skip_interval: float = 0.03
@@ -406,6 +408,7 @@ class GameSession:
         self.audio.set_channel_volume("music", self.preferences.music_volume)
         self.audio.set_channel_volume("sound", self.preferences.sfx_volume)
         self.audio.set_channel_volume("voice", self.preferences.voice_volume)
+        self.audio.set_channel_volume("ambient", getattr(self.preferences, "ambient_volume", 0.8))
         self.vm.set_locale(self.preferences.language)
         player = getattr(self, "_player", None)
         if player is not None and hasattr(player, "set_resolution_scale"):
@@ -472,6 +475,7 @@ class GameSession:
             backlog_len=len(self.backlog),
             ui=ui_state_dict,
             active_input_prompt=input_data,
+            backlog=self.backlog.to_list(),
         )
 
     def _restore_checkpoint(self, checkpoint: Checkpoint) -> None:
@@ -483,7 +487,11 @@ class GameSession:
         self.director.restore_ui_state(checkpoint.ui)
         self.director.ui_state.visible_chars = None
         self.text_reveal = None
-        if len(self.backlog.entries) > checkpoint.backlog_len:
+        if checkpoint.backlog is not None:
+            from eager_core.backlog import Backlog
+
+            self.backlog = Backlog.from_list(checkpoint.backlog, max_entries=self.backlog.max_entries)
+        elif len(self.backlog.entries) > checkpoint.backlog_len:
             self.backlog.entries = self.backlog.entries[: checkpoint.backlog_len]
 
         self.active_choice_prompt = self.vm.pending_choice
@@ -588,7 +596,7 @@ class GameSession:
             # Record into backlog
             if isinstance(event, DialogueEvent):
                 self.backlog.add(event.speaker, event.text, voice=event.voice, emotion=event.emotion)
-            elif isinstance(event, NarrationEvent):
+            elif isinstance(event, (NarrationEvent, FreshBoxEvent)):
                 self.backlog.add(None, event.text)
             elif isinstance(event, AppendEvent):
                 self.backlog.append_to_last(event.text)
@@ -732,7 +740,7 @@ class GameSession:
 
             if isinstance(event, DialogueEvent):
                 self.backlog.add(event.speaker, event.text, voice=event.voice, emotion=event.emotion)
-            elif isinstance(event, NarrationEvent):
+            elif isinstance(event, (NarrationEvent, FreshBoxEvent)):
                 self.backlog.add(None, event.text)
             elif isinstance(event, AppendEvent):
                 self.backlog.append_to_last(event.text)
@@ -839,6 +847,10 @@ class GameSession:
         self.checkpoints.clear()
         self.checkpoints.push(cp)
         return True
+
+    def delete_save_slot(self, slot_name: str) -> bool:
+        """Delete saved game in named slot."""
+        return self.save_manager.delete_slot(slot_name)
 
     def quicksave(self) -> Any:
         """Quicksave current checkpoint."""
@@ -1270,9 +1282,9 @@ class GameSession:
                 return self.return_to_title()
             if self.active_choice_prompt is None and self.active_input_prompt is None:
                 return self.advance()
-        elif action == InputAction.ROLLBACK:
+        elif action in (InputAction.ROLLBACK, InputAction.NAV_LEFT):
             return self.rollback()
-        elif action == InputAction.ROLL_FORWARD:
+        elif action in (InputAction.ROLL_FORWARD, InputAction.NAV_RIGHT):
             return self.roll_forward()
         elif action == InputAction.CHOOSE:
             idx = payload.get("index")

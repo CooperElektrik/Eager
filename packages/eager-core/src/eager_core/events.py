@@ -62,6 +62,7 @@ class DialogueEvent:
     emotion: str | None
     line_number: int
     beat_id: str | None = None
+    character_id: str | None = None
 
     @property
     def type(self) -> str:
@@ -84,6 +85,8 @@ class DialogueEvent:
         }
         if self.beat_id is not None:
             data["beat_id"] = self.beat_id
+        if self.character_id is not None:
+            data["character_id"] = self.character_id
         return data
 
 

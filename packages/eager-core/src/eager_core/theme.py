@@ -54,6 +54,10 @@ class Theme:
     font_size: int = 16
     title_font_size: int = 32
 
+    # Layout modes
+    layout_mode: str = "cinematic"  # "cinematic" or "classic"
+    show_numbering: bool = False
+
     def scale_font_size(self, base_size: float, viewport_height: float) -> int:
         """Scale a base font size proportionally with the viewport height (reference 720p)."""
         scale = float(viewport_height) / 720.0
@@ -86,6 +90,7 @@ class Theme:
         nameplate_border = self.dialogue_box_border if show_box else Color(0.0, 0.0, 0.0, 0.0)
 
         kwargs: dict[str, Any] = {
+            "layout_mode": self.layout_mode,
             "box_fill": self.dialogue_box_fill,
             "box_border": self.dialogue_box_border,
             "box_border_width": 1.0 if self.dialogue_box_border.a > 0.05 else 0.0,
@@ -132,6 +137,8 @@ class Theme:
             self.button_border.a * 0.5,
         )
         kwargs: dict[str, Any] = {
+            "layout_mode": self.layout_mode,
+            "show_numbering": self.show_numbering,
             "button_fill": self.button_fill,
             "button_border": self.button_border,
             "button_border_width": 1.0 if self.button_border.a > 0.05 else 0.0,
@@ -153,7 +160,35 @@ class Theme:
             "name": self.name,
             "font_family": self.font_family,
             "font_size": self.font_size,
+            "layout_mode": self.layout_mode,
+            "show_numbering": self.show_numbering,
         }
+
+    @classmethod
+    def cinematic(cls) -> Theme:
+        """Create a default cinematic theme preset."""
+        return cls(name="cinematic", layout_mode="cinematic")
+
+    @classmethod
+    def classic(cls) -> Theme:
+        """Create a classic visual novel theme preset."""
+        return cls(
+            name="classic",
+            layout_mode="classic",
+            show_numbering=True,
+            nameplate_fill=Color(0.08, 0.10, 0.14, 0.95),
+            dialogue_box_fill=Color(0.05, 0.07, 0.10, 0.92),
+        )
+
+    @classmethod
+    def from_name(cls, name: str) -> Theme:
+        """Resolve a named preset theme."""
+        clean = name.strip().lower()
+        if clean == "classic":
+            return cls.classic()
+        if clean in ("cinematic", "default"):
+            return cls.cinematic()
+        return cls(name=name)
 
 
 __all__ = ["Theme"]

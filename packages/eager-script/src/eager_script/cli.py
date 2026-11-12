@@ -22,8 +22,7 @@ def _cmd_parse(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        content = path.read_text(encoding="utf-8")
-        items = eager_script.parse(content)
+        items = eager_script.parse_file(path)
         json_output = eager_script.to_json(items, indent=args.indent)
         if args.output:
             out_path = Path(args.output)
@@ -31,7 +30,7 @@ def _cmd_parse(args: argparse.Namespace) -> int:
         else:
             sys.stdout.write(json_output + "\n")
         return 0
-    except eager_script.ParseError as exc:
+    except (eager_script.ParseError, eager_script.IncludeError) as exc:
         sys.stderr.write(f"Parse error: {exc}\n")
         return 1
     except Exception as exc:  # noqa: BLE001
@@ -46,8 +45,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        content = path.read_text(encoding="utf-8")
-        items = eager_script.parse(content)
+        items = eager_script.parse_file(path)
         result = eager_script.validate(items)
 
         for warning in result.warnings:
@@ -64,7 +62,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
             f"✓ Script '{path.name}' is valid ({len(items)} AST items, {len(result.warnings)} warning(s)).\n"
         )
         return 0
-    except eager_script.ParseError as exc:
+    except (eager_script.ParseError, eager_script.IncludeError) as exc:
         sys.stderr.write(f"Syntax error: {exc}\n")
         return 1
     except Exception as exc:  # noqa: BLE001
@@ -79,8 +77,8 @@ def _cmd_graph(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        content = path.read_text(encoding="utf-8")
-        graph = eager_script.parse_graph(content)
+        items = eager_script.parse_file(path)
+        graph = eager_script.to_graph(items)
 
         if args.format == "dot":
             output_text = graph.to_dot()
@@ -96,7 +94,7 @@ def _cmd_graph(args: argparse.Namespace) -> int:
         else:
             sys.stdout.write(output_text + "\n")
         return 0
-    except eager_script.ParseError as exc:
+    except (eager_script.ParseError, eager_script.IncludeError) as exc:
         sys.stderr.write(f"Parse error: {exc}\n")
         return 1
     except Exception as exc:  # noqa: BLE001

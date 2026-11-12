@@ -252,15 +252,16 @@ height = 720
         session.screens.register(pref_screen)
         session.screens.show("preferences", session)
 
-        # Button 0 is Back, Buttons 1..3 are languages (default, es, ja), Buttons 4..5 are options, Buttons 6..9 are scale
-        assert len(pref_screen.buttons) == 10
+        # Button 0 is Back, Buttons 1..3 are languages (default, es, ja), Buttons 4..6 are options, Buttons 7..10 are scale
+        assert len(pref_screen.buttons) == 11
         assert "DEFAULT" in pref_screen.buttons[1].text
         assert "ES" in pref_screen.buttons[2].text
         assert "JA" in pref_screen.buttons[3].text
         assert "Fullscreen" in pref_screen.buttons[4].text
         assert "Skip Unseen" in pref_screen.buttons[5].text
-        assert "0.75x" in pref_screen.buttons[6].text
-        assert "1.00x" in pref_screen.buttons[7].text
+        assert "Autosave" in pref_screen.buttons[6].text
+        assert "0.75x" in pref_screen.buttons[7].text
+        assert "1.00x" in pref_screen.buttons[8].text
 
         # Click Spanish (buttons[2])
         es_btn = pref_screen.buttons[2]

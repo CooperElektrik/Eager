@@ -90,6 +90,7 @@ class LightmapState:
     lights: list[PointLight] = field(default_factory=list)
     enabled: bool = False
     blend_mode: str = "multiply"  # "multiply" or "screen"
+    ambient_intensity: float = 1.0
 
     def clear(self) -> None:
         """Reset lights to neutral state."""
@@ -97,6 +98,7 @@ class LightmapState:
         self.lights.clear()
         self.enabled = False
         self.blend_mode = "multiply"
+        self.ambient_intensity = 1.0
 
     def add_light(self, light: PointLight) -> None:
         """Add a point light source and enable lighting pass."""
@@ -107,7 +109,7 @@ class LightmapState:
         """Remove a point light source."""
         if light in self.lights:
             self.lights.remove(light)
-        if not self.lights and self.ambient == WHITE:
+        if not self.lights and self.ambient == WHITE and self.ambient_intensity >= 1.0:
             self.enabled = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -116,6 +118,7 @@ class LightmapState:
             "lights": [light.to_dict() for light in self.lights],
             "enabled": self.enabled,
             "blend_mode": self.blend_mode,
+            "ambient_intensity": self.ambient_intensity,
         }
 
     @classmethod
@@ -127,4 +130,5 @@ class LightmapState:
             lights=lights,
             enabled=bool(data.get("enabled", False)),
             blend_mode=str(data.get("blend_mode", "multiply")),
+            ambient_intensity=float(data.get("ambient_intensity", 1.0)),
         )

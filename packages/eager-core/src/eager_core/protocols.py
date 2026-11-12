@@ -573,6 +573,7 @@ class UIDrawBackend(Protocol):
         anchor_x: str = "left",
         anchor_y: str = "top",
         cache: bool = True,
+        font_family: str | None = None,
     ) -> None:
         """Draw a single line of text."""
         ...
@@ -600,6 +601,7 @@ class UIDrawBackend(Protocol):
         bold: bool = False,
         italic: bool = False,
         cache: bool = True,
+        font_family: str | None = None,
     ) -> tuple[float, float]:
         """Return the ``(width, height)`` the given text would occupy."""
         ...

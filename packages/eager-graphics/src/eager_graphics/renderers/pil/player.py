@@ -362,6 +362,8 @@ if TYPE_CHECKING or PIL_AVAILABLE:
             label.pack(fill="both", expand=True)
 
             root.bind("<Button-1>", self._on_click)
+            root.bind("<ButtonRelease-1>", self._on_release)
+            root.bind("<Button-3>", self._on_right_click)
             root.bind("<Motion>", self._on_motion)
             root.bind("<Key>", self._on_key)
             root.bind("<Button-4>", self._on_scroll_up)
@@ -447,6 +449,19 @@ if TYPE_CHECKING or PIL_AVAILABLE:
         def _on_click(self, event: Any) -> None:
             """Handle mouse clicks for advancement or choice selection."""
             self.handle_pointer_click(float(event.x), float(event.y))
+
+        def _on_right_click(self, event: Any) -> None:
+            """Handle right click to toggle game menu."""
+            from eager_core.input import InputAction
+
+            self.session.handle_input(InputAction.GAME_MENU, {"button": "mouse_right"})
+
+        def _on_release(self, event: Any) -> None:
+            """Handle mouse release to terminate active slider dragging."""
+            screens = getattr(self.session, "screens", None)
+            release_fn = getattr(screens, "handle_mouse_release", None)
+            if callable(release_fn):
+                release_fn(float(event.x), float(event.y))
 
         def _on_configure(self, event: Any) -> None:
             """Keep the UI components laid out against the new window size."""

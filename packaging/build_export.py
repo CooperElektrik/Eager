@@ -54,7 +54,13 @@ def _ensure_pyinstaller() -> None:
         raise SystemExit(1) from exc
 
 
-def build_pyinstaller(platform: str, output: Path) -> Path:
+def build_pyinstaller(
+    platform: str,
+    output: Path,
+    *,
+    project_dir: Path | None = None,
+    script: Path | None = None,
+) -> Path:
     """Run PyInstaller and return the path to the built app directory."""
     _ensure_pyinstaller()
 
@@ -101,22 +107,42 @@ def build_pyinstaller(platform: str, output: Path) -> Path:
         (output / exe_path.name).chmod(0o755)
 
     # Copy data files alongside the executable so the runtime can access them.
-    examples_dir = REPO_ROOT / "examples"
-    assets_src = examples_dir / "assets"
-    locales_src = examples_dir / "locales"
-    demo_story_src = examples_dir / "demo_story.es"
     template_src = (
         REPO_ROOT / "packages" / "eager-runtime" / "src" / "eager_runtime" / "template"
     )
-
-    if assets_src.exists():
-        shutil.copytree(assets_src, output / "examples" / "assets")
-    if locales_src.exists():
-        shutil.copytree(locales_src, output / "examples" / "locales")
-    if demo_story_src.exists():
-        shutil.copy2(demo_story_src, output / "examples" / "demo_story.es")
     if template_src.exists():
         shutil.copytree(template_src, output / "eager_runtime" / "template")
+
+    if project_dir is not None:
+        proj = project_dir.resolve()
+        for item_name in ("game.toml", "assets", "locales", "scripts"):
+            src_item = proj / item_name
+            if src_item.is_dir():
+                shutil.copytree(src_item, output / item_name)
+            elif src_item.is_file():
+                shutil.copy2(src_item, output / item_name)
+        for es_file in proj.glob("*.es"):
+            shutil.copy2(es_file, output / es_file.name)
+    elif script is not None:
+        scr = script.resolve()
+        if scr.exists():
+            shutil.copy2(scr, output / scr.name)
+        for folder_name in ("assets", "locales"):
+            src_folder = scr.parent / folder_name
+            if src_folder.is_dir():
+                shutil.copytree(src_folder, output / folder_name)
+    else:
+        examples_dir = REPO_ROOT / "examples"
+        assets_src = examples_dir / "assets"
+        locales_src = examples_dir / "locales"
+        demo_story_src = examples_dir / "demo_story.es"
+
+        if assets_src.exists():
+            shutil.copytree(assets_src, output / "examples" / "assets")
+        if locales_src.exists():
+            shutil.copytree(locales_src, output / "examples" / "locales")
+        if demo_story_src.exists():
+            shutil.copy2(demo_story_src, output / "examples" / "demo_story.es")
 
     print(f"\nBuilt {platform} export at: {output}")
     return output
@@ -218,6 +244,18 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Output directory (default: dist/<platform>).",
     )
+    parser.add_argument(
+        "--project-dir",
+        type=Path,
+        default=None,
+        help="Path to an Eager project directory (with game.toml/assets/locales) to bundle.",
+    )
+    parser.add_argument(
+        "--script",
+        type=Path,
+        default=None,
+        help="Path to a standalone .es script file to bundle.",
+    )
     args = parser.parse_args(argv)
 
     # Detect platform
@@ -234,7 +272,12 @@ def main(argv: list[str] | None = None) -> int:
 
     output = args.output or (REPO_ROOT / "dist" / platform)
 
-    app_dir = build_pyinstaller(platform, output)
+    app_dir = build_pyinstaller(
+        platform,
+        output,
+        project_dir=args.project_dir,
+        script=args.script,
+    )
 
     if platform == "windows":
         package_windows(app_dir, REPO_ROOT / "dist" / "windows-installer")

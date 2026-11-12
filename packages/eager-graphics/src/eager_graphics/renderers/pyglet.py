@@ -935,7 +935,8 @@ class PygletRenderer(RenderBackend):
     def render_lightmap(self, lightmap: LightmapState) -> None:
         """Composite a screen-space low-res lightmap onto the display buffer."""
         self._active_lightmap = lightmap
-        if not lightmap.enabled or (lightmap.ambient == WHITE and not lightmap.lights):
+        intensity = getattr(lightmap, "ambient_intensity", 1.0)
+        if not lightmap.enabled or (lightmap.ambient == WHITE and intensity == 1.0 and not lightmap.lights):
             if self._lightmap_sprite is not None and self._lightmap_sprite.visible:
                 self._lightmap_sprite.visible = False
             return
@@ -948,7 +949,11 @@ class PygletRenderer(RenderBackend):
         low_w = max(16, win_w // 8)
         low_h = max(9, win_h // 8)
         amb = lightmap.ambient
-        amb_rgb = (round(amb.r * 255), round(amb.g * 255), round(amb.b * 255))
+        amb_rgb = (
+            max(0, min(255, round(amb.r * intensity * 255))),
+            max(0, min(255, round(amb.g * intensity * 255))),
+            max(0, min(255, round(amb.b * intensity * 255))),
+        )
         lightmap_img = Image.new("RGB", (low_w, low_h), amb_rgb)
 
         transform = self._current_transform
@@ -1280,6 +1285,7 @@ class PygletRenderer(RenderBackend):
         anchor_x: str = "left",
         anchor_y: str = "top",
         cache: bool = True,
+        font_family: str | None = None,
     ) -> None:
         """Draw a single line of text at the requested anchor point."""
         pyglet_anchor_x: Literal["left", "center", "right"] = "left"
@@ -1301,12 +1307,14 @@ class PygletRenderer(RenderBackend):
         group = self._get_ui_group(self._ui_order)
         self._ui_order += 1
 
+        target_font = font_family if (font_family and font_family not in ("sans-serif", "default")) else self._ui_font_name()
+
         if self._label_cursor < len(self._label_pool):
             label = self._label_pool[self._label_cursor]
         else:
             label = Label(
                 text,
-                font_name=self._ui_font_name(),
+                font_name=target_font,
                 font_size=font_size,
                 dpi=72,
                 weight=weight_str,
@@ -1425,10 +1433,12 @@ class PygletRenderer(RenderBackend):
         bold: bool = False,
         italic: bool = False,
         cache: bool = True,
+        font_family: str | None = None,
     ) -> tuple[float, float]:
         """Measure the pixel extents *text* would occupy at *font_size*."""
+        target_font = font_family if (font_family and font_family not in ("sans-serif", "default")) else self._ui_font_name()
         return _cached_measure_text(
-            self._ui_font_name(),
+            target_font,
             font_size,
             bold,
             italic,
@@ -1641,6 +1651,15 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):
 
         flipped_y = self.height - y
         self.handle_pointer_click(float(x), float(flipped_y))
+
+    def on_mouse_release(self, x: int, y: int, button: int, modifiers: int) -> None:
+        """Handle mouse release to terminate active slider dragging."""
+        if button == mouse.LEFT:
+            flipped_y = self.height - y
+            screens = getattr(self.session, "screens", None)
+            release_fn = getattr(screens, "handle_mouse_release", None)
+            if callable(release_fn):
+                release_fn(float(x), float(flipped_y))
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
         """Handle keyboard input for advancing, choices, rollback, save/load, and menus."""

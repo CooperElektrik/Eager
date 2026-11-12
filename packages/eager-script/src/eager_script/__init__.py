@@ -50,6 +50,11 @@ from eager_script.hooks import (
     parse_input_args,
     parse_input_hook,
 )
+from eager_script.includes import (
+    IncludeError,
+    parse_file,
+    resolve_includes,
+)
 from eager_script.parser import (
     CHARACTER_PATTERN,
     CHOICE_INLINE_PATTERN,
@@ -91,6 +96,7 @@ __all__ = [
     "EagerScriptError",
     "EdgeKind",
     "HookArgs",
+    "IncludeError",
     "InputHookArgs",
     "ParseError",
     "ParsedAppend",
@@ -127,11 +133,13 @@ __all__ = [
     "from_json",
     "is_input_hook",
     "parse",
+    "parse_file",
     "parse_graph",
     "parse_hook_args",
     "parse_input_args",
     "parse_input_hook",
     "parse_iter",
+    "resolve_includes",
     "slugify",
     "to_dict",
     "to_graph",

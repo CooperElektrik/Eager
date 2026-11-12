@@ -105,7 +105,8 @@ class TerminalPlayer:
             elif isinstance(event, ChoicePromptEvent):
                 self._print(self._color("\nChoices:", "1;33"))
                 for opt in event.options:
-                    self._print(f"  [{opt.index + 1}] {opt.text}")
+                    lock_str = " [Locked]" if not opt.enabled else ""
+                    self._print(f"  [{opt.index + 1}] {opt.text}{lock_str}")
 
                 self._handle_choice_input(event)
 
@@ -126,15 +127,17 @@ class TerminalPlayer:
                 line = self.input_stream.readline()
                 if not line:
                     # End of input
-                    self.vm.choose(0)
+                    first_enabled = next((opt.index for opt in prompt.options if opt.enabled), 0)
+                    self.vm.choose(first_enabled)
                     return
                 cmd = line.strip()
             except (EOFError, KeyboardInterrupt, OSError, ValueError):
                 self._print("\nInterrupted.")
-                if prompt.options[0].target is not None:
-                    self.vm.jump(prompt.options[0].target)
+                first_enabled_opt = next((opt for opt in prompt.options if opt.enabled), prompt.options[0])
+                if first_enabled_opt.target is not None:
+                    self.vm.jump(first_enabled_opt.target)
                 else:
-                    self.vm.choose(0)
+                    self.vm.choose(first_enabled_opt.index)
                 return
 
             if not cmd:
@@ -143,7 +146,8 @@ class TerminalPlayer:
             # Check built-in commands
             if cmd == ":q" or cmd == ":quit":
                 self._print("Quitting story.")
-                self.vm.choose(0)
+                first_enabled = next((opt.index for opt in prompt.options if opt.enabled), 0)
+                self.vm.choose(first_enabled)
                 sys.exit(0)
 
             if cmd == ":save":
@@ -178,6 +182,9 @@ class TerminalPlayer:
             if cmd.isdigit():
                 idx = int(cmd) - 1
                 if 0 <= idx < len(prompt.options):
+                    if not prompt.options[idx].enabled:
+                        self._print(self._color("That option is locked/disabled.", "31"))
+                        continue
                     self.vm.choose(idx)
                     return
                 self._print(self._color(f"Please select between 1 and {len(prompt.options)}.", "31"))
@@ -187,6 +194,10 @@ class TerminalPlayer:
             found = False
             for opt in prompt.options:
                 if cmd.lower() in opt.text.lower() or (opt.target is not None and cmd.lower() == opt.target.lower()):
+                    if not opt.enabled:
+                        self._print(self._color(f"Choice '{opt.text}' is locked/disabled.", "31"))
+                        found = True
+                        break
                     self.vm.choose(opt.index)
                     found = True
                     return

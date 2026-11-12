@@ -138,6 +138,7 @@ INLINE_TAGS = [
     ("{size=...}", "{size=${1:1.2}}${2:sized text}{/size}", "Font scaling factor"),
     ("{w=...}", "{w=${1:0.5}}", "Inline text pause (seconds)"),
     ("{p=...}", "{p=${1:1.0}}", "Wait for click pause point"),
+    ("{fast}", "{fast}", "Instantly reveal preceding text without typewriter delay"),
     ("{voice:...}", "{voice:${1:path}}", "Trigger voice audio clip"),
     ("{id=...}", "{id=${1:stable_id}}", "Pin explicit content ID for localization"),
 ]

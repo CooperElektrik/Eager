@@ -216,6 +216,33 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--lang", "--locale", default=None, help="Language locale for translations (e.g. 'vi').")
     run_p.set_defaults(func=_cmd_run)
 
+    for p in (play_p, run_p):
+        p.add_argument(
+            "--scale-mode",
+            choices=["letterbox", "stretch", "crop", "fit_width", "fit_height"],
+            default=None,
+            help="Stage viewport scaling mode.",
+        )
+        p.add_argument(
+            "--show-fps",
+            dest="show_fps",
+            action="store_true",
+            default=None,
+            help="Display real-time performance FPS overlay.",
+        )
+        p.add_argument(
+            "--uncapped",
+            action="store_true",
+            default=False,
+            help="Run without frame-rate cap / vsync.",
+        )
+        p.add_argument(
+            "--render-preset",
+            choices=["performance", "balanced", "quality", "debug"],
+            default=None,
+            help="Renderer pipeline optimization preset.",
+        )
+
     # new
     new_p = subparsers.add_parser(
         "new",
@@ -362,7 +389,9 @@ def run_test_run(args: argparse.Namespace) -> int:
 
                 if vm.pending_choice is not None:
                     prompt = vm.pending_choice
-                    num_opts = len(prompt.options)
+                    enabled_indices = [opt.index for opt in prompt.options if opt.enabled]
+                    if not enabled_indices:
+                        break
 
                     if decision_idx < len(decision_path):
                         chosen = decision_path[decision_idx]
@@ -370,17 +399,15 @@ def run_test_run(args: argparse.Namespace) -> int:
                         current_decisions.append(chosen)
                         vm.choose(chosen)
                     else:
-                        # First time encountering this choice prompt in this path:
-                        # Queue other alternatives (1 .. num_opts-1)
-                        for alt in range(1, num_opts):
+                        first_opt = enabled_indices[0]
+                        for alt in enabled_indices[1:]:
                             alt_seq = tuple(current_decisions + [alt])
                             if alt_seq not in visited_choice_sequences:
                                 visited_choice_sequences.add(alt_seq)
                                 frontier.append(list(alt_seq))
-                        # Take choice 0 for current run
-                        current_decisions.append(0)
+                        current_decisions.append(first_opt)
                         decision_idx += 1
-                        vm.choose(0)
+                        vm.choose(first_opt)
 
                 if vm.pending_input is not None:
                     vm.submit_input(vm.pending_input.default or "Player")
@@ -406,8 +433,11 @@ def run_test_run(args: argparse.Namespace) -> int:
         steps += 1
 
         if vm.pending_choice is not None:
-            # Default to first choice in headless mode
-            vm.choose(0)
+            first_enabled = next((opt.index for opt in vm.pending_choice.options if opt.enabled), None)
+            if first_enabled is not None:
+                vm.choose(first_enabled)
+            else:
+                break
 
         if vm.pending_input is not None:
             # Default to placeholder input in headless mode
@@ -480,6 +510,10 @@ def _run_headless(
         if event is not None and event.type == "choice_prompt":
             if auto_choose is not None:
                 session.choose(auto_choose)
+                continue
+            first_enabled = next((opt.index for opt in event.options if opt.enabled), None)
+            if first_enabled is not None:
+                session.choose(first_enabled)
                 continue
             break
 
@@ -558,6 +592,7 @@ def _cmd_play(args: argparse.Namespace) -> int:
         session.mode = "title"
 
     sys.stderr.write(f"Launching Eager visual novel ({args.backend})...\n")
+    session._cli_args = args
     _run_interactive_player(session, backend=args.backend)
     return 0
 
@@ -613,6 +648,7 @@ def _run_interactive_player(session: Any, *, backend: str) -> None:
     All interactive players (PygletPlayer and PILPlayer) share a
     common interface and run their own event loops via ``run()``.
     """
+    args = getattr(session, "_cli_args", None)
     _ensure_graphics()
     player_cls = get_player(backend)
     if player_cls is None:
@@ -627,13 +663,38 @@ def _run_interactive_player(session: Any, *, backend: str) -> None:
     title = cfg_title if cfg_title else f"Eager Visual Novel ({backend.upper()})"
     width = getattr(session, "virtual_width", 1280) or 1280
     height = getattr(session, "virtual_height", 720) or 720
-    player: Any = player_cls(
-        session=session,
-        width=width,
-        height=height,
-        title=title,
-        asset_dir=asset_dir,
-    )
+
+    player_kwargs: dict[str, Any] = {
+        "session": session,
+        "width": width,
+        "height": height,
+        "title": title,
+        "asset_dir": asset_dir,
+    }
+
+    scale_arg = getattr(args, "scale_mode", None) or getattr(getattr(session, "config", None), "scale_mode", None)
+    if scale_arg:
+        from eager_core.types import ScaleMode
+        try:
+            player_kwargs["scale_mode"] = ScaleMode(scale_arg.lower())
+        except (ValueError, KeyError):
+            pass
+
+    show_fps_arg = getattr(args, "show_fps", None)
+    if show_fps_arg is not None:
+        player_kwargs["show_fps"] = show_fps_arg
+    elif hasattr(getattr(session, "config", None), "show_fps"):
+        player_kwargs["show_fps"] = session.config.show_fps
+
+    uncapped_arg = getattr(args, "uncapped", False)
+    if uncapped_arg:
+        player_kwargs["uncapped"] = True
+
+    preset_arg = getattr(args, "render_preset", None) or getattr(getattr(session, "config", None), "render_preset", None)
+    if preset_arg and backend == "pil":
+        player_kwargs["preset"] = str(preset_arg).lower()
+
+    player: Any = player_cls(**player_kwargs)
     if (
         getattr(getattr(session, "preferences", None), "fullscreen", False)
         and hasattr(player, "toggle_fullscreen")
@@ -695,6 +756,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         session.screens.show("title", session)
         session.mode = "title"
 
+    session._cli_args = args
     _run_interactive_player(session, backend=args.backend)
     return 0
 

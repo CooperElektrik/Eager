@@ -128,10 +128,11 @@ class Checkpoint:
     backlog_len: int
     ui: dict[str, Any]
     active_input_prompt: dict[str, Any] | None = None
+    backlog: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize checkpoint to a JSON-compatible dictionary."""
-        return {
+        d: dict[str, Any] = {
             "story": copy.deepcopy(self.story),
             "visual": copy.deepcopy(self.visual),
             "audio": copy.deepcopy(dict(self.audio)),
@@ -139,6 +140,9 @@ class Checkpoint:
             "ui": copy.deepcopy(self.ui),
             "active_input_prompt": copy.deepcopy(self.active_input_prompt),
         }
+        if self.backlog is not None:
+            d["backlog"] = copy.deepcopy(self.backlog)
+        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Checkpoint:
@@ -151,6 +155,7 @@ class Checkpoint:
         ui = data.get("ui")
         backlog_raw = data.get("backlog_len", 0)
         backlog_len = int(0 if backlog_raw is None else backlog_raw)
+        backlog_entries = data.get("backlog")
         return cls(
             story=story if isinstance(story, dict) else {},
             visual=visual if isinstance(visual, dict) else {},
@@ -160,6 +165,7 @@ class Checkpoint:
             active_input_prompt=data.get("active_input_prompt")
             if isinstance(data.get("active_input_prompt"), dict)
             else None,
+            backlog=backlog_entries if isinstance(backlog_entries, list) else None,
         )
 
 

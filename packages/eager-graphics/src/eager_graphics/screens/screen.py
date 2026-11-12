@@ -34,6 +34,7 @@ class Screen:
         self.labels: list[Label] = []
         self.visible: bool = False
         self._focused_button_index: int = -1
+        self._dragging_slider: Slider | None = None
 
     def set_viewport(self, width: int, height: int) -> None:
         """Update viewport dimensions and recompute layout."""
@@ -64,8 +65,11 @@ class Screen:
         self.visible = False
 
     def handle_mouse_move(self, x: float, y: float) -> bool:
-        """Update hover state on buttons. Returns True if any hover state changed."""
+        """Update hover state on buttons and handle slider dragging."""
         changed = False
+        if self._dragging_slider is not None:
+            self._dragging_slider.handle_click(x, y)
+            changed = True
         for idx, b in enumerate(self.buttons):
             new_hover = b.hit_test(x, y)
             if b.hovered != new_hover:
@@ -84,8 +88,17 @@ class Screen:
                 return True
         for s in self.sliders:
             if s.hit_test(x, y):
+                self._dragging_slider = s
                 s.handle_click(x, y)
                 return True
+        self._dragging_slider = None
+        return False
+
+    def handle_mouse_release(self, x: float, y: float) -> bool:
+        """Process mouse release event, ending any active slider drag."""
+        if getattr(self, "_dragging_slider", None) is not None:
+            self._dragging_slider = None
+            return True
         return False
 
     def handle_key(self, key_name: str, session: GameSessionProtocol | None = None) -> bool:
@@ -242,6 +255,16 @@ class ScreenManager:
         """Forward mouse clicks to the active screen. Returns True if handled."""
         if self.active_screen is not None and self.active_screen.visible:
             return self.active_screen.handle_mouse_click(x, y)
+        return False
+
+    def handle_mouse_release(self, x: float, y: float) -> bool:
+        """Forward mouse release to the active screen."""
+        if (
+            self.active_screen is not None
+            and self.active_screen.visible
+            and hasattr(self.active_screen, "handle_mouse_release")
+        ):
+            return bool(self.active_screen.handle_mouse_release(x, y))
         return False
 
     def handle_key(self, key_name: str, session: GameSessionProtocol | Any = None) -> bool:

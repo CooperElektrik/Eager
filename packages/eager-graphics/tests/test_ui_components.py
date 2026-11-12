@@ -1081,10 +1081,12 @@ def test_ui_overlay_draw_nvl_markup_scaling_and_overflow() -> None:
     backend = NullRenderer()
     overlay.draw_nvl(backend, ui_state)
 
-    # Check text tag was stripped in drawn text
+    # Check text tag was parsed and rendered with segment styling
     text_calls = [c for c in backend.ui_calls if c["kind"] == "text"]
-    assert any("Line with bold and color" in c["text"] for c in text_calls)
+    joined_text = "".join(c["text"] for c in text_calls)
+    assert "Line with bold and color" in joined_text
     assert not any("{b}" in c["text"] for c in text_calls)
+    assert any(c["text"] == "bold" and c.get("bold") is True for c in text_calls)
 
     # Check font scaling on 1440p
     overlay_1440 = UIOverlay(2560, 1440)

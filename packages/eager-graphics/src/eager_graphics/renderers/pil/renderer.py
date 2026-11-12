@@ -204,10 +204,8 @@ class PILRenderer(RenderBackend):
             max_items=_MAX_TEXT_CACHE,
             max_bytes=32 * 1024 * 1024,
         )
-        self._font_cache: dict[int, Any] = {}
-        self._measure_cache: dict[
-            tuple[str, int] | tuple[str, int, bool, bool], tuple[float, float]
-        ] = {}
+        self._font_cache: dict[int | tuple[int, str], Any] = {}
+        self._measure_cache: dict[tuple[Any, ...], tuple[float, float]] = {}
         self._rgba_lut_cache: dict[tuple[int, int, int, int], list[int]] = {}
         self._fade_lut_cache: dict[tuple[Any, ...], list[int]] = {}
         self._mip_cache: dict[tuple[str, int], Image.Image] = {}
@@ -680,17 +678,24 @@ class PILRenderer(RenderBackend):
 
     def render_lightmap(self, lightmap: LightmapState) -> None:
         """Composite a screen-space low-res lightmap onto the display buffer."""
-        if not lightmap.enabled or (lightmap.ambient == WHITE and not lightmap.lights):
+        intensity = getattr(lightmap, "ambient_intensity", 1.0)
+        if not lightmap.enabled or (lightmap.ambient == WHITE and intensity == 1.0 and not lightmap.lights):
             return
 
         # 1/8th resolution canvas (e.g. 160x90 for 1280x720)
         low_w = max(16, self.width // 8)
         low_h = max(9, self.height // 8)
 
-        # Ambient color
+        # Ambient color scaled by ambient_intensity
         amb = lightmap.ambient
-        amb_rgb = (round(amb.r * 255), round(amb.g * 255), round(amb.b * 255))
+        amb_rgb = (
+            max(0, min(255, round(amb.r * intensity * 255))),
+            max(0, min(255, round(amb.g * intensity * 255))),
+            max(0, min(255, round(amb.b * intensity * 255))),
+        )
         lightmap_img = Image.new("RGB", (low_w, low_h), amb_rgb)
+        screen_img: Image.Image | None = None
+        screen_draw: ImageDraw.ImageDraw | None = None
 
         transform = self._current_transform
         sc_x = (transform.scale_x / 8.0) if transform else (1.0 / 8.0)
@@ -713,6 +718,10 @@ class PILRenderer(RenderBackend):
 
                 col = light.color
                 c_rgb = (round(col.r * 255), round(col.g * 255), round(col.b * 255))
+                is_screen = getattr(light, "mode", "multiply") == "screen"
+                if is_screen and screen_img is None:
+                    screen_img = Image.new("RGB", (low_w, low_h), (0, 0, 0))
+                    screen_draw = ImageDraw.Draw(screen_img)
 
                 # Concentric falloff rings on the low-res buffer
                 steps = max(2, min(8, round(lr)))
@@ -724,11 +733,18 @@ class PILRenderer(RenderBackend):
                     bx1 = round(lx + r_step)
                     by1 = round(ly + r_step)
                     alpha_factor = (1.0 - f) * light.intensity
-                    r_val = round(amb_rgb[0] + (c_rgb[0] - amb_rgb[0]) * alpha_factor)
-                    g_val = round(amb_rgb[1] + (c_rgb[1] - amb_rgb[1]) * alpha_factor)
-                    b_val = round(amb_rgb[2] + (c_rgb[2] - amb_rgb[2]) * alpha_factor)
-                    fill_col = (max(0, min(255, r_val)), max(0, min(255, g_val)), max(0, min(255, b_val)))
-                    draw.ellipse([bx0, by0, bx1, by1], fill=fill_col)
+                    if is_screen and screen_draw is not None:
+                        r_val = round(c_rgb[0] * alpha_factor)
+                        g_val = round(c_rgb[1] * alpha_factor)
+                        b_val = round(c_rgb[2] * alpha_factor)
+                        fill_col = (max(0, min(255, r_val)), max(0, min(255, g_val)), max(0, min(255, b_val)))
+                        screen_draw.ellipse([bx0, by0, bx1, by1], fill=fill_col)
+                    else:
+                        r_val = round(amb_rgb[0] + (c_rgb[0] - amb_rgb[0]) * alpha_factor)
+                        g_val = round(amb_rgb[1] + (c_rgb[1] - amb_rgb[1]) * alpha_factor)
+                        b_val = round(amb_rgb[2] + (c_rgb[2] - amb_rgb[2]) * alpha_factor)
+                        fill_col = (max(0, min(255, r_val)), max(0, min(255, g_val)), max(0, min(255, b_val)))
+                        draw.ellipse([bx0, by0, bx1, by1], fill=fill_col)
 
         # Upscale to full window resolution with BILINEAR (<0.3 ms)
         full_lightmap = lightmap_img.resize((self.width, self.height), Image.Resampling.BILINEAR)
@@ -738,6 +754,10 @@ class PILRenderer(RenderBackend):
             self._set_image(ImageChops.screen(self._image, full_lightmap))
         else:
             self._set_image(ImageChops.multiply(self._image, full_lightmap))
+
+        if screen_img is not None:
+            full_screen = screen_img.resize((self.width, self.height), Image.Resampling.BILINEAR)
+            self._set_image(ImageChops.screen(self._image, full_screen))
 
     def _render_top_fx(
         self,
@@ -1869,16 +1889,24 @@ class PILRenderer(RenderBackend):
     # with a top-left origin, which is already PIL's native convention.
     # ------------------------------------------------------------------ #
 
-    def _ui_font(self, font_size: int) -> Any:
-        """Return a bitmap font at *font_size*, cached and tolerating older Pillow."""
-        font = self._font_cache.get(font_size)
+    def _ui_font(self, font_size: int, font_family: str | None = None) -> Any:
+        """Return a font at *font_size* and optional *font_family*, cached."""
+        cache_key = (font_size, font_family) if font_family else font_size
+        font = self._font_cache.get(cache_key)
         if font is not None:
             return font
+        if font_family and font_family not in ("sans-serif", "default"):
+            try:
+                font = ImageFont.truetype(font_family, font_size)
+                self._font_cache[cache_key] = font
+                return font
+            except (OSError, ValueError):
+                pass
         try:
             font = ImageFont.load_default(size=font_size)
         except TypeError:
             font = ImageFont.load_default()
-        self._font_cache[font_size] = font
+        self._font_cache[cache_key] = font
         return font
 
     def _blend_rect(
@@ -2061,6 +2089,7 @@ class PILRenderer(RenderBackend):
         anchor_x: str = "left",
         anchor_y: str = "top",
         cache: bool = True,
+        font_family: str | None = None,
     ) -> None:
         """Draw a single line of text, honouring the requested anchor point."""
         if not text:
@@ -2079,12 +2108,12 @@ class PILRenderer(RenderBackend):
         )
         color_bytes = color_rgba[:3] if self.mode == "RGB" else color_rgba
 
-        if color_rgba[3] == 255 and (not cache or not self._text_mask_cache.enabled):
+        if color_rgba[3] == 255 and not italic and not bold and (not cache or not self._text_mask_cache.enabled):
             # Fast direct render onto canvas for uncached opaque text (e.g. active typing characters or DEBUG mode),
             # bypassing temporary mask allocation, getbbox, and paste passes.
-            font = self._ui_font(font_size)
+            font = self._ui_font(font_size, font_family=font_family)
             if self.enable_dirty_rects:
-                w_est, h_est = self.measure_text(text, font_size=font_size, cache=cache)
+                w_est, h_est = self.measure_text(text, font_size=font_size, cache=cache, font_family=font_family)
                 left = (x - w_est / 2.0) if anchor_x == "center" else ((x - w_est) if anchor_x == "right" else x)
                 top = (y - h_est / 2.0) if anchor_y == "middle" else ((y - h_est) if anchor_y == "bottom" else y)
                 self._mark_ui_dirty(round(left), round(top), round(left + w_est + 2), round(top + h_est + 2))
@@ -2097,10 +2126,10 @@ class PILRenderer(RenderBackend):
             )
             return
 
-        cache_key = (text, font_size, anchor, bold, italic)
+        cache_key = (text, font_size, anchor, bold, italic, font_family)
         cached = self._text_mask_cache.lookup(cache_key)
         if cached is None:
-            font = self._ui_font(font_size)
+            font = self._ui_font(font_size, font_family=font_family)
             try:
                 stroke_w = 1 if bold else 0
                 l, t, r, b = font.getbbox(text, anchor=anchor, stroke_width=stroke_w)
@@ -2110,6 +2139,13 @@ class PILRenderer(RenderBackend):
                     ImageDraw.Draw(mask).text(
                         (-l, -t), text, font=font, fill=255, anchor=anchor, stroke_width=stroke_w
                     )
+                    if italic:
+                        shear_pad = max(1, round(h * 0.22))
+                        mask = mask.transform(
+                            (w + shear_pad, h),
+                            Image.Transform.AFFINE,
+                            (1.0, 0.22, -shear_pad * 0.5, 0.0, 1.0, 0.0),
+                        )
                     cached = (mask, l, t)
                 else:
                     cached = (None, 0, 0)
@@ -2120,6 +2156,13 @@ class PILRenderer(RenderBackend):
                     if w > 0 and h > 0:
                         mask = Image.new("L", (w, h), 0)
                         ImageDraw.Draw(mask).text((-l, -t), text, font=font, fill=255, anchor=anchor)
+                        if italic:
+                            shear_pad = max(1, round(h * 0.22))
+                            mask = mask.transform(
+                                (w + shear_pad, h),
+                                Image.Transform.AFFINE,
+                                (1.0, 0.22, -shear_pad * 0.5, 0.0, 1.0, 0.0),
+                            )
                         cached = (mask, l, t)
                     else:
                         cached = (None, 0, 0)
@@ -2240,18 +2283,19 @@ class PILRenderer(RenderBackend):
         bold: bool = False,
         italic: bool = False,
         cache: bool = True,
+        font_family: str | None = None,
     ) -> tuple[float, float]:
         """Measure the pixel extents *text* would occupy at *font_size*."""
         cache_key = (
             (text, font_size)
-            if not bold and not italic
-            else (text, font_size, bold, italic)
+            if not bold and not italic and not font_family
+            else (text, font_size, bold, italic, font_family)
         )
         cached = self._measure_cache.get(cache_key)
         if cached is not None:
             return cached
 
-        font = self._ui_font(font_size)
+        font = self._ui_font(font_size, font_family=font_family)
         stroke_w = 1 if bold else 0
         lines = text.split("\n")
         try:

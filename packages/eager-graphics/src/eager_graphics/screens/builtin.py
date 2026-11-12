@@ -261,6 +261,8 @@ class SaveLoadScreen(Screen):
     ) -> None:
         super().__init__(mode, theme=theme, viewport_width=viewport_width, viewport_height=viewport_height)
         self.mode: str = mode  # "save" or "load"
+        self.current_tab: str = "slots"  # "slots", "quick", "auto"
+        self.delete_mode: bool = False
         self.session: GameSessionProtocol | None = None
         self.rebuild_layout()
 
@@ -288,12 +290,22 @@ class SaveLoadScreen(Screen):
         )
         save_mgr = getattr(self.session, "save_manager", None)
 
-        for i in range(6):
-            slot_name = f"slot_{i+1}"
+        if self.current_tab == "quick":
+            slot_names = [f"quick_{i+1}" for i in range(5)]
+            slot_prefix = "Quick"
+        elif self.current_tab == "auto":
+            slot_names = [f"auto_{i+1}" for i in range(5)]
+            slot_prefix = "Auto"
+        else:
+            slot_names = [f"slot_{i+1}" for i in range(6)]
+            slot_prefix = "Slot"
+
+        for i, slot_name in enumerate(slot_names):
             cell = grid.cell_rect_by_index(i)
             meta = save_mgr.get_slot_metadata(slot_name) if save_mgr else None
+            slot_num = i + 1
             if meta is not None:
-                scene_name = meta.scene_name or meta.scene_id or f"Scene {i+1}"
+                scene_name = meta.scene_name or meta.scene_id or f"Scene {slot_num}"
                 ts = meta.timestamp
                 if "T" in ts:
                     d_part, t_part = ts.split("T", 1)
@@ -303,23 +315,28 @@ class SaveLoadScreen(Screen):
                 snip = meta.dialogue_snippet or ""
                 if len(snip) > 36:
                     snip = snip[:33] + "..."
+                pt_clean = f" | {meta.playtime_formatted}" if getattr(meta, "playtime_formatted", None) else ""
                 if snip:
-                    label = f"Slot {i+1}: {scene_name}\n{ts_clean}\n\"{snip}\""
+                    label = f"{slot_prefix} {slot_num}: {scene_name}{pt_clean}\n{ts_clean}\n\"{snip}\""
                 else:
-                    label = f"Slot {i+1}: {scene_name}\n{ts_clean}"
+                    label = f"{slot_prefix} {slot_num}: {scene_name}{pt_clean}\n{ts_clean}"
             else:
-                label = f"Slot {i+1}\n[Empty Slot]"
+                label = f"{slot_prefix} {slot_num}\n[Empty Slot]"
 
             def make_action(sname: str):
-                if self.mode == "save":
-                    def save_action() -> None:
+                def slot_action() -> None:
+                    if self.delete_mode:
+                        del_fn = getattr(self.session, "delete_save_slot", None)
+                        if callable(del_fn):
+                            del_fn(sname)
+                        self.delete_mode = False
+                        self.rebuild_layout()
+                        return
+                    if self.mode == "save":
                         if self.session is not None:
                             self.session.save_game(sname)
-                        # Refresh current screen button texts
                         self.rebuild_layout()
-                    return save_action
-                else:
-                    def load_action() -> None:
+                    else:
                         if self.session is not None and self.session.load_game(sname):
                             screens = getattr(self.session, "screens", None)
                             if screens is not None:
@@ -336,7 +353,7 @@ class SaveLoadScreen(Screen):
                                     player._sync_state()
                                 if hasattr(player, "_mark_ui_dirty"):
                                     player._mark_ui_dirty()
-                    return load_action
+                return slot_action
 
             thumb_path = getattr(meta, "thumbnail_path", None) if meta else None
             self.buttons.append(
@@ -348,11 +365,56 @@ class SaveLoadScreen(Screen):
                 )
             )
 
-        # Back button
+        # Tab navigation buttons
+        tab_y = vh * (65.0 / 720.0)
+        tab_w = vw * (130.0 / 1280.0)
+        tab_h = vh * (32.0 / 720.0)
+        tab_spacing = vw * (12.0 / 1280.0)
+
+        tabs = [
+            ("slots", "Slots"),
+            ("quick", "Quick"),
+            ("auto", "Auto"),
+        ]
+        for t_idx, (t_key, t_label) in enumerate(tabs):
+            tx = grid_x + t_idx * (tab_w + tab_spacing)
+            is_active = (self.current_tab == t_key)
+            lbl = f"[{t_label}]" if is_active else t_label
+
+            def make_tab_action(target_tab: str) -> Callable[[], None]:
+                def action() -> None:
+                    self.current_tab = target_tab
+                    self.delete_mode = False
+                    self.rebuild_layout()
+                return action
+
+            self.buttons.append(
+                Button(
+                    Rect(tx, tab_y, tab_w, tab_h),
+                    lbl,
+                    action=make_tab_action(t_key),
+                )
+            )
+
+        # Bottom buttons: Delete and Back (keep Back as buttons[-1])
         back_x = grid_x
         back_y = vh * (520.0 / 720.0)
         back_w = vw * (140.0 / 1280.0)
         back_h = vh * (40.0 / 720.0)
+
+        del_label = "Delete: ON" if self.delete_mode else "Delete Slot"
+        def toggle_delete() -> None:
+            self.delete_mode = not self.delete_mode
+            self.rebuild_layout()
+
+        self.buttons.append(
+            Button(
+                Rect(back_x + back_w + vw * (20.0 / 1280.0), back_y, back_w, back_h),
+                del_label,
+                action=toggle_delete,
+            )
+        )
+
         self.buttons.append(
             Button(
                 Rect(back_x, back_y, back_w, back_h),
@@ -444,21 +506,22 @@ class PreferencesScreen(Screen):
                         self.session.apply_preferences()
             return cb
 
-        # Audio sliders (y: 120, 170, 220, 270)
+        # Audio sliders
         vol_settings = [
             ("Master Volume", "master_volume", getattr(prefs, "master_volume", 1.0) if prefs else 1.0),
             ("Music Volume", "music_volume", getattr(prefs, "music_volume", 0.8) if prefs else 0.8),
+            ("Ambient Volume", "ambient_volume", getattr(prefs, "ambient_volume", 0.8) if prefs else 0.8),
             ("SFX Volume", "sfx_volume", getattr(prefs, "sfx_volume", 1.0) if prefs else 1.0),
             ("Voice Volume", "voice_volume", getattr(prefs, "voice_volume", 1.0) if prefs else 1.0),
         ]
 
         label_x = vw * (100.0 / 1280.0)
-        base_y = vh * (120.0 / 720.0)
-        step_y = vh * (50.0 / 720.0)
+        base_y = vh * (110.0 / 720.0)
+        step_y = vh * (46.0 / 720.0)
         slider_x = vw * (280.0 / 1280.0)
         slider_w = vw * (300.0 / 1280.0)
-        slider_h = vh * (24.0 / 720.0)
-        label_offset_y = vh * (4.0 / 720.0)
+        slider_h = vh * (22.0 / 720.0)
+        label_offset_y = vh * (2.0 / 720.0)
 
         for idx, (label_text, field, current_val) in enumerate(vol_settings):
             sy = base_y + idx * step_y
@@ -487,7 +550,7 @@ class PreferencesScreen(Screen):
             if prefs is not None:
                 prefs.text_speed = val * 100.0
 
-        speed_y = base_y + 4 * step_y
+        speed_y = base_y + 5 * step_y
         self.labels.append(
             Label(
                 "Text Speed",
@@ -513,7 +576,7 @@ class PreferencesScreen(Screen):
             if prefs is not None:
                 prefs.auto_forward_time = 1.0 + val * 9.0
 
-        auto_y = base_y + 5 * step_y
+        auto_y = base_y + 6 * step_y
         self.labels.append(
             Label(
                 "Auto Forward",
@@ -637,6 +700,24 @@ class PreferencesScreen(Screen):
                 Rect(lang_x, opts_y + lang_offset_y + lang_step_y, opt_btn_w, opt_btn_h),
                 skip_label,
                 action=toggle_skip_cb,
+            )
+        )
+
+        is_autosave = bool(getattr(prefs, "autosave_enabled", True)) if prefs else True
+        autosave_label = f"Autosave: {'[ ON ]' if is_autosave else '[ OFF ]'}"
+
+        def toggle_autosave_cb() -> None:
+            if prefs is not None:
+                prefs.autosave_enabled = not is_autosave
+                if self.session is not None and hasattr(self.session, "save_preferences"):
+                    self.session.save_preferences()
+            self.rebuild_layout()
+
+        self.buttons.append(
+            Button(
+                Rect(lang_x, opts_y + lang_offset_y + 2 * lang_step_y, opt_btn_w, opt_btn_h),
+                autosave_label,
+                action=toggle_autosave_cb,
             )
         )
 
@@ -957,11 +1038,13 @@ class HistoryScreen(Screen):
             for entry in displayed_slice:
                 plain_text = parse_text_tags(entry.text).plain_text
                 if entry.speaker:
+                    entry_emotion = getattr(entry, "emotion", None)
+                    spk_text = f"{entry.speaker} ({entry_emotion})" if entry_emotion else entry.speaker
                     speaker_name_w, _ = backend.measure_text(
-                        entry.speaker, font_size=entry_font_size, bold=True
+                        spk_text, font_size=entry_font_size, bold=True
                     )
                     if speaker_name_w <= 0.0:
-                        speaker_name_w = len(entry.speaker) * 9.0 * (vw / 1280.0)
+                        speaker_name_w = len(spk_text) * 9.0 * (vw / 1280.0)
 
                     colon_w, _ = backend.measure_text(": ", font_size=entry_font_size)
                     if colon_w <= 0.0:
@@ -973,7 +1056,7 @@ class HistoryScreen(Screen):
                     backend.draw_text(
                         entry_x,
                         curr_y,
-                        entry.speaker,
+                        spk_text,
                         color=self.theme.accent_color,
                         font_size=entry_font_size,
                         bold=True,

@@ -903,6 +903,27 @@ class ScriptDocument:
                         metadata={"asset_kind": "background"},
                     )
                 )
+        elif hook_name == "image":
+            if len(arg_tokens) >= 2 and "=" not in arg_tokens[1][0]:
+                asset_name, a_start, a_end = arg_tokens[1]
+                asset_span = TokenSpan(
+                    kind="hook_arg",
+                    start_line=line_idx,
+                    start_col=a_start,
+                    end_line=line_idx,
+                    end_col=a_end,
+                    value=asset_name,
+                    metadata={"asset_kind": "image"},
+                )
+                self.spans.append(asset_span)
+                self.occurrences.append(
+                    SymbolOccurrence(
+                        kind="asset_ref",
+                        name=asset_name,
+                        span=asset_span,
+                        metadata={"asset_kind": "image"},
+                    )
+                )
         elif hook_name in ("show", "hide", "move", "expr"):
             if arg_tokens:
                 char_name, c_start, c_end = arg_tokens[0]

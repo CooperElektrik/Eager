@@ -188,6 +188,7 @@ class NullRenderer(RenderBackend, UIDrawBackend):
         anchor_x: str = "left",
         anchor_y: str = "top",
         cache: bool = True,
+        font_family: str | None = None,
     ) -> None:
         self.ui_calls.append(
             {
@@ -202,6 +203,7 @@ class NullRenderer(RenderBackend, UIDrawBackend):
                 "anchor_x": anchor_x,
                 "anchor_y": anchor_y,
                 "cache": cache,
+                "font_family": font_family,
             }
         )
 
@@ -239,6 +241,7 @@ class NullRenderer(RenderBackend, UIDrawBackend):
         bold: bool = False,
         italic: bool = False,
         cache: bool = True,
+        font_family: str | None = None,
     ) -> tuple[float, float]:
         longest = max((len(line) for line in text.splitlines()), default=0)
         return (longest * font_size * 0.5, float(font_size) * 1.2)

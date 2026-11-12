@@ -22,6 +22,7 @@ class Preferences:
     music_volume: float = 0.8
     sfx_volume: float = 1.0
     voice_volume: float = 1.0
+    ambient_volume: float = 0.8
     skip_unseen: bool = False
     autosave_enabled: bool = True
     fullscreen: bool = False

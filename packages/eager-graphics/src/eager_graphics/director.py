@@ -147,8 +147,12 @@ class StageDirector:
             expressions=exprs,
         )
 
-    def find_character(self, speaker: str | None) -> CharacterConfig | None:
+    def find_character(self, speaker: str | None, *, character_id: str | None = None) -> CharacterConfig | None:
         """Find CharacterConfig matching character_id or display name."""
+        if character_id:
+            cid = character_id.strip().lower()
+            if cid in self.characters:
+                return self.characters[cid]
         if not speaker:
             return None
         sid = speaker.strip().lower()
@@ -209,6 +213,7 @@ class StageDirector:
         dispatcher.on_hook("play_sound")(_wrap_hook(lambda a: self.handle_play(a, channel="sound")))
         dispatcher.on_hook("play_sfx")(_wrap_hook(lambda a: self.handle_play(a, channel="sound")))
         dispatcher.on_hook("play_voice")(_wrap_hook(lambda a: self.handle_play(a, channel="voice")))
+        dispatcher.on_hook("play_ambient")(_wrap_hook(lambda a: self.handle_play(a, channel="ambient")))
 
         # Audio queue shorthands
         dispatcher.on_hook("queue_bgm")(_wrap_hook(lambda a: self.handle_queue(a, channel="music")))
@@ -216,6 +221,7 @@ class StageDirector:
         dispatcher.on_hook("queue_sound")(_wrap_hook(lambda a: self.handle_queue(a, channel="sound")))
         dispatcher.on_hook("queue_sfx")(_wrap_hook(lambda a: self.handle_queue(a, channel="sound")))
         dispatcher.on_hook("queue_voice")(_wrap_hook(lambda a: self.handle_queue(a, channel="voice")))
+        dispatcher.on_hook("queue_ambient")(_wrap_hook(lambda a: self.handle_queue(a, channel="ambient")))
 
         # Audio pause shorthands
         dispatcher.on_hook("pause_bgm")(_wrap_hook(lambda a: self.handle_pause(a, channel="music")))
@@ -223,6 +229,7 @@ class StageDirector:
         dispatcher.on_hook("pause_sound")(_wrap_hook(lambda a: self.handle_pause(a, channel="sound")))
         dispatcher.on_hook("pause_sfx")(_wrap_hook(lambda a: self.handle_pause(a, channel="sound")))
         dispatcher.on_hook("pause_voice")(_wrap_hook(lambda a: self.handle_pause(a, channel="voice")))
+        dispatcher.on_hook("pause_ambient")(_wrap_hook(lambda a: self.handle_pause(a, channel="ambient")))
 
         # Audio resume shorthands
         dispatcher.on_hook("resume_bgm")(_wrap_hook(lambda a: self.handle_resume(a, channel="music")))
@@ -230,18 +237,21 @@ class StageDirector:
         dispatcher.on_hook("resume_sound")(_wrap_hook(lambda a: self.handle_resume(a, channel="sound")))
         dispatcher.on_hook("resume_sfx")(_wrap_hook(lambda a: self.handle_resume(a, channel="sound")))
         dispatcher.on_hook("resume_voice")(_wrap_hook(lambda a: self.handle_resume(a, channel="voice")))
+        dispatcher.on_hook("resume_ambient")(_wrap_hook(lambda a: self.handle_resume(a, channel="ambient")))
 
         dispatcher.on_hook("stop_bgm")(_wrap_hook(lambda a: self.handle_stop(a, channel="music")))
         dispatcher.on_hook("stop_music")(_wrap_hook(lambda a: self.handle_stop(a, channel="music")))
         dispatcher.on_hook("stop_sound")(_wrap_hook(lambda a: self.handle_stop(a, channel="sound")))
         dispatcher.on_hook("stop_sfx")(_wrap_hook(lambda a: self.handle_stop(a, channel="sound")))
         dispatcher.on_hook("stop_voice")(_wrap_hook(lambda a: self.handle_stop(a, channel="voice")))
+        dispatcher.on_hook("stop_ambient")(_wrap_hook(lambda a: self.handle_stop(a, channel="ambient")))
 
         dispatcher.on_hook("volume_bgm")(_wrap_hook(lambda a: self.handle_volume(a, channel="music")))
         dispatcher.on_hook("volume_music")(_wrap_hook(lambda a: self.handle_volume(a, channel="music")))
         dispatcher.on_hook("volume_sound")(_wrap_hook(lambda a: self.handle_volume(a, channel="sound")))
         dispatcher.on_hook("volume_sfx")(_wrap_hook(lambda a: self.handle_volume(a, channel="sound")))
         dispatcher.on_hook("volume_voice")(_wrap_hook(lambda a: self.handle_volume(a, channel="voice")))
+        dispatcher.on_hook("volume_ambient")(_wrap_hook(lambda a: self.handle_volume(a, channel="ambient")))
 
         # Expressive visual hooks
         dispatcher.on_hook("weather")(_wrap_hook(self.handle_weather))
@@ -390,7 +400,24 @@ class StageDirector:
         transition = parsed.with_ or parsed.get_str("transition", "fade") or "fade"
         duration = parsed.get_float("duration", 0.3)
         flip_h = parsed.get_bool("flip_h", False)
+        flip_v = parsed.get_bool("flip_v", False)
+        scale = parsed.get_float("scale", 1.0)
+        scale_x_raw = parsed.get_str("scale_x")
+        scale_y_raw = parsed.get_str("scale_y")
+        try:
+            scale_x = float(scale_x_raw) if scale_x_raw is not None else None
+        except ValueError:
+            scale_x = None
+        try:
+            scale_y = float(scale_y_raw) if scale_y_raw is not None else None
+        except ValueError:
+            scale_y = None
+        rotation = parsed.get_float("rotation", 0.0)
+        tint_str = parsed.get_str("tint", None)
+        tint = Color.from_hex(tint_str) if tint_str else WHITE
         z_index = parsed.get_int("z", 0)
+
+        asset_prefix = cfg.asset_prefix if cfg and cfg.asset_prefix else None
 
         self.compositor.show_character(
             character_id=char_id,
@@ -399,7 +426,14 @@ class StageDirector:
             transition=transition,
             duration=duration,
             flip_h=flip_h,
+            flip_v=flip_v,
+            scale=scale,
+            scale_x=scale_x,
+            scale_y=scale_y,
+            rotation=rotation,
+            tint=tint,
             z_index=z_index,
+            asset_prefix=asset_prefix,
         )
 
     def handle_hide(self, args: str) -> None:
@@ -456,7 +490,8 @@ class StageDirector:
         expr = parsed.positional[1].strip().lower()
         if cfg is not None:
             expr = cfg.resolve_expression(expr)
-        self.compositor.set_expression(char_id, expr)
+        asset_prefix = cfg.asset_prefix if cfg and cfg.asset_prefix else None
+        self.compositor.set_expression(char_id, expr, asset_prefix=asset_prefix)
 
     def handle_fade_in(self, args: str) -> None:
         """Handle `~ fade_in [duration=X] [color=#000]`."""
@@ -587,7 +622,11 @@ class StageDirector:
             return
         try:
             vol = float(raw_vol)
-            self.audio.set_volume(target_channel, vol)
+            if target_channel == "master":
+                if hasattr(self.audio, "set_master_volume"):
+                    self.audio.set_master_volume(vol)
+            else:
+                self.audio.set_volume(target_channel, vol)
         except ValueError:
             pass
 
@@ -805,11 +844,15 @@ class StageDirector:
     # Narrative Event Handlers
     # =========================================================================
 
-    def resolve_side_image(self, speaker: str | None, emotion: str | None = None) -> str | None:
+    def resolve_side_image(
+        self,
+        speaker: str | None,
+        emotion: str | None = None,
+        *,
+        character_id: str | None = None,
+    ) -> str | None:
         """Resolve the active side image asset ID for a character and expression."""
-        if not speaker:
-            return None
-        cfg = self.find_character(speaker)
+        cfg = self.find_character(speaker, character_id=character_id)
         if cfg and cfg.side_image:
             return cfg.side_image
         if cfg and cfg.asset_prefix:
@@ -824,12 +867,13 @@ class StageDirector:
         text = event.text
         emotion = event.emotion
         voice = getattr(event, "voice", None)
+        char_id = getattr(event, "character_id", None)
 
-        char_cfg = self.find_character(speaker)
+        char_cfg = self.find_character(speaker, character_id=char_id)
         self.ui_state.speaker = speaker
         self.ui_state.text = text
         self.ui_state.emotion = emotion
-        self.ui_state.side_image = self.resolve_side_image(speaker, emotion)
+        self.ui_state.side_image = self.resolve_side_image(speaker, emotion, character_id=char_id)
         self.ui_state.speaker_color = char_cfg.color if char_cfg else None
         self.ui_state.clear_choices()
 
@@ -838,18 +882,19 @@ class StageDirector:
 
         if speaker and emotion:
             target_id = (
-                self._resolve_speaker_element_id(speaker)
-                or (char_cfg.character_id if char_cfg is not None else speaker.strip().lower())
+                self._resolve_speaker_element_id(speaker, character_id=char_id)
+                or (char_cfg.character_id if char_cfg is not None else (char_id or speaker.strip().lower()))
             )
             resolved_expr = (
                 char_cfg.resolve_expression(emotion.strip().lower())
                 if char_cfg is not None
                 else emotion.strip().lower()
             )
-            self.compositor.set_expression(target_id, resolved_expr)
+            asset_prefix = char_cfg.asset_prefix if char_cfg and char_cfg.asset_prefix else None
+            self.compositor.set_expression(target_id, resolved_expr, asset_prefix=asset_prefix)
 
         if self.auto_highlight_speaker:
-            self._apply_speaker_highlight(speaker)
+            self._apply_speaker_highlight(speaker, character_id=char_id)
 
         # Voice audio management
         if self.audio is not None:
@@ -858,12 +903,21 @@ class StageDirector:
             else:
                 self.audio.stop("voice")
 
-    def _resolve_speaker_element_id(self, speaker: str | None) -> str | None:
+    def _resolve_speaker_element_id(self, speaker: str | None, *, character_id: str | None = None) -> str | None:
         """Resolve a speaker name/id to an element_id on the characters layer."""
-        if not speaker:
-            return None
         char_layer = self.compositor.stage.get_layer("characters")
         if char_layer is None:
+            return None
+
+        if character_id:
+            cid = character_id.strip().lower()
+            if cid in char_layer.elements:
+                return cid
+            cfg = self.characters.get(cid)
+            if cfg and cfg.character_id in char_layer.elements:
+                return cfg.character_id
+
+        if not speaker:
             return None
 
         # Check direct lowercase
@@ -887,13 +941,13 @@ class StageDirector:
 
         return None
 
-    def _apply_speaker_highlight(self, speaker: str | None) -> None:
+    def _apply_speaker_highlight(self, speaker: str | None, *, character_id: str | None = None) -> None:
         """Auto-highlight active speaker sprite and dim non-speaking sprites on characters layer."""
         char_layer = self.compositor.stage.get_layer("characters")
         if char_layer is None or not char_layer.elements:
             return
 
-        speaker_elem_id = self._resolve_speaker_element_id(speaker)
+        speaker_elem_id = self._resolve_speaker_element_id(speaker, character_id=character_id)
         dur = self.highlight_duration
 
         for elem_id, elem in char_layer.elements.items():

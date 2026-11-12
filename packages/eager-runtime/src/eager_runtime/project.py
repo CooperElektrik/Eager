@@ -41,6 +41,9 @@ class ProjectConfig:
     pop_scale: float | None = None
     pop_hop: float | None = None
     scene_backgrounds: dict[str, tuple[str, str, float]] = field(default_factory=dict)
+    scale_mode: str = "letterbox"
+    render_preset: str = "balanced"
+    show_fps: bool = True
 
     @classmethod
     def load(cls, toml_path: Path) -> ProjectConfig:
@@ -124,6 +127,9 @@ class ProjectConfig:
             pop_scale=pop_scale,
             pop_hop=pop_hop,
             scene_backgrounds=scene_bgs,
+            scale_mode=str(window_data.get("scale_mode") or pres_section.get("scale_mode", "letterbox")),
+            render_preset=str(pres_section.get("render_preset", "balanced")),
+            show_fps=bool(window_data.get("show_fps", pres_section.get("show_fps", True))),
         )
 
 

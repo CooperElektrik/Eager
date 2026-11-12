@@ -119,6 +119,16 @@ def extract_asset_references(
                         attrs_dict.update({str(k): str(v) for k, v in raw_attrs.items()})
                     if "name" in cdef and cdef["name"] is not None:
                         attrs_dict["name"] = str(cdef["name"])
+                    if "side_image" in attrs_dict:
+                        references.append(
+                            AssetReference(
+                                kind="character",
+                                identifier=attrs_dict["side_image"],
+                                line_number=cdef.get("line_number", 0) or 0,
+                                scene_id=None,
+                                character_id=c_id,
+                            )
+                        )
                 character_configs[c_id] = attrs_dict
     else:
         collect_items(graph_or_items, None)
@@ -131,6 +141,17 @@ def extract_asset_references(
             if item.name:
                 attrs_dict["name"] = item.name
             character_configs[c_id] = attrs_dict
+            side_img = attrs_dict.get("side_image")
+            if side_img:
+                references.append(
+                    AssetReference(
+                        kind="character",
+                        identifier=side_img,
+                        line_number=item.line_number,
+                        scene_id=None,
+                        character_id=c_id,
+                    )
+                )
 
     def resolve_char_id(raw_name: str) -> str:
         clean = raw_name.strip().lower()

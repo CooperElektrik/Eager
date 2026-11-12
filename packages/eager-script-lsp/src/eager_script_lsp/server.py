@@ -277,4 +277,22 @@ def create_server() -> EagerLanguageServer:
     def on_outgoing_calls(params: types.CallHierarchyOutgoingCallsParams) -> list[types.CallHierarchyOutgoingCall]:
         return compute_outgoing_calls(server.workspace_index, params.item)
 
+    @server.command("eager.showReferences")
+    def cmd_show_references(*args: Any) -> list[dict[str, Any]]:
+        """Return reference locations for a scene ID."""
+        flat_args = args[0] if (len(args) == 1 and isinstance(args[0], (list, tuple))) else args
+        if len(flat_args) < 2:
+            return []
+        scene_id = str(flat_args[1])
+        refs = server.workspace_index.references.get(scene_id, [])
+        return [{"uri": ref_uri, "range": ref_range} for ref_uri, ref_range in refs]
+
+    @server.command("eager.warpAndPlay")
+    def cmd_warp_and_play(*args: Any) -> dict[str, Any]:
+        """Return launch metadata to warp and play from a scene ID."""
+        flat_args = args[0] if (len(args) == 1 and isinstance(args[0], (list, tuple))) else args
+        if len(flat_args) < 2:
+            return {"ok": False}
+        return {"ok": True, "uri": str(flat_args[0]), "scene_id": str(flat_args[1])}
+
     return server

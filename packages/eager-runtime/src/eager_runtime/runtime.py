@@ -751,10 +751,20 @@ class StoryVM:
             if isinstance(item, ParsedDialogue):
                 raw_speaker = self._interpolate(item.speaker)
                 display_speaker = raw_speaker
+                resolved_cid: str | None = None
                 if self._graph.characters:
                     cid_match = raw_speaker if raw_speaker in self._graph.characters else raw_speaker.lower()
                     if cid_match in self._graph.characters:
+                        resolved_cid = cid_match
                         display_speaker = self._graph.characters[cid_match].get("name", raw_speaker)
+                    else:
+                        for c_id, c_data in self._graph.characters.items():
+                            if isinstance(c_data, dict) and c_data.get("name") and c_data["name"].strip().lower() == raw_speaker.lower():
+                                resolved_cid = c_id
+                                break
+                if resolved_cid is None:
+                    resolved_cid = raw_speaker.strip().lower()
+
                 interp_speaker = self._translate_speaker(display_speaker)
                 if interp_speaker == display_speaker and raw_speaker != display_speaker:
                     translated_raw = self._translate_speaker(raw_speaker)
@@ -768,6 +778,7 @@ class StoryVM:
                     emotion=item.emotion,
                     line_number=item.line_number,
                     beat_id=beat_id,
+                    character_id=resolved_cid,
                 )
 
             if isinstance(item, ParsedNarration):

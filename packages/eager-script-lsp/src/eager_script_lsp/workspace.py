@@ -375,16 +375,38 @@ class WorkspaceIndex:
                         attrs=attrs_dict,
                         is_defined=True,
                     )
+                    # Register expression aliases (e.g., happy=base+uniform+smile) in asset_index
+                    non_expr_keys = {
+                        "color",
+                        "pos",
+                        "position",
+                        "default_expression",
+                        "asset_prefix",
+                        "side_image",
+                        "voice",
+                        "name",
+                    }
+                    for attr_k in attrs_dict:
+                        if attr_k not in non_expr_keys:
+                            self.asset_index.characters.setdefault(char_id, set()).add(attr_k.lower())
 
                 elif occ.kind == "character_ref":
                     char_id = occ.name
-                    if char_id not in self.characters:
-                        self.characters[char_id] = CharacterSymbol(
+                    target_sym = self.characters.get(char_id)
+                    if target_sym is None:
+                        # Match by display name (case-insensitive) against defined characters
+                        for sym in self.characters.values():
+                            if sym.is_defined and sym.name.strip().lower() == char_id:
+                                target_sym = sym
+                                break
+                    if target_sym is None:
+                        target_sym = CharacterSymbol(
                             id=char_id,
                             name=occ.metadata.get("display_name", char_id.capitalize()),
                             is_defined=False,
                         )
-                    self.characters[char_id].dialogue_lines += 1
+                        self.characters[char_id] = target_sym
+                    target_sym.dialogue_lines += 1
 
                 elif occ.kind == "variable_def":
                     var_name = occ.name

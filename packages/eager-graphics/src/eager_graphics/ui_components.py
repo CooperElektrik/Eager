@@ -698,15 +698,21 @@ class InputBox:
         *,
         box_width: float = 600.0,
         box_height: float = 180.0,
+        theme: Theme | None = None,
     ) -> None:
         self.viewport_width = width
         self.viewport_height = height
         self.box_width = box_width
         self.box_height = box_height
+        self.theme = theme
         self.prompt: str = ""
         self.text_buffer: str = ""
         self.cursor_visible: bool = True
         self.cursor_timer: float = 0.0
+
+    def set_theme(self, theme: Theme) -> None:
+        """Apply theme styling."""
+        self.theme = theme
 
     def set_viewport(self, width: int, height: int) -> None:
         """Update viewport dimensions."""
@@ -755,14 +761,14 @@ class InputBox:
 
         # 2. Centered dialog box
         bx, by, bw, bh = self.layout()
-        bg_col = Color(0.08, 0.10, 0.14, 0.95)
-        border_col = Color(0.40, 0.45, 0.55, 0.85)
+        bg_col = self.theme.dialogue_box_fill if self.theme else Color(0.08, 0.10, 0.14, 0.95)
+        border_col = self.theme.dialogue_box_border if self.theme else Color(0.40, 0.45, 0.55, 0.85)
         backend.draw_rect(bx, by, bw, bh, bg_col, border_color=border_col, border_width=1.5)
 
         # 3. Prompt label
         prompt_x = bx + 28.0
         prompt_y = by + 26.0
-        prompt_col = Color(0.95, 0.86, 0.62, 1.0)
+        prompt_col = self.theme.accent_color if self.theme else Color(0.95, 0.86, 0.62, 1.0)
         prompt_fs = self.scale_font_size(15)
         backend.draw_text(
             prompt_x,
@@ -771,6 +777,7 @@ class InputBox:
             font_size=prompt_fs,
             color=prompt_col,
             bold=True,
+            font_family=self.theme.font_family if self.theme else None,
         )
 
         # 4. Text input field
@@ -844,15 +851,23 @@ class EndNotice:
         banner_fill: Color | None = None,
         text_color: Color | None = None,
         font_size: int = 16,
+        theme: Theme | None = None,
     ) -> None:
         self.viewport_width = width
         self.viewport_height = height
         self.message = message or self.DEFAULT_MESSAGE
         self.banner_height = banner_height
         self.bottom_gap = bottom_gap
-        self.banner_fill = _END_BANNER_FILL if banner_fill is None else banner_fill
-        self.text_color = _END_TEXT if text_color is None else text_color
+        self.theme = theme
+        self.banner_fill = banner_fill if banner_fill is not None else (theme.dialogue_box_fill if theme else _END_BANNER_FILL)
+        self.text_color = text_color if text_color is not None else (theme.text_color if theme else _END_TEXT)
         self.font_size = font_size
+
+    def set_theme(self, theme: Theme) -> None:
+        """Apply theme styling."""
+        self.theme = theme
+        self.banner_fill = theme.dialogue_box_fill
+        self.text_color = theme.text_color
 
     def set_viewport(self, width: int, height: int) -> None:
         """Update the viewport the component lays itself out against."""
@@ -1048,8 +1063,8 @@ class UIOverlay:
             style=self.choice_style,
             theme=self.theme if self.choice_style is None else None,
         )
-        self.input_box = InputBox(self.width, self.height)
-        self.end_notice = EndNotice(self.width, self.height)
+        self.input_box = InputBox(self.width, self.height, theme=self.theme)
+        self.end_notice = EndNotice(self.width, self.height, theme=self.theme)
         self.quick_menu = QuickMenu(self.width, self.height, theme=self.theme)
 
     def set_theme(self, theme: Theme) -> None:
@@ -1060,6 +1075,8 @@ class UIOverlay:
         self.dialogue_box.set_theme(theme)
         self.choice_menu.set_theme(theme)
         self.quick_menu.set_theme(theme)
+        self.input_box.set_theme(theme)
+        self.end_notice.set_theme(theme)
 
     # ── state ──────────────────────────────────────────────────────────
 
@@ -1138,20 +1155,28 @@ class UIOverlay:
         ui_state: UIState,
         choice_prompt: Any | None = None,
     ) -> None:
-        """Draw full-screen NVL mode text display."""
+        """Draw full-screen NVL mode text display with theme styling and typewriter reveal."""
         margin_x = float(self.width) * 0.1
         margin_y = float(self.height) * 0.08
         box_w = float(self.width) - margin_x * 2.0
         box_h = float(self.height) - margin_y * 2.0
 
-        # Semi-transparent dark background
+        bg_col = self.theme.dialogue_box_fill if self.theme else Color(0.02, 0.03, 0.05, 0.88)
+        border_col = self.theme.dialogue_box_border if self.theme else Color(0.3, 0.4, 0.5, 0.8)
+        font_family = self.theme.font_family if self.theme else None
+        default_text_col = self.theme.text_color if self.theme else Color(0.95, 0.95, 0.95, 1.0)
+        default_speaker_col = getattr(ui_state, "speaker_color", None) or (
+            self.theme.nameplate_text if self.theme else Color(1.0, 0.9, 0.45, 1.0)
+        )
+
+        # Semi-transparent background
         backend.draw_rect(
             margin_x,
             margin_y,
             box_w,
             box_h,
-            Color(0.02, 0.03, 0.05, 0.88),
-            border_color=Color(0.3, 0.4, 0.5, 0.8),
+            bg_col,
+            border_color=border_col,
             border_width=1.5,
         )
 
@@ -1163,19 +1188,24 @@ class UIOverlay:
         max_content_h = box_h - 45.0
 
         # Pre-wrap and measure entries to tail-fit the most recent visible entries
-        prepared_entries: list[tuple[Any, list[str], float]] = []
+        prepared_entries: list[tuple[Any, Any, list[tuple[str, int, int]], float]] = []
         for entry in ui_state.nvl_entries:
-            plain_text = parse_text_tags(entry.text).plain_text
-            wrapped = _get_wrapped_lines(plain_text, text_max_w, backend.measure_text, font_size=font_size)
-            lines = [w[0] if isinstance(w, tuple) else w for w in wrapped]
+            formatted = parse_text_tags(entry.text)
+            lines = _get_wrapped_lines(
+                formatted.plain_text,
+                text_max_w,
+                backend.measure_text,
+                font_size=font_size,
+                font_family=font_family,
+            )
             h = (line_height * 1.1 if entry.speaker else 0.0) + len(lines) * line_height + 10.0
-            prepared_entries.append((entry, lines, h))
+            prepared_entries.append((entry, formatted, lines, h))
 
         # Tail-fit entries that fit within max_content_h
-        visible_entries: list[tuple[Any, list[str], float]] = []
+        visible_entries: list[tuple[Any, Any, list[tuple[str, int, int]], float]] = []
         total_h = 0.0
         for item in reversed(prepared_entries):
-            entry, lines, h = item
+            entry, formatted, lines, h = item
             if total_h + h <= max_content_h or not visible_entries:
                 visible_entries.append(item)
                 total_h += h
@@ -1183,29 +1213,69 @@ class UIOverlay:
                 break
         visible_entries.reverse()
 
-        for entry, lines, _ in visible_entries:
+        last_entry_obj = ui_state.nvl_entries[-1] if ui_state.nvl_entries else None
+
+        for entry, formatted, lines, _ in visible_entries:
             if curr_y + line_height > margin_y + box_h - 20.0:
                 break
             if entry.speaker:
+                spk_col = getattr(ui_state, "speaker_color", None) or default_speaker_col
                 backend.draw_text(
                     margin_x + 20.0,
                     curr_y,
                     entry.speaker,
                     font_size=speaker_font_size,
-                    color=Color(1.0, 0.9, 0.45, 1.0),
+                    color=spk_col,
+                    bold=True,
+                    font_family=font_family,
                 )
                 curr_y += line_height * 1.1
 
-            for line_str in lines:
-                if curr_y + line_height > margin_y + box_h - 20.0:
+            is_last = (entry is last_entry_obj)
+            visible_limit = (
+                max(0, int(ui_state.visible_chars))
+                if (is_last and ui_state.visible_chars is not None)
+                else len(formatted.plain_text)
+            )
+
+            seg_spans: list[tuple[int, int, Any]] = []
+            cur_pos = 0
+            for seg in formatted.segments:
+                seg_len = len(seg.text)
+                seg_spans.append((cur_pos, cur_pos + seg_len, seg))
+                cur_pos += seg_len
+
+            for line_str, line_start, line_end in lines:
+                if line_start >= visible_limit or curr_y + line_height > margin_y + box_h - 20.0:
                     break
-                backend.draw_text(
-                    margin_x + 20.0,
-                    curr_y,
-                    line_str,
-                    font_size=font_size,
-                    color=Color(0.95, 0.95, 0.95, 1.0),
-                )
+                visible_line_end = min(line_end, visible_limit)
+                x_cursor = margin_x + 20.0
+
+                for seg_start, seg_end, seg in seg_spans:
+                    overlap_start = max(line_start, seg_start)
+                    overlap_end = min(visible_line_end, seg_end)
+                    if overlap_start < overlap_end:
+                        piece_text = seg.text[overlap_start - seg_start : overlap_end - seg_start]
+                        seg_fs = max(1, round(font_size * seg.size_mult))
+                        seg_col = seg.color if seg.color is not None else default_text_col
+                        backend.draw_text(
+                            x_cursor,
+                            curr_y,
+                            piece_text,
+                            font_size=seg_fs,
+                            color=seg_col,
+                            bold=seg.bold,
+                            italic=seg.italic,
+                            font_family=font_family,
+                        )
+                        piece_w, _ = backend.measure_text(
+                            piece_text,
+                            font_size=seg_fs,
+                            bold=seg.bold,
+                            italic=seg.italic,
+                            font_family=font_family,
+                        )
+                        x_cursor += piece_w
                 curr_y += line_height
             curr_y += 10.0
 
@@ -1235,6 +1305,8 @@ class UIOverlay:
         if not finished:
             if ui_state.nvl_mode:
                 self.draw_nvl(backend, ui_state, choice_prompt)
+                if show_quick_menu and not self.choice_menu.options and not self.input_box.prompt:
+                    self.quick_menu.draw(backend)
             elif self.dialogue_box.text:
                 self.dialogue_box.draw(backend)
                 if show_quick_menu and not self.choice_menu.options and not self.input_box.prompt:
