@@ -196,6 +196,31 @@ class StageDirector:
         dispatcher.on_hook("nvl")(_wrap_hook(self.handle_nvl))
         dispatcher.on_hook("nvl_clear")(_wrap_hook(self.handle_nvl_clear))
 
+        # Audio shorthands
+        dispatcher.on_hook("play_bgm")(_wrap_hook(lambda a: self.handle_play(a, channel="music")))
+        dispatcher.on_hook("play_music")(_wrap_hook(lambda a: self.handle_play(a, channel="music")))
+        dispatcher.on_hook("play_sound")(_wrap_hook(lambda a: self.handle_play(a, channel="sound")))
+        dispatcher.on_hook("play_sfx")(_wrap_hook(lambda a: self.handle_play(a, channel="sound")))
+        dispatcher.on_hook("play_voice")(_wrap_hook(lambda a: self.handle_play(a, channel="voice")))
+
+        dispatcher.on_hook("stop_bgm")(_wrap_hook(lambda a: self.handle_stop(a, channel="music")))
+        dispatcher.on_hook("stop_music")(_wrap_hook(lambda a: self.handle_stop(a, channel="music")))
+        dispatcher.on_hook("stop_sound")(_wrap_hook(lambda a: self.handle_stop(a, channel="sound")))
+        dispatcher.on_hook("stop_sfx")(_wrap_hook(lambda a: self.handle_stop(a, channel="sound")))
+        dispatcher.on_hook("stop_voice")(_wrap_hook(lambda a: self.handle_stop(a, channel="voice")))
+
+        dispatcher.on_hook("volume_bgm")(_wrap_hook(lambda a: self.handle_volume(a, channel="music")))
+        dispatcher.on_hook("volume_music")(_wrap_hook(lambda a: self.handle_volume(a, channel="music")))
+        dispatcher.on_hook("volume_sound")(_wrap_hook(lambda a: self.handle_volume(a, channel="sound")))
+        dispatcher.on_hook("volume_sfx")(_wrap_hook(lambda a: self.handle_volume(a, channel="sound")))
+        dispatcher.on_hook("volume_voice")(_wrap_hook(lambda a: self.handle_volume(a, channel="voice")))
+
+        # Expressive visual hooks
+        dispatcher.on_hook("weather")(_wrap_hook(self.handle_weather))
+        dispatcher.on_hook("particles")(_wrap_hook(self.handle_particles))
+        dispatcher.on_hook("ambient")(_wrap_hook(self.handle_ambient))
+        dispatcher.on_hook("light")(_wrap_hook(self.handle_light))
+
 
         # 2. Narrative Event Listeners
         dispatcher.on_event(DialogueEvent)(self.handle_dialogue_event)
@@ -403,20 +428,28 @@ class StageDirector:
                 return False
         return False
 
-    def handle_play(self, args: str) -> None:
-        """Handle `~ play channel track [fade=X] [volume=Y] [loop=True/False] [loop_start=Z] [loop_end=W] [auto_channels=True/False] [max_polyphony=N]`."""
+    def handle_play(self, args: str, channel: str | None = None) -> None:
+        """Handle `~ play channel track [...]` or shorthand `~ play_<channel> track [...]`."""
         if self.audio is None:
             return
         parsed = parse_hook_args(args)
-        if len(parsed.positional) < 2:
+        track_arg = parsed.get_str("track")
+        if channel is None:
+            if not parsed.positional:
+                return
+            target_channel = parsed.positional[0].strip().lower()
+            track = track_arg or (parsed.positional[1].strip() if len(parsed.positional) > 1 else "")
+        else:
+            target_channel = channel.strip().lower()
+            track = track_arg or (parsed.positional[0].strip() if parsed.positional else "")
+
+        if not track:
             return
-        channel = parsed.positional[0].strip().lower()
-        track = parsed.positional[1].strip()
 
         # In skip mode, drop sound and voice playback (music and ambient keep playing)
         if self._is_skip_active() and (
-            channel in ("sound", "voice")
-            or channel.startswith(("sound_", "voice_"))
+            target_channel in ("sound", "voice")
+            or target_channel.startswith(("sound_", "voice_"))
         ):
             return
 
@@ -435,7 +468,7 @@ class StageDirector:
         # pool slots (sound_0, sound_1, …) instead of cutting each other off.
         # Other channels stay single-voice unless opted in. Explicit pool
         # names (sound_0) always address that slot directly.
-        auto_channels = parsed.get_bool("auto_channels", channel == "sound")
+        auto_channels = parsed.get_bool("auto_channels", target_channel == "sound")
         poly_raw = parsed.get_str("max_polyphony")
         try:
             max_polyphony = int(poly_raw) if poly_raw is not None else None
@@ -443,7 +476,7 @@ class StageDirector:
             max_polyphony = None
 
         self.audio.play(
-            channel,
+            target_channel,
             track,
             loop=loop_arg,
             fade_in=fade_in,
@@ -454,40 +487,94 @@ class StageDirector:
             max_polyphony=max_polyphony,
         )
 
-    def handle_stop(self, args: str) -> None:
-        """Handle `~ stop channel [fade=X]` or `~ stop all`.
-
-        Stopping a base channel (e.g. ``sound``) also stops its polyphonic
-        pool members (``sound_0``, ``sound_1``, …).
-        """
+    def handle_stop(self, args: str, channel: str | None = None) -> None:
+        """Handle `~ stop channel [fade=X]` or `~ stop_<channel> [fade=X]`."""
         if self.audio is None:
             return
         parsed = parse_hook_args(args)
-        channel = parsed.positional[0].strip().lower() if parsed.positional else "all"
+        if channel is None:
+            target_channel = parsed.positional[0].strip().lower() if parsed.positional else "all"
+        else:
+            target_channel = channel.strip().lower()
         fade_out = parsed.get_float("fade", 0.0) or parsed.get_float("fade_out", 0.0)
 
-        if channel == "all":
+        if target_channel == "all":
             self.audio.stop_all(fade_out=fade_out)
         else:
-            self.audio.stop(channel, fade_out=fade_out)
+            self.audio.stop(target_channel, fade_out=fade_out)
 
-    def handle_volume(self, args: str) -> None:
-        """Handle `~ volume channel level`.
-
-        Volume changes on a base channel fan out to its polyphonic pool
-        members.
-        """
+    def handle_volume(self, args: str, channel: str | None = None) -> None:
+        """Handle `~ volume channel level` or `~ volume_<channel> level`."""
         if self.audio is None:
             return
         parsed = parse_hook_args(args)
-        if len(parsed.positional) < 2:
+        if channel is None:
+            if len(parsed.positional) < 2:
+                return
+            target_channel = parsed.positional[0].strip().lower()
+            raw_vol = parsed.positional[1].strip()
+        else:
+            target_channel = channel.strip().lower()
+            raw_vol = parsed.get_str("volume") or (parsed.positional[0].strip() if parsed.positional else None)
+
+        if raw_vol is None:
             return
-        channel = parsed.positional[0].strip().lower()
         try:
-            vol = float(parsed.positional[1].strip())
-            self.audio.set_volume(channel, vol)
+            vol = float(raw_vol)
+            self.audio.set_volume(target_channel, vol)
         except ValueError:
             pass
+
+    def handle_weather(self, args: str) -> None:
+        """Handle `~ weather preset [count=N]` or `~ weather clear`."""
+        parsed = parse_hook_args(args)
+        preset = parsed.positional[0] if parsed.positional else "snow"
+        count = parsed.get_int("count", 0) or None
+        if hasattr(self.compositor, "set_weather"):
+            self.compositor.set_weather(preset, count=count)
+
+    def handle_particles(self, args: str) -> None:
+        """Handle `~ particles preset [count=N]` or `~ particles clear`."""
+        self.handle_weather(args)
+
+    def handle_ambient(self, args: str) -> None:
+        """Handle `~ ambient color [intensity=X]` or `~ ambient clear`."""
+        parsed = parse_hook_args(args)
+        if not parsed.positional:
+            return
+        token = parsed.positional[0].strip().lower()
+        if token in ("clear", "reset", "off", "none"):
+            self.compositor.set_ambient_light(WHITE, 1.0)
+            return
+        color = _parse_hook_color(parsed, "color", None)  # type: ignore[arg-type]
+        if color is None:
+            try:
+                color = Color.from_hex(token)
+            except Exception:  # noqa: BLE001
+                color = WHITE
+        intensity = parsed.get_float("intensity", 1.0)
+        self.compositor.set_ambient_light(color, intensity=intensity)
+
+    def handle_light(self, args: str) -> None:
+        """Handle `~ light add x=X y=Y radius=R [color=C] [intensity=I] [mode=M]` or `~ light clear`."""
+        parsed = parse_hook_args(args)
+        action = parsed.positional[0].strip().lower() if parsed.positional else "add"
+        if action in ("clear", "reset", "off"):
+            self.compositor.clear_lights()
+            return
+        if action == "add" or not parsed.positional:
+            vw = float(getattr(self.compositor, "virtual_width", 1920))
+            vh = float(getattr(self.compositor, "virtual_height", 1080))
+            x = parsed.get_float("x", vw / 2.0)
+            y = parsed.get_float("y", vh / 2.0)
+            radius = parsed.get_float("radius", 200.0)
+            intensity = parsed.get_float("intensity", 1.0)
+            mode = parsed.get_str("mode", "multiply") or "multiply"
+            color = _parse_hook_color(parsed, "color", WHITE)
+            from eager_core.lighting import PointLight
+
+            light = PointLight(x=x, y=y, radius=radius, color=color, intensity=intensity, mode=mode)
+            self.compositor.add_light(light)
 
     def handle_nvl(self, args: str) -> None:
         """Handle `~ nvl [on/off/clear]`."""

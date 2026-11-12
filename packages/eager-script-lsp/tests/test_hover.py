@@ -91,6 +91,8 @@ def test_hover_engine_hooks_and_variables():
 ~ bg school_day
 ~ shake intensity=1.5
 ~ show hoshiko smile
+~ weather rain
+~ play_bgm battle.ogg
 $ score += 10
 """
         doc = ScriptDocument("file:///test.es", text)
@@ -109,14 +111,26 @@ $ score += 10
         assert isinstance(h_shake.contents, MarkupContent)
         assert "Camera shake effect" in h_shake.contents.value
 
+        # Hover on '~ weather' (line 6, col 3)
+        h_weather = compute_hover(doc, index, Position(line=6, character=3))
+        assert h_weather is not None
+        assert isinstance(h_weather.contents, MarkupContent)
+        assert "Engine Hook: `~ weather`" in h_weather.contents.value
+
+        # Hover on '~ play_bgm' (line 7, col 4)
+        h_play = compute_hover(doc, index, Position(line=7, character=4))
+        assert h_play is not None
+        assert isinstance(h_play.contents, MarkupContent)
+        assert "Engine Hook: `~ play_bgm`" in h_play.contents.value
+
         # Hover on character in hook '~ show hoshiko' (line 5, col 8)
         h_char = compute_hover(doc, index, Position(line=5, character=8))
         assert h_char is not None
         assert isinstance(h_char.contents, MarkupContent)
         assert "Character: `Hoshiko`" in h_char.contents.value
 
-        # Hover on '$ score' (line 6, col 3)
-        h_var = compute_hover(doc, index, Position(line=6, character=3))
+        # Hover on '$ score' (line 8, col 3)
+        h_var = compute_hover(doc, index, Position(line=8, character=3))
         assert h_var is not None
         assert isinstance(h_var.contents, MarkupContent)
         assert "Variable: `$score`" in h_var.contents.value

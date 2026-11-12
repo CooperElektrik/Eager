@@ -1394,6 +1394,10 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):
         """Toggle fullscreen mode."""
         try:
             self.set_fullscreen(not self.fullscreen)
+            if hasattr(self.session, "preferences") and self.session.preferences is not None:
+                self.session.preferences.fullscreen = bool(self.fullscreen)
+                if hasattr(self.session, "save_preferences"):
+                    self.session.save_preferences()
         except Exception:  # noqa: BLE001, S110
             pass
 

@@ -98,7 +98,12 @@ if TYPE_CHECKING or PIL_AVAILABLE:
             if self._root is not None:
                 try:
                     cur = bool(self._root.attributes("-fullscreen"))
-                    self._root.attributes("-fullscreen", not cur)
+                    new_val = not cur
+                    self._root.attributes("-fullscreen", new_val)
+                    if hasattr(self.session, "preferences") and self.session.preferences is not None:
+                        self.session.preferences.fullscreen = bool(new_val)
+                        if hasattr(self.session, "save_preferences"):
+                            self.session.save_preferences()
                 except Exception:  # noqa: BLE001, S110
                     pass
 

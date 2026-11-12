@@ -17,7 +17,7 @@ from eager_core.events import (
     StoryEndEvent,
 )
 from eager_core.headless import NullRenderer
-from eager_core.types import Color
+from eager_core.types import WHITE, Color
 
 from eager_graphics.compositor import StageCompositor
 from eager_graphics.director import StageDirector
@@ -752,6 +752,92 @@ class TestDirectorAudioHooks:
         # Boundary click tests
         assert menu_many.hit_test(-100, -100) is None
         assert menu_many.hit_test(2000, 2000) is None
+
+    def test_stage_director_audio_shorthand_hooks(self) -> None:
+        """Verify ~ play_bgm, ~ play_sound, ~ stop_bgm shorthand hooks route correctly."""
+        backend = NullAudioBackend()
+        audio = AudioMixer(backend=backend)
+        comp = StageCompositor(1920, 1080)
+        director = StageDirector(comp, audio=audio)
+        dispatcher = EventDispatcher()
+        director.bind(dispatcher)
+
+        dispatcher.dispatch(HookEvent(hook_name="play_bgm", args="theme.ogg fade=1.0 loop=True", line_number=1))
+        assert audio.channels["music"].is_playing
+        assert backend.calls[-1][0] == "play"
+        assert backend.calls[-1][1] == "music"
+
+        dispatcher.dispatch(HookEvent(hook_name="play_sound", args="hit.ogg volume=0.7", line_number=2))
+        assert "sound_0" in audio.channels or "sound" in audio.channels
+        assert backend.calls[-1][0] == "play"
+        assert backend.calls[-1][1].startswith("sound")
+
+        dispatcher.dispatch(HookEvent(hook_name="play_voice", args="voice_line.ogg", line_number=3))
+        assert audio.channels["voice"].is_playing
+        assert backend.calls[-1][0] == "play"
+        assert backend.calls[-1][1] == "voice"
+
+        dispatcher.dispatch(HookEvent(hook_name="stop_bgm", args="fade=0.5", line_number=4))
+        assert audio.channels["music"].fade_duration == 0.5
+
+    def test_stage_director_weather_and_ambient_hooks(self) -> None:
+        """Verify ~ weather, ~ ambient, and ~ light hooks manipulate stage compositor state."""
+        comp = StageCompositor(1920, 1080)
+        director = StageDirector(comp)
+        dispatcher = EventDispatcher()
+        director.bind(dispatcher)
+
+        # 1. Weather
+        dispatcher.dispatch(HookEvent(hook_name="weather", args="rain count=120", line_number=10))
+        assert comp._active_weather_preset == "rain"
+        assert comp.get_particle_emitter("weather") is not None
+        assert comp.get_particle_emitter("weather").max_particles == 120
+
+        dispatcher.dispatch(HookEvent(hook_name="weather", args="clear", line_number=11))
+        assert comp._active_weather_preset is None
+        assert comp.get_particle_emitter("weather") is None
+
+        # 2. Ambient lighting
+        dispatcher.dispatch(HookEvent(hook_name="ambient", args="#334455 intensity=0.8", line_number=12))
+        assert comp.lighting.enabled is True
+        assert comp.lighting.ambient == Color.from_hex("#334455")
+
+        dispatcher.dispatch(HookEvent(hook_name="ambient", args="clear", line_number=13))
+        assert comp.lighting.enabled is False
+        assert comp.lighting.ambient == WHITE
+
+        # 3. Dynamic point light
+        dispatcher.dispatch(HookEvent(hook_name="light", args="add x=500 y=300 radius=150 color=#ffaa00 mode=screen", line_number=14))
+        assert len(comp.lighting.lights) == 1
+        light = comp.lighting.lights[0]
+        assert light.x == 500
+        assert light.y == 300
+        assert light.radius == 150
+        assert light.mode == "screen"
+
+        dispatcher.dispatch(HookEvent(hook_name="light", args="clear", line_number=15))
+        assert len(comp.lighting.lights) == 0
+
+    def test_stage_compositor_lighting_and_weather_serialization(self) -> None:
+        """Verify save_state and load_state preserve lighting and active weather particle effects."""
+        comp = StageCompositor(1920, 1080)
+        comp.set_weather("snow", count=100)
+        comp.set_ambient_light(Color.from_hex("#223344"))
+
+        snap = comp.save_state()
+        assert snap.get("weather") == "snow"
+        assert "lighting" in snap
+        assert snap["lighting"]["enabled"] is True
+
+        new_comp = StageCompositor(1920, 1080)
+        assert new_comp._active_weather_preset is None
+        assert new_comp.lighting.enabled is False
+
+        new_comp.load_state(snap)
+        assert new_comp._active_weather_preset == "snow"
+        assert new_comp.get_particle_emitter("weather") is not None
+        assert new_comp.lighting.enabled is True
+        assert new_comp.lighting.ambient == Color.from_hex("#223344")
 
 
 

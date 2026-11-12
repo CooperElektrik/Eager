@@ -211,6 +211,9 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--skip-title", action="store_true", help="Bypass title screen and start story immediately.")
     run_p.add_argument("--no-audio", action="store_true", help="Disable audio playback (use NullAudioBackend).")
     run_p.add_argument("--watch", "--hot-reload", dest="watch", action="store_true", help="Automatically hot-reload when script changes on disk.")
+    run_p.add_argument("--warp", default=None, help="Fast-forward / jump directly to scene label.")
+    run_p.add_argument("--no-warp-sim", action="store_true", help="Bypass state simulation and jump directly when warping.")
+    run_p.add_argument("--lang", "--locale", default=None, help="Language locale for translations (e.g. 'vi').")
     run_p.set_defaults(func=_cmd_run)
 
     # new
@@ -233,6 +236,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_p.add_argument("project_dir", nargs="?", default=".", help="Project directory (default: current directory)")
     build_p.add_argument("-o", "--output", default=None, help="Output zip archive path")
+    build_p.add_argument("--no-check", action="store_true", help="Skip script and asset validation before packaging.")
     build_p.set_defaults(func=_cmd_build)
 
     # i18n
@@ -378,6 +382,9 @@ def run_test_run(args: argparse.Namespace) -> int:
                         decision_idx += 1
                         vm.choose(0)
 
+                if vm.pending_input is not None:
+                    vm.submit_input(vm.pending_input.default or "Player")
+
             paths_completed += 1
 
         print(
@@ -401,6 +408,10 @@ def run_test_run(args: argparse.Namespace) -> int:
         if vm.pending_choice is not None:
             # Default to first choice in headless mode
             vm.choose(0)
+
+        if vm.pending_input is not None:
+            # Default to placeholder input in headless mode
+            vm.submit_input(vm.pending_input.default or "Player")
 
     print(f"Test run completed: {steps} steps, {events_count} events dispatched, ended: {vm.is_ended}.")
     return 0
@@ -471,6 +482,10 @@ def _run_headless(
                 session.choose(auto_choose)
                 continue
             break
+
+        if event is not None and event.type == "input_prompt":
+            session.submit_input(getattr(event, "default", "") or "Player")
+            continue
 
         if event is None:
             break
@@ -610,13 +625,24 @@ def _run_interactive_player(session: Any, *, backend: str) -> None:
     asset_dir = str(session.asset_dir) if getattr(session, "asset_dir", None) else None
     cfg_title = getattr(getattr(session, "config", None), "title", None)
     title = cfg_title if cfg_title else f"Eager Visual Novel ({backend.upper()})"
+    width = getattr(session, "virtual_width", 1280) or 1280
+    height = getattr(session, "virtual_height", 720) or 720
     player: Any = player_cls(
         session=session,
-        width=1280,
-        height=720,
+        width=width,
+        height=height,
         title=title,
         asset_dir=asset_dir,
     )
+    if (
+        getattr(getattr(session, "preferences", None), "fullscreen", False)
+        and hasattr(player, "toggle_fullscreen")
+        and not getattr(player, "fullscreen", False)
+    ):
+        try:
+            player.toggle_fullscreen()
+        except Exception:  # noqa: BLE001, S110
+            pass
     player.run()
 
 
@@ -654,7 +680,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
         auto_reload=getattr(args, "watch", False),
         config=cfg,
     )
-    if not getattr(args, "skip_title", False) and hasattr(session.screens, "show"):
+    if getattr(args, "lang", None):
+        session.set_language(args.lang)
+
+    if getattr(args, "warp", None):
+        target_scene = args.warp
+        if target_scene in session.vm.graph.nodes:
+            simulate = not getattr(args, "no_warp_sim", False)
+            session.warp(target_scene, simulate=simulate)
+            sys.stderr.write(f"Warped directly to scene '{target_scene}'.\n")
+        else:
+            sys.stderr.write(f"Warning: Warp target '{target_scene}' not found in script.\n")
+    elif not getattr(args, "skip_title", False) and hasattr(session.screens, "show"):
         session.screens.show("title", session)
         session.mode = "title"
 
@@ -854,6 +891,17 @@ def _cmd_build(args: argparse.Namespace) -> int:
     if not proj_dir.is_dir():
         sys.stderr.write(f"Error: Project directory '{proj_dir}' not found.\n")
         return 1
+
+    if not getattr(args, "no_check", False):
+        check_args = argparse.Namespace(
+            script=str(proj_dir),
+            assets=(proj_dir / "assets").is_dir(),
+            asset_dir=None,
+        )
+        rc = _cmd_check(check_args)
+        if rc != 0:
+            sys.stderr.write("Build aborted: project check failed. Use --no-check to bypass.\n")
+            return 1
 
     out_name = args.output or f"{proj_dir.name}_dist.zip"
     out_path = Path(out_name).resolve()

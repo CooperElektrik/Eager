@@ -43,8 +43,22 @@ BUILTIN_HOOKS = [
     ("fade_out", "Fade out stage to color"),
     ("flash", "Screen flash effect"),
     ("shake", "Screen shake effect"),
+    ("weather", "Simulate weather particle effect (rain, snow, sakura, embers, clear)"),
+    ("particles", "Simulate custom or preset particle emitter system"),
+    ("ambient", "Set ambient stage lighting color and intensity"),
+    ("light", "Add, clear, or configure dynamic stage point lights"),
     ("play", "Play audio track on specified channel"),
+    ("play_bgm", "Play background music track on music channel"),
+    ("play_music", "Play music track on music channel"),
+    ("play_sound", "Play sound effect track on sound channel"),
+    ("play_sfx", "Play sound effect track on sound channel"),
+    ("play_voice", "Play voice clip on voice channel"),
     ("stop", "Stop audio playback on channel"),
+    ("stop_bgm", "Stop music playback"),
+    ("stop_music", "Stop music playback"),
+    ("stop_sound", "Stop sound effects"),
+    ("stop_sfx", "Stop sound effects"),
+    ("stop_voice", "Stop voice playback"),
     ("volume", "Adjust channel volume"),
     ("nvl", "Switch to NVL full-screen text mode"),
     ("nvl_clear", "Clear NVL text overlay"),
@@ -324,12 +338,33 @@ def compute_completions(
             return CompletionList(is_incomplete=False, items=items)
 
         # '~ play <cursor>'
-        if hook_cmd in ("play", "stop", "volume") or hook_cmd.startswith("play_"):
+        if hook_cmd in ("play", "stop", "volume") or hook_cmd.startswith(("play_", "stop_", "volume_")):
             for chan in ("music", "sound", "voice", "ambient"):
                 items.append(CompletionItem(label=chan, kind=CompletionItemKind.Enum, detail="Audio Channel"))
             for track in sorted(workspace.asset_index.audio):
                 items.append(CompletionItem(label=track, kind=CompletionItemKind.File, detail="Audio Track"))
             for kw in ("fade=", "volume=", "loop="):
+                items.append(CompletionItem(label=kw, kind=CompletionItemKind.Property))
+            return CompletionList(is_incomplete=False, items=items)
+
+        # '~ weather <cursor>' / '~ particles <cursor>'
+        if hook_cmd in ("weather", "particles"):
+            for preset in ("rain", "snow", "sakura", "embers", "clear"):
+                items.append(CompletionItem(label=preset, kind=CompletionItemKind.Value, detail="Weather Preset"))
+            items.append(CompletionItem(label="count=", kind=CompletionItemKind.Property))
+            return CompletionList(is_incomplete=False, items=items)
+
+        # '~ ambient <cursor>'
+        if hook_cmd == "ambient":
+            for val in ("clear", "intensity="):
+                items.append(CompletionItem(label=val, kind=CompletionItemKind.Property))
+            return CompletionList(is_incomplete=False, items=items)
+
+        # '~ light <cursor>'
+        if hook_cmd == "light":
+            for act in ("add", "clear"):
+                items.append(CompletionItem(label=act, kind=CompletionItemKind.Keyword))
+            for kw in ("x=", "y=", "radius=", "color=", "intensity=", "mode="):
                 items.append(CompletionItem(label=kw, kind=CompletionItemKind.Property))
             return CompletionList(is_incomplete=False, items=items)
 

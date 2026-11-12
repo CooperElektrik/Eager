@@ -350,6 +350,8 @@ class GameSession:
             listener.on_request_fullscreen()
         if hasattr(self.renderer, "toggle_fullscreen"):
             self.renderer.toggle_fullscreen()
+        self.preferences.fullscreen = not getattr(self.preferences, "fullscreen", False)
+        self.save_preferences()
 
     def request_quit(self) -> bool:
         """Notify registered host listeners to terminate the application."""
@@ -381,11 +383,15 @@ class GameSession:
         self.audio.set_channel_volume("voice", self.preferences.voice_volume)
         self.vm.set_locale(self.preferences.language)
 
+    def save_preferences(self) -> None:
+        """Persist current preferences to preferences.json in save directory."""
+        self.preferences.save(self.save_manager.save_dir / "preferences.json")
+
     def set_language(self, locale: str) -> None:
         """Switch active language locale, updating VM and persisting preferences."""
         self.preferences.language = locale
         self.apply_preferences()
-        self.preferences.save(self.save_manager.save_dir / "preferences.json")
+        self.save_preferences()
 
     def play_voice(self, voice_path: str) -> None:
         """Replay a voice clip on the voice channel."""

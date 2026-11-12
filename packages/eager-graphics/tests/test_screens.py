@@ -252,11 +252,13 @@ height = 720
         session.screens.register(pref_screen)
         session.screens.show("preferences", session)
 
-        # Button 0 is Back, Buttons 1..3 are languages: default, es, ja
-        assert len(pref_screen.buttons) == 4
+        # Button 0 is Back, Buttons 1..3 are languages (default, es, ja), Buttons 4..5 are options
+        assert len(pref_screen.buttons) == 6
         assert "DEFAULT" in pref_screen.buttons[1].text
         assert "ES" in pref_screen.buttons[2].text
         assert "JA" in pref_screen.buttons[3].text
+        assert "Fullscreen" in pref_screen.buttons[4].text
+        assert "Skip Unseen" in pref_screen.buttons[5].text
 
         # Click Spanish (buttons[2])
         es_btn = pref_screen.buttons[2]
@@ -266,6 +268,24 @@ height = 720
 
         # After clicking, screen re-initializes on_enter, so active marker updates
         assert "[ ES ]" in pref_screen.buttons[2].text
+
+        # Test options buttons (Fullscreen & Skip Unseen toggles)
+        fs_btn = pref_screen.buttons[4]
+        assert "[ OFF ]" in fs_btn.text
+        assert pref_screen.handle_mouse_click(fs_btn.rect.x + 5, fs_btn.rect.y + 5)
+        assert "[ ON ]" in pref_screen.buttons[4].text
+
+        skip_btn = pref_screen.buttons[5]
+        assert "[ OFF ]" in skip_btn.text
+        assert pref_screen.handle_mouse_click(skip_btn.rect.x + 5, skip_btn.rect.y + 5)
+        assert "[ ON ]" in pref_screen.buttons[5].text
+        assert session.preferences.skip_unseen is True
+
+        # Test on_exit auto-save
+        session.saved_prefs = False
+        session.save_preferences = lambda: setattr(session, "saved_prefs", True)
+        session.screens.hide(session)
+        assert getattr(session, "saved_prefs", False) is True
 
     def test_history_screen(self):
         from eager_graphics.screens import HistoryScreen

@@ -1485,6 +1485,29 @@ Alice: Beat 4
     assert session.skip_mode is True
 
 
+def test_session_save_preferences_and_fullscreen_toggle(tmp_path: Path) -> None:
+    script_file = tmp_path / "game.es"
+    script_file.write_text("## Start --- start\nNarrator: Hello.\n", encoding="utf-8")
+    session = GameSession(script_file, save_dir=tmp_path / "saves")
+
+    session.preferences.music_volume = 0.42
+    session.save_preferences()
+
+    prefs_file = tmp_path / "saves" / "preferences.json"
+    assert prefs_file.exists()
+    from eager_core.preferences import Preferences
+
+    loaded = Preferences.load(prefs_file)
+    assert loaded.music_volume == pytest.approx(0.42)
+
+    # Fullscreen toggle
+    assert session.preferences.fullscreen is False
+    session.request_fullscreen()
+    assert session.preferences.fullscreen is True
+    loaded_fs = Preferences.load(prefs_file)
+    assert loaded_fs.fullscreen is True
+
+
 
 
 

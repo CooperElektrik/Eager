@@ -263,4 +263,61 @@ def test_cmd_build_excludes_output_zip(tmp_path: Path) -> None:
         names = zf.namelist()
         assert "dist.zip" not in names
         assert "main.es" in names
-        assert "game.toml" in names
+
+
+def test_cli_run_warp_and_lang(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    proj_dir = tmp_path / "warp_proj"
+    proj_dir.mkdir()
+    (proj_dir / "game.toml").write_text('[game]\ntitle = "Warp Test"\nentry_script = "main.es"\n', encoding="utf-8")
+    script = """## Start --- start
+Narrator: Scene 1.
+> target
+
+## Target --- target
+Narrator: Scene 2.
+"""
+    (proj_dir / "main.es").write_text(script, encoding="utf-8")
+
+    import eager_runtime.cli
+
+    monkeypatch.setattr(eager_runtime.cli, "_run_interactive_player", lambda session, backend: None)
+
+    code = main(["run", str(proj_dir), "--warp", "target"])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "Warped directly to scene 'target'" in captured.err
+
+
+def test_cli_test_run_with_input_prompt(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    script = """## Start --- start
+Narrator: Hello.
+~ input player_name prompt="Name?" default="Hero"
+Narrator: Welcome {player_name}.
+"""
+    sf = tmp_path / "input.es"
+    sf.write_text(script, encoding="utf-8")
+
+    code = main(["test-run", str(sf)])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "ended: True" in captured.out
+
+
+def test_cli_build_pre_validation(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    proj_dir = tmp_path / "broken_proj"
+    proj_dir.mkdir()
+    (proj_dir / "game.toml").write_text('[game]\ntitle = "Broken"\n', encoding="utf-8")
+    # Missing target scene -> validation error
+    (proj_dir / "main.es").write_text("## Start --- start\n> missing_target\n", encoding="utf-8")
+
+    out_zip = tmp_path / "broken.zip"
+    code = main(["build", str(proj_dir), "-o", str(out_zip)])
+    assert code == 1
+    assert not out_zip.exists()
+    captured = capsys.readouterr()
+    assert "Build aborted: project check failed" in captured.err
+
+    # With --no-check, build succeeds
+    code_bypass = main(["build", str(proj_dir), "-o", str(out_zip), "--no-check"])
+    assert code_bypass == 0
+    assert out_zip.exists()

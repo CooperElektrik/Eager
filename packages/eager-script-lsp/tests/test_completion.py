@@ -205,7 +205,9 @@ def test_server_incremental_edit_and_completion():
         text_document=types.TextDocumentIdentifier(uri=uri),
         position=types.Position(line=2, character=1)
     ))
-    assert len(comp_res.items) == 18
+    from eager_script_lsp.features.completion import BUILTIN_HOOKS
+
+    assert len(comp_res.items) == len(BUILTIN_HOOKS)
     bg_item = next(i for i in comp_res.items if i.label == "bg")
     assert bg_item.text_edit is not None
     assert bg_item.text_edit.new_text == "~ bg "

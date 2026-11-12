@@ -56,6 +56,7 @@ class StageCompositor:
 
         # Expressive particle emitters & screen-space lighting
         self._particle_emitters: dict[str, ParticleEmitter] = {}
+        self._active_weather_preset: str | None = None
         self.lighting: LightmapState = LightmapState()
 
     @property
@@ -1016,6 +1017,8 @@ class StageCompositor:
                 "stage": stage_dict,
                 "virtual_width": self.virtual_width,
                 "virtual_height": self.virtual_height,
+                "lighting": self.lighting.to_dict(),
+                "weather": self._active_weather_preset,
             }
 
         # Build mapping from ElementState id to (layer_name, element_id)
@@ -1077,6 +1080,8 @@ class StageCompositor:
             "stage": stage_dict,
             "virtual_width": self.virtual_width,
             "virtual_height": self.virtual_height,
+            "lighting": self.lighting.to_dict(),
+            "weather": self._active_weather_preset,
         }
 
     def load_state(self, state: dict[str, Any]) -> None:
@@ -1093,16 +1098,52 @@ class StageCompositor:
         if "virtual_height" in state:
             self.virtual_height = int(state["virtual_height"])
 
+        if "lighting" in state and isinstance(state["lighting"], dict):
+            self.lighting = LightmapState.from_dict(state["lighting"])
+        else:
+            self.lighting.clear()
+
+        weather = state.get("weather")
+        if weather:
+            self.set_weather(weather)
+        else:
+            self.set_weather(None)
+
     def clear(self) -> None:
         """Clear all animations, particle systems, lighting, and reset all stage layers."""
         self.timeline.clear()
         self.stage.clear()
         self._particle_emitters.clear()
+        self._active_weather_preset = None
         self.lighting.clear()
 
     # =========================================================================
     # Particle Systems & Lighting Operations
     # =========================================================================
+
+    def set_weather(self, preset: str | None, count: int | None = None) -> None:
+        """Set or clear full-screen weather effect (rain, snow, sakura, embers)."""
+        if not preset or preset.strip().lower() in ("clear", "none", "off", "stop"):
+            self.remove_particle_emitter("weather")
+            self._active_weather_preset = None
+            return
+
+        from eager_graphics.particles import ParticleEmitter
+
+        p = preset.strip().lower()
+        if p == "rain":
+            emitter = ParticleEmitter.create_rain("weather", count=count or 250)
+        elif p == "snow":
+            emitter = ParticleEmitter.create_snow("weather", count=count or 200)
+        elif p in ("sakura", "petals", "cherry"):
+            emitter = ParticleEmitter.create_sakura("weather", count=count or 150)
+        elif p in ("embers", "fire", "sparks"):
+            emitter = ParticleEmitter.create_embers("weather", count=count or 100)
+        else:
+            emitter = ParticleEmitter.create_snow("weather", count=count or 200)
+
+        self.add_particle_emitter(emitter)
+        self._active_weather_preset = p
 
     def add_particle_emitter(self, emitter: ParticleEmitter) -> None:
         """Register an active particle emitter system."""

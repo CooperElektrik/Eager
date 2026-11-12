@@ -353,6 +353,10 @@ class GameSessionProtocol(Protocol):
         """Apply active preferences to audio, locale, and display subsystems."""
         ...
 
+    def save_preferences(self) -> None:
+        """Persist active preferences to disk."""
+        ...
+
     def request_fullscreen(self) -> None:
         """Request host environment fullscreen toggle."""
         ...

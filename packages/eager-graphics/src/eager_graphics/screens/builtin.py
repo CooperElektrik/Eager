@@ -585,6 +585,59 @@ class PreferencesScreen(Screen):
                 )
             )
 
+        # Options toggles (Fullscreen & Skip Unseen)
+        opts_y = base_y + 4 * step_y
+        self.labels.append(
+            Label(
+                "Options",
+                lang_x,
+                opts_y + label_offset_y,
+                color=self.theme.text_color,
+                font_size=self.scale_font_size(18),
+            )
+        )
+
+        opt_btn_w = vw * (220.0 / 1280.0)
+        opt_btn_h = vh * (36.0 / 720.0)
+
+        is_fs = bool(getattr(prefs, "fullscreen", False)) if prefs else False
+        fs_label = f"Fullscreen: {'[ ON ]' if is_fs else '[ OFF ]'}"
+
+        def toggle_fs_cb() -> None:
+            if self.session is not None and hasattr(self.session, "request_fullscreen"):
+                self.session.request_fullscreen()
+            elif prefs is not None:
+                prefs.fullscreen = not is_fs
+                if self.session is not None and hasattr(self.session, "save_preferences"):
+                    self.session.save_preferences()
+            self.rebuild_layout()
+
+        self.buttons.append(
+            Button(
+                Rect(lang_x, opts_y + lang_offset_y, opt_btn_w, opt_btn_h),
+                fs_label,
+                action=toggle_fs_cb,
+            )
+        )
+
+        is_skip = bool(getattr(prefs, "skip_unseen", False)) if prefs else False
+        skip_label = f"Skip Unseen: {'[ ON ]' if is_skip else '[ OFF ]'}"
+
+        def toggle_skip_cb() -> None:
+            if prefs is not None:
+                prefs.skip_unseen = not is_skip
+                if self.session is not None and hasattr(self.session, "save_preferences"):
+                    self.session.save_preferences()
+            self.rebuild_layout()
+
+        self.buttons.append(
+            Button(
+                Rect(lang_x, opts_y + lang_offset_y + lang_step_y, opt_btn_w, opt_btn_h),
+                skip_label,
+                action=toggle_skip_cb,
+            )
+        )
+
     def on_enter(self, session: GameSessionProtocol) -> None:
         """Handle preferences screen entry and sync controls.
 
@@ -598,6 +651,12 @@ class PreferencesScreen(Screen):
             self.viewport_width = ov.width
             self.viewport_height = ov.height
         self.rebuild_layout()
+
+    def on_exit(self, session: GameSessionProtocol) -> None:
+        """Handle preferences screen exit and persist changes to disk."""
+        super().on_exit(session)
+        if hasattr(session, "save_preferences") and callable(session.save_preferences):
+            session.save_preferences()
 
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
         """Render preferences screen controls, labels, and sliders.
