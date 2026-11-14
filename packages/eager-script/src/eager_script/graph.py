@@ -610,6 +610,7 @@ def to_graph(items: Sequence[ParsedItem] | Iterable[ParsedItem]) -> SceneGraph:
     from eager_script import (
         ParsedCharacter,
         ParsedDefault,
+        ParsedInclude,
         ParsedLabel,
     )
 
@@ -632,6 +633,9 @@ def to_graph(items: Sequence[ParsedItem] | Iterable[ParsedItem]) -> SceneGraph:
                 scene_order.append((first_label, current_body))
                 first_label = item
                 current_body = []
+            continue
+
+        if isinstance(item, ParsedInclude):
             continue
 
         if isinstance(item, ParsedCharacter):

@@ -665,10 +665,26 @@ def launch_interactive(
         print(f"Error: PIL renderer unavailable: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    from eager_core.audio import NullAudioBackend
+    from eager_core.protocols import get_audio_backend, load_providers
     from eager_runtime.session import GameSession
 
+    load_providers()
+    audio_backend: Any = NullAudioBackend()
+    audio_factory = get_audio_backend("pil")
+    if audio_factory is not None:
+        try:
+            audio_backend = audio_factory()
+        except Exception:  # noqa: BLE001
+            audio_backend = NullAudioBackend()
+
     graph = parse_graph(script_text)
-    session = GameSession(graph)
+    session = GameSession(
+        graph,
+        backend="pil",
+        audio_backend=audio_backend,
+        asset_dir=asset_dir,
+    )
     locales_dir = Path(__file__).resolve().parent / "locales"
     if locales_dir.is_dir():
         session.translation_manager.load_directory(locales_dir)

@@ -47,7 +47,6 @@ from eager_core.exceptions import (
     StorageError,
 )
 from eager_core.headless import (
-    HeadlessUIState,
     NullCompositor,
     NullRenderer,
     NullScreenManager,
@@ -70,8 +69,6 @@ from eager_core.layout import (
     ViewportTransform,
 )
 from eager_core.lighting import (
-    AmbientLight,
-    LightKind,
     LightmapState,
     PointLight,
 )
@@ -169,7 +166,6 @@ __all__ = [
     "RED",
     "TRANSPARENT",
     "WHITE",
-    "AmbientLight",
     "Anchor",
     "AppendEvent",
     "AudioBackend",
@@ -197,7 +193,6 @@ __all__ = [
     "FrameClock",
     "FreshBoxEvent",
     "GameSessionProtocol",
-    "HeadlessUIState",
     "HookEvent",
     "HostLifecycleListener",
     "I18nError",
@@ -205,7 +200,6 @@ __all__ = [
     "InputPromptEvent",
     "Keymap",
     "LayoutResolver",
-    "LightKind",
     "LightmapState",
     "NVLEntry",
     "NarrationEvent",

@@ -45,6 +45,9 @@ class BasePlayer:
             session.add_lifecycle_listener(self)
         self.width: int = width
         self.height: int = height
+        self._base_width: int = width
+        self._base_height: int = height
+        self._resolution_scale: float = 1.0
         self.title: str = title
         self.asset_dir: str | Path | None = asset_dir
         self.scale_mode: ScaleMode = scale_mode
@@ -104,6 +107,14 @@ class BasePlayer:
             self.debug_mode = DebugOverlayMode.FPS
         else:
             self.debug_mode = DebugOverlayMode.OFF
+
+    def set_resolution_scale(self, scale: float) -> None:
+        """Update window/viewport resolution scale relative to base dimensions."""
+        clamped = max(0.5, min(2.0, float(scale)))
+        self._resolution_scale = clamped
+        target_w = max(320, round(self._base_width * clamped))
+        target_h = max(180, round(self._base_height * clamped))
+        self.on_resize(target_w, target_h)
 
     def toggle_fullscreen(self) -> None:
         """Toggle fullscreen mode if supported by the player implementation."""
@@ -328,12 +339,9 @@ class BasePlayer:
         self._sync_state()
 
     def handle_scroll(self, dy: float) -> None:
-        """Handle mouse wheel scrolling for rollback or roll-forward."""
+        """Handle mouse wheel scrolling."""
         self._mark_ui_dirty()
-        if dy > 0:
-            self.session.handle_input(InputAction.ROLLBACK)
-        elif dy < 0:
-            self.session.handle_input(InputAction.ROLL_FORWARD)
+        self.session.handle_input(InputAction.SCROLL, dy=dy)
         self._sync_state()
 
     def handle_skip_release(self) -> None:

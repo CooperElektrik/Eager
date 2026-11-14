@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from eager_script_lsp.document import ScriptDocument
 
 
@@ -259,6 +261,65 @@ def test_get_item_at_position_and_enriched_syntax_errors():
     assert err.line == 0
     assert err.start_col == 4
     assert err.end_col == 26
+
+
+def test_document_scans_scene_bg_queue_ambient_and_ignores_stop_volume_assets() -> None:
+    text = """~ scene_bg intro bg_park
+## Intro --- intro
+~ queue_ambient wind_loop
+~ play music track=theme_main
+~ stop music
+~ volume music 0.5
+<<
+"""
+    doc = ScriptDocument("file:///hooks.es", text)
+    label_refs = [o.name for o in doc.occurrences if o.kind == "label_ref"]
+    assert "intro" in label_refs
+
+    asset_refs = [(o.metadata.get("asset_kind"), o.name) for o in doc.occurrences if o.kind == "asset_ref"]
+    assert ("background", "bg_park") in asset_refs
+    assert ("audio", "wind_loop") in asset_refs
+    assert ("audio", "theme_main") in asset_refs
+    # stop / volume must NOT emit asset_ref occurrences
+    assert not any(name in ("music", "0.5") for _, name in asset_refs)
+
+
+def test_workspace_and_features_resolve_image_hook_assets(tmp_path: Path) -> None:
+    from lsprotocol.types import Location, MarkupContent, Position
+
+    from eager_script_lsp.features.hover import compute_hover
+    from eager_script_lsp.features.navigation import compute_definition
+    from eager_script_lsp.features.tokens import compute_document_links
+    from eager_script_lsp.workspace import WorkspaceIndex
+
+    assets_dir = tmp_path / "assets"
+    images_dir = assets_dir / "images"
+    images_dir.mkdir(parents=True)
+    badge = images_dir / "badge.png"
+    badge.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    script_file = tmp_path / "main.es"
+    text = "## Intro --- intro\n~ image ui_badge badge\n<<\n"
+    script_file.write_text(text, encoding="utf-8")
+
+    ws = WorkspaceIndex(tmp_path)
+    ws.asset_index.scan_assets(assets_dir)
+    doc = ScriptDocument(script_file.as_uri(), text)
+    ws.documents[doc.uri] = doc
+
+    assert "badge" in ws.asset_index.images
+    assert ws.asset_index.resolve_asset_path("image", "badge") == badge
+
+    pos = Position(line=1, character=18)
+    defn = compute_definition(doc, ws, pos)
+    assert isinstance(defn, Location) and defn.uri == badge.as_uri()
+
+    hov = compute_hover(doc, ws, pos)
+    assert hov is not None and isinstance(hov.contents, MarkupContent)
+    assert "badge.png" in hov.contents.value
+
+    links = compute_document_links(doc, ws)
+    assert any(lnk.target == badge.as_uri() for lnk in links)
 
 
 

@@ -11,7 +11,6 @@ import pytest
 from eager_runtime.project import (
     ProjectConfig,
     load_project_graph,
-    mask_script_includes,
     merge_graphs,
     resolve_project_scripts,
 )
@@ -184,16 +183,6 @@ font_size = 18
     assert cfg.theme_overrides["accent_color"].g == pytest.approx(170 / 255, abs=0.01)
     assert cfg.theme_overrides["accent_color"].b == pytest.approx(0.0)
     assert cfg.theme_overrides["font_size"] == 18
-
-
-def test_mask_script_includes() -> None:
-    text = '@include "chapter1.es"\n## Intro --- intro\n  @include "extra.es"\nNarrator: Hello'
-    masked = mask_script_includes(text)
-    lines = masked.splitlines()
-    assert lines[0] == '# @include "chapter1.es"'
-    assert lines[1] == "## Intro --- intro"
-    assert lines[2] == '  # @include "extra.es"'
-    assert lines[3] == "Narrator: Hello"
 
 
 def test_load_project_graph_with_includes(tmp_path: Path) -> None:

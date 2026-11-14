@@ -51,6 +51,9 @@ class ParticleStampLUT:
     ) -> None:
         self._table = table
         self.approx_bytes = approx_bytes
+        self._shape: str = "circle"
+        self._base_size: int = 12
+        self._color: tuple[int, int, int] = (255, 255, 255)
 
     @classmethod
     def quantize_angle(cls, angle_deg: float) -> int:
@@ -178,7 +181,11 @@ class ParticleStampLUT:
         else:
             draw.rectangle([1, 1, base_size - 2, base_size - 2], fill=(r, g, b, 255))
 
-        return cls.from_image(img)
+        lut = cls.from_image(img)
+        lut._shape = shape
+        lut._base_size = base_size
+        lut._color = (int(color[0]), int(color[1]), int(color[2]))
+        return lut
 
 
 @dataclass(slots=True)
@@ -432,3 +439,46 @@ class ParticleEmitter:
         """Create a rising campfire embers emitter with pre-baked spark stamps."""
         lut = ParticleStampLUT.from_shape("spark", base_size=14, color=(255, 140, 40))
         return cls(emitter_id, lut, max_particles=count, layer=layer, z_order=z_order, preset="embers")
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize emitter configuration for save/load and rollback."""
+        return {
+            "emitter_id": self.emitter_id,
+            "max_particles": self.max_particles,
+            "layer": self.layer,
+            "z_order": self.z_order,
+            "preset": self.preset,
+            "shape": self.lut._shape,
+            "base_size": self.lut._base_size,
+            "color": list(self.lut._color),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ParticleEmitter:
+        """Reconstruct a ParticleEmitter from a serialized dictionary."""
+        emitter_id = str(data["emitter_id"])
+        count = int(data.get("max_particles", 200))
+        layer = str(data.get("layer", "foreground"))
+        z_order = int(data.get("z_order", 200000))
+        preset = data.get("preset")
+        if preset == "rain":
+            return cls.create_rain(emitter_id, count=count, layer=layer, z_order=z_order)
+        if preset == "snow":
+            return cls.create_snow(emitter_id, count=count, layer=layer, z_order=z_order)
+        if preset == "sakura":
+            return cls.create_sakura(emitter_id, count=count, layer=layer, z_order=z_order)
+        if preset == "embers":
+            return cls.create_embers(emitter_id, count=count, layer=layer, z_order=z_order)
+        shape = str(data.get("shape", "circle"))
+        base_size = int(data.get("base_size", 12))
+        raw_color = data.get("color", [255, 255, 255])
+        color = (int(raw_color[0]), int(raw_color[1]), int(raw_color[2]))
+        lut = ParticleStampLUT.from_shape(shape=shape, base_size=base_size, color=color)
+        return cls(
+            emitter_id,
+            lut,
+            max_particles=count,
+            layer=layer,
+            z_order=z_order,
+            preset=preset,
+        )

@@ -805,6 +805,83 @@ def test_pyglet_render_error_and_asset_security_error(tmp_path: Path, invisible_
         resolver.get_texture("../escape_attempt")
 
 
+def test_pyglet_renderer_lightmap_blend_modes(monkeypatch: pytest.MonkeyPatch) -> None:
+    import pyglet
+    from eager_core.lighting import LightmapState, PointLight
+    from eager_core.types import Color
+
+    from eager_graphics.renderers.pyglet import PygletRenderer
+
+    created_sprites: list[dict[str, Any]] = []
+
+    class FakeSprite:
+        def __init__(self, img: Any, x: float = 0, y: float = 0, blend_src: int = 770, blend_dest: int = 771, batch: Any = None, group: Any = None) -> None:
+            self.image = img
+            self.position = (x, y, 0)
+            self.blend_src = blend_src
+            self.blend_dest = blend_dest
+            self.group = group
+            self.visible = True
+            self.scale_x = 1.0
+            self.scale_y = 1.0
+            created_sprites.append({"blend_src": blend_src, "blend_dest": blend_dest, "sprite": self})
+
+        def delete(self) -> None:
+            pass
+
+    monkeypatch.setattr(pyglet.sprite, "Sprite", FakeSprite)
+    monkeypatch.setattr(
+        pyglet.image.ImageData,
+        "get_texture",
+        lambda self: type("FakeTex", (), {"id": 1, "target": 3553})(),
+    )
+
+    renderer = PygletRenderer(width=320, height=180)
+    lm = LightmapState(
+        enabled=True,
+        ambient=Color(0.2, 0.2, 0.3, 1.0),
+        lights=[PointLight(x=100, y=100, radius=50, mode="screen")],
+    )
+    renderer.render_lightmap(lm)
+
+    assert len(created_sprites) == 2
+    assert created_sprites[0]["blend_src"] == pyglet.gl.GL_DST_COLOR
+    assert created_sprites[0]["blend_dest"] == pyglet.gl.GL_ZERO
+    assert created_sprites[1]["blend_src"] == pyglet.gl.GL_ONE
+    assert created_sprites[1]["blend_dest"] == pyglet.gl.GL_ONE_MINUS_SRC_COLOR
+
+
+def test_pyglet_renderer_draw_text_updates_pooled_label_font_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    import eager_graphics.renderers.pyglet as pyglet_mod
+    from eager_graphics.renderers.pyglet import PygletRenderer
+
+    class FakeLabel:
+        def __init__(self, text: str, font_name: str = "", font_size: int = 12, **kwargs: Any) -> None:
+            self.text = text
+            self.font_name = font_name
+            self.font_size = font_size
+            self.weight = kwargs.get("weight", "normal")
+            self.italic = kwargs.get("italic", False)
+            self.x = kwargs.get("x", 0)
+            self.y = kwargs.get("y", 0)
+            self.anchor_x = kwargs.get("anchor_x", "left")
+            self.anchor_y = kwargs.get("anchor_y", "bottom")
+            self.color = kwargs.get("color", (255, 255, 255, 255))
+            self.group = kwargs.get("group")
+            self.visible = True
+
+    monkeypatch.setattr(pyglet_mod, "Label", FakeLabel)
+
+    renderer = PygletRenderer(width=320, height=180)
+    renderer.begin_frame()
+    renderer.draw_text(10, 10, "A", font_family="FontA")
+    renderer._label_cursor = 0
+    renderer.draw_text(10, 10, "B", font_family="FontB")
+
+    assert len(renderer._label_pool) == 1
+    assert renderer._label_pool[0].font_name == "FontB"
+
+
 
 
 

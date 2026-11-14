@@ -15,6 +15,7 @@ from eager_script import (
     DEFAULT_PATTERN,
     ELIF_PATTERN,
     IF_PATTERN,
+    INCLUDE_PATTERN,
     SET_PATTERN,
     SPEAKER_PATTERN,
     ParsedItem,
@@ -35,7 +36,6 @@ _TAG_PATTERN = re.compile(r"\{([^\}]+)\}")
 _COLOR_TAG_PATTERN = re.compile(r"\{color=(#[0-9a-fA-F]{3,8})\}")
 _BEAT_ID_TAG_PATTERN = re.compile(r"\{id=([a-zA-Z0-9_-]+)\}")
 _TOKEN_PATTERN = re.compile(r'"([^"]*)"|\'([^\']*)\'|(\S+)')
-_INCLUDE_PATTERN = re.compile(r'^@include\s+(?:"([^"]+)"|\'([^\']+)\')\s*$')
 
 __all__ = [
     "ScriptDocument",
@@ -903,6 +903,41 @@ class ScriptDocument:
                         metadata={"asset_kind": "background"},
                     )
                 )
+        elif hook_name == "scene_bg":
+            if arg_tokens:
+                sc_name, sc_start, sc_end = arg_tokens[0]
+                sc_span = TokenSpan(
+                    kind="jump_target",
+                    start_line=line_idx,
+                    start_col=sc_start,
+                    end_line=line_idx,
+                    end_col=sc_end,
+                    value=sc_name,
+                )
+                self.spans.append(sc_span)
+                self.occurrences.append(
+                    SymbolOccurrence(kind="label_ref", name=sc_name, span=sc_span)
+                )
+            if len(arg_tokens) >= 2 and "=" not in arg_tokens[1][0]:
+                bg_name, b_start, b_end = arg_tokens[1]
+                bg_span = TokenSpan(
+                    kind="hook_arg",
+                    start_line=line_idx,
+                    start_col=b_start,
+                    end_line=line_idx,
+                    end_col=b_end,
+                    value=bg_name,
+                    metadata={"asset_kind": "background"},
+                )
+                self.spans.append(bg_span)
+                self.occurrences.append(
+                    SymbolOccurrence(
+                        kind="asset_ref",
+                        name=bg_name,
+                        span=bg_span,
+                        metadata={"asset_kind": "background"},
+                    )
+                )
         elif hook_name == "image":
             if len(arg_tokens) >= 2 and "=" not in arg_tokens[1][0]:
                 asset_name, a_start, a_end = arg_tokens[1]
@@ -971,11 +1006,13 @@ class ScriptDocument:
                             },
                         )
                     )
-        elif hook_name in ("play", "stop", "volume") or hook_name.startswith("play_"):
+        elif hook_name in ("play", "queue") or hook_name.startswith(("play_", "queue_")):
+            is_shorthand = hook_name.startswith(("play_", "queue_"))
+            chan_default = hook_name.replace("play_", "").replace("queue_", "") if is_shorthand else "music"
+            track_emitted = False
             if arg_tokens:
                 first_tok, f_start, f_end = arg_tokens[0]
-                # channel or track
-                is_chan = first_tok in ("music", "sound", "voice", "ambient")
+                is_chan = (not is_shorthand) and first_tok in ("bgm", "music", "sound", "sfx", "voice", "ambient")
                 if is_chan and len(arg_tokens) > 1 and "=" not in arg_tokens[1][0]:
                     track_name, t_start, t_end = arg_tokens[1]
                     track_span = TokenSpan(
@@ -996,8 +1033,8 @@ class ScriptDocument:
                             metadata={"asset_kind": "audio", "channel": first_tok},
                         )
                     )
+                    track_emitted = True
                 elif not is_chan and "=" not in first_tok:
-                    chan = hook_name.replace("play_", "") if hook_name.startswith("play_") else "music"
                     track_span = TokenSpan(
                         kind="hook_arg",
                         start_line=line_idx,
@@ -1005,7 +1042,7 @@ class ScriptDocument:
                         end_line=line_idx,
                         end_col=f_end,
                         value=first_tok,
-                        metadata={"asset_kind": "audio", "channel": chan},
+                        metadata={"asset_kind": "audio", "channel": chan_default},
                     )
                     self.spans.append(track_span)
                     self.occurrences.append(
@@ -1013,7 +1050,55 @@ class ScriptDocument:
                             kind="asset_ref",
                             name=first_tok,
                             span=track_span,
-                            metadata={"asset_kind": "audio", "channel": chan},
+                            metadata={"asset_kind": "audio", "channel": chan_default},
+                        )
+                    )
+                    track_emitted = True
+            if not track_emitted:
+                chan_val = chan_default
+                for tok, t_start, t_end in arg_tokens:
+                    if tok.startswith("channel="):
+                        chan_val = tok.split("=", 1)[1].strip("\"'") or chan_val
+                for tok, t_start, t_end in arg_tokens:
+                    if tok.startswith("track="):
+                        track_val = tok.split("=", 1)[1].strip("\"'")
+                        if track_val:
+                            val_start = t_start + len("track=")
+                            if tok[len("track="):].startswith(('"', "'")):
+                                val_start += 1
+                            val_end = val_start + len(track_val)
+                            track_span = TokenSpan(
+                                kind="hook_arg",
+                                start_line=line_idx,
+                                start_col=val_start,
+                                end_line=line_idx,
+                                end_col=val_end,
+                                value=track_val,
+                                metadata={"asset_kind": "audio", "channel": chan_val},
+                            )
+                            self.spans.append(track_span)
+                            self.occurrences.append(
+                                SymbolOccurrence(
+                                    kind="asset_ref",
+                                    name=track_val,
+                                    span=track_span,
+                                    metadata={"asset_kind": "audio", "channel": chan_val},
+                                )
+                            )
+                            break
+        elif hook_name in ("stop", "pause", "resume", "volume") or hook_name.startswith(
+            ("stop_", "pause_", "resume_", "volume_")
+        ):
+            for tok, t_start, t_end in arg_tokens:
+                if "=" not in tok:
+                    self.spans.append(
+                        TokenSpan(
+                            kind="hook_arg",
+                            start_line=line_idx,
+                            start_col=t_start,
+                            end_line=line_idx,
+                            end_col=t_end,
+                            value=tok,
                         )
                     )
         elif hook_name == "input" and arg_tokens:
@@ -1341,7 +1426,7 @@ class ScriptDocument:
 
         if content_stripped.startswith("@include"):
             indent = len(content_line) - len(content_line.lstrip(" \t"))
-            m = _INCLUDE_PATTERN.match(content_stripped)
+            m = INCLUDE_PATTERN.match(content_stripped)
             if not m:
                 self.syntax_errors.append(
                     SyntaxIssue(
@@ -1384,7 +1469,6 @@ class ScriptDocument:
                     span=inc_span,
                 )
             )
-            sanitized_lines[line_idx] = f"{' ' * indent}# @include"
             return
 
         # Unknown directive

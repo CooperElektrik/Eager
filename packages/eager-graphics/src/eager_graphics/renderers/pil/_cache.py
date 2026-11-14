@@ -65,10 +65,6 @@ class _CachedSprite:
     is bit-identical to ``alpha_composite`` on an opaque canvas but ~40%
     faster, clips off-screen regions natively, and makes opacity variants
     cheap (only the 1-byte-per-pixel mask differs between fade frames).
-
-    Iterating yields ``(image, is_opaque, off_x, off_y)`` for compatibility
-    with the previous tuple-based cache layout, where ``image`` is the
-    straight-alpha RGBA sprite (materialised lazily).
     """
 
     __slots__ = ("_image", "color", "mask", "nbytes", "off_x", "off_y", "patches")

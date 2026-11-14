@@ -210,7 +210,6 @@ class GameMenuScreen(Screen):
             self.viewport_width = ov.width
             self.viewport_height = ov.height
         self.rebuild_layout()
-        self.rebuild_layout()
 
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
         """Render darkened modal scrim, menu header, and navigation buttons.
@@ -435,7 +434,6 @@ class SaveLoadScreen(Screen):
         if ov is not None and hasattr(ov, "width") and hasattr(ov, "height"):
             self.viewport_width = ov.width
             self.viewport_height = ov.height
-        self.rebuild_layout()
         self.rebuild_layout()
 
     def draw(self, backend: UIDrawBackend, width: int, height: int) -> None:
@@ -933,10 +931,10 @@ class HistoryScreen(Screen):
 
         curr_y = vh * (110.0 / 720.0)
         step_y = vh * (65.0 / 720.0)
-        spk_x = vw * (52.0 / 1280.0)
-        spk_w = vw * (36.0 / 1280.0)
+        spk_x = vw * (60.0 / 1280.0)
+        spk_w = vw * (32.0 / 1280.0)
         spk_h = vh * (28.0 / 720.0)
-        spk_offset_y = vh * (6.0 / 720.0)
+        spk_offset_y = vh * (4.0 / 720.0)
 
         for entry in displayed_slice:
             voice = getattr(entry, "voice", None)
@@ -958,7 +956,7 @@ class HistoryScreen(Screen):
             return
         backlog = getattr(self.session, "backlog", None)
         max_entries = len(backlog.entries) if backlog else 0
-        if self.scroll_offset + 5 < max_entries:
+        if self.scroll_offset + 7 < max_entries:
             self.scroll_offset += 1
             self._rebuild_buttons()
 
@@ -1034,8 +1032,17 @@ class HistoryScreen(Screen):
             entry_x = vw * (100.0 / 1280.0)
             max_text_w = vw * (960.0 / 1280.0)
             line_h = float(entry_font_size) * 1.35
+            spk_x = vw * (60.0 / 1280.0)
+            spk_w = vw * (32.0 / 1280.0)
+            spk_h = vh * (28.0 / 720.0)
+            spk_offset_y = vh * (4.0 / 720.0)
+            voice_buttons = [b for b in self.buttons if getattr(b, "voice", None)]
+            voice_btn_idx = 0
 
             for entry in displayed_slice:
+                if getattr(entry, "voice", None) and voice_btn_idx < len(voice_buttons):
+                    voice_buttons[voice_btn_idx].rect = Rect(spk_x, curr_y - spk_offset_y, spk_w, spk_h)
+                    voice_btn_idx += 1
                 plain_text = parse_text_tags(entry.text).plain_text
                 if entry.speaker:
                     entry_emotion = getattr(entry, "emotion", None)

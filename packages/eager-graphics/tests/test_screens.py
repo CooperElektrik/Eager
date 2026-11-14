@@ -1028,3 +1028,48 @@ height = 720
         assert pyglet_r.width == 800
         assert pyglet_r.height == 600
 
+
+def test_history_screen_scroll_bounds_and_voice_button_alignment() -> None:
+    from eager_core.backlog import Backlog
+
+    from eager_graphics.screens.builtin import HistoryScreen
+
+    backlog = Backlog()
+    for i in range(10):
+        backlog.add(
+            speaker="Hero",
+            text="This is a very long line of dialogue that will definitely wrap across multiple lines in the history view! " * 3,
+            voice=f"voice_{i}.ogg",
+        )
+
+    class DummySession:
+        def __init__(self, bl: Backlog) -> None:
+            self.backlog = bl
+            self.overlay = None
+
+    class DummyBackend:
+        def draw_rect(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def draw_text(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def measure_text(self, text: str, font_size: int = 14, **kwargs: Any) -> tuple[float, float]:
+            return (len(text) * 10.0, float(font_size))
+
+    screen = HistoryScreen(viewport_width=1280, viewport_height=720)
+    screen.on_enter(DummySession(backlog))
+
+    # Max scroll_offset with 10 entries and visible_count=7 is 3 (7 + 3 = 10)
+    for _ in range(10):
+        screen.scroll_up()
+    assert screen.scroll_offset == 3
+
+    # Draw should align voice buttons with wrapped entry heights (non-uniform y steps)
+    screen.draw(DummyBackend(), 1280, 720)
+    voice_buttons = [b for b in screen.buttons if getattr(b, "voice", None)]
+    assert len(voice_buttons) == 7
+    ys = [b.rect.y for b in voice_buttons]
+    # Because entries wrap to 3 lines, step > 65.0
+    assert ys[1] - ys[0] > 65.0
+

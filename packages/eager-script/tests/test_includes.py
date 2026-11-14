@@ -58,3 +58,23 @@ def test_resolve_includes_missing_file_error(tmp_path: Path):
 
     with pytest.raises(IncludeError, match="Included file not found"):
         parse_file(main_file)
+
+
+def test_resolve_includes_path_traversal_error(tmp_path: Path):
+    sub_dir = tmp_path / "project"
+    sub_dir.mkdir()
+    outside = tmp_path / "secret.es"
+    outside.write_text("## Secret --- secret\n<<\n", encoding="utf-8")
+    main_file = sub_dir / "main.es"
+    main_file.write_text('@include "../secret.es"\n## Start --- start\n<<\n', encoding="utf-8")
+
+    with pytest.raises(IncludeError, match="Path traversal detected"):
+        parse_file(main_file)
+
+
+def test_to_graph_ignores_parsed_include():
+    from eager_script import ParsedInclude, parse_graph
+
+    graph = parse_graph('@include "other.es"\n## Start --- start\nHello\n<<\n')
+    assert not any(isinstance(item, ParsedInclude) for item in graph.preamble)
+    assert not any(isinstance(item, ParsedInclude) for item in graph.nodes["start"].body)

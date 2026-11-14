@@ -248,9 +248,20 @@ def extract_asset_references(
                     )
 
             elif hook_cmd in ("play", "queue"):
-                if len(parsed.positional) >= 2:
+                track_kw = parsed.get_str("track")
+                chan_kw = parsed.get_str("channel")
+                chan: str | None = None
+                track: str | None = None
+                if parsed.positional:
                     chan = parsed.positional[0].strip().lower()
-                    track = parsed.positional[1].strip()
+                    if len(parsed.positional) >= 2:
+                        track = parsed.positional[1].strip()
+                    elif track_kw:
+                        track = track_kw.strip()
+                elif chan_kw and track_kw:
+                    chan = chan_kw.strip().lower()
+                    track = track_kw.strip()
+                if chan and track:
                     kind = "voice" if chan == "voice" else "audio"
                     references.append(
                         AssetReference(
@@ -262,34 +273,34 @@ def extract_asset_references(
                         )
                     )
 
-            elif (
-                hook_cmd
-                in (
-                    "play_bgm",
-                    "play_sfx",
-                    "play_music",
-                    "play_sound",
-                    "play_voice",
-                    "queue_bgm",
-                    "queue_sfx",
-                    "queue_music",
-                    "queue_sound",
-                    "queue_voice",
-                )
-                and parsed.positional
+            elif hook_cmd in (
+                "play_bgm",
+                "play_sfx",
+                "play_music",
+                "play_sound",
+                "play_voice",
+                "play_ambient",
+                "queue_bgm",
+                "queue_sfx",
+                "queue_music",
+                "queue_sound",
+                "queue_voice",
+                "queue_ambient",
             ):
-                track = parsed.positional[0].strip()
-                chan = hook_cmd.replace("play_", "").replace("queue_", "")
-                kind = "voice" if chan == "voice" else "audio"
-                references.append(
-                    AssetReference(
-                        kind=kind,
-                        identifier=track,
-                        line_number=item.line_number,
-                        scene_id=scene_id,
-                        channel=chan,
+                track_val = parsed.get_str("track") or (parsed.positional[0] if parsed.positional else None)
+                if track_val:
+                    track = track_val.strip()
+                    chan = hook_cmd.replace("play_", "").replace("queue_", "")
+                    kind = "voice" if chan == "voice" else "audio"
+                    references.append(
+                        AssetReference(
+                            kind=kind,
+                            identifier=track,
+                            line_number=item.line_number,
+                            scene_id=scene_id,
+                            channel=chan,
+                        )
                     )
-                )
 
         elif isinstance(item, ParsedDialogue):
             # Check speaker emotion sprite

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import eager_script
 import pytest
 from eager_core.events import (
@@ -780,3 +782,57 @@ def test_vm_has_no_legacy_history_stack() -> None:
     assert not hasattr(vm, "_history")
     assert not hasattr(vm, "history")
     assert not hasattr(vm, "rollback")
+
+
+def test_vm_executes_preamble_hooks_once_at_start() -> None:
+    from eager_core.events import HookEvent, SceneEnterEvent
+
+    script = """~ scene_bg intro bg_park
+~ speaker_highlight on
+
+## Intro --- intro
+Hello world.
+<<
+"""
+    graph = eager_script.parse_graph(script)
+    vm = StoryVM(graph)
+
+    ev1 = vm.step()
+    assert isinstance(ev1, HookEvent)
+    assert ev1.hook_name == "scene_bg"
+    assert ev1.args == "intro bg_park"
+
+    ev2 = vm.step()
+    assert isinstance(ev2, HookEvent)
+    assert ev2.hook_name == "speaker_highlight"
+    assert ev2.args == "on"
+
+    ev3 = vm.step()
+    assert isinstance(ev3, SceneEnterEvent)
+    assert ev3.scene_id == "intro"
+
+    # Save + restore should not replay preamble hooks
+    snap = vm.save()
+    vm2 = StoryVM(graph, initial_state=snap)
+    ev4 = vm2.step()
+    assert not isinstance(ev4, HookEvent)
+
+
+def test_session_hot_reload_dispatches_updated_preamble_hooks(tmp_path: Path) -> None:
+    script_file = tmp_path / "story.es"
+    script_file.write_text(
+        "~ scene_bg intro bg_old\n## Intro --- intro\nLine 1\n<<\n",
+        encoding="utf-8",
+    )
+    session = GameSession(script_file)
+    session.advance()
+
+    seen_hooks: list[tuple[str, str]] = []
+    session.dispatcher.on_hook("scene_bg")(lambda args: seen_hooks.append(("scene_bg", args)))
+
+    script_file.write_text(
+        "~ scene_bg intro bg_new\n## Intro --- intro\nLine 1 updated\n<<\n",
+        encoding="utf-8",
+    )
+    assert session.hot_reload() is True
+    assert ("scene_bg", "intro bg_new") in seen_hooks

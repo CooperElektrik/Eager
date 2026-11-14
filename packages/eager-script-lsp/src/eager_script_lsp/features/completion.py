@@ -57,31 +57,42 @@ BUILTIN_HOOKS = [
     ("play_sound", "Play sound effect track on sound channel"),
     ("play_sfx", "Play sound effect track on sound channel"),
     ("play_voice", "Play voice clip on voice channel"),
+    ("play_ambient", "Play ambient audio loop on ambient channel"),
     ("queue", "Queue audio track on specified channel"),
     ("queue_bgm", "Queue background music track on music channel"),
     ("queue_music", "Queue music track on music channel"),
     ("queue_sound", "Queue sound effect track on sound channel"),
     ("queue_sfx", "Queue sound effect track on sound channel"),
     ("queue_voice", "Queue voice clip on voice channel"),
+    ("queue_ambient", "Queue ambient audio track on ambient channel"),
     ("pause", "Pause audio playback on specified channel or all channels"),
     ("pause_bgm", "Pause background music"),
     ("pause_music", "Pause music playback"),
     ("pause_sound", "Pause sound effects"),
     ("pause_sfx", "Pause sound effects"),
     ("pause_voice", "Pause voice playback"),
+    ("pause_ambient", "Pause ambient audio playback"),
     ("resume", "Resume audio playback on specified channel or all channels"),
     ("resume_bgm", "Resume background music"),
     ("resume_music", "Resume music playback"),
     ("resume_sound", "Resume sound effects"),
     ("resume_sfx", "Resume sound effects"),
     ("resume_voice", "Resume voice playback"),
+    ("resume_ambient", "Resume ambient audio playback"),
     ("stop", "Stop audio playback on channel"),
     ("stop_bgm", "Stop music playback"),
     ("stop_music", "Stop music playback"),
     ("stop_sound", "Stop sound effects"),
     ("stop_sfx", "Stop sound effects"),
     ("stop_voice", "Stop voice playback"),
+    ("stop_ambient", "Stop ambient audio playback"),
     ("volume", "Adjust channel volume"),
+    ("volume_bgm", "Set music channel volume"),
+    ("volume_music", "Set music channel volume"),
+    ("volume_sound", "Set sound channel volume"),
+    ("volume_sfx", "Set sound channel volume"),
+    ("volume_voice", "Set voice channel volume"),
+    ("volume_ambient", "Set ambient channel volume"),
     ("nvl", "Switch to NVL full-screen text mode"),
     ("nvl_clear", "Clear NVL text overlay"),
     ("input", "Prompt user for text input into variable"),
@@ -125,6 +136,7 @@ BUILTIN_EXPR_FUNCS = [
 DIRECTIVES = [
     ("@character", '@character ${1:id} "${2:Name}" color=${3:#ffffff}', "Declare character with styling attributes"),
     ("@default", "@default ${1:var_name} = ${2:0}", "Declare global variable with initial default value"),
+    ("@include", '@include "${1:scene.es}"', "Include another screenplay file"),
     ("@if", "@if ${1:condition}", "Conditional branch start"),
     ("@elif", "@elif ${1:condition}", "Alternative conditional branch"),
     ("@else", "@else", "Fallback branch"),
@@ -360,12 +372,15 @@ def compute_completions(
                 )
             return CompletionList(is_incomplete=False, items=items)
 
-        # '~ play <cursor>'
-        if hook_cmd in ("play", "stop", "volume") or hook_cmd.startswith(("play_", "stop_", "volume_")):
+        # '~ play <cursor>' / '~ queue <cursor>' / audio control hooks
+        if hook_cmd in ("play", "queue", "stop", "pause", "resume", "volume") or hook_cmd.startswith(
+            ("play_", "queue_", "stop_", "pause_", "resume_", "volume_")
+        ):
             for chan in ("music", "sound", "voice", "ambient"):
                 items.append(CompletionItem(label=chan, kind=CompletionItemKind.Enum, detail="Audio Channel"))
-            for track in sorted(workspace.asset_index.audio):
-                items.append(CompletionItem(label=track, kind=CompletionItemKind.File, detail="Audio Track"))
+            if hook_cmd in ("play", "queue") or hook_cmd.startswith(("play_", "queue_")):
+                for track in sorted(workspace.asset_index.audio):
+                    items.append(CompletionItem(label=track, kind=CompletionItemKind.File, detail="Audio Track"))
             for kw in ("fade=", "volume=", "loop="):
                 items.append(CompletionItem(label=kw, kind=CompletionItemKind.Property))
             return CompletionList(is_incomplete=False, items=items)

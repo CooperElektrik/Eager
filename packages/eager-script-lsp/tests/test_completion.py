@@ -341,4 +341,13 @@ def test_completion_choice_inline_target():
         assert "s1" in labels
         assert "s2" in labels
 
+    def test_completion_includes_ambient_hooks_and_include_directive(self) -> None:
+        from eager_script_lsp.features.completion import BUILTIN_HOOKS, DIRECTIVES
+
+        hook_names = {h[0] for h in BUILTIN_HOOKS}
+        for expected in ("play_ambient", "queue_ambient", "pause_ambient", "resume_ambient", "stop_ambient", "volume_ambient"):
+            assert expected in hook_names
+        directive_names = {d[0] for d in DIRECTIVES}
+        assert "@include" in directive_names
+
 

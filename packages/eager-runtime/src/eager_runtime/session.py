@@ -410,9 +410,11 @@ class GameSession:
         self.audio.set_channel_volume("voice", self.preferences.voice_volume)
         self.audio.set_channel_volume("ambient", getattr(self.preferences, "ambient_volume", 0.8))
         self.vm.set_locale(self.preferences.language)
-        player = getattr(self, "_player", None)
-        if player is not None and hasattr(player, "set_resolution_scale"):
-            player.set_resolution_scale(getattr(self.preferences, "resolution_scale", 1.0))
+        scale = getattr(self.preferences, "resolution_scale", 1.0)
+        for listener in list(getattr(self, "_lifecycle_listeners", ())):
+            set_scale = getattr(listener, "set_resolution_scale", None)
+            if callable(set_scale):
+                set_scale(scale)
 
     def save_preferences(self) -> None:
         """Persist current preferences to preferences.json in save directory."""
@@ -1498,9 +1500,9 @@ class GameSession:
             self._ui_dirty = True
             return False
 
-        # 3. Hot-swap the VM and sync characters and defaults
+        # 3. Hot-swap the VM and sync characters, defaults, and preamble hooks
         self.graph = new_graph
-        self.vm.graph = new_graph
+        reloaded = self.vm.hot_reload(new_graph)
 
         if self.translation_manager is not None:
             proj_dir = target_path if target_path.is_dir() else target_path.parent
@@ -1534,22 +1536,36 @@ class GameSession:
 
         self.vm.apply_graph_defaults()
 
+        # Re-dispatch preamble hooks (e.g., ~ scene_bg, ~ speaker_highlight)
+        from eager_core.events import HookEvent
+        from eager_script import ParsedHook
+
+        for p_item in new_graph.preamble:
+            if isinstance(p_item, ParsedHook):
+                parts = p_item.hook_name.split(None, 1)
+                hook_name = parts[0] if parts else ""
+                args = parts[1] if len(parts) > 1 else ""
+                self.dispatcher.dispatch(
+                    HookEvent(
+                        hook_name=hook_name,
+                        args=args,
+                        line_number=p_item.line_number,
+                    )
+                )
+
         # 4. Reconcile State
-        if cur_scene_id is not None and cur_scene_id in new_graph.nodes:
+        if reloaded and cur_scene_id is not None and cur_scene_id in new_graph.nodes:
             new_scene = new_graph.nodes[cur_scene_id]
             if new_scene.body:
-                self.vm.beat_index = max(0, min(b_idx, len(new_scene.body) - 1))
                 active_idx = min(max(0, b_idx - 1) if b_idx > 0 else 0, len(new_scene.body) - 1)
             else:
-                self.vm.beat_index = 0
                 active_idx = 0
             self._clear_error_overlay()
             self._refresh_presentation_after_reload(new_scene, active_idx)
         else:
             # Scene was deleted
-            if new_graph.entry and new_graph.entry in new_graph.nodes:
+            if reloaded and new_graph.entry and new_graph.entry in new_graph.nodes:
                 self._clear_error_overlay()
-                self.vm.jump(new_graph.entry)
                 self.advance()
             else:
                 self._set_error_overlay(f"Scene not found: '{cur_scene_id}'")

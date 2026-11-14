@@ -292,4 +292,4 @@ def test_pyglet_renderer_particles_and_lighting() -> None:
     # Headless render (no window)
     renderer.render_compositor(comp, 1280, 720)
     assert renderer.last_frame_particles == 40
-    assert renderer._active_lightmap is not None
+    assert renderer._lightmap_sprite is not None

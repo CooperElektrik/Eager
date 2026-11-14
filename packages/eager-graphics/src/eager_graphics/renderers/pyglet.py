@@ -482,7 +482,8 @@ class PygletRenderer(RenderBackend):
         self._pooled_particle_sprites: list[pyglet.sprite.Sprite] = []
         self._particle_cursor: int = 0
         self._lightmap_sprite: pyglet.sprite.Sprite | None = None
-        self._active_lightmap: LightmapState | None = None
+        self._screen_lightmap_sprite: pyglet.sprite.Sprite | None = None
+        self._lightmap_blend_mode: str = "multiply"
         self.last_frame_particles: int = 0
 
         # Initial viewport & letterbox setup
@@ -643,6 +644,8 @@ class PygletRenderer(RenderBackend):
         self._particle_cursor = 0
         if self._lightmap_sprite is not None:
             self._lightmap_sprite.visible = False
+        if self._screen_lightmap_sprite is not None:
+            self._screen_lightmap_sprite.visible = False
         self._rect_cursor = 0
         self._box_cursor = 0
         self._grad_cursor = 0
@@ -934,11 +937,12 @@ class PygletRenderer(RenderBackend):
 
     def render_lightmap(self, lightmap: LightmapState) -> None:
         """Composite a screen-space low-res lightmap onto the display buffer."""
-        self._active_lightmap = lightmap
         intensity = getattr(lightmap, "ambient_intensity", 1.0)
         if not lightmap.enabled or (lightmap.ambient == WHITE and intensity == 1.0 and not lightmap.lights):
             if self._lightmap_sprite is not None and self._lightmap_sprite.visible:
                 self._lightmap_sprite.visible = False
+            if self._screen_lightmap_sprite is not None and self._screen_lightmap_sprite.visible:
+                self._screen_lightmap_sprite.visible = False
             return
 
         win_w = self.window.width if self.window is not None else self.width
@@ -955,6 +959,8 @@ class PygletRenderer(RenderBackend):
             max(0, min(255, round(amb.b * intensity * 255))),
         )
         lightmap_img = Image.new("RGB", (low_w, low_h), amb_rgb)
+        screen_img: Image.Image | None = None
+        screen_draw: ImageDraw.ImageDraw | None = None
 
         transform = self._current_transform
         sc_x = (transform.scale_x / 8.0) if transform else (1.0 / 8.0)
@@ -968,8 +974,20 @@ class PygletRenderer(RenderBackend):
                 lx = off_x + light.x * sc_x
                 ly = off_y + light.y * sc_y
                 lr = max(1.0, light.radius * sc_x)
+                x0 = round(lx - lr)
+                y0 = round(ly - lr)
+                x1 = round(lx + lr)
+                y1 = round(ly + lr)
+                if x1 <= 0 or y1 <= 0 or x0 >= low_w or y0 >= low_h:
+                    continue
+
                 col = light.color
                 c_rgb = (round(col.r * 255), round(col.g * 255), round(col.b * 255))
+                is_screen = getattr(light, "mode", "multiply") == "screen"
+                if is_screen and screen_img is None:
+                    screen_img = Image.new("RGB", (low_w, low_h), (0, 0, 0))
+                    screen_draw = ImageDraw.Draw(screen_img)
+
                 steps = max(2, min(8, round(lr)))
                 for s in range(steps, 0, -1):
                     f = s / steps
@@ -979,15 +997,26 @@ class PygletRenderer(RenderBackend):
                     bx1 = round(lx + r_step)
                     by1 = round(ly + r_step)
                     alpha_factor = (1.0 - f) * light.intensity
-                    r_val = round(amb_rgb[0] + (c_rgb[0] - amb_rgb[0]) * alpha_factor)
-                    g_val = round(amb_rgb[1] + (c_rgb[1] - amb_rgb[1]) * alpha_factor)
-                    b_val = round(amb_rgb[2] + (c_rgb[2] - amb_rgb[2]) * alpha_factor)
-                    fill_col = (
-                        max(0, min(255, r_val)),
-                        max(0, min(255, g_val)),
-                        max(0, min(255, b_val)),
-                    )
-                    draw.ellipse([bx0, by0, bx1, by1], fill=fill_col)
+                    if is_screen and screen_draw is not None:
+                        r_val = round(c_rgb[0] * alpha_factor)
+                        g_val = round(c_rgb[1] * alpha_factor)
+                        b_val = round(c_rgb[2] * alpha_factor)
+                        fill_col = (
+                            max(0, min(255, r_val)),
+                            max(0, min(255, g_val)),
+                            max(0, min(255, b_val)),
+                        )
+                        screen_draw.ellipse([bx0, by0, bx1, by1], fill=fill_col)
+                    else:
+                        r_val = round(amb_rgb[0] + (c_rgb[0] - amb_rgb[0]) * alpha_factor)
+                        g_val = round(amb_rgb[1] + (c_rgb[1] - amb_rgb[1]) * alpha_factor)
+                        b_val = round(amb_rgb[2] + (c_rgb[2] - amb_rgb[2]) * alpha_factor)
+                        fill_col = (
+                            max(0, min(255, r_val)),
+                            max(0, min(255, g_val)),
+                            max(0, min(255, b_val)),
+                        )
+                        draw.ellipse([bx0, by0, bx1, by1], fill=fill_col)
 
         rgba_lightmap = lightmap_img.convert("RGBA")
         tex = pyglet.image.ImageData(
@@ -995,12 +1024,25 @@ class PygletRenderer(RenderBackend):
         ).get_texture()
         PygletAssetResolver._clamp_texture(tex)
 
+        blend_mode = "screen" if getattr(lightmap, "blend_mode", "multiply") == "screen" else "multiply"
+        if blend_mode == "screen":
+            blend_src = pyglet.gl.GL_ONE
+            blend_dest = pyglet.gl.GL_ONE_MINUS_SRC_COLOR
+        else:
+            blend_src = pyglet.gl.GL_DST_COLOR
+            blend_dest = pyglet.gl.GL_ZERO
+
         blend_group = self._get_stage_group(999999)
-        if self._lightmap_sprite is None:
+        if self._lightmap_sprite is None or self._lightmap_blend_mode != blend_mode:
+            if self._lightmap_sprite is not None:
+                self._lightmap_sprite.delete()
+            self._lightmap_blend_mode = blend_mode
             self._lightmap_sprite = pyglet.sprite.Sprite(
                 tex,
                 x=0,
                 y=0,
+                blend_src=blend_src,
+                blend_dest=blend_dest,
                 batch=self._stage_batch,
                 group=blend_group,
             )
@@ -1012,6 +1054,33 @@ class PygletRenderer(RenderBackend):
 
         self._lightmap_sprite.scale_x = win_w / max(1, low_w)
         self._lightmap_sprite.scale_y = win_h / max(1, low_h)
+
+        if screen_img is not None:
+            rgba_screen = screen_img.convert("RGBA")
+            screen_tex = pyglet.image.ImageData(
+                low_w, low_h, "RGBA", rgba_screen.tobytes(), pitch=-low_w * 4
+            ).get_texture()
+            PygletAssetResolver._clamp_texture(screen_tex)
+            screen_group = self._get_stage_group(1_000_000)
+            if self._screen_lightmap_sprite is None:
+                self._screen_lightmap_sprite = pyglet.sprite.Sprite(
+                    screen_tex,
+                    x=0,
+                    y=0,
+                    blend_src=pyglet.gl.GL_ONE,
+                    blend_dest=pyglet.gl.GL_ONE_MINUS_SRC_COLOR,
+                    batch=self._stage_batch,
+                    group=screen_group,
+                )
+            else:
+                self._screen_lightmap_sprite.image = screen_tex
+                self._screen_lightmap_sprite.position = (0, 0, 0)
+                self._screen_lightmap_sprite.group = screen_group
+                self._screen_lightmap_sprite.visible = True
+            self._screen_lightmap_sprite.scale_x = win_w / max(1, low_w)
+            self._screen_lightmap_sprite.scale_y = win_h / max(1, low_h)
+        elif self._screen_lightmap_sprite is not None and self._screen_lightmap_sprite.visible:
+            self._screen_lightmap_sprite.visible = False
 
     # ------------------------------------------------------------------ #
     # Introspection
@@ -1333,6 +1402,8 @@ class PygletRenderer(RenderBackend):
         # Guard property mutations behind equality checks to avoid layout recomputes
         if label.text != text:
             label.text = text
+        if label.font_name != target_font:
+            label.font_name = target_font
         if label.font_size != font_size:
             label.font_size = font_size
         if label.weight != weight_str:
@@ -1545,11 +1616,34 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):
         # Step first beat if not starting in active menu
         self.step_initial_beat()
 
+        # Apply saved resolution scale on startup if present
+        prefs = getattr(session, "preferences", None)
+        if prefs is not None:
+            scale = getattr(prefs, "resolution_scale", 1.0)
+            if scale != 1.0:
+                self.set_resolution_scale(scale)
+
         # Schedule animation tick at 60 FPS or uncapped
         if self.uncapped:
             pyglet.clock.schedule(self.tick)
         else:
             pyglet.clock.schedule_interval(self.tick, 1.0 / 60.0)
+
+    def set_resolution_scale(self, scale: float) -> None:
+        """Update window/viewport resolution scale relative to base dimensions."""
+        clamped = max(0.5, min(2.0, float(scale)))
+        self._resolution_scale = clamped
+        target_w = max(320, round(self._base_width * clamped))
+        target_h = max(180, round(self._base_height * clamped))
+        if not self.fullscreen and not getattr(self, "_resizing_scale", False):
+            self._resizing_scale = True
+            try:
+                self.set_size(target_w, target_h)
+            finally:
+                self._resizing_scale = False
+        else:
+            BasePlayer.on_resize(self, target_w, target_h)
+            self.renderer.on_resize(target_w, target_h)
 
     def toggle_fullscreen(self) -> None:
         """Toggle fullscreen mode."""

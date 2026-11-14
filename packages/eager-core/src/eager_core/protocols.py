@@ -133,11 +133,13 @@ class CharacterRegistryProtocol(Protocol):
         """Register character attributes, colors, and expression aliases."""
         ...
 
-    def find_character(self, speaker: str | None) -> CharacterConfig | None:
+    def find_character(self, speaker: str | None, *, character_id: str | None = None) -> CharacterConfig | None:
         """Find CharacterConfig matching character ID or display name."""
         ...
 
-    def resolve_side_image(self, speaker: str | None, expression: str | None = None) -> str | None:
+    def resolve_side_image(
+        self, speaker: str | None, expression: str | None = None, *, character_id: str | None = None
+    ) -> str | None:
         """Resolve the active side image asset ID for a character and expression."""
         ...
 
@@ -405,7 +407,7 @@ class GameSessionProtocol(Protocol):
         """Draw current stage and overlay to renderer."""
         ...
 
-    def handle_input(self, action: Any, *args: Any, **kwargs: Any) -> bool:
+    def handle_input(self, action: Any, **payload: Any) -> Any:
         """Process input action."""
         ...
 

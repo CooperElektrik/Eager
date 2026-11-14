@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,13 +10,13 @@ from typing import Any
 
 from eager_core.types import Color
 from eager_script import ParseError, SceneGraph, parse_graph, to_graph
+from eager_script.parser import INCLUDE_PATTERN
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "ProjectConfig",
     "load_project_graph",
-    "mask_script_includes",
     "merge_graphs",
     "resolve_project_scripts",
 ]
@@ -237,9 +236,9 @@ def resolve_project_scripts(target_path: Path) -> list[Path]:
                 text = current.read_text(encoding="utf-8")
                 for line in text.splitlines():
                     # Check for @include "filename.es" or 'filename.es'
-                    m = re.match(r'^\s*@include\s+["\']([^"\']+)["\']', line)
+                    m = INCLUDE_PATTERN.match(line.strip())
                     if m:
-                        inc_name = m.group(1)
+                        inc_name = m.group(1) if m.group(1) is not None else m.group(2)
                         inc_path = (current.parent / inc_name).resolve()
                         if not inc_path.is_relative_to(project_root):
                             raise ValueError(
@@ -250,11 +249,6 @@ def resolve_project_scripts(target_path: Path) -> list[Path]:
                 pass
 
     return es_files
-
-
-def mask_script_includes(text: str) -> str:
-    """Mask out @include directives as comments while preserving exact line numbering."""
-    return re.sub(r"^([ \t]*)@include\b", r"\1# @include", text, flags=re.MULTILINE)
 
 
 def load_project_graph(
@@ -271,8 +265,7 @@ def load_project_graph(
     for es_file in es_files:
         try:
             text = es_file.read_text(encoding="utf-8")
-            cleaned = mask_script_includes(text)
-            graphs.append(parse_graph(cleaned))
+            graphs.append(parse_graph(text))
         except (ValueError, TypeError, OSError, ParseError) as exc:
             if raise_parse_error and isinstance(exc, (ParseError, ValueError)):
                 raise

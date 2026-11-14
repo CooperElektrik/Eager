@@ -70,17 +70,13 @@ def compute_definition(
     # 4. Asset reference -> media file on disk
     if token.kind in ("hook_arg", "emotion", "voice_path"):
         asset_kind = token.metadata.get("asset_kind")
-        disk_path = None
-        if asset_kind == "background":
-            disk_path = workspace.asset_index.file_paths.get(f"bg:{token.value}")
-        elif asset_kind == "voice":
-            disk_path = workspace.asset_index.file_paths.get(f"voice:{token.value}")
-        elif asset_kind == "character" or token.kind == "emotion":
-            char_id = token.metadata.get("character", "")
-            expr = token.value.lower()
-            disk_path = workspace.asset_index.file_paths.get(f"char:{char_id}/{expr}")
-        elif asset_kind == "audio":
-            disk_path = workspace.asset_index.file_paths.get(f"audio:{token.value}")
+        if asset_kind is None and token.kind == "emotion":
+            asset_kind = "character"
+        disk_path = workspace.asset_index.resolve_asset_path(
+            asset_kind,
+            token.value,
+            character=token.metadata.get("character", ""),
+        )
 
         if disk_path is not None and disk_path.is_file():
             zero_range = Range(start=Position(line=0, character=0), end=Position(line=0, character=0))

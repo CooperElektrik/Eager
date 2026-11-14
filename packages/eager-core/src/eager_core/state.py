@@ -62,6 +62,8 @@ class StorySnapshot:
     just_entered_scene: bool = False
     is_ended: bool = False
     rng_state: list[Any] | None = None
+    preamble_index: int = 0
+    preamble_done: bool = False
     version: int = 1
 
     def to_dict(self) -> dict[str, Any]:
@@ -79,6 +81,8 @@ class StorySnapshot:
             "just_entered_scene": self.just_entered_scene,
             "is_ended": self.is_ended,
             "rng_state": copy.deepcopy(self.rng_state) if self.rng_state is not None else None,
+            "preamble_index": self.preamble_index,
+            "preamble_done": self.preamble_done,
         }
 
     def to_json(self, indent: int | None = None) -> str:
@@ -110,6 +114,8 @@ class StorySnapshot:
             just_entered_scene=data.get("just_entered_scene", False),
             is_ended=data.get("is_ended", False),
             rng_state=copy.deepcopy(data.get("rng_state")),
+            preamble_index=data.get("preamble_index", 0),
+            preamble_done=data.get("preamble_done", True),
         )
 
     @classmethod

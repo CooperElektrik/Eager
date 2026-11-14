@@ -41,10 +41,19 @@ HOOK_DOCS: dict[str, str] = {
     "resume": "**Engine Hook: `~ resume`**\n\nResumes paused playback on a channel or all channels.\n\n*Usage:* `~ resume [channel]`",
     "queue_bgm": "**Engine Hook: `~ queue_bgm`**\n\nQueues a background music track on the music channel.\n\n*Usage:* `~ queue_bgm <track>`",
     "queue_music": "**Engine Hook: `~ queue_music`**\n\nQueues a music track on the music channel.\n\n*Usage:* `~ queue_music <track>`",
+    "queue_sound": "**Engine Hook: `~ queue_sound`**\n\nQueues a sound effect on the sound channel.\n\n*Usage:* `~ queue_sound <track>`",
+    "queue_sfx": "**Engine Hook: `~ queue_sfx`**\n\nQueues a sound effect on the sound channel.\n\n*Usage:* `~ queue_sfx <track>`",
+    "queue_voice": "**Engine Hook: `~ queue_voice`**\n\nQueues a voice clip on the voice channel.\n\n*Usage:* `~ queue_voice <track>`",
     "pause_bgm": "**Engine Hook: `~ pause_bgm`**\n\nPauses background music playback.\n\n*Usage:* `~ pause_bgm`",
     "pause_music": "**Engine Hook: `~ pause_music`**\n\nPauses music channel playback.\n\n*Usage:* `~ pause_music`",
+    "pause_sound": "**Engine Hook: `~ pause_sound`**\n\nPauses sound effect playback.\n\n*Usage:* `~ pause_sound`",
+    "pause_sfx": "**Engine Hook: `~ pause_sfx`**\n\nPauses sound effect playback.\n\n*Usage:* `~ pause_sfx`",
+    "pause_voice": "**Engine Hook: `~ pause_voice`**\n\nPauses voice playback.\n\n*Usage:* `~ pause_voice`",
     "resume_bgm": "**Engine Hook: `~ resume_bgm`**\n\nResumes background music playback.\n\n*Usage:* `~ resume_bgm`",
     "resume_music": "**Engine Hook: `~ resume_music`**\n\nResumes music channel playback.\n\n*Usage:* `~ resume_music`",
+    "resume_sound": "**Engine Hook: `~ resume_sound`**\n\nResumes sound effect playback.\n\n*Usage:* `~ resume_sound`",
+    "resume_sfx": "**Engine Hook: `~ resume_sfx`**\n\nResumes sound effect playback.\n\n*Usage:* `~ resume_sfx`",
+    "resume_voice": "**Engine Hook: `~ resume_voice`**\n\nResumes voice playback.\n\n*Usage:* `~ resume_voice`",
     "stop": "**Engine Hook: `~ stop`**\n\nStops audio on a channel.\n\n*Usage:* `~ stop [channel] [fade=<seconds>]`",
     "fade_in": "**Engine Hook: `~ fade_in`**\n\nFades in the stage from black or a specified color.\n\n*Usage:* `~ fade_in [duration=<seconds>] [color=#hex]`",
     "fade_out": "**Engine Hook: `~ fade_out`**\n\nFades out the stage to a color.\n\n*Usage:* `~ fade_out [duration=<seconds>] [color=#hex]`",
@@ -193,20 +202,16 @@ def compute_hover(
             range=token.range,
         )
 
-    # 6. Asset hover (background, character emotion, voice, audio)
+    # 6. Asset hover (background, image, character emotion, voice, audio)
     if token.kind in ("hook_arg", "emotion", "voice_path"):
         asset_kind = token.metadata.get("asset_kind")
-        disk_path = None
-        if asset_kind == "background":
-            disk_path = workspace.asset_index.file_paths.get(f"bg:{token.value}")
-        elif asset_kind == "voice":
-            disk_path = workspace.asset_index.file_paths.get(f"voice:{token.value}")
-        elif asset_kind == "character" or token.kind == "emotion":
-            char_id = token.metadata.get("character", "")
-            expr = token.value.lower()
-            disk_path = workspace.asset_index.file_paths.get(f"char:{char_id}/{expr}")
-        elif asset_kind == "audio":
-            disk_path = workspace.asset_index.file_paths.get(f"audio:{token.value}")
+        if asset_kind is None and token.kind == "emotion":
+            asset_kind = "character"
+        disk_path = workspace.asset_index.resolve_asset_path(
+            asset_kind,
+            token.value,
+            character=token.metadata.get("character", ""),
+        )
 
         if disk_path is not None and disk_path.is_file():
             md_lines = [

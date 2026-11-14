@@ -111,9 +111,11 @@ class StoryVM:
         self._is_ended: bool = False
         self._just_entered_scene: bool = False
         self._next_transition_target: str | None = None
+        self._preamble_index: int = 0
+        self._preamble_done: bool = False
 
         # Initialize defaults from graph
-        self._apply_graph_defaults()
+        self.apply_graph_defaults()
 
         if initial_state is not None:
             self.load(initial_state)
@@ -148,12 +150,6 @@ class StoryVM:
         """Set the active translation locale."""
         self._translation_manager.set_locale(locale)
 
-    def _translate(self, key: str | None, default: str) -> str:
-        """Translate key if catalog present and key non-null, else default."""
-        if key is not None and self._translation_manager is not None:
-            return self._translation_manager.translate(key, default)
-        return default
-
     def _translate_beat(
         self, key: str | None, default: str
     ) -> tuple[str, str | None]:
@@ -178,10 +174,6 @@ class StoryVM:
                 if isinstance(d, ParsedDefault) and d.name not in self._variables:
                     val = self._evaluate_expr(d.expr_src)
                     self.set_variable(d.name, val)
-
-    def _apply_graph_defaults(self) -> None:
-        """Backward-compatible alias for apply_graph_defaults."""
-        self.apply_graph_defaults()
 
     def _get_eval_env(self) -> dict[str, Any]:
         """Build evaluation environment for expression evaluation."""
@@ -296,6 +288,7 @@ class StoryVM:
         cur_scene = self._current_scene_id
         b_idx = self._beat_index
         self._graph = new_graph
+        self._preamble_done = True
 
         if cur_scene is not None and cur_scene in new_graph.nodes:
             new_scene = new_graph.nodes[cur_scene]
@@ -507,6 +500,8 @@ class StoryVM:
             just_entered_scene=self._just_entered_scene,
             is_ended=self._is_ended,
             rng_state=list(self._rng.getstate()),
+            preamble_index=self._preamble_index,
+            preamble_done=self._preamble_done,
         )
 
     def load(self, snapshot: StorySnapshot) -> None:
@@ -535,6 +530,8 @@ class StoryVM:
         self._pending_input = None
         self._next_transition_target = snapshot.next_transition_target
         self._just_entered_scene = snapshot.just_entered_scene
+        self._preamble_index = snapshot.preamble_index
+        self._preamble_done = snapshot.preamble_done
         self._is_ended = False
 
         # If saved while waiting on a choice prompt, re-materialize the ChoicePromptEvent
@@ -665,6 +662,23 @@ class StoryVM:
             target = self._next_transition_target
             self._next_transition_target = None
             self._enter_scene(target)
+
+        # 2b. Execute preamble hooks once before entering the first scene
+        if not self._preamble_done:
+            while self._preamble_index < len(self._graph.preamble):
+                p_item = self._graph.preamble[self._preamble_index]
+                self._preamble_index += 1
+                if isinstance(p_item, ParsedHook):
+                    interp_hook = self._interpolate(p_item.hook_name)
+                    parts = interp_hook.split(None, 1)
+                    hook_name = parts[0] if parts else ""
+                    args = parts[1] if len(parts) > 1 else ""
+                    return HookEvent(
+                        hook_name=hook_name,
+                        args=args,
+                        line_number=p_item.line_number,
+                    )
+            self._preamble_done = True
 
         # 3. Handle initial or empty graph
         if self._current_scene_id is None:

@@ -33,8 +33,6 @@ from eager_core.easing import (
 from eager_core.headless import NullRenderer
 from eager_core.layout import LayoutResolver, ViewportTransform
 from eager_core.lighting import (
-    AmbientLight,
-    LightKind,
     LightmapState,
     PointLight,
 )
@@ -104,7 +102,6 @@ __all__ = [
     "RED",
     "TRANSPARENT",
     "WHITE",
-    "AmbientLight",
     "Anchor",
     "AssetSecurityError",
     "BasePlayer",
@@ -124,7 +121,6 @@ __all__ = [
     "InputBox",
     "Layer",
     "LayoutResolver",
-    "LightKind",
     "LightmapState",
     "NullRenderer",
     "PILAssetResolver",

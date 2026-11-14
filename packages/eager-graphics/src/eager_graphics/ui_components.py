@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any
 from eager_core.text import (
     _WRAP_CACHE,
     TextAnchor,
-    _get_wrapped_lines,
+    get_wrapped_lines,
     parse_text_tags,
     wrap_text,
 )
@@ -58,7 +58,7 @@ __all__ = [
     "TextAnchor",
     "TextboxStyle",
     "UIOverlay",
-    "_get_wrapped_lines",
+    "get_wrapped_lines",
     "wrap_text",
 ]
 
@@ -419,7 +419,7 @@ class DialogueBox:
 
         text_fs = self.scale_font_size(style.text_font_size)
         line_height = text_fs * 1.35
-        lines = _get_wrapped_lines(
+        lines = get_wrapped_lines(
             formatted.plain_text,
             text_max_w,
             backend.measure_text,
@@ -1191,7 +1191,7 @@ class UIOverlay:
         prepared_entries: list[tuple[Any, Any, list[tuple[str, int, int]], float]] = []
         for entry in ui_state.nvl_entries:
             formatted = parse_text_tags(entry.text)
-            lines = _get_wrapped_lines(
+            lines = get_wrapped_lines(
                 formatted.plain_text,
                 text_max_w,
                 backend.measure_text,

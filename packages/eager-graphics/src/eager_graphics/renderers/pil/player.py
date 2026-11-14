@@ -85,6 +85,13 @@ if TYPE_CHECKING or PIL_AVAILABLE:
             # Step first beat if not starting in active menu
             self.step_initial_beat()
 
+            # Apply saved resolution scale on startup if present
+            prefs = getattr(session, "preferences", None)
+            if prefs is not None:
+                scale = getattr(prefs, "resolution_scale", 1.0)
+                if scale != 1.0:
+                    self.set_resolution_scale(scale)
+
             # Pre-load all assets and warm the sprite cache so the first
             # visible frame doesn't pay disk-I/O + resize costs (which would
             # cause a visible frame drop / hitch).
@@ -92,6 +99,19 @@ if TYPE_CHECKING or PIL_AVAILABLE:
             self.renderer.warm_sprite_cache(
                 self.compositor, self.width, self.height
             )
+
+        def set_resolution_scale(self, scale: float) -> None:
+            """Update window/viewport resolution scale relative to base dimensions."""
+            super().set_resolution_scale(scale)
+            self.renderer.set_window(self)
+            self._photo = None
+            self._ui_dirty = True
+            if self._root is not None:
+                try:
+                    if not bool(self._root.attributes("-fullscreen")):
+                        self._root.geometry(f"{self.width}x{self.height}")
+                except Exception:  # noqa: BLE001, S110
+                    pass
 
         def toggle_fullscreen(self) -> None:
             """Toggle fullscreen mode."""
@@ -204,10 +224,6 @@ if TYPE_CHECKING or PIL_AVAILABLE:
             if self._root is None or self._label is None or self._photo is None:
                 return
             self._label.configure(image=self._photo)
-
-        def _draw_fps(self) -> None:
-            """Update the on-screen debug overlay (no-op headless)."""
-            self._draw_debug_overlay()
 
         def _draw_debug_overlay(self, force: bool = False) -> None:
             """Update the on-screen developer debug overlay (no-op headless)."""
@@ -454,7 +470,9 @@ if TYPE_CHECKING or PIL_AVAILABLE:
             """Handle right click to toggle game menu."""
             from eager_core.input import InputAction
 
-            self.session.handle_input(InputAction.GAME_MENU, {"button": "mouse_right"})
+            self._mark_ui_dirty()
+            self.session.handle_input(InputAction.GAME_MENU, button="mouse_right")
+            self._sync_state()
 
         def _on_release(self, event: Any) -> None:
             """Handle mouse release to terminate active slider dragging."""

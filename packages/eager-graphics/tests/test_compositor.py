@@ -379,3 +379,30 @@ def test_snapshot_serialization_with_extreme_values() -> None:
     assert restored_elem.state.rotation == 1440.5
 
 
+def test_compositor_save_load_preserves_custom_particles_and_weather_count() -> None:
+    from eager_graphics.particles import ParticleEmitter, ParticleStampLUT
+
+    comp = StageCompositor(1920, 1080)
+    comp.set_weather("rain", count=42)
+    custom_lut = ParticleStampLUT.from_shape("spark", base_size=10, color=(120, 200, 255))
+    custom_emitter = ParticleEmitter("custom_fx", custom_lut, max_particles=33, layer="foreground", z_order=250000)
+    comp.add_particle_emitter(custom_emitter)
+
+    state = comp.save_state()
+
+    restored = StageCompositor(1920, 1080)
+    restored.load_state(state)
+
+    weather_em = restored.get_particle_emitter("weather")
+    assert weather_em is not None
+    assert weather_em.max_particles == 42
+    assert weather_em.preset == "rain"
+
+    custom_em = restored.get_particle_emitter("custom_fx")
+    assert custom_em is not None
+    assert custom_em.max_particles == 33
+    assert custom_em.z_order == 250000
+    assert custom_em.lut._shape == "spark"
+    assert custom_em.lut._color == (120, 200, 255)
+
+

@@ -33,7 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SPEC_FILE = REPO_ROOT / "packaging" / "eager.spec"
 
 
-def _run(cmd: list[str], *, cwd: Path | None = None, check: bool = True) -> int:
+def _run(cmd: list[str], *, cwd: Path | None = None) -> int:
     print("$ " + " ".join(cmd))
     return subprocess.call(cmd, cwd=str(cwd) if cwd else None)
 

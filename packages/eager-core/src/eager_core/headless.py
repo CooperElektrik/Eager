@@ -10,7 +10,9 @@ from eager_core.events import (
     ChoicePromptEvent,
     DialogueEvent,
     FreshBoxEvent,
+    InputPromptEvent,
     NarrationEvent,
+    SceneExitEvent,
     StoryEndEvent,
 )
 from eager_core.protocols import (
@@ -23,12 +25,9 @@ from eager_core.protocols import (
 )
 from eager_core.timing import FrameClock
 from eager_core.types import BLACK, WHITE, Color
-from eager_core.ui_state import UIState
-
-HeadlessUIState = UIState
+from eager_core.ui_state import NVLEntry, UIState
 
 __all__ = [
-    "HeadlessUIState",
     "NullCompositor",
     "NullRenderer",
     "NullScreenManager",
@@ -331,8 +330,12 @@ class NullStage(StageProtocol):
             expressions=exprs,
         )
 
-    def find_character(self, speaker: str | None) -> CharacterConfig | None:
+    def find_character(self, speaker: str | None, *, character_id: str | None = None) -> CharacterConfig | None:
         """Find CharacterConfig matching character ID or display name."""
+        if character_id:
+            cid = character_id.strip().lower()
+            if cid in self.characters:
+                return self.characters[cid]
         if not speaker:
             return None
         sid = speaker.strip().lower()
@@ -343,11 +346,15 @@ class NullStage(StageProtocol):
                 return cinfo
         return None
 
-    def resolve_side_image(self, speaker: str | None, expression: str | None = None) -> str | None:
+    def resolve_side_image(
+        self,
+        speaker: str | None,
+        expression: str | None = None,
+        *,
+        character_id: str | None = None,
+    ) -> str | None:
         """Resolve the active side image asset ID for a character and expression."""
-        if not speaker:
-            return None
-        cfg = self.find_character(speaker)
+        cfg = self.find_character(speaker, character_id=character_id)
         if cfg and cfg.side_image:
             return cfg.side_image
         if cfg and cfg.asset_prefix:
@@ -362,17 +369,39 @@ class NullStage(StageProtocol):
         dispatcher.on_event(AppendEvent)(self._on_append)
         dispatcher.on_event(FreshBoxEvent)(self._on_fresh_box)
         dispatcher.on_event(ChoicePromptEvent)(self._on_choice)
+        dispatcher.on_event(InputPromptEvent)(self._on_input_prompt)
+        dispatcher.on_event(SceneExitEvent)(self._on_scene_exit)
         dispatcher.on_event(StoryEndEvent)(self._on_story_end)
+        if hasattr(dispatcher, "on_hook"):
+            dispatcher.on_hook("nvl")(self._on_nvl)
+            dispatcher.on_hook("nvl_clear")(self._on_nvl_clear)
+
+    def _on_nvl(self, args: str) -> None:
+        arg = args.strip().lower() if args else "on"
+        if arg in ("off", "false", "0"):
+            self.ui_state.nvl_mode = False
+        elif arg == "clear":
+            self.ui_state.clear_nvl()
+        else:
+            self.ui_state.nvl_mode = True
+
+    def _on_nvl_clear(self, args: str) -> None:
+        self.ui_state.clear_nvl()
 
     def _on_dialogue(self, event: DialogueEvent) -> None:
-        char_info = self.find_character(event.speaker)
+        char_id = getattr(event, "character_id", None)
+        char_info = self.find_character(event.speaker, character_id=char_id)
         self.ui_state.speaker = event.speaker
         self.ui_state.text = event.text
         self.ui_state.emotion = event.emotion
         self.ui_state.visible_chars = None
         self.ui_state.speaker_color = char_info.color if char_info else None
-        self.ui_state.side_image = self.resolve_side_image(event.speaker, event.emotion)
+        self.ui_state.side_image = self.resolve_side_image(event.speaker, event.emotion, character_id=char_id)
         self.ui_state.clear_choices()
+        if self.ui_state.nvl_mode:
+            self.ui_state.nvl_entries.append(
+                NVLEntry(speaker=event.speaker, text=event.text, emotion=event.emotion)
+            )
 
     def _on_narration(self, event: NarrationEvent) -> None:
         self.ui_state.speaker = None
@@ -380,20 +409,41 @@ class NullStage(StageProtocol):
         self.ui_state.emotion = None
         self.ui_state.visible_chars = None
         self.ui_state.clear_choices()
+        if self.ui_state.nvl_mode:
+            self.ui_state.nvl_entries.append(NVLEntry(speaker=None, text=event.text))
 
     def _on_append(self, event: AppendEvent) -> None:
         add_text = event.text
         current = self.ui_state.text or ""
         self.ui_state.text = f"{current} {add_text}".strip()
         self.ui_state.clear_choices()
+        if self.ui_state.nvl_mode and self.ui_state.nvl_entries:
+            last = self.ui_state.nvl_entries[-1]
+            last.text = f"{last.text} {add_text}".strip()
 
     def _on_fresh_box(self, event: FreshBoxEvent) -> None:
         self.ui_state.text = event.text
         self.ui_state.visible_chars = None
         self.ui_state.clear_choices()
+        if self.ui_state.nvl_mode:
+            self.ui_state.nvl_entries.append(
+                NVLEntry(
+                    speaker=self.ui_state.speaker,
+                    text=self.ui_state.text,
+                    emotion=self.ui_state.emotion,
+                )
+            )
 
     def _on_choice(self, event: ChoicePromptEvent) -> None:
         self.ui_state.choices = list(event.options)
+
+    def _on_input_prompt(self, event: InputPromptEvent) -> None:
+        self.ui_state.active_input_prompt = event
+
+    def _on_scene_exit(self, event: SceneExitEvent) -> None:
+        self.ui_state.clear_dialogue()
+        self.ui_state.clear_choices()
+        self.ui_state.active_input_prompt = None
 
     def _on_story_end(self, event: StoryEndEvent) -> None:
         self.ui_state.is_finished = True
@@ -405,7 +455,7 @@ class NullStage(StageProtocol):
         self.compositor.finish_animations()
 
     def clear_stage(self) -> None:
-        self.compositor.clear(Color(0, 0, 0, 1))
+        self.compositor.clear()
         self.ui_state.clear_dialogue()
         self.ui_state.clear_choices()
         self.ui_state.clear_nvl()

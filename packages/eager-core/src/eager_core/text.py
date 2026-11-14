@@ -474,7 +474,3 @@ def get_wrapped_lines(
         _WRAP_CACHE.popitem(last=False)
     _WRAP_CACHE[key] = res
     return res
-
-
-# Backward-compatible internal alias
-_get_wrapped_lines = get_wrapped_lines

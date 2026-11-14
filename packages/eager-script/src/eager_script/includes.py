@@ -24,9 +24,11 @@ def resolve_includes(
     base_dir: Path | str,
     *,
     visited: set[Path] | None = None,
+    root_dir: Path | str | None = None,
 ) -> list[ParsedItem]:
     """Recursively resolve ParsedInclude items by parsing target files and inlining their AST items."""
     base_path = Path(base_dir).resolve()
+    root_path = Path(root_dir).resolve() if root_dir is not None else base_path
     if visited is None:
         visited = set()
 
@@ -34,6 +36,12 @@ def resolve_includes(
     for item in items:
         if isinstance(item, ParsedInclude):
             inc_target = (base_path / item.path).resolve()
+            if not inc_target.is_relative_to(root_path):
+                msg = (
+                    f"Line {item.line_number}: Path traversal detected: "
+                    f"@include '{item.path}' resolves outside root '{root_path}'"
+                )
+                raise IncludeError(msg)
             if not inc_target.is_file():
                 msg = f"Line {item.line_number}: Included file not found: '{item.path}' (looked at {inc_target})"
                 raise IncludeError(msg)
@@ -45,7 +53,12 @@ def resolve_includes(
             sub_visited.add(inc_target)
             content = inc_target.read_text(encoding="utf-8")
             sub_items = parse(content)
-            inlined = resolve_includes(sub_items, inc_target.parent, visited=sub_visited)
+            inlined = resolve_includes(
+                sub_items,
+                inc_target.parent,
+                visited=sub_visited,
+                root_dir=root_path,
+            )
             resolved.extend(inlined)
         else:
             resolved.append(item)

@@ -96,14 +96,30 @@ class AssetIndex:
     """Indexed media files on disk for fast auto-completion and navigation."""
 
     backgrounds: set[str] = field(default_factory=set)
+    images: set[str] = field(default_factory=set)
     characters: dict[str, set[str]] = field(default_factory=dict)
     audio: set[str] = field(default_factory=set)
     voice: set[str] = field(default_factory=set)
     file_paths: dict[str, Path] = field(default_factory=dict)
 
+    def resolve_asset_path(self, asset_kind: str | None, value: str, *, character: str = "") -> Path | None:
+        """Resolve an indexed asset reference to its disk Path, if known."""
+        if asset_kind == "background":
+            return self.file_paths.get(f"bg:{value}")
+        if asset_kind == "image":
+            return self.file_paths.get(f"image:{value}") or self.file_paths.get(f"bg:{value}")
+        if asset_kind == "voice":
+            return self.file_paths.get(f"voice:{value}")
+        if asset_kind == "character":
+            return self.file_paths.get(f"char:{character}/{value.lower()}")
+        if asset_kind == "audio":
+            return self.file_paths.get(f"audio:{value}")
+        return None
+
     def scan_assets(self, asset_dir: Path) -> None:
-        """Scan directory and index all background, character, audio, and voice assets."""
+        """Scan directory and index all background, character, image, audio, and voice assets."""
         self.backgrounds.clear()
+        self.images.clear()
         self.characters.clear()
         self.audio.clear()
         self.voice.clear()
@@ -134,6 +150,17 @@ class AssetIndex:
                         self.file_paths[f"bg:{sub_stem}"] = p
                     self.file_paths[f"bg:{stem}"] = p
                     self.file_paths[f"bg:{rel_str}"] = p
+                # Check overlay images
+                elif rel.parts[0] in ("images", "image"):
+                    self.images.add(rel_str)
+                    self.images.add(stem)
+                    if len(rel.parts) > 1:
+                        sub_id = "/".join(rel.parts[1:])
+                        sub_stem = Path(sub_id).with_suffix("").as_posix()
+                        self.images.add(sub_stem)
+                        self.file_paths[f"image:{sub_stem}"] = p
+                    self.file_paths[f"image:{stem}"] = p
+                    self.file_paths[f"image:{rel_str}"] = p
                 # Check character sprites
                 elif rel.parts[0] in ("characters", "chars") and len(rel.parts) >= 3:
                     cid = rel.parts[1].lower()
@@ -154,7 +181,10 @@ class AssetIndex:
                 else:
                     # Generic image/background
                     self.backgrounds.add(stem)
+                    self.images.add(stem)
                     self.file_paths[f"bg:{stem}"] = p
+                    self.file_paths[f"image:{stem}"] = p
+                    self.file_paths[f"image:{rel_str}"] = p
 
             elif ext in AUDIO_EXTENSIONS and ext != "":
                 # Check audio / voice

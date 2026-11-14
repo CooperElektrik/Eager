@@ -16,9 +16,7 @@ from ._compat import (
 )
 from ._constants import (
     _ALPHA_LUTS,
-    _DEFAULT_CACHE_BYTES,
     _EXTENSIONS,
-    _IDENTITY_256,
     _MAX_GRADIENT_CACHE,
     _MAX_MIP_CACHE,
     _MAX_RGBA_LUTS,
@@ -28,7 +26,6 @@ from ._constants import (
     _PIL_ANCHOR_Y,
     _PLACEHOLDER_GRAD_LUT,
     _QUANT_ALPHA_LUT,
-    _REDUCING_GAP,
     _WHITE_RGBA,
 )
 from ._imaging import (

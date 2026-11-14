@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 _EXTENSIONS: tuple[str, ...] = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
-_IDENTITY_256: list[int] = list(range(256))
 _ALPHA_LUTS: list[list[int]] = [
     [round(i * (a / 255.0)) for i in range(256)] for a in range(256)
 ]
@@ -16,11 +15,6 @@ _WHITE_RGBA: tuple[int, int, int, int] = (255, 255, 255, 255)
 _PIL_ANCHOR_X: dict[str, str] = {"left": "l", "center": "m", "right": "r"}
 _PIL_ANCHOR_Y: dict[str, str] = {"top": "t", "middle": "m", "bottom": "b"}
 
-# Downscales by more than this factor first run a cheap integer ``reduce()``
-# (cached as a mip level) before the filtered resize.  Mirrors Pillow's own
-# ``reducing_gap`` option, which ``Image.resize`` silently ignores for RGBA.
-_REDUCING_GAP: float = 2.0
-_DEFAULT_CACHE_BYTES: int = 256 * 1024 * 1024
 _MAX_TEXT_CACHE: int = 1024
 _MAX_RGBA_LUTS: int = 256
 _MAX_MIP_CACHE: int = 128
@@ -28,9 +22,7 @@ _MAX_GRADIENT_CACHE: int = 256
 
 __all__ = [
     "_ALPHA_LUTS",
-    "_DEFAULT_CACHE_BYTES",
     "_EXTENSIONS",
-    "_IDENTITY_256",
     "_MAX_GRADIENT_CACHE",
     "_MAX_MIP_CACHE",
     "_MAX_RGBA_LUTS",
@@ -40,6 +32,5 @@ __all__ = [
     "_PIL_ANCHOR_Y",
     "_PLACEHOLDER_GRAD_LUT",
     "_QUANT_ALPHA_LUT",
-    "_REDUCING_GAP",
     "_WHITE_RGBA",
 ]

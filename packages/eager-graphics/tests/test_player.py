@@ -114,10 +114,10 @@ def test_base_player_input_routing() -> None:
     session.handle_input.assert_called_with(InputAction.POINTER_CLICK, x=100.0, y=200.0)
 
     player.handle_scroll(1.0)
-    session.handle_input.assert_called_with(InputAction.ROLLBACK)
+    session.handle_input.assert_called_with(InputAction.SCROLL, dy=1.0)
 
     player.handle_scroll(-1.0)
-    session.handle_input.assert_called_with(InputAction.ROLL_FORWARD)
+    session.handle_input.assert_called_with(InputAction.SCROLL, dy=-1.0)
 
     player.handle_skip_release()
     session.handle_input.assert_called_with(InputAction.SKIP_RELEASE)
@@ -174,3 +174,66 @@ def test_concrete_players_inherit_base_player() -> None:
     finally:
         pil_player.close()
         pyglet_player.close()
+
+
+def test_pil_player_right_click_scroll_and_resolution_scale() -> None:
+    from unittest.mock import MagicMock
+
+    import eager_script
+    from eager_core.input import InputAction
+    from eager_runtime.session import GameSession
+
+    from eager_graphics.renderers.pil import PILPlayer
+
+    graph = eager_script.parse_graph("## Start --- start\nHello world.\n<<\n")
+    session = GameSession(graph)
+    session.handle_input = MagicMock(wraps=session.handle_input)  # type: ignore[method-assign]
+
+    player = PILPlayer(session=session, width=1280, height=720, visible=False)
+    try:
+        # _on_right_click should not raise TypeError and should pass button="mouse_right"
+        player._on_right_click(None)
+        session.handle_input.assert_called_with(InputAction.GAME_MENU, button="mouse_right")
+
+        # handle_scroll should route InputAction.SCROLL with dy
+        player.handle_scroll(1.0)
+        session.handle_input.assert_called_with(InputAction.SCROLL, dy=1.0)
+
+        # set_resolution_scale should resize viewport and clear _photo
+        player._photo = object()
+        player.set_resolution_scale(1.25)
+        assert player.width == 1600
+        assert player.height == 900
+        assert player._photo is None
+    finally:
+        player.close()
+
+
+def test_pil_player_applies_saved_resolution_scale_on_startup_and_with_prior_listener() -> None:
+    import eager_script
+    from eager_core.protocols import HostLifecycleListener
+    from eager_runtime.session import GameSession
+
+    from eager_graphics.renderers.pil import PILPlayer
+
+    class DummyListener(HostLifecycleListener):
+        pass
+
+    graph = eager_script.parse_graph("## Start --- start\nHello world.\n<<\n")
+    session = GameSession(graph)
+    session.add_lifecycle_listener(DummyListener())
+    session.preferences.resolution_scale = 1.25
+
+    player = PILPlayer(session=session, width=1280, height=720, visible=False)
+    try:
+        # Applied on startup
+        assert player.width == 1600
+        assert player.height == 900
+
+        # apply_preferences still reaches player despite DummyListener being first
+        session.preferences.resolution_scale = 0.75
+        session.apply_preferences()
+        assert player.width == 960
+        assert player.height == 540
+    finally:
+        player.close()

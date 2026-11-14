@@ -3,25 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any
 
 from eager_core.types import WHITE, Color, Vec2
 
 __all__ = [
-    "AmbientLight",
-    "LightKind",
     "LightmapState",
     "PointLight",
 ]
-
-
-class LightKind(str, Enum):
-    """Classification of light sources."""
-
-    POINT = "point"
-    RADIAL = "radial"
-    AMBIENT = "ambient"
 
 
 @dataclass(slots=True)
@@ -58,27 +47,6 @@ class PointLight:
             color=Color.from_dict(data.get("color", {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0})),
             intensity=float(data.get("intensity", 1.0)),
             mode=str(data.get("mode", "multiply")),
-        )
-
-
-@dataclass(slots=True)
-class AmbientLight:
-    """Scene-wide ambient lighting level."""
-
-    color: Color = WHITE
-    intensity: float = 1.0
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "color": self.color.to_dict(),
-            "intensity": self.intensity,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> AmbientLight:
-        return cls(
-            color=Color.from_dict(data.get("color", {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0})),
-            intensity=float(data.get("intensity", 1.0)),
         )
 
 

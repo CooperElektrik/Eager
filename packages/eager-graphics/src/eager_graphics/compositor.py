@@ -1045,6 +1045,7 @@ class StageCompositor:
                 "virtual_height": self.virtual_height,
                 "lighting": self.lighting.to_dict(),
                 "weather": self._active_weather_preset,
+                "particle_emitters": [e.to_dict() for e in self._particle_emitters.values()],
             }
 
         # Build mapping from ElementState id to (layer_name, element_id)
@@ -1108,6 +1109,7 @@ class StageCompositor:
             "virtual_height": self.virtual_height,
             "lighting": self.lighting.to_dict(),
             "weather": self._active_weather_preset,
+            "particle_emitters": [e.to_dict() for e in self._particle_emitters.values()],
         }
 
     def load_state(self, state: dict[str, Any]) -> None:
@@ -1129,11 +1131,21 @@ class StageCompositor:
         else:
             self.lighting.clear()
 
-        weather = state.get("weather")
-        if weather:
-            self.set_weather(weather)
+        self._particle_emitters.clear()
+        self._active_weather_preset = None
+        if "particle_emitters" in state and isinstance(state["particle_emitters"], list):
+            from eager_graphics.particles import ParticleEmitter
+
+            for ed in state["particle_emitters"]:
+                if isinstance(ed, dict):
+                    self.add_particle_emitter(ParticleEmitter.from_dict(ed))
+            self._active_weather_preset = state.get("weather")
         else:
-            self.set_weather(None)
+            weather = state.get("weather")
+            if weather:
+                self.set_weather(weather)
+            else:
+                self.set_weather(None)
 
     def clear(self) -> None:
         """Clear all animations, particle systems, lighting, and reset all stage layers."""
@@ -1211,4 +1223,3 @@ class StageCompositor:
     def clear_lights(self) -> None:
         """Clear all dynamic lights and reset ambient light."""
         self.lighting.clear()
-        self._shake_offset = Vec2(0.0, 0.0)

@@ -26,7 +26,7 @@ from eager_core.protocols import (
 )
 
 from eager_runtime.player import TerminalPlayer
-from eager_runtime.project import load_project_graph, mask_script_includes, resolve_project_scripts
+from eager_runtime.project import load_project_graph, resolve_project_scripts
 from eager_runtime.runtime import StoryVM
 
 __all__ = [
@@ -883,8 +883,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
         items = []
         for f in es_files:
             text = f.read_text(encoding="utf-8")
-            cleaned = mask_script_includes(text)
-            items.extend(eager_script.parse(cleaned))
+            items.extend(eager_script.parse(text))
         result = eager_script.validate(items)
     except (eager_script.ParseError, OSError, ValueError, TypeError) as err:
         sys.stderr.write(f"Check failed with error: {err}\n")
@@ -985,17 +984,6 @@ def _cmd_build(args: argparse.Namespace) -> int:
 
     print(f"Build complete: archive created at '{out_path}'.")
     return 0
-
-
-def _resolve_script_file(target_path: Path) -> Path | None:
-    if target_path.is_dir():
-        from eager_runtime.project import resolve_project_scripts
-
-        scripts = resolve_project_scripts(target_path)
-        return scripts[0] if scripts else None
-    elif target_path.is_file():
-        return target_path
-    return None
 
 
 def _cmd_i18n_extract(args: argparse.Namespace) -> int:
