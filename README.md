@@ -29,15 +29,20 @@ uv sync
 ### Play the Demo
 
 ```bash
-# Play interactive demo screenplay in the terminal
+# Check installed backends and tools
+uv run eager doctor
+
+# Launch graphical player (defaults to PIL software renderer)
 uv run eager play examples/demo_story.es
 
 # Launch hardware-accelerated OpenGL player
 uv run eager play examples/demo_story.es --backend pyglet
 
-# Launch software-rendered player
-uv run eager play examples/demo_story.es --backend pil
+# Play interactive demo screenplay in the terminal
+uv run eager play examples/demo_story.es --backend terminal
 ```
+
+For full authoring documentation, see the **User Guide** in `docs/user-guide/` (or run `uv run mkdocs serve`).
 
 ### Screenplay Tooling
 

@@ -321,3 +321,44 @@ def test_cli_build_pre_validation(tmp_path: Path, capsys: pytest.CaptureFixture[
     code_bypass = main(["build", str(proj_dir), "-o", str(out_zip), "--no-check"])
     assert code_bypass == 0
     assert out_zip.exists()
+
+
+def test_cli_play_defaults_to_pil(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    sf = tmp_path / "story.es"
+    sf.write_text("## Start --- start\nNarrator: Hello.\n", encoding="utf-8")
+
+    import eager_runtime.cli
+
+    seen_backends: list[str] = []
+    monkeypatch.setattr(
+        eager_runtime.cli,
+        "_run_interactive_player",
+        lambda session, backend: seen_backends.append(backend),
+    )
+
+    code = main(["play", str(sf)])
+    assert code == 0
+    assert seen_backends == ["pil"]
+
+
+def test_cli_build_mentions_standalone_export(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    proj_dir = tmp_path / "ok_proj"
+    proj_dir.mkdir()
+    (proj_dir / "game.toml").write_text('[game]\ntitle = "OK"\n', encoding="utf-8")
+    (proj_dir / "main.es").write_text("## Start --- start\nNarrator: Hi.\n", encoding="utf-8")
+
+    out_zip = tmp_path / "ok.zip"
+    code = main(["build", str(proj_dir), "-o", str(out_zip)])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "packaging/build_export.py" in captured.out
+
+
+def test_cli_doctor(capsys: pytest.CaptureFixture[str]) -> None:
+    code = main(["doctor"])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "Eager Environment Check:" in captured.out
+    assert "eager-core" in captured.out
+    assert "eager-script" in captured.out
+    assert "eager-runtime" in captured.out

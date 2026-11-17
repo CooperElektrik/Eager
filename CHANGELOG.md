@@ -7,8 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Author-Facing Documentation (`docs/user-guide/`)**:
+  - Added a 5-part User Guide to MkDocs (`getting-started.md`, `screenplay-syntax.md`, `staging-and-effects.md`, `project-and-distribution.md`, and `ide-and-debugging.md`) with quick-links in `docs/index.md` and `README.md`.
+- **CLI Diagnostics (`eager doctor`)**:
+  - Added `eager doctor` subcommand in `eager-runtime` to report installed Eager packages, rendering/audio backends (`pillow`/`pillow-simd`, `pyglet`, `miniaudio`), `eager-script-lsp`, and `pyinstaller`.
+
 ### Changed
 
+- **User-Friendly CLI Defaults & Messaging (`eager-runtime`)**:
+  - Changed `eager play` default `--backend` from `terminal` to `pil` (matching `eager run`).
+  - Clarified `eager build` help/output to distinguish `.zip` project archives from standalone builds (`packaging/build_export.py`), and updated `eager new` next steps to highlight `--watch` and `eager check --assets`.
 - **Cross-Package Wiring & Cleanup**:
   - Wired engine hooks, preferences lifecycle, and visual atmosphere state across runtime and graphics subsystems.
   - Wired Pyglet particles and lighting, audio playback queue, and screen navigation.

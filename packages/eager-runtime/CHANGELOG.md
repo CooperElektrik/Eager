@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `eager doctor` CLI subcommand to check installed Eager packages, rendering/audio backends (`pillow`/`pillow-simd`, `pyglet`, `miniaudio`), `eager-script-lsp`, and `pyinstaller`.
+
+### Changed
+
+- Changed `eager play` default `--backend` from `terminal` to `pil` (matching `eager run`).
+- Clarified `eager build` help/output to point standalone executable builds to `packaging/build_export.py`, and updated `eager new` next steps to highlight `--watch` and `eager check --assets`.
+
 ## [0.9.0] - 2026-11-09
 
 ### Added

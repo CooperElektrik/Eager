@@ -87,7 +87,13 @@ plugins:
 
 nav:
   - Home: index.md
-  - Guides:
+  - User Guide:
+    - Getting Started: user-guide/getting-started.md
+    - Screenplay Syntax (.es): user-guide/screenplay-syntax.md
+    - Staging, Visuals & Audio: user-guide/staging-and-effects.md
+    - Project, i18n & Distribution: user-guide/project-and-distribution.md
+    - IDE & Debugging Workflow: user-guide/ide-and-debugging.md
+  - Developer Guides:
     - Architecture & Design:
       - Architecture: guides/architecture.md
       - Import Conventions: guides/import-conventions.md

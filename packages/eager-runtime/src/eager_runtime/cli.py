@@ -122,15 +122,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     # play
     play_p = subparsers.add_parser(
-        "play", help="Play an Eager-Script screenplay interactively in the terminal."
+        "play", help="Play an Eager-Script screenplay interactively."
     )
     _build_common_script_args(play_p)
     play_p.add_argument("--no-color", action="store_true", help="Disable colored terminal output.")
     play_p.add_argument(
         "--backend",
         choices=["terminal", "pyglet", "pil"],
-        default="terminal",
-        help="Player backend (default: terminal). Graphical backends require eager-graphics.",
+        default="pil",
+        help="Player backend (default: pil). Graphical backends require eager-graphics.",
     )
     play_p.add_argument("--asset-dir", default=None, help="Directory containing sprite/background assets.")
     play_p.add_argument("--warp", default=None, help="Fast-forward / jump directly to scene label.")
@@ -259,12 +259,19 @@ def build_parser() -> argparse.ArgumentParser:
     # build
     build_p = subparsers.add_parser(
         "build",
-        help="Package and bundle an Eager project into a standalone distribution archive.",
+        help="Bundle an Eager project into a distributable .zip archive (see packaging/build_export.py for standalone executables).",
     )
     build_p.add_argument("project_dir", nargs="?", default=".", help="Project directory (default: current directory)")
     build_p.add_argument("-o", "--output", default=None, help="Output zip archive path")
     build_p.add_argument("--no-check", action="store_true", help="Skip script and asset validation before packaging.")
     build_p.set_defaults(func=_cmd_build)
+
+    # doctor
+    doctor_p = subparsers.add_parser(
+        "doctor",
+        help="Check installed Eager packages, graphical/audio backends, and export tools.",
+    )
+    doctor_p.set_defaults(func=_cmd_doctor)
 
     # i18n
     _add_i18n_subparser(subparsers)
@@ -286,8 +293,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run_play(args: argparse.Namespace) -> int:
-    """Execute interactive playthrough (terminal by default, graphical with --backend)."""
-    backend = getattr(args, "backend", "terminal")
+    """Execute interactive playthrough (PIL graphical by default, or terminal/pyglet via --backend)."""
+    backend = getattr(args, "backend", "pil")
     if backend != "terminal":
         return _cmd_play(args)
     script_path = Path(args.script)
@@ -815,8 +822,9 @@ height = 1080
             (target_dir / "game.toml").write_text(toml_content, encoding="utf-8")
 
             print(f"Created new Eager demo showcase project in '{target_dir}'.")
-            print("Run your game with:")
-            print(f"  eager run {target_dir}")
+            print("Next steps:")
+            print(f"  eager run {target_dir} --watch     # Launch with live hot-reload")
+            print(f"  eager check {target_dir} --assets  # Validate script & assets")
             return 0
 
     # Default: scaffold from starter template
@@ -858,10 +866,10 @@ Narrator: Create characters, dialogue, and choices here.
         (target_dir / "main.es").write_text(es_content, encoding="utf-8")
 
     print(f"Created new Eager project in '{target_dir}'.")
-    print("Run your game with:")
-    print(f"  eager run {target_dir}")
-    print("Or play in the terminal:")
-    print(f"  eager play {target_dir}/main.es")
+    print("Next steps:")
+    print(f"  eager run {target_dir} --watch     # Launch with live hot-reload")
+    print(f"  eager check {target_dir} --assets  # Validate script & assets")
+    print(f"  eager play {target_dir}/main.es --backend terminal  # Terminal mode")
     return 0
 
 
@@ -982,7 +990,8 @@ def _cmd_build(args: argparse.Namespace) -> int:
                     continue
                 zf.write(file, rel)
 
-    print(f"Build complete: archive created at '{out_path}'.")
+    print(f"Build complete: project archive created at '{out_path}'.")
+    print("Note: For standalone executables or OS installers, use 'python packaging/build_export.py'.")
     return 0
 
 
@@ -1073,6 +1082,52 @@ def _cmd_i18n_check(args: argparse.Namespace) -> int:
 
     if args.strict and has_incomplete:
         return 1
+    return 0
+
+
+def _cmd_doctor(_args: argparse.Namespace) -> int:
+    """Report availability of Eager packages, rendering/audio backends, and export tools."""
+    import importlib.metadata
+    import importlib.util
+
+    checks: list[tuple[str, str, str]] = [
+        ("eager_core", "eager-core", "Required core primitives"),
+        ("eager_script", "eager-script", "Required screenplay DSL parser"),
+        ("eager_runtime", "eager-runtime", "Required story VM & CLI"),
+        ("eager_graphics", "eager-graphics", "Required for graphical backends (pil/pyglet)"),
+        ("PIL", "pillow (or pillow-simd)", "Software renderer (--backend pil)"),
+        ("pyglet", "pyglet", "Hardware OpenGL renderer (--backend pyglet)"),
+        ("miniaudio", "miniaudio", "Audio playback backend"),
+        ("eager_script_lsp", "eager-script-lsp", "Language Server Protocol (LSP) for editors"),
+        ("PyInstaller", "pyinstaller", "Standalone executable builds (packaging/build_export.py)"),
+    ]
+
+    print("Eager Environment Check:")
+    for mod_name, pkg_label, purpose in checks:
+        spec = importlib.util.find_spec(mod_name)
+        if spec is not None:
+            version_str = ""
+            if mod_name == "PIL":
+                try:
+                    import PIL
+                    import PIL.features  # type: ignore[import-untyped]
+
+                    supported = getattr(PIL.features, "get_supported_features", list)()
+                    simd = "simd" in supported
+                    pil_ver = getattr(PIL, "__version__", "")
+                    tag = "pillow-simd" if simd else "pillow"
+                    version_str = f" ({tag} {pil_ver})" if pil_ver else f" ({tag})"
+                except (ImportError, AttributeError, ValueError):
+                    version_str = ""
+            else:
+                try:
+                    version_str = f" ({importlib.metadata.version(pkg_label.split()[0])})"
+                except importlib.metadata.PackageNotFoundError:
+                    version_str = ""
+            print(f"  [OK]      {pkg_label}{version_str} — {purpose}")
+        else:
+            print(f"  [MISSING] {pkg_label} — {purpose}")
+
     return 0
 
 

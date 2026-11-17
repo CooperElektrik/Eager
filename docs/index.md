@@ -2,6 +2,16 @@
 
 A modern, high-performance Python engine and tooling ecosystem for visual novels and interactive narrative games.
 
+## User Guide (For Creators)
+
+New to Eager? Start here to write, stage, and package your visual novel:
+
+- [Getting Started](user-guide/getting-started.md) — Create, run, and validate your first project (`eager new`, `eager run`, `eager doctor`)
+- [Screenplay Syntax (`.es`)](user-guide/screenplay-syntax.md) — Scenes, dialogue, choices, variables, and conditionals
+- [Staging, Visuals & Audio](user-guide/staging-and-effects.md) — Stage hooks (`~ bg`, `~ show`, `~ move`, `~ flash`, `~ play_bgm`) and asset layout
+- [Project, i18n & Distribution](user-guide/project-and-distribution.md) — `game.toml`, translations (`eager i18n`), `.zip` bundles, and standalone exports
+- [IDE & Debugging Workflow](user-guide/ide-and-debugging.md) — VS Code extension, LSP, `--watch`, `--warp`, and headless testing
+
 ## Architecture
 
 Eager is organized as a monorepo with strict architectural boundaries:
