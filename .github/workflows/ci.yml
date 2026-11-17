@@ -8,7 +8,7 @@ on:
 
 jobs:
   lint:
-    name: Lint (ruff)
+    name: Lint, Contracts, Types & Docs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,6 +17,17 @@ jobs:
         run: uv sync --frozen
       - name: Ruff check
         run: uv run ruff check packages/
+      - name: Import contracts
+        run: uv run lint-imports
+      - name: Type check (basedpyright)
+        run: |
+          (cd packages/eager-core && uv run basedpyright)
+          (cd packages/eager-script && uv run basedpyright)
+          (cd packages/eager-runtime && uv run basedpyright)
+          (cd packages/eager-graphics && uv run basedpyright)
+          (cd packages/eager-script-lsp && uv run basedpyright)
+      - name: Docs build
+        run: uv run mkdocs build
 
   test:
     name: Test (Python ${{ matrix.python-version }})
