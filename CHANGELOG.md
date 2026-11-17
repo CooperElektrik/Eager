@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Cross-Package Wiring & Cleanup**:
+  - Wired engine hooks, preferences lifecycle, and visual atmosphere state across runtime and graphics subsystems.
+  - Wired Pyglet particles and lighting, audio playback queue, and screen navigation.
+  - Completed cross-package wirings and removed dead/superseded symbols.
+- **CI & Tooling**:
+  - Expanded GitHub Actions CI (`ci.yml`) to run `lint-imports`, `basedpyright` across all 5 packages (including `eager-graphics/tests`), and `mkdocs build`.
+
+### Fixed
+
+- Wired backlog, character lookup, audio, lighting, NVL mode, LSP, and CLI subsystems.
+- Mocked `miniaudio.PlaybackDevice` in `test_miniaudio_audio_backend_error_handling` so error-handling coverage executes reliably on headless CI runners without audio hardware.
+- Resolved `basedpyright` type errors across `packages/eager-graphics/tests`.
+
 ## [0.9.0] - 2026-11-09
 
 ### Added
