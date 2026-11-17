@@ -1071,7 +1071,9 @@ def test_putalpha_does_not_corrupt_cached_texture():
 
     # Verify the cached base texture still has alpha=255
     base_tex = renderer.asset_resolver._image_cache["bg/test_bg"]
-    assert base_tex.getpixel((0, 0))[3] == 255, "Base texture alpha was corrupted by putalpha!"
+    px = base_tex.getpixel((0, 0))
+    assert isinstance(px, tuple)
+    assert px[3] == 255, "Base texture alpha was corrupted by putalpha!"
 
 
 

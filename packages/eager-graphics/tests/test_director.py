@@ -464,23 +464,18 @@ def test_nvl_mode_and_overlay():
     director.handle_nvl("on")
     assert director.ui_state.nvl_mode is True
 
-    # Simulate dialogue events
-    class DummyEvent:
-        def __init__(self, speaker, text, emotion=None):
-            self.speaker = speaker
-            self.text = text
-            self.emotion = emotion
+    from eager_core.events import AppendEvent, DialogueEvent, NarrationEvent
 
-    director.handle_dialogue_event(DummyEvent("Alice", "First NVL line."))
-    director.handle_dialogue_event(DummyEvent("Bob", "Second NVL line."))
-    director.handle_narration_event(DummyEvent(None, "And narrator spoke."))
+    director.handle_dialogue_event(DialogueEvent(speaker="Alice", text="First NVL line.", voice=None, emotion=None, line_number=1))
+    director.handle_dialogue_event(DialogueEvent(speaker="Bob", text="Second NVL line.", voice=None, emotion=None, line_number=2))
+    director.handle_narration_event(NarrationEvent(text="And narrator spoke.", line_number=3))
 
     assert len(director.ui_state.nvl_entries) == 3
     assert director.ui_state.nvl_entries[0].speaker == "Alice"
     assert director.ui_state.nvl_entries[1].text == "Second NVL line."
 
     # Append
-    director.handle_append_event(DummyEvent(None, "More narrator text."))
+    director.handle_append_event(AppendEvent(text="More narrator text.", line_number=4))
     assert "More narrator text." in director.ui_state.nvl_entries[2].text
 
     # Draw through NullRenderer to verify UIOverlay renders NVL without error
@@ -770,6 +765,7 @@ class TestDirectorAudioHooks:
         dispatcher.dispatch(HookEvent(hook_name="play_sound", args="hit.ogg volume=0.7", line_number=2))
         assert "sound_0" in audio.channels or "sound" in audio.channels
         assert backend.calls[-1][0] == "play"
+        assert isinstance(backend.calls[-1][1], str)
         assert backend.calls[-1][1].startswith("sound")
 
         dispatcher.dispatch(HookEvent(hook_name="play_voice", args="voice_line.ogg", line_number=3))
@@ -790,8 +786,9 @@ class TestDirectorAudioHooks:
         # 1. Weather
         dispatcher.dispatch(HookEvent(hook_name="weather", args="rain count=120", line_number=10))
         assert comp._active_weather_preset == "rain"
-        assert comp.get_particle_emitter("weather") is not None
-        assert comp.get_particle_emitter("weather").max_particles == 120
+        emitter = comp.get_particle_emitter("weather")
+        assert emitter is not None
+        assert emitter.max_particles == 120
 
         dispatcher.dispatch(HookEvent(hook_name="weather", args="clear", line_number=11))
         assert comp._active_weather_preset is None
@@ -920,8 +917,9 @@ class TestDirectorAudioHooks:
         comp.step(1.0)
         bg_layer = comp.stage.get_layer("background")
         assert bg_layer is not None
-        assert bg_layer.get_element("bg_main") is not None
-        assert bg_layer.get_element("bg_main").asset_id == "bg/forest"
+        bg_elem = bg_layer.get_element("bg_main")
+        assert bg_elem is not None
+        assert bg_elem.asset_id == "bg/forest"
 
         # 2. speaker_highlight
         dispatcher.dispatch(HookEvent(hook_name="speaker_highlight", args="on dim=#444444 duration=0.4 scale=1.05", line_number=2))

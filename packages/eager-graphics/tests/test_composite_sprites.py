@@ -77,6 +77,7 @@ def test_pil_asset_resolver_size_mismatch_compositing(temp_character_assets: Pat
     assert img.size == (100, 100)
     # Patch covers top-left 50x50
     patch_px = img.getpixel((25, 25))
+    assert isinstance(patch_px, tuple)
     assert patch_px[0] > 0  # Red channel blended in from yellow
     assert patch_px[1] > 0  # Green channel blended in from yellow
 

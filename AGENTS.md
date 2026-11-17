@@ -110,7 +110,7 @@ A task is complete only when all steps pass:
    (cd packages/eager-core && uv run basedpyright)
    (cd packages/eager-script && uv run basedpyright)
    (cd packages/eager-runtime && uv run basedpyright)
-   (cd packages/eager-graphics && uv run basedpyright src)
+   (cd packages/eager-graphics && uv run basedpyright)
    (cd packages/eager-script-lsp && uv run basedpyright)
    ```
 4. **Docs build:**

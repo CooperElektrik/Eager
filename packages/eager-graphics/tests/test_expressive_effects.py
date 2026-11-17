@@ -217,6 +217,8 @@ def test_screen_space_lighting_low_res_lightmap() -> None:
     # Verify center pixel is brighter than top-left corner (darkness vs illuminated)
     corner_px = img.getpixel((10, 10))
     center_px = img.getpixel((640, 360))
+    assert isinstance(corner_px, tuple)
+    assert isinstance(center_px, tuple)
     # Center should be substantially brighter due to the point light
     assert sum(center_px[:3]) > sum(corner_px[:3])
 

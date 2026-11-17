@@ -211,13 +211,19 @@ def test_pil_player_right_click_scroll_and_resolution_scale() -> None:
 
 def test_pil_player_applies_saved_resolution_scale_on_startup_and_with_prior_listener() -> None:
     import eager_script
-    from eager_core.protocols import HostLifecycleListener
     from eager_runtime.session import GameSession
 
     from eager_graphics.renderers.pil import PILPlayer
 
-    class DummyListener(HostLifecycleListener):
-        pass
+    class DummyListener:
+        def on_request_fullscreen(self) -> None:
+            pass
+
+        def on_request_quit(self) -> None:
+            pass
+
+        def on_state_restored(self) -> None:
+            pass
 
     graph = eager_script.parse_graph("## Start --- start\nHello world.\n<<\n")
     session = GameSession(graph)

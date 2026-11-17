@@ -789,7 +789,7 @@ def test_pyglet_render_error_and_asset_security_error(tmp_path: Path, invisible_
 
     renderer = PygletRenderer(window=invisible_window)
     renderer._current_transform = None
-    item = RenderItem("test", "foreground", 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, Anchor.CENTER, WHITE, False, False, 10)
+    item = RenderItem("test", 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, Anchor.CENTER, WHITE, False, False, "foreground", 10)
     # draw_item without viewport transform raises RenderError (and RuntimeError)
     with pytest.raises(RenderError):
         renderer.draw_item(item)

@@ -2,13 +2,18 @@
 
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from eager_core.protocols import GameSessionProtocol
 from eager_core.types import WHITE, Color, Rect
 from eager_runtime.project import ProjectConfig, merge_graphs
 from eager_script import parse_graph
 
 from eager_graphics.screens import Button, ScreenManager, TitleScreen
+
+
+def _as_session(session: Any) -> GameSessionProtocol:
+    return cast("GameSessionProtocol", session)
 
 
 class MockUIDrawBackend:
@@ -97,6 +102,7 @@ class MockUIDrawBackend:
         bold: bool = False,
         italic: bool = False,
         cache: bool = True,
+        font_family: str | None = None,
     ) -> tuple[float, float]:
         longest = max((len(line) for line in text.splitlines()), default=0)
         return (longest * font_size * 0.5, float(font_size) * 1.2)
@@ -122,7 +128,7 @@ class TestScreensAndProject:
             def advance(self):
                 pass
 
-        mgr.show("title", DummySession())
+        mgr.show("title", _as_session(DummySession()))
         assert mgr.active_screen is not None
         assert mgr.active_screen.name == "title"
 
@@ -141,7 +147,7 @@ class TestScreensAndProject:
             def advance(self):
                 pass
 
-        screen.on_enter(DummySession())
+        screen.on_enter(_as_session(DummySession()))
         screen.draw(backend, 1280, 720)
 
         assert len(backend.rects) > 0
@@ -205,7 +211,7 @@ height = 720
         session = DummySession()
         pref_screen = PreferencesScreen()
         session.screens.register(pref_screen)
-        session.screens.show("preferences", session)
+        session.screens.show("preferences", _as_session(session))
 
         # Hit test slider
         slider = pref_screen.sliders[0]
@@ -228,6 +234,10 @@ height = 720
             text_speed = 50.0
             auto_forward_time = 3.0
             language = "default"
+            fullscreen = False
+            skip_unseen = False
+            autosave_enabled = False
+            resolution_scale = 1.0
 
         class DummyTranslationManager:
             def available_locales(self):
@@ -250,7 +260,7 @@ height = 720
         session = DummySession()
         pref_screen = PreferencesScreen()
         session.screens.register(pref_screen)
-        session.screens.show("preferences", session)
+        session.screens.show("preferences", _as_session(session))
 
         # Button 0 is Back, Buttons 1..3 are languages (default, es, ja), Buttons 4..6 are options, Buttons 7..10 are scale
         assert len(pref_screen.buttons) == 11
@@ -285,10 +295,10 @@ height = 720
         assert session.preferences.skip_unseen is True
 
         # Test on_exit auto-save
-        session.saved_prefs = False
-        session.save_preferences = lambda: setattr(session, "saved_prefs", True)
-        session.screens.hide(session)
-        assert getattr(session, "saved_prefs", False) is True
+        saved_prefs = {"value": False}
+        cast(Any, session).save_preferences = lambda: saved_prefs.__setitem__("value", True)
+        session.screens.hide(_as_session(session))
+        assert saved_prefs["value"] is True
 
     def test_history_screen(self):
         from eager_graphics.screens import HistoryScreen
@@ -309,7 +319,7 @@ height = 720
         session = DummySession()
         history_screen = HistoryScreen()
         session.screens.register(history_screen)
-        session.screens.show("history", session)
+        session.screens.show("history", _as_session(session))
 
         history_screen.scroll_up()
         assert history_screen.scroll_offset > 0
@@ -343,12 +353,12 @@ height = 720
         mgr.register(s1)
         mgr.register(s2)
 
-        mgr.show("s1", None)
+        mgr.show("s1", _as_session(None))
         assert mgr.is_active
         assert mgr.active_screen is not None
         assert mgr.active_screen.name == "s1"
 
-        mgr.show("s2", None)
+        mgr.show("s2", _as_session(None))
         assert mgr.active_screen is not None
         assert mgr.active_screen.name == "s2"
 
@@ -384,7 +394,7 @@ height = 720
 
         session = DummySession()
         screen = SaveLoadScreen("save")
-        screen.on_enter(session)
+        screen.on_enter(_as_session(session))
 
         # Slot 1 button should contain title, timestamp, and snippet
         slot1_btn = screen.buttons[0]
@@ -463,7 +473,7 @@ height = 720
         session = DummySession(entries)
         history_screen = HistoryScreen()
         session.screens.register(history_screen)
-        session.screens.show("history", session)
+        session.screens.show("history", _as_session(session))
 
         # Check buttons: Up, Down, Back + 3 speaker buttons for the 3 entries with voice
         speaker_buttons = [b for b in history_screen.buttons if b.text == "🔊"]
@@ -512,7 +522,7 @@ height = 720
         scroll_session = DummySession(many_entries)
         history_screen2 = HistoryScreen()
         scroll_session.screens.register(history_screen2)
-        scroll_session.screens.show("history", scroll_session)
+        scroll_session.screens.show("history", _as_session(scroll_session))
 
         # Offset 0: displays slice 8..15 (7 entries: indices 8, 9, 10, 11, 12, 13, 14)
         # Even indices in 8..14 are 8, 10, 12, 14 -> 4 speaker buttons
@@ -731,7 +741,7 @@ height = 720
         session = DummySession()
         menu = GameMenuScreen(viewport_width=1280, viewport_height=720)
         session.screens.register(menu)
-        session.screens.show("game_menu", session)
+        session.screens.show("game_menu", _as_session(session))
 
         btn_labels = [b.text for b in menu.buttons]
         assert btn_labels == [
@@ -751,17 +761,20 @@ height = 720
 
         # Test Resume button action hides the menu
         resume_btn = menu.buttons[0]
+        assert resume_btn.action is not None
         resume_btn.action()
         assert not session.screens.is_active
 
         # Test Main Menu action calls session.return_to_title
         title_btn = next(b for b in menu.buttons if b.text == "Main Menu")
+        assert title_btn.action is not None
         title_btn.action()
         assert session.title_returned is True
 
         # Test Quit Game action calls session.handle_input(QUIT)
         from eager_core.input import InputAction
         quit_btn = next(b for b in menu.buttons if b.text == "Quit Game")
+        assert quit_btn.action is not None
         quit_btn.action()
         assert InputAction.QUIT in session.handled_inputs
 
@@ -772,7 +785,7 @@ height = 720
         mgr = ScreenManager()
         title = TitleScreen()
         mgr.register(title)
-        mgr.show("title", None)
+        mgr.show("title", _as_session(None))
 
         assert mgr.is_active
         assert mgr.active_screen is not None
@@ -798,7 +811,7 @@ height = 720
         # Title screen
         title = TitleScreen()
         session.screens.register(title)
-        session.screens.show("title", session)
+        session.screens.show("title", _as_session(session))
         for btn in title.buttons:
             btn_center_x = btn.rect.x + (btn.rect.width / 2.0)
             assert abs(btn_center_x - (vw / 2.0)) < 1.0
@@ -806,7 +819,7 @@ height = 720
         # Game menu screen
         menu = GameMenuScreen()
         session.screens.register(menu)
-        session.screens.show("game_menu", session)
+        session.screens.show("game_menu", _as_session(session))
         for btn in menu.buttons:
             btn_center_x = btn.rect.x + (btn.rect.width / 2.0)
             assert abs(btn_center_x - (vw / 2.0)) < 1.0
@@ -842,8 +855,9 @@ height = 720
         # TitleScreen Quit button
         title = TitleScreen()
         session.screens.register(title)
-        session.screens.show("title", session)
+        session.screens.show("title", _as_session(session))
         quit_btn = next(b for b in title.buttons if b.text == "Quit")
+        assert quit_btn.action is not None
         quit_btn.action()
         assert session._player.closed is True
 
@@ -851,8 +865,9 @@ height = 720
         session._player.closed = False
         menu = GameMenuScreen()
         session.screens.register(menu)
-        session.screens.show("game_menu", session)
+        session.screens.show("game_menu", _as_session(session))
         quit_menu_btn = next(b for b in menu.buttons if b.text == "Quit Game")
+        assert quit_menu_btn.action is not None
         quit_menu_btn.action()
         assert session._player.closed is True
 
@@ -892,7 +907,7 @@ height = 720
         session = DummySession()
         saveload = SaveLoadScreen(mode="load")
         session.screens.register(saveload)
-        session.screens.show("load", session)
+        session.screens.show("load", _as_session(session))
         assert session.screens.is_active
 
         # Slot 1 is button index 1 (button 0 is Back)
@@ -936,7 +951,7 @@ height = 720
         session = DummySession(entries)
         screen = HistoryScreen(viewport_width=1280, viewport_height=720)
         session.screens.register(screen)
-        session.screens.show("history", session)
+        session.screens.show("history", _as_session(session))
 
         backend = MockUIDrawBackend()
         screen.draw(backend, 1280, 720)
@@ -1047,18 +1062,21 @@ def test_history_screen_scroll_bounds_and_voice_button_alignment() -> None:
             self.backlog = bl
             self.overlay = None
 
-    class DummyBackend:
-        def draw_rect(self, *args: Any, **kwargs: Any) -> None:
-            pass
-
-        def draw_text(self, *args: Any, **kwargs: Any) -> None:
-            pass
-
-        def measure_text(self, text: str, font_size: int = 14, **kwargs: Any) -> tuple[float, float]:
+    class DummyBackend(MockUIDrawBackend):
+        def measure_text(
+            self,
+            text: str,
+            *,
+            font_size: int = 14,
+            bold: bool = False,
+            italic: bool = False,
+            cache: bool = True,
+            font_family: str | None = None,
+        ) -> tuple[float, float]:
             return (len(text) * 10.0, float(font_size))
 
     screen = HistoryScreen(viewport_width=1280, viewport_height=720)
-    screen.on_enter(DummySession(backlog))
+    screen.on_enter(_as_session(DummySession(backlog)))
 
     # Max scroll_offset with 10 entries and visible_count=7 is 3 (7 + 3 = 10)
     for _ in range(10):
