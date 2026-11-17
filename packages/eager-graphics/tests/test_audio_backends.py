@@ -105,12 +105,11 @@ class TestHardwareAudioBackends:
         backend.shutdown()
 
     def test_miniaudio_audio_backend_error_handling(self, caplog: pytest.LogCaptureFixture) -> None:
-        pytest.importorskip("miniaudio")
+        miniaudio = pytest.importorskip("miniaudio")
         from eager_graphics.audio.miniaudio import MiniaudioAudioBackend
 
-        backend = MiniaudioAudioBackend()
-        if backend._device is not None:
-            backend._device.stop()
+        with mock.patch.object(miniaudio, "PlaybackDevice"):
+            backend = MiniaudioAudioBackend()
         missing_path = os.path.join(self.tmp_dir.name, "missing.wav")
 
         # Missing file on streaming channel (music)
