@@ -70,8 +70,10 @@ from eager_script.parser import (
     ScreenplayParser,
     parse,
     parse_iter,
+    parse_with_tokens,
     slugify,
 )
+from eager_script.tokens import ParseResult, TokenSpan
 from eager_script.validator import (
     ValidationError,
     ValidationResult,
@@ -99,6 +101,7 @@ __all__ = [
     "IncludeError",
     "InputHookArgs",
     "ParseError",
+    "ParseResult",
     "ParsedAppend",
     "ParsedCall",
     "ParsedCharacter",
@@ -126,6 +129,7 @@ __all__ = [
     "SceneGraph",
     "SceneNode",
     "ScreenplayParser",
+    "TokenSpan",
     "ValidationError",
     "ValidationResult",
     "__version__",
@@ -139,6 +143,7 @@ __all__ = [
     "parse_input_args",
     "parse_input_hook",
     "parse_iter",
+    "parse_with_tokens",
     "resolve_includes",
     "slugify",
     "to_dict",

@@ -962,3 +962,53 @@ $ score = score + 5
         assert res.start_col == orig.start_col
         assert res.end_col == orig.end_col
 
+
+def test_inline_comment_quote_and_apostrophe_handling() -> None:
+    """Verify runtime parse() and parse_with_tokens() share quote-aware comment stripping."""
+    from eager_script import parse_with_tokens
+
+    script = (
+        'Alice: Welcome to "#1 Diner"\n'
+        'Alice: "Hello # world" # real comment\n'
+        "Alice: It's fine # another comment\n"
+        "Alice: It's Bob's # third comment\n"
+    )
+    items = parse(script)
+    result = parse_with_tokens(script)
+    assert items == result.items
+    assert len(items) == 4
+    assert isinstance(items[0], ParsedDialogue)
+    assert items[0].text == 'Welcome to "#1 Diner"'
+    assert isinstance(items[1], ParsedDialogue)
+    assert items[1].text == '"Hello # world"'
+    assert isinstance(items[2], ParsedDialogue)
+    assert items[2].text == "It's fine"
+    assert isinstance(items[3], ParsedDialogue)
+    assert items[3].text == "It's Bob's"
+
+    comments = [s.value for s in result.spans if s.kind == "comment"]
+    assert comments == ["# real comment", "# another comment", "# third comment"]
+
+
+def test_parse_with_tokens_inline_block_and_recovery() -> None:
+    """Verify parse_with_tokens() preserves exact columns in inline blocks and recovers errors."""
+    from eager_script import parse_with_tokens
+
+    script = (
+        "## Start --- start\n"
+        "? Choose\n"
+        "\tAlice: Inside tab block\n"
+        "\t$ invalid %%%\n"
+        "\t> start\n"
+    )
+    result = parse_with_tokens(script, recovery=True)
+    speakers = [s for s in result.spans if s.kind == "speaker"]
+    assert len(speakers) == 1
+    assert speakers[0].start_line == 2
+    assert speakers[0].start_col == 1
+    assert speakers[0].end_col == 6
+
+    errors = [it for it in result.items if isinstance(it, ParsedError)]
+    assert len(errors) == 1
+    assert errors[0].line_number == 4
+
