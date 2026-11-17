@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `BasePlayer.handle_key_press` leaking global keymap shortcuts during active `InputBox` prompts, fixed `Shift+Tab` backward focus navigation, prioritized active modal screens over underlying prompts, and propagated `on_resize` to `ScreenManager.set_viewport`.
+- Fixed `Slider.handle_click` drag clamping outside track bounds and zero-width division guard, added keyboard `left`/`right` slider support in `Screen.handle_key`, and preserved button focus highlights across `rebuild_layout()` and `set_viewport()`.
+- Fixed `PreferencesScreen` Text Speed slider scale (`20..200 cps` with far-right `Instant`) and immediate `save_preferences()` on slider changes.
+- Fixed `HistoryScreen` ASCII-safe button labels (`^ Up`, `v Down`, `[>]`) and entry overflow clipping above `Back`; fixed `TitleScreen.start_game()` mid-game restart behavior.
+- Synced `UIOverlay.hit_test_quick_action` with `UIOverlay.draw` visibility across choices, input prompts, story end, and NVL mode.
+
 ## [0.9.0] - 2026-11-09
 
 ### Added

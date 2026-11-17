@@ -47,8 +47,12 @@ class TitleScreen(Screen):
                     screens.hide_all(self.session)
                 if hasattr(self.session, "mode"):
                     self.session.mode = "game"
-                if getattr(self.session, "is_finished", False):
-                    self.session.restart_story()
+                has_started = getattr(self.session, "_last_event", None) is not None
+                if getattr(self.session, "is_finished", False) or has_started:
+                    if hasattr(self.session, "restart_story"):
+                        self.session.restart_story()
+                    elif hasattr(self.session, "advance"):
+                        self.session.advance()
                 elif hasattr(self.session, "advance"):
                     self.session.advance()
 
@@ -421,6 +425,7 @@ class SaveLoadScreen(Screen):
                 action=lambda: self.session.screens.hide(self.session) if self.session is not None and self.session.screens is not None else None,
             )
         )
+        self._restore_focus_highlight()
 
     def on_enter(self, session: GameSessionProtocol) -> None:
         """Handle screen presentation entry and initialize viewport.
@@ -502,6 +507,8 @@ class PreferencesScreen(Screen):
                     setattr(prefs, field_name, val)
                     if self.session is not None:
                         self.session.apply_preferences()
+                        if hasattr(self.session, "save_preferences"):
+                            self.session.save_preferences()
             return cb
 
         # Audio sliders
@@ -540,13 +547,24 @@ class PreferencesScreen(Screen):
                 )
             )
 
-        # Text Speed (0..100 cps mapped to 0..1)
+        # Text Speed (20..200 cps mapped to 0.0..0.99; <= 0.0 is Instant at 1.0)
         raw_speed = getattr(prefs, "text_speed", 50.0) if prefs else 50.0
-        speed_norm = max(0.0, min(1.0, raw_speed / 100.0))
+        if raw_speed <= 0.0:
+            speed_norm = 1.0
+        else:
+            clamped = max(20.0, min(200.0, raw_speed))
+            speed_norm = ((clamped - 20.0) / 180.0) * 0.99
 
         def speed_cb(val: float) -> None:
             if prefs is not None:
-                prefs.text_speed = val * 100.0
+                if val >= 0.99:
+                    prefs.text_speed = 0.0
+                else:
+                    prefs.text_speed = 20.0 + (max(0.0, val) / 0.99) * 180.0
+                if self.session is not None:
+                    self.session.apply_preferences()
+                    if hasattr(self.session, "save_preferences"):
+                        self.session.save_preferences()
 
         speed_y = base_y + 5 * step_y
         self.labels.append(
@@ -573,6 +591,8 @@ class PreferencesScreen(Screen):
         def auto_cb(val: float) -> None:
             if prefs is not None:
                 prefs.auto_forward_time = 1.0 + val * 9.0
+                if self.session is not None and hasattr(self.session, "save_preferences"):
+                    self.session.save_preferences()
 
         auto_y = base_y + 6 * step_y
         self.labels.append(
@@ -604,6 +624,7 @@ class PreferencesScreen(Screen):
                 action=lambda: self.session.screens.hide(self.session) if self.session is not None and self.session.screens is not None else None,
             )
         )
+        self._restore_focus_highlight()
 
         # Language Selector
         tm = getattr(self.session, "translation_manager", None)
@@ -758,6 +779,7 @@ class PreferencesScreen(Screen):
                     action=make_scale_cb(sc_val),
                 )
             )
+        self._restore_focus_highlight()
 
     def on_enter(self, session: GameSessionProtocol) -> None:
         """Handle preferences screen entry and sync controls.
@@ -895,14 +917,14 @@ class HistoryScreen(Screen):
         self.buttons.append(
             Button(
                 Rect(up_x, up_y, btn_w, btn_h),
-                "▲ Up",
+                "^ Up",
                 action=self.scroll_up,
             )
         )
         self.buttons.append(
             Button(
                 Rect(up_x, down_y, btn_w, btn_h),
-                "▼ Down",
+                "v Down",
                 action=self.scroll_down,
             )
         )
@@ -913,6 +935,7 @@ class HistoryScreen(Screen):
                 action=lambda: self.session.screens.hide(self.session) if self.session is not None and self.session.screens is not None else None,
             )
         )
+        self._restore_focus_highlight()
 
         backlog = getattr(self.session, "backlog", None) if self.session is not None else None
         entries = backlog.entries if backlog else []
@@ -943,12 +966,13 @@ class HistoryScreen(Screen):
                 self.buttons.append(
                     Button(
                         Rect(spk_x, curr_y - spk_offset_y, spk_w, spk_h),
-                        "🔊",
+                        "[>]",
                         action=self._make_voice_action(voice_str),
                         voice=voice_str,
                     )
                 )
             curr_y += step_y
+        self._restore_focus_highlight()
 
     def scroll_up(self) -> None:
         """Scroll backward toward older dialogue entries."""
@@ -1029,6 +1053,7 @@ class HistoryScreen(Screen):
 
             curr_y = vh * (110.0 / 720.0)
             step_y = vh * (65.0 / 720.0)
+            max_content_y = vh * (600.0 / 720.0)
             entry_x = vw * (100.0 / 1280.0)
             max_text_w = vw * (960.0 / 1280.0)
             line_h = float(entry_font_size) * 1.35
@@ -1040,6 +1065,8 @@ class HistoryScreen(Screen):
             voice_btn_idx = 0
 
             for entry in displayed_slice:
+                if curr_y + line_h > max_content_y:
+                    break
                 if getattr(entry, "voice", None) and voice_btn_idx < len(voice_buttons):
                     voice_buttons[voice_btn_idx].rect = Rect(spk_x, curr_y - spk_offset_y, spk_w, spk_h)
                     voice_btn_idx += 1

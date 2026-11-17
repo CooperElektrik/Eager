@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed `eager play` default `--backend` from `terminal` to `pil` (matching `eager run`).
 - Clarified `eager build` help/output to point standalone executable builds to `packaging/build_export.py`, and updated `eager new` next steps to highlight `--watch` and `eager check --assets`.
 
+### Fixed
+
+- Fixed `GameSession.request_fullscreen` double-toggling `preferences.fullscreen` when a host lifecycle listener or renderer already handled the toggle.
+- Updated `GameSession.handle_input` so left-clicking while `ui_hidden=True` unhides the UI without advancing dialogue or selecting hidden choices, and skips hover updates while hidden.
+- Fixed `GameSession.save_game` capturing the active `SaveLoadScreen` overlay in save slot thumbnails by rendering the underlying gameplay stage cleanly.
+
 ## [0.9.0] - 2026-11-09
 
 ### Added

@@ -1037,6 +1037,8 @@ class UIOverlay:
     input_box: InputBox = field(init=False)
     end_notice: EndNotice = field(init=False)
     quick_menu: QuickMenu = field(init=False)
+    _nvl_mode: bool = field(init=False, default=False)
+    _is_finished: bool = field(init=False, default=False)
 
     def __post_init__(self) -> None:
         """Initialize child UI components using current theme and dimensions."""
@@ -1113,6 +1115,8 @@ class UIOverlay:
         is_read: bool = False,
     ) -> None:
         """Mirror narrative state onto the child components."""
+        self._nvl_mode = bool(getattr(ui_state, "nvl_mode", False))
+        self._is_finished = bool(getattr(ui_state, "is_finished", False))
         self.dialogue_box.set_content(
             ui_state.speaker,
             ui_state.text,
@@ -1301,6 +1305,7 @@ class UIOverlay:
             is_read=is_read,
         )
         finished = ui_state.is_finished if is_finished is None else is_finished
+        self._is_finished = bool(finished)
 
         if not finished:
             if ui_state.nvl_mode:
@@ -1412,7 +1417,12 @@ class UIOverlay:
 
     def hit_test_quick_action(self, x: float, y: float) -> str | None:
         """Return the quick menu action under the point (e.g. 'save', 'load'), or None."""
-        if not self.dialogue_box.text:
+        if (
+            self._is_finished
+            or self.choice_menu.options
+            or self.input_box.prompt
+            or (not self._nvl_mode and not self.dialogue_box.text)
+        ):
             return None
         return self.quick_menu.hit_test(x, y)
 

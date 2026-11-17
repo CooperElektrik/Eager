@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **UI Elements & Cross-Layer Wiring (`eager-graphics`, `eager-runtime`)**:
+  - Fixed `BasePlayer.handle_key_press` leaking global keymap shortcuts while `InputBox` is active, fixed `Shift+Tab` backward focus navigation, prioritized active modal screens over underlying prompts, and propagated viewport resizes to `ScreenManager.set_viewport`.
+  - Fixed `Slider.handle_click` drag clamping outside track bounds and zero-width division guard, added keyboard `left`/`right` slider adjustment in `Screen.handle_key`, and preserved keyboard focus highlights across `rebuild_layout()` and `set_viewport()`.
+  - Fixed `PreferencesScreen` fullscreen double-flip, Text Speed slider mapping (`20..200 cps` with far-right `Instant`), and immediate preference saving on slider changes.
+  - Fixed `HistoryScreen` missing-glyph Unicode labels (`^ Up`, `v Down`, `[>]`) and prevented wrapped entries from overlapping `Back`; fixed `TitleScreen.start_game()` mid-game restart behavior and `SaveLoadScreen` capturing the Save Menu in slot thumbnails.
+  - Synced `UIOverlay.hit_test_quick_action` with `UIOverlay.draw` visibility and updated `GameSession.handle_input` so left-clicking while `ui_hidden=True` unhides the UI without advancing or selecting hidden choices.
 - Wired backlog, character lookup, audio, lighting, NVL mode, LSP, and CLI subsystems.
 - Mocked `miniaudio.PlaybackDevice` in `test_miniaudio_audio_backend_error_handling` so error-handling coverage executes reliably on headless CI runners without audio hardware.
 - Resolved `basedpyright` type errors across `packages/eager-graphics/tests`.

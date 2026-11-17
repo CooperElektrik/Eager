@@ -493,7 +493,7 @@ Alice: {voice:alice_02.ogg} Second line with voice.
 
     history_screen = session.screens.active_screen
     # Should have 2 speaker buttons (indices 0 and 2 have voice)
-    speaker_btns = [b for b in history_screen.buttons if b.text == "🔊"]
+    speaker_btns = [b for b in history_screen.buttons if b.text == "[>]"]
     assert len(speaker_btns) == 2
     assert speaker_btns[0].voice == "alice_01.ogg"
     assert speaker_btns[1].voice == "alice_02.ogg"
@@ -1516,3 +1516,35 @@ def test_session_save_preferences_and_fullscreen_toggle(tmp_path: Path) -> None:
 
 
 
+
+
+def test_request_fullscreen_no_double_flip_and_ui_hidden_unhides_on_click(tmp_path: Path) -> None:
+    from eager_core.input import InputAction
+
+    script_file = tmp_path / "story.es"
+    script_file.write_text("## Start --- start\nLine 1\n\nLine 2\n<<\n", encoding="utf-8")
+    session = GameSession(script_file, save_dir=tmp_path / "saves")
+
+    class FullscreenListener:
+        def on_request_fullscreen(self) -> None:
+            session.preferences.fullscreen = not session.preferences.fullscreen
+
+        def on_request_quit(self) -> None:
+            pass
+
+        def on_state_restored(self) -> None:
+            pass
+
+    session.add_lifecycle_listener(FullscreenListener())
+    assert session.preferences.fullscreen is False
+    session.request_fullscreen()
+    # Must flip only once (False -> True), not twice
+    assert session.preferences.fullscreen is True
+
+    # ui_hidden=True: click unhides without advancing past Line 1
+    session.advance()
+    assert session.director.ui_state.text == "Line 1"
+    session.ui_hidden = True
+    assert session.handle_input(InputAction.POINTER_CLICK, x=100.0, y=100.0) is True
+    assert session.ui_hidden is False
+    assert session.director.ui_state.text == "Line 1"

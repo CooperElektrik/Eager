@@ -243,3 +243,53 @@ def test_pil_player_applies_saved_resolution_scale_on_startup_and_with_prior_lis
         assert player.height == 540
     finally:
         player.close()
+
+
+def test_base_player_input_box_blocks_shortcuts_and_shift_tab() -> None:
+    from unittest.mock import MagicMock
+
+    from eager_core.events import InputPromptEvent
+    from eager_core.input import InputAction
+
+    from eager_graphics.player import BasePlayer
+    from eager_graphics.screens.builtin import TitleScreen
+    from eager_graphics.screens.screen import ScreenManager
+
+    session = MagicMock()
+    session.keymap = None
+    mgr = ScreenManager()
+    title = TitleScreen()
+    mgr.register(title)
+    session.screens = mgr
+    session.active_choice_prompt = None
+    session.active_input_prompt = None
+    session.is_finished = False
+
+    player = BasePlayer(session=session)
+    player.close = MagicMock()  # type: ignore[method-assign]
+
+    # 1. InputBox active: 'q' with char=None (Pyglet style) must NOT trigger QUIT/close
+    input_ev = InputPromptEvent(var_name="name", prompt="Name:")
+    player.active_input_prompt = input_ev
+    assert player.handle_key_press("q") is True
+    player.close.assert_not_called()
+    assert player.handle_key_press("tab") is True
+    session.handle_input.assert_not_called()
+
+    # Escape still reaches GAME_MENU
+    assert player.handle_key_press("escape") is True
+    session.handle_input.assert_called_with(InputAction.GAME_MENU)
+
+    # 2. Shift+Tab navigates backward on active Screen
+    player.active_input_prompt = None
+    mgr.show("title", session)
+    title.handle_key("down")
+    title.handle_key("down")
+    assert title._focused_button_index == 1
+    assert player.handle_key_press("tab", is_shift=True) is True
+    assert title._focused_button_index == 0
+
+    # 3. on_resize updates screens viewport
+    player.on_resize(1920, 1080)
+    assert mgr.viewport_width == 1920
+    assert mgr.viewport_height == 1080

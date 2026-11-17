@@ -34,7 +34,16 @@ class Screen:
         self.labels: list[Label] = []
         self.visible: bool = False
         self._focused_button_index: int = -1
+        self._focused_slider_index: int = -1
         self._dragging_slider: Slider | None = None
+
+    def _restore_focus_highlight(self) -> None:
+        """Re-apply keyboard focus highlight to the focused button after layout rebuild."""
+        if 0 <= self._focused_button_index < len(self.buttons) and self.buttons[self._focused_button_index].enabled:
+            for i, b in enumerate(self.buttons):
+                b.hovered = (i == self._focused_button_index)
+        elif self._focused_button_index >= len(self.buttons):
+            self._focused_button_index = -1
 
     def set_viewport(self, width: int, height: int) -> None:
         """Update viewport dimensions and recompute layout."""
@@ -86,9 +95,11 @@ class Screen:
                 if b.action:
                     b.action()
                 return True
-        for s in self.sliders:
+        for idx, s in enumerate(self.sliders):
             if s.hit_test(x, y):
                 self._dragging_slider = s
+                self._focused_slider_index = idx
+                self._focused_button_index = -1
                 s.handle_click(x, y)
                 return True
         self._dragging_slider = None
@@ -106,9 +117,24 @@ class Screen:
         k = key_name.strip().lower()
         enabled_buttons = [i for i, b in enumerate(self.buttons) if b.enabled]
 
+        # Adjust focused slider (or first slider when no buttons are enabled)
+        if k in ("left", "nav_left", "right", "nav_right") and self.sliders:
+            slider_idx = self._focused_slider_index
+            if slider_idx < 0 and not enabled_buttons:
+                slider_idx = 0
+                self._focused_slider_index = 0
+            if 0 <= slider_idx < len(self.sliders):
+                slider = self.sliders[slider_idx]
+                delta = -0.05 if k in ("left", "nav_left") else 0.05
+                slider.value = max(0.0, min(1.0, slider.value + delta))
+                if slider.on_change:
+                    slider.on_change(slider.value)
+                return True
+
         if k in ("up", "nav_up", "left", "nav_left", "shift+tab"):
             if not enabled_buttons:
                 return False
+            self._focused_slider_index = -1
             if self._focused_button_index in enabled_buttons:
                 pos = enabled_buttons.index(self._focused_button_index)
                 new_idx = enabled_buttons[(pos - 1) % len(enabled_buttons)]
@@ -122,6 +148,7 @@ class Screen:
         if k in ("down", "nav_down", "right", "nav_right", "tab"):
             if not enabled_buttons:
                 return False
+            self._focused_slider_index = -1
             if self._focused_button_index in enabled_buttons:
                 pos = enabled_buttons.index(self._focused_button_index)
                 new_idx = enabled_buttons[(pos + 1) % len(enabled_buttons)]

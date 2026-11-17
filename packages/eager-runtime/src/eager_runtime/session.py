@@ -373,12 +373,15 @@ class GameSession:
 
     def request_fullscreen(self) -> None:
         """Notify registered host listeners to toggle fullscreen."""
+        prev_fs = bool(getattr(self.preferences, "fullscreen", False))
         for listener in list(self._lifecycle_listeners):
             listener.on_request_fullscreen()
         if hasattr(self.renderer, "toggle_fullscreen"):
             self.renderer.toggle_fullscreen()
-        self.preferences.fullscreen = not getattr(self.preferences, "fullscreen", False)
-        self.save_preferences()
+        # Only flip preference here if no host listener/renderer already toggled it
+        if bool(getattr(self.preferences, "fullscreen", False)) == prev_fs:
+            self.preferences.fullscreen = not prev_fs
+            self.save_preferences()
 
     def request_quit(self) -> bool:
         """Notify registered host listeners to terminate the application."""
@@ -822,9 +825,26 @@ class GameSession:
         try:
             thumb_dir = self.save_manager.save_dir / "screenshots" / "thumbs"
             thumb_dir.mkdir(parents=True, exist_ok=True)
-            thumb_path = self.take_screenshot(
-                target_path=thumb_dir / f"thumb_{slot_name}.png"
-            )
+            target_thumb = thumb_dir / f"thumb_{slot_name}.png"
+            r = self.renderer or self._last_renderer
+            saved_screen = getattr(self.screens, "active_screen", None)
+            if (
+                r is not None
+                and saved_screen is not None
+                and hasattr(r, "draw_rect")
+                and hasattr(r, "save_frame")
+            ):
+                draw_w = int(getattr(self.overlay, "width", 1280))
+                draw_h = int(getattr(self.overlay, "height", 720))
+                self.screens.active_screen = None
+                try:
+                    self.draw(r, draw_w, draw_h)
+                    thumb_path = self.take_screenshot(target_path=target_thumb)
+                finally:
+                    self.screens.active_screen = saved_screen
+                    self.draw(r, draw_w, draw_h)
+            else:
+                thumb_path = self.take_screenshot(target_path=target_thumb)
         except Exception:  # noqa: BLE001
             # A missing renderer or screenshot failure must never break saving.
             thumb_path = None
@@ -1332,11 +1352,14 @@ class GameSession:
         elif action == InputAction.POINTER_CLICK:
             x = payload.get("x", 0.0)
             y = payload.get("y", 0.0)
+            if self.ui_hidden:
+                self.ui_hidden = False
+                self._ui_dirty = True
+                return True
             # Check quick action bar in UIOverlay
-            if not self.ui_hidden:
-                qa = self.overlay.hit_test_quick_action(x, y)
-                if qa:
-                    return self._handle_quick_action(qa)
+            qa = self.overlay.hit_test_quick_action(x, y)
+            if qa:
+                return self._handle_quick_action(qa)
             # Check choices
             if self.active_choice_prompt is not None:
                 idx = self.overlay.hit_test_choice(x, y)
@@ -1358,6 +1381,8 @@ class GameSession:
         elif action == InputAction.POINTER_MOVE:
             x = payload.get("x", 0.0)
             y = payload.get("y", 0.0)
+            if self.ui_hidden:
+                return False
             hover_changed = False
             # Choice menu hover update
             if self.active_choice_prompt is not None:
@@ -1368,13 +1393,12 @@ class GameSession:
                         self.overlay.set_selected_choice(idx)
                     hover_changed = True
             # Quick menu hover update
-            if not self.ui_hidden:
-                qa = self.overlay.hit_test_quick_action(x, y)
-                cur_qa = self.overlay.get_hovered_quick_action() if hasattr(self.overlay, "get_hovered_quick_action") else None
-                if cur_qa != qa:
-                    if hasattr(self.overlay, "set_hovered_quick_action"):
-                        self.overlay.set_hovered_quick_action(qa)
-                    hover_changed = True
+            qa = self.overlay.hit_test_quick_action(x, y)
+            cur_qa = self.overlay.get_hovered_quick_action() if hasattr(self.overlay, "get_hovered_quick_action") else None
+            if cur_qa != qa:
+                if hasattr(self.overlay, "set_hovered_quick_action"):
+                    self.overlay.set_hovered_quick_action(qa)
+                hover_changed = True
             return hover_changed
         return None
 

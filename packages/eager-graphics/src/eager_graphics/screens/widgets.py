@@ -235,17 +235,18 @@ class Slider:
         )
 
     def handle_click(self, x: float, y: float) -> None:
-        """Process click event, updating slider value and invoking callback.
+        """Process click or drag event, updating slider value and invoking callback.
 
         Args:
-            x: Click X coordinate.
-            y: Click Y coordinate.
+            x: Click or drag X coordinate.
+            y: Click or drag Y coordinate.
         """
-        if self.hit_test(x, y):
-            rel = (x - self.rect.x) / self.rect.width
-            self.value = max(0.0, min(1.0, rel))
-            if self.on_change:
-                self.on_change(self.value)
+        if self.rect.width <= 0:
+            return
+        rel = (x - self.rect.x) / self.rect.width
+        self.value = max(0.0, min(1.0, rel))
+        if self.on_change:
+            self.on_change(self.value)
 
     def draw(self, backend: UIDrawBackend, bar_color: Color, fill_color: Color) -> None:
         """Render slider track background bar and filled value segment.

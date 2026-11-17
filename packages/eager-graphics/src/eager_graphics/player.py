@@ -208,6 +208,9 @@ class BasePlayer:
         self.width = width
         self.height = height
         self.overlay.set_viewport(width, height)
+        screens = getattr(self.session, "screens", None)
+        if screens is not None and hasattr(screens, "set_viewport"):
+            screens.set_viewport(width, height)
 
     def tick(self, dt: float) -> None:
         """Advance animations and pump audio mixer / session logic."""
@@ -256,8 +259,21 @@ class BasePlayer:
     ) -> bool:
         """Handle a key press with normalized keysym, prompt handling, and action mapping."""
         keysym = self.normalize_keysym(raw_key)
+        combo = f"shift+{keysym}" if is_shift else keysym
 
-        # Active input prompt handling
+        # Forward to active modal screen first so screens work over prompts
+        screens = getattr(self.session, "screens", None)
+        if (
+            screens is not None
+            and getattr(screens, "is_active", False) is True
+            and hasattr(screens, "handle_key")
+            and screens.handle_key(combo, self.session) is True
+        ):
+            self._mark_ui_dirty()
+            self._sync_state()
+            return True
+
+        # Active input prompt handling: swallow unhandled keys so shortcuts don't fire
         if self.active_input_prompt is not None:
             if keysym == "enter":
                 self._mark_ui_dirty()
@@ -274,6 +290,8 @@ class BasePlayer:
                 self.session.handle_input(InputAction.TEXT_CHAR, char=char)
                 self._sync_overlay()
                 return True
+            if keysym != "escape":
+                return True
 
         # 1-9 choice keys
         if self.active_choice_prompt is not None and keysym in "123456789":
@@ -284,19 +302,6 @@ class BasePlayer:
                 self._sync_state()
                 return True
 
-        # Forward to active screen if a screen is active
-        screens = getattr(self.session, "screens", None)
-        if (
-            screens is not None
-            and getattr(screens, "is_active", False)
-            and hasattr(screens, "handle_key")
-            and screens.handle_key(keysym, self.session)
-        ):
-            self._mark_ui_dirty()
-            self._sync_state()
-            return True
-
-        combo = f"shift+{keysym}" if is_shift else keysym
         action = self.keymap.map_key(combo) or self.keymap.map_key(keysym)
         if action == InputAction.QUIT:
             self.close()

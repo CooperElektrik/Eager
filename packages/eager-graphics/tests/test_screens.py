@@ -476,7 +476,7 @@ height = 720
         session.screens.show("history", _as_session(session))
 
         # Check buttons: Up, Down, Back + 3 speaker buttons for the 3 entries with voice
-        speaker_buttons = [b for b in history_screen.buttons if b.text == "🔊"]
+        speaker_buttons = [b for b in history_screen.buttons if b.text == "[>]"]
         assert len(speaker_buttons) == 3
         assert speaker_buttons[0].voice == "bob_01.ogg"
         assert speaker_buttons[1].voice == "alice_02.ogg"
@@ -505,7 +505,7 @@ height = 720
         # Test draw with mock backend
         backend = MockUIDrawBackend()
         history_screen.draw(backend, 1280, 720)
-        speaker_draws = [t for t in backend.texts if t[0] == "🔊"]
+        speaker_draws = [t for t in backend.texts if t[0] == "[>]"]
         assert len(speaker_draws) == 3
 
         # Test session.play_voice delegation if play_voice is provided on session
@@ -1091,3 +1091,83 @@ def test_history_screen_scroll_bounds_and_voice_button_alignment() -> None:
     # Because entries wrap to 3 lines, step > 65.0
     assert ys[1] - ys[0] > 65.0
 
+
+
+def test_slider_drag_clamps_outside_bounds_and_width_zero_guard() -> None:
+    from eager_core.types import Rect
+
+    from eager_graphics.screens.widgets import Slider
+
+    values: list[float] = []
+    s = Slider(Rect(100.0, 100.0, 200.0, 22.0), value=0.5, on_change=values.append)
+
+    # Dragging above and left of track still clamps to 0.0
+    s.handle_click(50.0, 80.0)
+    assert s.value == 0.0
+    assert values[-1] == 0.0
+
+    # Dragging below and right of track still clamps to 1.0
+    s.handle_click(400.0, 160.0)
+    assert s.value == 1.0
+    assert values[-1] == 1.0
+
+    # Zero-width slider does not raise ZeroDivisionError
+    s_zero = Slider(Rect(0.0, 0.0, 0.0, 22.0), value=0.5)
+    s_zero.handle_click(10.0, 10.0)
+    assert s_zero.value == 0.5
+
+
+def test_screen_handle_key_slider_and_resize_focus_preservation() -> None:
+    from unittest.mock import MagicMock
+
+    import pytest
+
+    from eager_graphics.screens.builtin import PreferencesScreen, TitleScreen
+
+    session = MagicMock()
+    session.overlay = None
+    session.preferences.master_volume = 0.5
+    session.preferences.music_volume = 0.8
+    session.preferences.ambient_volume = 0.8
+    session.preferences.sfx_volume = 1.0
+    session.preferences.voice_volume = 1.0
+    session.preferences.text_speed = 0.0  # Instant
+    session.preferences.auto_forward_time = 3.0
+    session.preferences.language = "default"
+    session.preferences.fullscreen = False
+    session.preferences.skip_unseen = False
+    session.preferences.autosave_enabled = True
+    session.preferences.resolution_scale = 1.0
+    session.translation_manager = None
+
+    pref = PreferencesScreen()
+    pref.on_enter(session)
+
+    # Text speed slider: 0.0 (Instant) maps to 1.0 on the slider
+    text_speed_slider = pref.sliders[5]
+    assert text_speed_slider.value == 1.0
+
+    # Moving slider to 0.0 sets slowest speed (20.0) and saves immediately
+    pref.handle_mouse_click(text_speed_slider.rect.x, text_speed_slider.rect.y + 5)
+    assert session.preferences.text_speed == pytest.approx(20.0)
+    session.save_preferences.assert_called()
+
+    # Keyboard left/right adjusts focused slider
+    assert pref.handle_key("right") is True
+    assert text_speed_slider.value == pytest.approx(0.05)
+
+    # Focus highlight survives rebuild_layout and set_viewport
+    pref.handle_key("down")
+    focused_idx = pref._focused_button_index
+    assert focused_idx >= 0
+    pref.set_viewport(1920, 1080)
+    assert pref.buttons[focused_idx].hovered is True
+
+    # TitleScreen.start_game restarts if story already started
+    title = TitleScreen()
+    session._last_event = object()
+    session.is_finished = False
+    title.on_enter(session)
+    assert title.buttons[0].action is not None
+    title.buttons[0].action()
+    session.restart_story.assert_called_once()

@@ -1110,3 +1110,35 @@ def test_ui_overlay_draw_nvl_markup_scaling_and_overflow() -> None:
     assert not any(c["text"] == "Entry 0" for c in calls_overflow)
 
 
+
+
+def test_ui_overlay_hit_test_quick_action_syncs_with_visibility() -> None:
+    from eager_core.events import ChoiceOption, ChoicePromptEvent, InputPromptEvent
+
+    overlay = UIOverlay(1280, 720)
+    qx, qy = 720.0, 705.0  # Inside QuickMenu Log button
+
+    # Normal dialogue -> quick action hit
+    state = UIState(speaker="Alice", text="Hello")
+    overlay.sync(state)
+    assert overlay.hit_test_quick_action(qx, qy) == "log"
+
+    # Active choice prompt -> quick menu hidden, hit_test returns None
+    choice = ChoicePromptEvent(options=(ChoiceOption(index=0, text="Go", target="next"),), line_number=1)
+    overlay.sync(state, choice_prompt=choice)
+    assert overlay.hit_test_quick_action(qx, qy) is None
+
+    # Active input prompt -> quick menu hidden, hit_test returns None
+    prompt = InputPromptEvent(var_name="name", prompt="Name:")
+    overlay.sync(state, input_prompt=prompt)
+    assert overlay.hit_test_quick_action(qx, qy) is None
+
+    # Story finished -> quick menu hidden, hit_test returns None
+    finished_state = UIState(speaker="Alice", text="End", is_finished=True)
+    overlay.sync(finished_state)
+    assert overlay.hit_test_quick_action(qx, qy) is None
+
+    # NVL mode with empty dialogue_box.text -> quick menu visible, hit_test works
+    nvl_state = UIState(speaker="", text="", nvl_mode=True)
+    overlay.sync(nvl_state)
+    assert overlay.hit_test_quick_action(qx, qy) == "log"
