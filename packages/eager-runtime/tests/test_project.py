@@ -198,10 +198,10 @@ Narrator: This is chapter one.
     main = tmp_path / "main.es"
     main.write_text(
         """
-@include "chapter1.es"
 ## Prologue --- prologue
 Narrator: Beginning.
 > ch1
+@include "chapter1.es"
 """,
         encoding="utf-8",
     )
@@ -213,6 +213,39 @@ Narrator: Beginning.
     assert len(graph.edges) == 1
     assert graph.edges[0].source == "prologue"
     assert graph.edges[0].target == "ch1"
+
+
+def test_load_project_graph_inlines_scene_include(tmp_path: Path) -> None:
+    """Verify @include inside a scene inlines label-less beats in both file and dir modes."""
+    shared = tmp_path / "shared_intro.es"
+    shared.write_text(
+        """
+Narrator: Shared intro line 1.
+Alice: Shared intro line 2.
+""",
+        encoding="utf-8",
+    )
+
+    main = tmp_path / "main.es"
+    main.write_text(
+        """
+## Prologue --- prologue
+@include "shared_intro.es"
+Narrator: After include.
+""",
+        encoding="utf-8",
+    )
+
+    for target in (main, tmp_path):
+        graph = load_project_graph(target, strict=True)
+        assert graph.entry == "prologue"
+        assert len(graph.preamble) == 0
+        body_texts = [getattr(item, "text", "") for item in graph.nodes["prologue"].body]
+        assert body_texts == [
+            "Shared intro line 1.",
+            "Shared intro line 2.",
+            "After include.",
+        ]
 
 
 def test_resolve_project_scripts_include_traversal(tmp_path: Path) -> None:

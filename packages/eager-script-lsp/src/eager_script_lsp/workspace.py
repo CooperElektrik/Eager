@@ -9,7 +9,14 @@ from pathlib import Path
 from eager_core.i18n import TranslationCatalog
 from eager_runtime.assets import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS
 from eager_runtime.project import ProjectConfig, merge_graphs
-from eager_script import SceneGraph, SceneNode
+from eager_script import (
+    IncludeError,
+    ParseError,
+    SceneGraph,
+    SceneNode,
+    resolve_includes,
+    to_graph,
+)
 from lsprotocol.types import Range
 from pygls.uris import from_fs_path, to_fs_path
 
@@ -339,11 +346,39 @@ class WorkspaceIndex:
         self.merge_errors.clear()
 
         # Step 1: Collect symbols from each document
+        path_to_doc = {uri_to_path(uri).resolve(): doc for uri, doc in self.documents.items()}
+        root_dir = self.root_path.resolve()
+
+        def _read_doc_or_disk(path: Path) -> str:
+            if path in path_to_doc:
+                return path_to_doc[path].text
+            return path.read_text(encoding="utf-8")
+
+        included_paths: set[Path] = set()
+        resolved_doc_graphs: dict[str, SceneGraph] = {}
+        for uri, doc in self.documents.items():
+            doc_path = uri_to_path(uri).resolve()
+            if doc.ast_items:
+                try:
+                    resolved_items = resolve_includes(
+                        doc.ast_items,
+                        doc_path.parent,
+                        visited={doc_path},
+                        root_dir=root_dir,
+                        included_paths=included_paths,
+                        read_file=_read_doc_or_disk,
+                    )
+                    resolved_doc_graphs[uri] = to_graph(resolved_items)
+                except (IncludeError, ParseError, OSError, ValueError):
+                    if doc.scene_graph is not None:
+                        resolved_doc_graphs[uri] = doc.scene_graph
+
         valid_graphs: list[SceneGraph] = []
 
         for uri, doc in self.documents.items():
-            if doc.scene_graph is not None:
-                valid_graphs.append(doc.scene_graph)
+            doc_path = uri_to_path(uri).resolve()
+            if doc_path not in included_paths and uri in resolved_doc_graphs:
+                valid_graphs.append(resolved_doc_graphs[uri])
 
             # Discover docstrings (leading comments before labels)
             for occ in doc.occurrences:

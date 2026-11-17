@@ -96,3 +96,22 @@ def test_workspace_index_ignores_external_symlinks(tmp_path: Path):
     assert any(p.endswith("main.es") for p in doc_paths)
     assert not any("outside" in p or "external" in p for p in doc_paths)
 
+
+def test_workspace_index_inlines_scene_include(tmp_path: Path):
+    (tmp_path / "shared_intro.es").write_text(
+        "Narrator: Shared intro.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "main.es").write_text(
+        '## Prologue --- prologue\n@include "shared_intro.es"\nNarrator: Main line.\n',
+        encoding="utf-8",
+    )
+
+    index = WorkspaceIndex(tmp_path)
+    index.initialize()
+
+    assert index.merged_graph is not None
+    assert len(index.merge_errors) == 0
+    body_texts = [getattr(item, "text", "") for item in index.merged_graph.nodes["prologue"].body]
+    assert body_texts == ["Shared intro.", "Main line."]
+

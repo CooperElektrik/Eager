@@ -9,8 +9,14 @@ from pathlib import Path
 from typing import Any
 
 from eager_core.types import Color
-from eager_script import ParseError, SceneGraph, parse_graph, to_graph
-from eager_script.parser import INCLUDE_PATTERN
+from eager_script import (
+    IncludeError,
+    ParseError,
+    SceneGraph,
+    discover_includes,
+    parse_file,
+    to_graph,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +138,22 @@ class ProjectConfig:
         )
 
 
+def _validate_reachability(graph: SceneGraph, *, strict: bool) -> None:
+    """Validate that all scenes in graph are reachable from graph.entry."""
+    if not graph.entry:
+        return
+    if graph.entry not in graph.nodes:
+        raise ValueError(f"Entry scene '{graph.entry}' does not exist in merged graphs")
+    reachable = graph.reachable_from(graph.entry)
+    unreachable = set(graph.nodes.keys()) - reachable
+    if unreachable:
+        unreachable_list = sorted(unreachable)
+        msg = f"Unreachable scenes detected from entry '{graph.entry}': {', '.join(unreachable_list)}"
+        logger.warning(msg)
+        if strict:
+            raise ValueError(msg)
+
+
 def merge_graphs(graphs: list[SceneGraph], *, strict: bool = False) -> SceneGraph:
     """Merge multiple SceneGraph instances into one unified SceneGraph.
 
@@ -177,19 +199,7 @@ def merge_graphs(graphs: list[SceneGraph], *, strict: bool = False) -> SceneGrap
         defaults=tuple(combined_defaults),
     )
 
-    # Validate reachability from entry
-    if merged.entry:
-        if merged.entry not in combined_nodes:
-            raise ValueError(f"Entry scene '{merged.entry}' does not exist in merged graphs")
-        reachable = merged.reachable_from(merged.entry)
-        unreachable = set(combined_nodes.keys()) - reachable
-        if unreachable:
-            unreachable_list = sorted(unreachable)
-            msg = f"Unreachable scenes detected from entry '{merged.entry}': {', '.join(unreachable_list)}"
-            logger.warning(msg)
-            if strict:
-                raise ValueError(msg)
-
+    _validate_reachability(merged, strict=strict)
     return merged
 
 
@@ -219,34 +229,10 @@ def resolve_project_scripts(target_path: Path) -> list[Path]:
             discovered.insert(0, entry_file)
         es_files = discovered
     else:
-        # Load script and any includes recursively
-        project_root = target_path.resolve().parent
-        visited: set[Path] = set()
-        queue = [target_path.resolve()]
-
-        while queue:
-            current = queue.pop(0)
-            if current in visited or not current.is_file():
-                continue
-
-            visited.add(current)
-            es_files.append(current)
-
-            try:
-                text = current.read_text(encoding="utf-8")
-                for line in text.splitlines():
-                    # Check for @include "filename.es" or 'filename.es'
-                    m = INCLUDE_PATTERN.match(line.strip())
-                    if m:
-                        inc_name = m.group(1) if m.group(1) is not None else m.group(2)
-                        inc_path = (current.parent / inc_name).resolve()
-                        if not inc_path.is_relative_to(project_root):
-                            raise ValueError(
-                                f"Path traversal detected: @include '{inc_name}' resolves outside project root"
-                            )
-                        queue.append(inc_path)
-            except OSError:
-                pass
+        try:
+            es_files = discover_includes(target_path, missing_ok=True)
+        except IncludeError as exc:
+            raise ValueError(str(exc)) from exc
 
     return es_files
 
@@ -258,16 +244,38 @@ def load_project_graph(
     raise_parse_error: bool = False,
 ) -> SceneGraph:
     """Load and merge all scene graphs for a project or script file."""
+    if not target_path.is_dir():
+        try:
+            items = parse_file(target_path, resolve_includes_flag=True)
+            graph = to_graph(items)
+        except (ValueError, TypeError, OSError, ParseError, IncludeError) as exc:
+            if raise_parse_error and isinstance(exc, (ParseError, IncludeError, ValueError)):
+                raise
+            logger.warning("Failed to parse %s: %s", target_path, exc)
+            return to_graph([])
+        _validate_reachability(graph, strict=strict)
+        return graph
 
     es_files = resolve_project_scripts(target_path)
-    graphs: list[SceneGraph] = []
+    project_root = target_path.resolve()
 
+    included_by_others: set[Path] = set()
     for es_file in es_files:
         try:
-            text = es_file.read_text(encoding="utf-8")
-            graphs.append(parse_graph(text))
-        except (ValueError, TypeError, OSError, ParseError) as exc:
-            if raise_parse_error and isinstance(exc, (ParseError, ValueError)):
+            included = discover_includes(es_file, root_dir=project_root, missing_ok=True)
+            included_by_others.update(included[1:])
+        except (IncludeError, OSError):
+            continue
+
+    graphs: list[SceneGraph] = []
+    for es_file in es_files:
+        if es_file in included_by_others:
+            continue
+        try:
+            items = parse_file(es_file, resolve_includes_flag=True, root_dir=project_root)
+            graphs.append(to_graph(items))
+        except (ValueError, TypeError, OSError, ParseError, IncludeError) as exc:
+            if raise_parse_error and isinstance(exc, (ParseError, IncludeError, ValueError)):
                 raise
             logger.warning("Failed to parse %s: %s", es_file, exc)
 

@@ -52,6 +52,7 @@ from eager_script.hooks import (
 )
 from eager_script.includes import (
     IncludeError,
+    discover_includes,
     parse_file,
     resolve_includes,
 )
@@ -133,6 +134,7 @@ __all__ = [
     "ValidationError",
     "ValidationResult",
     "__version__",
+    "discover_includes",
     "from_dict",
     "from_json",
     "is_input_hook",
