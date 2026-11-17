@@ -5,8 +5,10 @@ import sys
 from pathlib import Path
 
 EXCLUDED = {
-    ".git", ".venv", "venv", "__pycache__", ".pytest_cache", ".ruff_cache", 
-    ".mypy_cache", ".poolside", ".freebuff", "node_modules", "build", "dist", "egg-info"
+    ".git", ".venv", "venv", "__pycache__", ".pytest_cache", ".ruff_cache",
+    ".mypy_cache", ".poolside", ".freebuff", "node_modules", "build", "dist", "egg-info",
+    "benchmarks", "examples", "packaging", "scripts", "site", "editors",
+    ".eggs", ".tox", ".nox", ".hypothesis", "htmlcov",
 }
 
 def main():
