@@ -32,11 +32,7 @@ from ._imaging import (
     _alpha_bbox,
     _bboxes_intersect,
     _image_nbytes,
-    _largest_opaque_rect,
-    _max_rect,
     _resize_opaque,
-    _solid_band,
-    _split_patches,
     _split_rgba,
     _union_bboxes,
 )

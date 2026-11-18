@@ -67,7 +67,7 @@ class _CachedSprite:
     cheap (only the 1-byte-per-pixel mask differs between fade frames).
     """
 
-    __slots__ = ("_image", "color", "mask", "nbytes", "off_x", "off_y", "patches")
+    __slots__ = ("_image", "color", "mask", "nbytes", "off_x", "off_y")
 
     def __init__(
         self,
@@ -75,16 +75,11 @@ class _CachedSprite:
         mask: Image.Image | None,
         off_x: float,
         off_y: float,
-        patches: list[tuple[Image.Image, Image.Image | None, int, int]] | None = None,
     ) -> None:
         self.color = color
         self.mask = mask
         self.off_x = off_x
         self.off_y = off_y
-        # Optional opaque-core + fringe decomposition.  When present it is
-        # byte-identical to compositing ``color`` through ``mask`` but lets the
-        # hot path use cheap unmasked pastes for the bulk of the sprite.
-        self.patches = patches
         self.nbytes = (
             _image_nbytes(color)
             if mask is color
@@ -130,7 +125,6 @@ class _GeomEntry:
         "nbytes",
         "off_x",
         "off_y",
-        "patches",
     )
 
     def __init__(
@@ -139,21 +133,14 @@ class _GeomEntry:
         natural_mask: Image.Image | None,
         off_x: float,
         off_y: float,
-        patches: list[tuple[Image.Image, Image.Image | None, int, int]] | None = None,
     ) -> None:
         self.color = color
         self.natural_mask = natural_mask
         self.off_x = off_x
         self.off_y = off_y
-        self.patches = patches
         self.alpha_masks: dict[int, Image.Image] = {}
-        patch_bytes = (
-            sum(_image_nbytes(p[0]) + _image_nbytes(p[1]) for p in patches)
-            if patches is not None
-            else 0
-        )
         mask_bytes = _image_nbytes(natural_mask) if natural_mask is not color else 0
-        self.nbytes = _image_nbytes(color) + mask_bytes + patch_bytes
+        self.nbytes = _image_nbytes(color) + mask_bytes
 
 __all__ = [
     "_CachedSprite",

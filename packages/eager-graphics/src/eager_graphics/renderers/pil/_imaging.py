@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import math
+from functools import lru_cache
 from typing import Any
 
-from ._compat import Image
-from ._constants import _OPAQUE_LUT
+from ._compat import Image, ImageDraw
+from ._constants import _MAX_RGBA_LUTS
+
+_FULL_LUT = list(range(256))
 
 
 def _image_nbytes(img: Image.Image | None) -> int:
@@ -29,7 +33,7 @@ def _resize_opaque(img: Image.Image, size: tuple[int, int], resample: Any) -> Im
             return img._new(img.im.resize(size, resample, (0, 0, *img.size)))
         except (AttributeError, TypeError, ValueError):
             pass
-    return img.resize(size, resample=resample)
+    return img.resize(size, resample=resample, reducing_gap=3.0)
 
 
 def _alpha_bbox(img: Image.Image) -> tuple[int, int, int, int] | None:
@@ -85,110 +89,6 @@ def _cluster_dirty_boxes(
     return clusters
 
 
-def _max_rect(data: bytes, cw: int, ch: int) -> tuple[int, int, int, int] | None:
-    """Largest all-``255`` rectangle in a ``cw`` x ``ch`` byte grid (cell coords, end-exclusive)."""
-    heights = [0] * cw
-    best: tuple[int, int, int, int] | None = None
-    best_area = 0
-    for y in range(ch):
-        base = y * cw
-        for x in range(cw):
-            heights[x] = heights[x] + 1 if data[base + x] else 0
-        stack: list[tuple[int, int]] = []
-        for x in range(cw + 1):
-            h_cur = heights[x] if x < cw else 0
-            start = x
-            while stack and stack[-1][1] > h_cur:
-                sx, sh = stack.pop()
-                area = sh * (x - sx)
-                if area > best_area:
-                    best_area = area
-                    best = (sx, y - sh + 1, x, y + 1)
-                start = sx
-            stack.append((start, h_cur))
-    return best
-
-
-def _largest_opaque_rect(
-    mask: Image.Image, *, min_frac: float = 0.15, min_area: int = 4096
-) -> tuple[int, int, int, int] | None:
-    """Largest axis-aligned rectangle of fully-opaque pixels in an ``L`` *mask*.
-
-    The search runs on a coarse downsampled grid (a ``BOX`` average of a 0/255
-    mask is 255 only when *every* contributing pixel is opaque), so it is cheap
-    even for multi-megapixel sprites and never reports a rectangle containing
-    partially-transparent pixels.  Returns ``None`` when no worthwhile interior
-    exists (e.g. soft glows), leaving the caller on the general masked path.
-    """
-    w, h = mask.size
-    if w * h < min_area:
-        return None
-    op = mask.point(_OPAQUE_LUT)
-    if op.getbbox() is None:
-        return None
-    step = max(1, int((w * h / 8000) ** 0.5))
-    cw, ch = w // step, h // step
-    if cw < 1 or ch < 1:
-        return None
-    best = _max_rect(op.resize((cw, ch), Image.Resampling.BOX).tobytes(), cw, ch)
-    if best is None:
-        return None
-    rect = (best[0] * step, best[1] * step, min(w, best[2] * step), min(h, best[3] * step))
-    for _ in range(4):
-        if rect[2] - rect[0] <= 0 or rect[3] - rect[1] <= 0:
-            return None
-        if op.crop(rect).getextrema() == (255, 255):
-            break
-        rect = (rect[0] + step, rect[1] + step, rect[2] - step, rect[3] - step)
-    else:
-        return None
-    if (rect[2] - rect[0]) * (rect[3] - rect[1]) < min_frac * w * h:
-        return None
-    return rect
-
-
-def _solid_band(
-    color: Image.Image, mask: Image.Image, box: tuple[int, int, int, int]
-) -> tuple[Image.Image, Image.Image | None, int, int] | None:
-    """Build a compositing patch for *box*: unmasked when opaque, else masked."""
-    m = mask.crop(box)
-    lo, hi = m.getextrema()
-    if hi == 0:
-        return None  # fully transparent band — nothing to draw
-    patch_mask = None if lo == 255 else m  # fully opaque band needs no mask
-    return (color.crop(box), patch_mask, box[0], box[1])
-
-
-def _split_patches(
-    color: Image.Image, mask: Image.Image
-) -> list[tuple[Image.Image, Image.Image | None, int, int]] | None:
-    """Decompose a masked sprite into patches whose *interior* can be pasted unmasked.
-
-    Masked ``paste`` blends every pixel in the bounding box; pasting a large
-    fully-opaque interior without a mask is ~10x cheaper, so we split the sprite
-    into that interior (unmasked) plus up to four masked fringe bands (which
-    exactly tile the remaining pixels).  The result is byte-identical to a single
-    masked paste.  Returns ``None`` when the decomposition would not pay off.
-    """
-    rect = _largest_opaque_rect(mask)
-    if rect is None:
-        return None
-    x0, y0, x1, y1 = rect
-    w, h = mask.size
-    patches: list[tuple[Image.Image, Image.Image | None, int, int] | None] = [
-        (color.crop(rect), None, x0, y0)
-    ]
-    if y0 > 0:
-        patches.append(_solid_band(color, mask, (0, 0, w, y0)))
-    if y1 < h:
-        patches.append(_solid_band(color, mask, (0, y1, w, h)))
-    if x0 > 0:
-        patches.append(_solid_band(color, mask, (0, y0, x0, y1)))
-    if x1 < w:
-        patches.append(_solid_band(color, mask, (x1, y0, w, y1)))
-    return [p for p in patches if p is not None]
-
-
 def _split_rgba(img: Image.Image, *, shared: bool) -> tuple[Image.Image, Image.Image | None]:
     """Split straight RGBA *img* into ``(color with alpha=255, alpha mask | None)``."""
     alpha = img.getchannel("A")
@@ -199,16 +99,82 @@ def _split_rgba(img: Image.Image, *, shared: bool) -> tuple[Image.Image, Image.I
     return color, alpha
 
 
+def rotate_expand_params(
+    w: int, h: int, angle_deg: float
+) -> tuple[tuple[int, int], tuple[float, float, float, float, float, float]]:
+    """Compute output dimensions and reverse affine matrix identical to ``Image.rotate(expand=True)``."""
+    angle = -math.radians(angle_deg % 360.0)
+    matrix = [
+        round(math.cos(angle), 15),
+        round(math.sin(angle), 15),
+        0.0,
+        round(-math.sin(angle), 15),
+        round(math.cos(angle), 15),
+        0.0,
+    ]
+    center_x = w / 2.0
+    center_y = h / 2.0
+    a, b, _c, d, e, _f = matrix
+    c_new = a * (-center_x) + b * (-center_y) + center_x
+    f_new = d * (-center_x) + e * (-center_y) + center_y
+
+    xx = [c_new, a * w + c_new, a * w + b * h + c_new, b * h + c_new]
+    yy = [f_new, d * w + f_new, d * w + e * h + f_new, e * h + f_new]
+
+    nw = math.ceil(max(xx)) - math.floor(min(xx))
+    nh = math.ceil(max(yy)) - math.floor(min(yy))
+
+    dx = -(nw - w) / 2.0
+    dy = -(nh - h) / 2.0
+    matrix[2] = c_new + (a * dx + b * dy)
+    matrix[5] = f_new + (d * dx + e * dy)
+
+    return (nw, nh), (matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5])
+
+
+@lru_cache(maxsize=_MAX_RGBA_LUTS)
+def get_rgba_lut(r: int, g: int, b: int, a: int, mode: str = "RGBA") -> list[int]:
+    """Return a cached 768-entry (RGB) or 1024-entry (RGBA) point LUT for tint/alpha modulation."""
+    r_lut = _FULL_LUT if r == 255 else [round(i * r / 255) for i in range(256)]
+    g_lut = _FULL_LUT if g == 255 else [round(i * g / 255) for i in range(256)]
+    b_lut = _FULL_LUT if b == 255 else [round(i * b / 255) for i in range(256)]
+    if mode == "RGB":
+        return r_lut + g_lut + b_lut
+    a_lut = _FULL_LUT if a == 255 else [round(i * a / 255) for i in range(256)]
+    return r_lut + g_lut + b_lut + a_lut
+
+
+@lru_cache(maxsize=64)
+def get_fade_lut(factor_q: int, r: int, g: int, b: int, mode: str) -> list[int]:
+    """Return a cached point LUT for full-screen fade overlays."""
+    inv = 1.0 - factor_q / 255.0
+    r_lut = [round(i * inv + r * (1.0 - inv)) for i in range(256)]
+    g_lut = [round(i * inv + g * (1.0 - inv)) for i in range(256)]
+    b_lut = [round(i * inv + b * (1.0 - inv)) for i in range(256)]
+    if mode == "RGBA":
+        return r_lut + g_lut + b_lut + _FULL_LUT
+    return r_lut + g_lut + b_lut
+
+
+@lru_cache(maxsize=64)
+def get_rect_mask(rw: int, rh: int, radius: int) -> Image.Image:
+    """Return a cached rounded-rectangle alpha mask."""
+    mask = Image.new("L", (rw, rh), 0)
+    mdraw = ImageDraw.Draw(mask)
+    mdraw.rounded_rectangle([(0, 0), (rw - 1, rh - 1)], radius=radius, fill=255)
+    return mask
+
+
 __all__ = [
     "_alpha_bbox",
     "_bboxes_intersect",
     "_cluster_dirty_boxes",
     "_image_nbytes",
-    "_largest_opaque_rect",
-    "_max_rect",
     "_resize_opaque",
-    "_solid_band",
-    "_split_patches",
     "_split_rgba",
     "_union_bboxes",
+    "get_fade_lut",
+    "get_rect_mask",
+    "get_rgba_lut",
+    "rotate_expand_params",
 ]

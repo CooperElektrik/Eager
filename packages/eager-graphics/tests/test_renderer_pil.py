@@ -1203,20 +1203,21 @@ def test_scaled_cache_reuse_and_invalidation():
     renderer.draw_item(item1)
     renderer.end_frame()
 
-    scale_key = ("alice/smiling", round(400 * renderer._current_transform.scale_x), round(800 * renderer._current_transform.scale_y))
-    assert scale_key in renderer._scaled_cache
-    cached_scaled = renderer._scaled_cache[scale_key]
+    assert len(renderer._geom_cache) == 1
+    geom_key = next(iter(renderer._geom_cache.keys()))
+    cached_geom = renderer._geom_cache[geom_key]
 
-    # Render with different opacity (cache miss in _sprite_cache, hit in _scaled_cache)
+    # Render with different opacity (cache miss in _sprite_cache, hit in _geom_cache)
     renderer.begin_frame()
     renderer.draw_item(item2)
     renderer.end_frame()
 
-    assert renderer._scaled_cache[scale_key] is cached_scaled
+    assert len(renderer._geom_cache) == 1
+    assert renderer._geom_cache[geom_key] is cached_geom
 
-    # clear_cache clears _scaled_cache
+    # clear_cache clears _geom_cache
     renderer.clear_cache()
-    assert len(renderer._scaled_cache) == 0
+    assert len(renderer._geom_cache) == 0
 
 
 def test_font_and_measure_cache():
@@ -1854,7 +1855,7 @@ def test_render_presets_initialization() -> None:
     r_perf = PILRenderer(1280, 720, preset="performance")
     assert r_perf.enable_stage_cache is True
     assert r_perf.enable_dirty_rects is True
-    assert r_perf.enable_patches is True
+    assert r_perf.enable_patches is False
     assert r_perf.resampling == Image.Resampling.NEAREST
     assert r_perf.cache_budget_bytes == 256 * 1024 * 1024
     assert r_perf.dirty_area_threshold == 0.85
@@ -1864,7 +1865,7 @@ def test_render_presets_initialization() -> None:
     assert r_bal.preset == RenderPreset.BALANCED
     assert r_bal.enable_stage_cache is True
     assert r_bal.enable_dirty_rects is True
-    assert r_bal.enable_patches is True
+    assert r_bal.enable_patches is False
     assert r_bal.resampling == Image.Resampling.BILINEAR
     assert r_bal.adaptive_resampling is True
     assert r_bal.cache_budget_bytes == 128 * 1024 * 1024
