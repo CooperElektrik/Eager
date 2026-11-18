@@ -20,25 +20,14 @@ from eager_script_lsp.document import ScriptDocument
 from eager_script_lsp.features.completion import compute_completions
 from eager_script_lsp.features.diagnostics import compute_diagnostics
 from eager_script_lsp.features.hover import compute_hover
-from eager_script_lsp.features.lenses import compute_code_lenses, compute_inlay_hints
 from eager_script_lsp.features.navigation import (
     compute_definition,
     compute_document_symbols,
-    compute_incoming_calls,
-    compute_outgoing_calls,
     compute_references,
     compute_workspace_symbols,
-    prepare_call_hierarchy,
-)
-from eager_script_lsp.features.refactor import (
-    compute_code_actions,
-    compute_rename,
-    prepare_rename,
 )
 from eager_script_lsp.features.tokens import (
     LEGEND,
-    compute_color_presentation,
-    compute_document_colors,
     compute_document_links,
     compute_folding_ranges,
     compute_semantic_tokens,
@@ -201,44 +190,12 @@ def create_server() -> EagerLanguageServer:
     def on_workspace_symbol(params: types.WorkspaceSymbolParams) -> list[types.SymbolInformation]:
         return compute_workspace_symbols(server.workspace_index, params.query)
 
-    @server.feature(types.TEXT_DOCUMENT_PREPARE_RENAME)
-    def on_prepare_rename(params: types.PrepareRenameParams) -> types.Range | None:
-        doc = _get_or_sync_doc(params.text_document.uri)
-        if doc is None:
-            return None
-        return prepare_rename(doc, server.workspace_index, params.position)
-
-    @server.feature(types.TEXT_DOCUMENT_RENAME, types.RenameOptions(prepare_provider=True))
-    def on_rename(params: types.RenameParams) -> types.WorkspaceEdit | None:
-        doc = _get_or_sync_doc(params.text_document.uri)
-        if doc is None:
-            return None
-        return compute_rename(doc, server.workspace_index, params.position, params.new_name)
-
-    @server.feature(types.TEXT_DOCUMENT_CODE_ACTION)
-    def on_code_action(params: types.CodeActionParams) -> list[types.CodeAction]:
-        doc = _get_or_sync_doc(params.text_document.uri)
-        if doc is None:
-            return []
-        return compute_code_actions(doc, server.workspace_index, params.range, params.context)
-
     @server.feature(types.TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL, LEGEND)
     def on_semantic_tokens(params: types.SemanticTokensParams) -> types.SemanticTokens:
         doc = _get_or_sync_doc(params.text_document.uri)
         if doc is None:
             return types.SemanticTokens(data=[])
         return compute_semantic_tokens(doc)
-
-    @server.feature(types.TEXT_DOCUMENT_DOCUMENT_COLOR)
-    def on_document_color(params: types.DocumentColorParams) -> list[types.ColorInformation]:
-        doc = _get_or_sync_doc(params.text_document.uri)
-        if doc is None:
-            return []
-        return compute_document_colors(doc)
-
-    @server.feature(types.TEXT_DOCUMENT_COLOR_PRESENTATION)
-    def on_color_presentation(params: types.ColorPresentationParams) -> list[types.ColorPresentation]:
-        return compute_color_presentation(params.color, params.range)
 
     @server.feature(types.TEXT_DOCUMENT_FOLDING_RANGE)
     def on_folding_range(params: types.FoldingRangeParams) -> list[types.FoldingRange]:
@@ -253,52 +210,5 @@ def create_server() -> EagerLanguageServer:
         if doc is None:
             return []
         return compute_document_links(doc, server.workspace_index)
-
-    @server.feature(types.TEXT_DOCUMENT_CODE_LENS, types.CodeLensOptions(resolve_provider=False))
-    def on_code_lens(params: types.CodeLensParams) -> list[types.CodeLens]:
-        doc = _get_or_sync_doc(params.text_document.uri)
-        if doc is None:
-            return []
-        return compute_code_lenses(doc, server.workspace_index)
-
-    @server.feature(types.TEXT_DOCUMENT_INLAY_HINT, types.InlayHintOptions(resolve_provider=False))
-    def on_inlay_hint(params: types.InlayHintParams) -> list[types.InlayHint]:
-        doc = _get_or_sync_doc(params.text_document.uri)
-        if doc is None:
-            return []
-        return compute_inlay_hints(doc, server.workspace_index, params.range)
-
-    @server.feature(types.TEXT_DOCUMENT_PREPARE_CALL_HIERARCHY)
-    def on_prepare_call_hierarchy(params: types.CallHierarchyPrepareParams) -> list[types.CallHierarchyItem] | None:
-        doc = _get_or_sync_doc(params.text_document.uri)
-        if doc is None:
-            return None
-        return prepare_call_hierarchy(doc, server.workspace_index, params.position)
-
-    @server.feature(types.CALL_HIERARCHY_INCOMING_CALLS)
-    def on_incoming_calls(params: types.CallHierarchyIncomingCallsParams) -> list[types.CallHierarchyIncomingCall]:
-        return compute_incoming_calls(server.workspace_index, params.item)
-
-    @server.feature(types.CALL_HIERARCHY_OUTGOING_CALLS)
-    def on_outgoing_calls(params: types.CallHierarchyOutgoingCallsParams) -> list[types.CallHierarchyOutgoingCall]:
-        return compute_outgoing_calls(server.workspace_index, params.item)
-
-    @server.command("eager.showReferences")
-    def cmd_show_references(*args: Any) -> list[dict[str, Any]]:
-        """Return reference locations for a scene ID."""
-        flat_args = args[0] if (len(args) == 1 and isinstance(args[0], (list, tuple))) else args
-        if len(flat_args) < 2:
-            return []
-        scene_id = str(flat_args[1])
-        refs = server.workspace_index.references.get(scene_id, [])
-        return [{"uri": ref_uri, "range": ref_range} for ref_uri, ref_range in refs]
-
-    @server.command("eager.warpAndPlay")
-    def cmd_warp_and_play(*args: Any) -> dict[str, Any]:
-        """Return launch metadata to warp and play from a scene ID."""
-        flat_args = args[0] if (len(args) == 1 and isinstance(args[0], (list, tuple))) else args
-        if len(flat_args) < 2:
-            return {"ok": False}
-        return {"ok": True, "uri": str(flat_args[0]), "scene_id": str(flat_args[1])}
 
     return server

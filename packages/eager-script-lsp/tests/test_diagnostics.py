@@ -74,22 +74,3 @@ Narrator: Hi
         asset_diags = [d for d in diags if d.source == "eager-assets"]
         assert len(asset_diags) > 0
         assert "non_existent_bg" in asset_diags[0].message
-
-
-def test_diagnostics_duplicate_beat_id():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        root = Path(tmpdir)
-        index = WorkspaceIndex(root)
-
-        text = """## Scene 1 --- s1
-Narrator: Beat one {id=same_id}
-Narrator: Beat two {id=same_id}
-"""
-        doc = ScriptDocument("file:///test_i18n.es", text)
-        index.documents["file:///test_i18n.es"] = doc
-        index._rebuild_index()
-
-        diags = compute_diagnostics(doc, index)
-        i18n_diags = [d for d in diags if d.source == "eager-i18n"]
-        assert len(i18n_diags) > 0
-        assert "same_id" in i18n_diags[0].message

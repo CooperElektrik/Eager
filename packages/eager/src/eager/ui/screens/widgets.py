@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from eager.backends.types import UIDrawBackend
@@ -90,11 +89,8 @@ class SaveSlotButton(Button):
         rect: Rect,
         text: str,
         action: Any = None,
-        *,
-        thumbnail_path: Path | str | None = None,
     ) -> None:
         super().__init__(rect, text, action)
-        self.thumbnail_path = str(thumbnail_path) if thumbnail_path else None
 
     def draw(
         self,
@@ -129,16 +125,7 @@ class SaveSlotButton(Button):
             border_width=1.0,
         )
 
-        has_thumb = bool(self.thumbnail_path and Path(self.thumbnail_path).is_file())
         tx = self.rect.x + max(12.0, 16.0 * (font_size / 16.0))
-        if has_thumb and self.thumbnail_path:
-            thumb_margin = 8.0
-            thumb_h = max(10.0, self.rect.height - thumb_margin * 2)
-            thumb_w = round(thumb_h * (16.0 / 9.0))
-            thumb_x = self.rect.x + thumb_margin
-            thumb_y = self.rect.y + thumb_margin
-            backend.draw_image(self.thumbnail_path, thumb_x, thumb_y, thumb_w, thumb_h)
-            tx = thumb_x + thumb_w + max(12.0, 16.0 * (font_size / 16.0))
 
         line_spacing = font_size * 1.35
         total_text_h = len(lines) * line_spacing

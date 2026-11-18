@@ -13,14 +13,13 @@ from eager.core.events import (
     ChoicePromptEvent,
     DialogueEvent,
     FreshBoxEvent,
-    InputPromptEvent,
     NarrationEvent,
     SceneEnterEvent,
     SceneExitEvent,
     StoryEndEvent,
 )
-from eager.core.types import BLACK, WHITE, Color, Vec2
-from eager.core.ui_state import NVLEntry, UIState
+from eager.core.types import BLACK, WHITE, Color
+from eager.core.ui_state import UIState
 from eager.script.hooks import HookArgs, parse_hook_args
 from eager.stage.compositor import StageCompositor
 
@@ -63,24 +62,13 @@ class StageDirector:
         *,
         audio: AudioMixer | None = None,
         skip_mode_cb: Callable[[], bool] | None = None,
-        auto_highlight_speaker: bool = False,
-        dim_color: Color | None = None,
-        highlight_duration: float = 0.25,
-        pop_scale: float | None = None,
-        pop_hop: float | None = None,
     ) -> None:
         self.compositor = compositor
         self.audio = audio
         self.skip_mode_cb = skip_mode_cb
-        self.auto_highlight_speaker = auto_highlight_speaker
-        self.dim_color = dim_color if dim_color is not None else Color(0.65, 0.65, 0.70, 1.0)
-        self.highlight_duration = highlight_duration
-        self.pop_scale = pop_scale
-        self.pop_hop = pop_hop
         self.characters: dict[str, CharacterConfig] = {}
         self.scene_backgrounds: dict[str, tuple[str, str, float]] = {}
         self.ui_state: UIState = UIState()
-        self._sprite_base_y: dict[str, float] = {}
 
     def step(self, dt: float) -> None:
         """Advance compositor timelines and animations by *dt* seconds."""
@@ -93,10 +81,8 @@ class StageDirector:
     def clear_stage(self) -> None:
         """Clear all stage compositor elements, sprite state, and dialogue UI."""
         self.compositor.clear()
-        self._sprite_base_y.clear()
         self.ui_state.clear_dialogue()
         self.ui_state.clear_choices()
-        self.ui_state.clear_nvl()
 
     def save_ui_state(self) -> dict[str, Any]:
         """Serialize current UI state."""
@@ -115,7 +101,6 @@ class StageDirector:
 
     def load_visual_state(self, state: dict[str, Any]) -> None:
         """Restore compositor and UI state from a serialized dictionary."""
-        self._sprite_base_y.clear()
         if comp_state := state.get("compositor"):
             self.compositor.load_state(comp_state)
         if ui_state := state.get("ui_state"):
@@ -213,66 +198,9 @@ class StageDirector:
         dispatcher.on_hook("shake")(_wrap_hook(self.handle_shake))
         dispatcher.on_hook("play")(_wrap_hook(self.handle_play))
         dispatcher.on_hook("stop")(_wrap_hook(self.handle_stop))
-        dispatcher.on_hook("queue")(_wrap_hook(self.handle_queue))
         dispatcher.on_hook("pause")(_wrap_hook(self.handle_pause))
         dispatcher.on_hook("resume")(_wrap_hook(self.handle_resume))
         dispatcher.on_hook("volume")(_wrap_hook(self.handle_volume))
-        dispatcher.on_hook("nvl")(_wrap_hook(self.handle_nvl))
-        dispatcher.on_hook("nvl_clear")(_wrap_hook(self.handle_nvl_clear))
-        dispatcher.on_hook("speaker_highlight")(_wrap_hook(self.handle_speaker_highlight))
-
-        # Audio play shorthands
-        dispatcher.on_hook("play_bgm")(_wrap_hook(lambda a: self.handle_play(a, channel="music")))
-        dispatcher.on_hook("play_music")(_wrap_hook(lambda a: self.handle_play(a, channel="music")))
-        dispatcher.on_hook("play_sound")(_wrap_hook(lambda a: self.handle_play(a, channel="sound")))
-        dispatcher.on_hook("play_sfx")(_wrap_hook(lambda a: self.handle_play(a, channel="sound")))
-        dispatcher.on_hook("play_voice")(_wrap_hook(lambda a: self.handle_play(a, channel="voice")))
-        dispatcher.on_hook("play_ambient")(_wrap_hook(lambda a: self.handle_play(a, channel="ambient")))
-
-        # Audio queue shorthands
-        dispatcher.on_hook("queue_bgm")(_wrap_hook(lambda a: self.handle_queue(a, channel="music")))
-        dispatcher.on_hook("queue_music")(_wrap_hook(lambda a: self.handle_queue(a, channel="music")))
-        dispatcher.on_hook("queue_sound")(_wrap_hook(lambda a: self.handle_queue(a, channel="sound")))
-        dispatcher.on_hook("queue_sfx")(_wrap_hook(lambda a: self.handle_queue(a, channel="sound")))
-        dispatcher.on_hook("queue_voice")(_wrap_hook(lambda a: self.handle_queue(a, channel="voice")))
-        dispatcher.on_hook("queue_ambient")(_wrap_hook(lambda a: self.handle_queue(a, channel="ambient")))
-
-        # Audio pause shorthands
-        dispatcher.on_hook("pause_bgm")(_wrap_hook(lambda a: self.handle_pause(a, channel="music")))
-        dispatcher.on_hook("pause_music")(_wrap_hook(lambda a: self.handle_pause(a, channel="music")))
-        dispatcher.on_hook("pause_sound")(_wrap_hook(lambda a: self.handle_pause(a, channel="sound")))
-        dispatcher.on_hook("pause_sfx")(_wrap_hook(lambda a: self.handle_pause(a, channel="sound")))
-        dispatcher.on_hook("pause_voice")(_wrap_hook(lambda a: self.handle_pause(a, channel="voice")))
-        dispatcher.on_hook("pause_ambient")(_wrap_hook(lambda a: self.handle_pause(a, channel="ambient")))
-
-        # Audio resume shorthands
-        dispatcher.on_hook("resume_bgm")(_wrap_hook(lambda a: self.handle_resume(a, channel="music")))
-        dispatcher.on_hook("resume_music")(_wrap_hook(lambda a: self.handle_resume(a, channel="music")))
-        dispatcher.on_hook("resume_sound")(_wrap_hook(lambda a: self.handle_resume(a, channel="sound")))
-        dispatcher.on_hook("resume_sfx")(_wrap_hook(lambda a: self.handle_resume(a, channel="sound")))
-        dispatcher.on_hook("resume_voice")(_wrap_hook(lambda a: self.handle_resume(a, channel="voice")))
-        dispatcher.on_hook("resume_ambient")(_wrap_hook(lambda a: self.handle_resume(a, channel="ambient")))
-
-        dispatcher.on_hook("stop_bgm")(_wrap_hook(lambda a: self.handle_stop(a, channel="music")))
-        dispatcher.on_hook("stop_music")(_wrap_hook(lambda a: self.handle_stop(a, channel="music")))
-        dispatcher.on_hook("stop_sound")(_wrap_hook(lambda a: self.handle_stop(a, channel="sound")))
-        dispatcher.on_hook("stop_sfx")(_wrap_hook(lambda a: self.handle_stop(a, channel="sound")))
-        dispatcher.on_hook("stop_voice")(_wrap_hook(lambda a: self.handle_stop(a, channel="voice")))
-        dispatcher.on_hook("stop_ambient")(_wrap_hook(lambda a: self.handle_stop(a, channel="ambient")))
-
-        dispatcher.on_hook("volume_bgm")(_wrap_hook(lambda a: self.handle_volume(a, channel="music")))
-        dispatcher.on_hook("volume_music")(_wrap_hook(lambda a: self.handle_volume(a, channel="music")))
-        dispatcher.on_hook("volume_sound")(_wrap_hook(lambda a: self.handle_volume(a, channel="sound")))
-        dispatcher.on_hook("volume_sfx")(_wrap_hook(lambda a: self.handle_volume(a, channel="sound")))
-        dispatcher.on_hook("volume_voice")(_wrap_hook(lambda a: self.handle_volume(a, channel="voice")))
-        dispatcher.on_hook("volume_ambient")(_wrap_hook(lambda a: self.handle_volume(a, channel="ambient")))
-
-        # Expressive visual hooks
-        dispatcher.on_hook("weather")(_wrap_hook(self.handle_weather))
-        dispatcher.on_hook("particles")(_wrap_hook(self.handle_particles))
-        dispatcher.on_hook("ambient")(_wrap_hook(self.handle_ambient))
-        dispatcher.on_hook("light")(_wrap_hook(self.handle_light))
-
 
         # 2. Narrative Event Listeners
         dispatcher.on_event(DialogueEvent)(self.handle_dialogue_event)
@@ -282,7 +210,6 @@ class StageDirector:
         dispatcher.on_event(SceneEnterEvent)(self.handle_scene_enter_event)
         dispatcher.on_event(SceneExitEvent)(self.handle_scene_exit_event)
         dispatcher.on_event(ChoicePromptEvent)(self.handle_choice_prompt_event)
-        dispatcher.on_event(InputPromptEvent)(self.handle_input_prompt_event)
         dispatcher.on_event(StoryEndEvent)(self.handle_story_end_event)
 
     # =========================================================================
@@ -322,7 +249,6 @@ class StageDirector:
         char_layer = self.compositor.stage.get_layer("characters")
         if char_layer:
             char_layer.clear()
-        self._sprite_base_y.clear()
         # Set background
         self.handle_bg(args)
 
@@ -459,7 +385,6 @@ class StageDirector:
         raw_id = parsed.positional[0]
         cfg = self.find_character(raw_id)
         char_id = cfg.character_id if cfg is not None else raw_id.strip().lower()
-        self._sprite_base_y.pop(char_id, None)
         transition = parsed.with_ or parsed.get_str("transition", "fade") or "fade"
         duration = parsed.get_float("duration", 0.3)
 
@@ -478,7 +403,6 @@ class StageDirector:
         raw_id = parsed.positional[0]
         cfg = self.find_character(raw_id)
         char_id = cfg.character_id if cfg is not None else raw_id.strip().lower()
-        self._sprite_base_y.pop(char_id, None)
         destination = parsed.to or (
             parsed.positional[1] if len(parsed.positional) > 1 else "center"
         )
@@ -579,16 +503,6 @@ class StageDirector:
         loop_arg = parsed.get_bool("loop") if "loop" in parsed.kwargs else None
         loop_start = parsed.get_float("loop_start") if "loop_start" in parsed.kwargs else None
         loop_end = parsed.get_float("loop_end") if "loop_end" in parsed.kwargs else None
-        # Sound effects are polyphonic by default so overlapping SFX spawn
-        # pool slots (sound_0, sound_1, …) instead of cutting each other off.
-        # Other channels stay single-voice unless opted in. Explicit pool
-        # names (sound_0) always address that slot directly.
-        auto_channels = parsed.get_bool("auto_channels", target_channel == "sound")
-        poly_raw = parsed.get_str("max_polyphony")
-        try:
-            max_polyphony = int(poly_raw) if poly_raw is not None else None
-        except ValueError:
-            max_polyphony = None
 
         self.audio.play(
             target_channel,
@@ -598,8 +512,6 @@ class StageDirector:
             volume=volume,
             loop_start=loop_start,
             loop_end=loop_end,
-            auto_channels=auto_channels,
-            max_polyphony=max_polyphony,
         )
 
     def handle_stop(self, args: str, channel: str | None = None) -> None:
@@ -644,32 +556,6 @@ class StageDirector:
         except ValueError:
             pass
 
-    def handle_queue(self, args: str, channel: str | None = None) -> None:
-        """Handle `~ queue channel track` or `~ queue_<channel> track`."""
-        if self.audio is None:
-            return
-        parsed = parse_hook_args(args)
-        track_arg = parsed.get_str("track")
-        if channel is None:
-            if not parsed.positional:
-                return
-            target_channel = parsed.positional[0].strip().lower()
-            track = track_arg or (parsed.positional[1].strip() if len(parsed.positional) > 1 else "")
-        else:
-            target_channel = channel.strip().lower()
-            track = track_arg or (parsed.positional[0].strip() if parsed.positional else "")
-
-        if not track:
-            return
-
-        if self._is_skip_active() and (
-            target_channel in ("sound", "voice")
-            or target_channel.startswith(("sound_", "voice_"))
-        ):
-            return
-
-        self.audio.queue(target_channel, track)
-
     def handle_pause(self, args: str, channel: str | None = None) -> None:
         """Handle `~ pause [channel]` or `~ pause_<channel>`."""
         if self.audio is None:
@@ -712,148 +598,6 @@ class StageDirector:
         else:
             self.audio.resume(target)
 
-    def handle_speaker_highlight(self, args: str) -> None:
-        """Handle `~ speaker_highlight [on/off] [dim=color] [duration=X] [scale=X] [hop=X]`."""
-        parsed = parse_hook_args(args)
-        if parsed.positional:
-            flag = parsed.positional[0].strip().lower()
-            self.auto_highlight_speaker = flag not in ("off", "false", "0", "disable")
-        else:
-            self.auto_highlight_speaker = True
-
-        if "duration" in parsed.kwargs:
-            self.highlight_duration = parsed.get_float("duration", self.highlight_duration)
-        if "scale" in parsed.kwargs:
-            self.pop_scale = parsed.get_float("scale", self.pop_scale if self.pop_scale is not None else 1.05)
-        if "hop" in parsed.kwargs:
-            self.pop_hop = parsed.get_float("hop", self.pop_hop if self.pop_hop is not None else 10.0)
-        if "dim" in parsed.kwargs:
-            self.dim_color = _parse_hook_color(parsed, "dim", self.dim_color)
-
-    def handle_weather(self, args: str) -> None:
-        """Handle `~ weather preset [count=N]` or `~ weather clear`."""
-        parsed = parse_hook_args(args)
-        preset = parsed.positional[0] if parsed.positional else "snow"
-        count = parsed.get_int("count", 0) or None
-        if hasattr(self.compositor, "set_weather"):
-            self.compositor.set_weather(preset, count=count)
-
-    def handle_particles(self, args: str) -> None:
-        """Handle `~ particles [id_or_preset] [count=N] [shape=S] [color=C] [layer=L] [z=Z]` or `clear`."""
-        parsed = parse_hook_args(args)
-        if not parsed.positional and not parsed.kwargs:
-            self.compositor.clear_particle_emitters()
-            return
-
-        token = parsed.positional[0].strip().lower() if parsed.positional else ""
-        if token in ("clear", "reset", "off", "stop") and len(parsed.positional) == 1:
-            self.compositor.clear_particle_emitters()
-            return
-
-        if len(parsed.positional) >= 2 and parsed.positional[1].strip().lower() in ("clear", "remove", "off", "stop"):
-            self.compositor.remove_particle_emitter(token)
-            return
-
-        presets = ("rain", "snow", "sakura", "petals", "cherry", "embers", "fire", "sparks")
-        count = parsed.get_int("count", 150) or 150
-        layer = parsed.get_str("layer", "foreground") or "foreground"
-        z = parsed.get_int("z", 200000)
-        shape = parsed.get_str("shape")
-        size = parsed.get_int("size", 16)
-        color = _parse_hook_color(parsed, "color", WHITE) if "color" in parsed.kwargs else None
-
-        if token in presets:
-            preset = token
-            emitter_id = parsed.get_str("id") or f"particles_{preset}"
-        else:
-            emitter_id = token if token else "custom_particles"
-            preset = parsed.get_str("preset")
-
-        from eager.stage.particles import ParticleEmitter, ParticleStampLUT
-
-        if shape or (preset is None and color is not None):
-            shape_name = shape or "circle"
-            c_tuple = (round(color.r * 255), round(color.g * 255), round(color.b * 255)) if color else (255, 255, 255)
-            lut = ParticleStampLUT.from_shape(shape=shape_name, base_size=size, color=c_tuple)
-            emitter = ParticleEmitter(
-                emitter_id,
-                lut,
-                max_particles=count,
-                layer=layer,
-                z_order=z,
-                preset=preset or shape_name,
-            )
-            self.compositor.add_particle_emitter(emitter)
-        elif preset:
-            p = preset.strip().lower()
-            if p == "rain":
-                emitter = ParticleEmitter.create_rain(emitter_id, count=count, layer=layer, z_order=z)
-            elif p == "snow":
-                emitter = ParticleEmitter.create_snow(emitter_id, count=count, layer=layer, z_order=z)
-            elif p in ("sakura", "petals", "cherry"):
-                emitter = ParticleEmitter.create_sakura(emitter_id, count=count, layer=layer, z_order=z)
-            elif p in ("embers", "fire", "sparks"):
-                emitter = ParticleEmitter.create_embers(emitter_id, count=count, layer=layer, z_order=z)
-            else:
-                emitter = ParticleEmitter.create_snow(emitter_id, count=count, layer=layer, z_order=z)
-            self.compositor.add_particle_emitter(emitter)
-        else:
-            emitter = ParticleEmitter.create_snow(emitter_id, count=count, layer=layer, z_order=z)
-            self.compositor.add_particle_emitter(emitter)
-
-    def handle_ambient(self, args: str) -> None:
-        """Handle `~ ambient color [intensity=X]` or `~ ambient clear`."""
-        parsed = parse_hook_args(args)
-        if not parsed.positional:
-            return
-        token = parsed.positional[0].strip().lower()
-        if token in ("clear", "reset", "off", "none"):
-            self.compositor.set_ambient_light(WHITE, 1.0)
-            return
-        color = _parse_hook_color(parsed, "color", None)
-        if color is None:
-            try:
-                color = Color.from_hex(token)
-            except Exception:  # noqa: BLE001
-                color = WHITE
-        intensity = parsed.get_float("intensity", 1.0)
-        self.compositor.set_ambient_light(color, intensity=intensity)
-
-    def handle_light(self, args: str) -> None:
-        """Handle `~ light add x=X y=Y radius=R [color=C] [intensity=I] [mode=M]` or `~ light clear`."""
-        parsed = parse_hook_args(args)
-        action = parsed.positional[0].strip().lower() if parsed.positional else "add"
-        if action in ("clear", "reset", "off"):
-            self.compositor.clear_lights()
-            return
-        if action == "add" or not parsed.positional:
-            vw = float(getattr(self.compositor, "virtual_width", 1920))
-            vh = float(getattr(self.compositor, "virtual_height", 1080))
-            x = parsed.get_float("x", vw / 2.0)
-            y = parsed.get_float("y", vh / 2.0)
-            radius = parsed.get_float("radius", 200.0)
-            intensity = parsed.get_float("intensity", 1.0)
-            mode = parsed.get_str("mode", "multiply") or "multiply"
-            color = _parse_hook_color(parsed, "color", WHITE)
-            from eager.core.lighting import PointLight
-
-            light = PointLight(x=x, y=y, radius=radius, color=color, intensity=intensity, mode=mode)
-            self.compositor.add_light(light)
-
-    def handle_nvl(self, args: str) -> None:
-        """Handle `~ nvl [on/off/clear]`."""
-        arg = args.strip().lower() if args else "on"
-        if arg in ("off", "false", "0"):
-            self.ui_state.nvl_mode = False
-        elif arg == "clear":
-            self.ui_state.clear_nvl()
-        else:
-            self.ui_state.nvl_mode = True
-
-    def handle_nvl_clear(self, args: str) -> None:
-        """Handle `~ nvl_clear`."""
-        self.ui_state.clear_nvl()
-
     # =========================================================================
     # Narrative Event Handlers
     # =========================================================================
@@ -891,9 +635,6 @@ class StageDirector:
         self.ui_state.speaker_color = char_cfg.color if char_cfg else None
         self.ui_state.clear_choices()
 
-        if self.ui_state.nvl_mode:
-            self.ui_state.nvl_entries.append(NVLEntry(speaker=speaker, text=text, emotion=emotion))
-
         if speaker and emotion:
             target_id = (
                 self._resolve_speaker_element_id(speaker, character_id=char_id)
@@ -906,9 +647,6 @@ class StageDirector:
             )
             asset_prefix = char_cfg.asset_prefix if char_cfg and char_cfg.asset_prefix else None
             self.compositor.set_expression(target_id, resolved_expr, asset_prefix=asset_prefix)
-
-        if self.auto_highlight_speaker:
-            self._apply_speaker_highlight(speaker, character_id=char_id)
 
         # Voice audio management
         if self.audio is not None:
@@ -955,104 +693,6 @@ class StageDirector:
 
         return None
 
-    def _apply_speaker_highlight(self, speaker: str | None, *, character_id: str | None = None) -> None:
-        """Auto-highlight active speaker sprite and dim non-speaking sprites on characters layer."""
-        char_layer = self.compositor.stage.get_layer("characters")
-        if char_layer is None or not char_layer.elements:
-            return
-
-        speaker_elem_id = self._resolve_speaker_element_id(speaker, character_id=character_id)
-        dur = self.highlight_duration
-
-        for elem_id, elem in char_layer.elements.items():
-            if speaker_elem_id is not None and elem_id == speaker_elem_id:
-                # Active speaker: tint -> WHITE
-                if elem.state.tint != WHITE:
-                    if dur > 0.0:
-                        self.compositor.timeline.add_tween(
-                            target=elem.state,
-                            property_name="tint",
-                            end_value=WHITE,
-                            duration=dur,
-                        )
-                    else:
-                        elem.state.tint = WHITE
-
-                # Optional scale pop
-                if self.pop_scale is not None:
-                    target_scale = Vec2(self.pop_scale, self.pop_scale)
-                    if elem.state.scale != target_scale:
-                        if dur > 0.0:
-                            self.compositor.timeline.add_tween(
-                                target=elem.state,
-                                property_name="scale",
-                                end_value=target_scale,
-                                duration=dur,
-                            )
-                        else:
-                            elem.state.scale = target_scale
-
-                # Optional hop (tiny y hop)
-                if self.pop_hop is not None:
-                    base_y = self._sprite_base_y.get(elem_id)
-                    if base_y is None:
-                        base_y = elem.state.position.y
-                        self._sprite_base_y[elem_id] = base_y
-                    target_pos = Vec2(elem.state.position.x, base_y - self.pop_hop)
-                    if elem.state.position != target_pos:
-                        if dur > 0.0:
-                            self.compositor.timeline.add_tween(
-                                target=elem.state,
-                                property_name="position",
-                                end_value=target_pos,
-                                duration=dur,
-                            )
-                        else:
-                            elem.state.position = target_pos
-            else:
-                # Non-speaking character or restore when speaker not on layer:
-                # When speaker_elem_id is not None, this character is dimmed.
-                # When speaker_elem_id is None, restore to WHITE.
-                target_tint = self.dim_color if speaker_elem_id is not None else WHITE
-                if elem.state.tint != target_tint:
-                    if dur > 0.0:
-                        self.compositor.timeline.add_tween(
-                            target=elem.state,
-                            property_name="tint",
-                            end_value=target_tint,
-                            duration=dur,
-                        )
-                    else:
-                        elem.state.tint = target_tint
-
-                if self.pop_scale is not None:
-                    target_scale = Vec2(1.0, 1.0)
-                    if elem.state.scale != target_scale:
-                        if dur > 0.0:
-                            self.compositor.timeline.add_tween(
-                                target=elem.state,
-                                property_name="scale",
-                                end_value=target_scale,
-                                duration=dur,
-                            )
-                        else:
-                            elem.state.scale = target_scale
-
-                if self.pop_hop is not None:
-                    base_y = self._sprite_base_y.get(elem_id)
-                    if base_y is not None:
-                        target_pos = Vec2(elem.state.position.x, base_y)
-                        if elem.state.position != target_pos:
-                            if dur > 0.0:
-                                self.compositor.timeline.add_tween(
-                                    target=elem.state,
-                                    property_name="position",
-                                    end_value=target_pos,
-                                    duration=dur,
-                                )
-                            else:
-                                elem.state.position = target_pos
-
     def handle_append_event(self, event: AppendEvent) -> None:
         """Append text to current UI dialogue buffer."""
         add_text = event.text
@@ -1060,17 +700,10 @@ class StageDirector:
         self.ui_state.text = f"{current} {add_text}".strip()
         self.ui_state.clear_choices()
 
-        if self.ui_state.nvl_mode and self.ui_state.nvl_entries:
-            last = self.ui_state.nvl_entries[-1]
-            last.text = f"{last.text} {add_text}".strip()
-
     def handle_fresh_box_event(self, event: FreshBoxEvent) -> None:
         """Clear textbox content but preserve speaker for fresh box."""
         self.ui_state.text = event.text
         self.ui_state.clear_choices()
-
-        if self.ui_state.nvl_mode:
-            self.ui_state.nvl_entries.append(NVLEntry(speaker=self.ui_state.speaker, text=self.ui_state.text, emotion=self.ui_state.emotion))
 
     def handle_narration_event(self, event: NarrationEvent) -> None:
         """Update UI state with narration text and stop active voice."""
@@ -1079,12 +712,6 @@ class StageDirector:
         self.ui_state.emotion = None
         self.ui_state.side_image = None
         self.ui_state.clear_choices()
-
-        if self.ui_state.nvl_mode:
-            self.ui_state.nvl_entries.append(NVLEntry(speaker=None, text=self.ui_state.text))
-
-        if self.auto_highlight_speaker:
-            self._apply_speaker_highlight(None)
 
         if self.audio is not None:
             self.audio.stop("voice")
@@ -1100,7 +727,6 @@ class StageDirector:
         """Clear dialogue and choices on scene exit and stop voice channel."""
         self.ui_state.clear_dialogue()
         self.ui_state.clear_choices()
-        self.ui_state.active_input_prompt = None
         if self.audio is not None:
             self.audio.stop("voice")
 
@@ -1116,10 +742,6 @@ class StageDirector:
             )
             for opt in event.options
         ]
-
-    def handle_input_prompt_event(self, event: InputPromptEvent) -> None:
-        """Record active input prompt on UI state."""
-        self.ui_state.active_input_prompt = event
 
     def handle_story_end_event(self, event: StoryEndEvent) -> None:
         """Mark UI state as finished and stop voice channel."""

@@ -77,7 +77,7 @@ def _handle_screen_input(session: GameSession, action: InputAction, payload: dic
             return True
         if hasattr(session.screens, "handle_key"):
             return session.screens.handle_key("nav_up", session)
-    if action in (InputAction.ROLL_FORWARD, InputAction.NAV_DOWN):
+    if action == InputAction.NAV_DOWN:
         active = session.screens.active_screen
         scroll_down = getattr(active, "scroll_down", None)
         if callable(scroll_down):
@@ -138,39 +138,10 @@ def _handle_choice_nav_input(session: GameSession, action: InputAction) -> tuple
     return False, None
 
 
-def _handle_text_prompt_input(
-    session: GameSession,
-    action: InputAction,
-    payload: dict[str, Any],
-) -> tuple[bool, Any]:
-    """Handle text entry and modal blocking while an InputPromptEvent is active."""
-    if action == InputAction.TEXT_CHAR:
-        ch = payload.get("char", "")
-        if ch:
-            session.input_text += ch
-            if hasattr(session.overlay, "set_input_text"):
-                session.overlay.set_input_text(session.input_text)
-            session.mark_ui_dirty()
-            return True, True
-    elif action == InputAction.TEXT_BACKSPACE:
-        if session.input_text:
-            session.input_text = session.input_text[:-1]
-            if hasattr(session.overlay, "set_input_text"):
-                session.overlay.set_input_text(session.input_text)
-            session.mark_ui_dirty()
-            return True, True
-    elif action == InputAction.CONFIRM:
-        return True, session.submit_input(session.input_text)
-    if action in (InputAction.ADVANCE, InputAction.ROLLBACK, InputAction.ROLL_FORWARD):
-        return True, None
-    return False, None
-
-
 def _handle_pointer_click(session: GameSession, x: float, y: float) -> Any:
     """Handle in-game pointer click (unhide UI, quick actions, choices, reveal, advance)."""
     if session.ui_hidden:
         session.ui_hidden = False
-        session.mark_ui_dirty()
         return True
     qa = session.overlay.hit_test_quick_action(x, y)
     if qa:
@@ -184,7 +155,7 @@ def _handle_pointer_click(session: GameSession, x: float, y: float) -> Any:
         return True
     if session.is_finished:
         return session.return_to_title()
-    if session.active_choice_prompt is None and session.active_input_prompt is None:
+    if session.active_choice_prompt is None:
         return session.advance()
     return None
 
@@ -223,17 +194,10 @@ def handle_input(session: GameSession, action: InputAction, **payload: Any) -> A
         dy = float(payload.get("dy", 0.0))
         if dy > 0:
             return session.rollback()
-        if dy < 0:
-            return session.roll_forward()
         return None
 
     if session.active_choice_prompt is not None and session.active_choice_prompt.options:
         handled, result = _handle_choice_nav_input(session, action)
-        if handled:
-            return result
-
-    if session.active_input_prompt is not None:
-        handled, result = _handle_text_prompt_input(session, action, payload)
         if handled:
             return result
 
@@ -242,14 +206,12 @@ def handle_input(session: GameSession, action: InputAction, **payload: Any) -> A
             return True
         if session.is_finished:
             return session.return_to_title()
-        if session.active_choice_prompt is None and session.active_input_prompt is None:
+        if session.active_choice_prompt is None:
             return session.advance()
         return None
 
     if action in (InputAction.ROLLBACK, InputAction.NAV_LEFT):
         return session.rollback()
-    if action in (InputAction.ROLL_FORWARD, InputAction.NAV_RIGHT):
-        return session.roll_forward()
     if action == InputAction.CHOOSE:
         idx = payload.get("index")
         return session.choose(idx) if idx is not None else None
@@ -286,8 +248,6 @@ def handle_input(session: GameSession, action: InputAction, **payload: Any) -> A
         return True
     if action == InputAction.QUIT:
         return session.request_quit()
-    if action == InputAction.RELOAD:
-        return session.hot_reload()
     if action == InputAction.SCREENSHOT:
         return session.take_screenshot(**payload)
     if action == InputAction.POINTER_CLICK:

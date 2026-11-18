@@ -8,14 +8,10 @@ import eager.script
 from eager.core.events import (
     ChoicePromptEvent,
     DialogueEvent,
-    InputPromptEvent,
     NarrationEvent,
-    StoryEndEvent,
 )
-from eager.core.i18n import TranslationCatalog, TranslationManager
 from eager.session import GameSession
 from eager.vm import StoryVM
-from eager.vm.i18n import extract_catalog
 
 
 class TestCrossFeatureScenarios:
@@ -135,56 +131,6 @@ Alice: Gained coins.
         # Persistent data NOT rolled back!
         assert session.persistent.get("secret_unlocked") is True
 
-    def test_localized_dialogue_with_variable_interpolation(self) -> None:
-        script = """
-@default player_name = "Roland"
-@default crowns = 42
-## Market --- market
-Merchant: Welcome [player_name], you possess [crowns] crowns! {id=welcome_msg}
-"""
-        graph = eager.script.parse_graph(script)
-        cat_es = TranslationCatalog(
-            locale="es",
-            strings={"market.welcome_msg": "¡Bienvenido [player_name], posees [crowns] coronas!"},
-            speakers={"Merchant": "Comerciante"},
-        )
-        tm = TranslationManager()
-        tm.register_catalog(cat_es)
-        tm.set_locale("es")
-
-        vm = StoryVM(graph, translation_manager=tm)
-        vm.step()  # enter
-        ev = vm.step()
-        assert isinstance(ev, DialogueEvent)
-        assert ev.speaker == "Comerciante"
-        assert ev.text == "¡Bienvenido Roland, posees 42 coronas!"
-
-    def test_input_prompt_feeding_conditional_choice(self) -> None:
-        script = """
-## GateKeeper --- gatekeeper
-~ input age "State your age:" "16"
-? Enter the arena (arena) if int(age) >= 18
-? Visit the training yard (training)
-
-## Arena --- arena
-Arena entered.
-
-## Training --- training
-Training yard entered.
-"""
-        graph = eager.script.parse_graph(script)
-        vm = StoryVM(graph)
-        vm.step()  # enter
-        inp = vm.step()
-        assert isinstance(inp, InputPromptEvent)
-        # Supply adult age
-        vm.submit_input("21")
-        prompt = vm.step()
-        assert isinstance(prompt, ChoicePromptEvent)
-        assert prompt.options[0].enabled is True
-        vm.choose(0)
-        assert vm.current_scene_id == "arena"
-
     def test_subroutine_called_from_inline_choice(self) -> None:
         script = """
 ## Crossroads --- crossroads
@@ -239,7 +185,7 @@ class TestApplicationScenarios:
 
 ## Prologue --- prologue
 The rain hammers against the stained glass windows of Blackwood Manor.
-~ input detective_name "Enter investigator name:" "Sam Vance"
+$ detective_name = "Sherlock"
 detective: My name is [detective_name], private investigator.
 detective: Lord Blackwood's signet ring is missing. Let us begin.
 > crime_scene
@@ -287,19 +233,18 @@ detective: All evidence points to a conclusion.
         # --- Playthrough 1: Gather sufficient clues in Library -> True Ending ---
         session1 = GameSession(graph, headless=True, save_dir=save_dir)
         session1.advance()  # Prologue narration
-        session1.advance()  # Input prompt for detective name
-        session1.submit_input("Sherlock")
         session1.advance()  # detective: My name is Sherlock...
         session1.advance()  # detective: Lord Blackwood's...
         session1.advance()  # CrimeScene dialogue
+
+        # Choose Library
+        choice_ev = session1.advance()
+        assert isinstance(choice_ev, ChoicePromptEvent)
 
         # Save game at the branching crossroads
         save_meta = session1.save_game("branch_point")
         assert save_meta.scene_id == "crime_scene"
 
-        # Choose Library
-        choice_ev = session1.advance()
-        assert isinstance(choice_ev, ChoicePromptEvent)
         session1.choose(0)  # library
 
         session1.advance()  # Library narration/dialogue
@@ -339,127 +284,3 @@ detective: All evidence points to a conclusion.
         # Verify persistent store now contains BOTH unlocked endings!
         assert session2.persistent.get("true_detective_ending") is True
         assert session2.persistent.get("cold_case_ending") is True
-
-    def test_multi_language_full_session_flow(self, tmp_path: Path) -> None:
-        """Run a bilingual visual novel story with prologue, dialogue, choices, and input prompt.
-
-        Switch language on the fly (EN -> DE), verify localization across all event types,
-        save in alternate language, reload, and verify state consistency.
-        """
-        script = """
-## Prologue --- prologue
-The portal hums with ancient power. {id=prologue_narration}
-~ input traveler_role "Declare your calling:" "Wanderer" {id=inp_role}
-Elder: Welcome, brave [traveler_role]. {id=elder_greet}
-? Enter portal (portal)
-? Retreat to safety (safety)
-
-## Portal --- portal
-You step into the unknown. {id=portal_narration}
-
-## Safety --- safety
-You return to the valley. {id=safety_narration}
-"""
-        graph = eager.script.parse_graph(script)
-        cat_tpl = extract_catalog(graph, locale="template")
-        c_keys = [k for k in cat_tpl.strings if "choice_" in k]
-        assert len(c_keys) == 2
-        cat_de = TranslationCatalog(
-            locale="de",
-            strings={
-                "prologue.prologue_narration": "Das Portal summt mit uralter Kraft.",
-                "prologue.inp_role.input": "Erkläre deine Berufung:",
-                "prologue.elder_greet": "Willkommen, tapferer [traveler_role].",
-                c_keys[0]: "Das Portal betreten",
-                c_keys[1]: "In Sicherheit zurückziehen",
-                "portal.portal_narration": "Du trittst ins Unbekannte ein.",
-            },
-            speakers={"Elder": "Ältester"},
-        )
-        save_dir = tmp_path / "i18n_saves"
-        session = GameSession(graph, headless=True, save_dir=save_dir)
-        session.translation_manager.register_catalog(cat_de)
-
-        # 1. Step in English
-        ev1 = session.advance()
-        assert isinstance(ev1, NarrationEvent)
-        assert ev1.text == "The portal hums with ancient power."
-
-        # 2. Switch to German
-        session.set_language("de")
-
-        # 3. Input prompt in German
-        ev2 = session.advance()
-        assert isinstance(ev2, InputPromptEvent)
-        assert ev2.prompt == "Erkläre deine Berufung:"
-
-        # 4. Dialogue in German with speaker and variable interpolation returned by submit_input
-        ev3 = session.submit_input("Magier")
-        assert isinstance(ev3, DialogueEvent)
-        assert ev3.speaker == "Ältester"
-        assert ev3.text == "Willkommen, tapferer Magier."
-
-        # 5. Choice prompt in German
-        ev4 = session.advance()
-        assert isinstance(ev4, ChoicePromptEvent)
-        assert ev4.options[0].text == "Das Portal betreten"
-        assert ev4.options[1].text == "In Sicherheit zurückziehen"
-
-        # 6. Save in German session
-        session.save_game("german_checkpoint")
-
-        # 7. Reload in new session and verify preferences & text
-        session_loaded = GameSession(graph, headless=True, save_dir=save_dir)
-        session_loaded.translation_manager.register_catalog(cat_de)
-        load_ok = session_loaded.load_game("german_checkpoint")
-        assert load_ok is True
-        assert session_loaded.active_choice_prompt is not None
-        assert session_loaded.active_choice_prompt.options[0].text == "Das Portal betreten"
-
-        # Pick choice and complete
-        ev_final = session_loaded.choose(0)
-        assert isinstance(ev_final, NarrationEvent)
-        assert ev_final.text == "Du trittst ins Unbekannte ein."
-        ev_end = session_loaded.advance()
-        assert isinstance(ev_end, StoryEndEvent)
-        assert ev_end.reason == "terminal"
-
-    def test_session_resilience_and_corrupt_quicksave_recovery(self, tmp_path: Path) -> None:
-        """Verify session handles corrupted quicksave file gracefully without crashing
-
-        and successfully recovers to normal gameplay.
-        """
-        script = """
-## Story --- story
-Alice: Beginning journey.
-Alice: Checkpoint reached.
-Alice: Final chapter.
-"""
-        graph = eager.script.parse_graph(script)
-        save_dir = tmp_path / "resilience_saves"
-        session = GameSession(graph, headless=True, save_dir=save_dir)
-
-        session.advance()
-        session.quicksave()
-        session.advance()
-
-        # Artificially corrupt the quicksave file
-        quick_file = save_dir / "quick_1.json"
-        assert quick_file.exists()
-        quick_file.write_text("CORRUPTED_BINARY_DATA_\x00\x01\x02", encoding="utf-8")
-
-        # Attempt quickload: should fail gracefully, returning False
-        assert session.quickload() is False
-
-        # Gameplay can continue uninterrupted
-        ev3 = session.advance()
-        assert isinstance(ev3, DialogueEvent)
-        assert ev3.text == "Final chapter."
-
-        # Normal manual save succeeds cleanly
-        meta = session.save_game("healthy_slot")
-        assert meta.slot_name == "healthy_slot"
-
-        # Healthy load succeeds cleanly
-        assert session.load_game("healthy_slot") is True
-        assert session.director.ui_state.text == "Final chapter."

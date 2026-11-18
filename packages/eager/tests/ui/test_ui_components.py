@@ -15,7 +15,6 @@ from eager.ui.components import (
     DialogueBox,
     DialogueBoxLayout,
     EndNotice,
-    InputBox,
     QuickMenu,
     TextAnchor,
     TextboxStyle,
@@ -36,55 +35,12 @@ def test_dialogue_box_is_docked_at_the_bottom() -> None:
     assert cw == pytest.approx(1280)
 
 
-def test_dialogue_box_nameplate_straddles_top_edge() -> None:
-    boxed_style = TextboxStyle(
-        layout_mode="classic",
-        show_nameplate_box=True,
-        min_margin=20.0,
-        margin_ratio=0.05,
-        bottom_gap=25.0,
-        nameplate_overlap=15.0,
-    )
-    box = DialogueBox(1280, 720, style=boxed_style)
-    box.set_content("Meris", "You have returned.")
-
-    layout = box.layout()
-    assert layout.nameplate is not None
-
-    _, box_y, _, _ = layout.box
-    name_y = layout.nameplate[1]
-    name_h = layout.nameplate[3]
-
-    # The nameplate is centred on the box's top edge, overhanging equally.
-    assert name_y + (name_h / 2) == pytest.approx(box_y)
-    assert name_y < box_y
-
-
 def test_dialogue_box_cinematic_inline_speaker() -> None:
     box = DialogueBox(1280, 720)
     box.set_content("Meris", "You have returned.")
 
     layout = box.layout()
     assert layout.nameplate is None
-
-
-def test_dialogue_box_no_nameplate_for_narration() -> None:
-    boxed_style = TextboxStyle(layout_mode="classic", show_nameplate_box=True)
-    box = DialogueBox(1280, 720, style=boxed_style)
-    box.set_content(None, "The wind howls.")
-
-    assert box.layout().nameplate is None
-
-
-def test_dialogue_box_nameplate_width_scales_with_name() -> None:
-    boxed_style = TextboxStyle(layout_mode="classic", show_nameplate_box=True)
-    short = DialogueBox(1280, 720, style=boxed_style)
-    short.set_content("Al", "x")
-    long = DialogueBox(1280, 720, style=boxed_style)
-    long.set_content("Bartholomew", "x")
-
-    assert long.nameplate_width() > short.nameplate_width()
-    assert long.nameplate_width() <= 250
 
 
 def test_dialogue_box_hides_arrow_when_choices_are_active() -> None:
@@ -105,30 +61,6 @@ def test_dialogue_box_cache_key_tracks_visible_state() -> None:
 
     box.set_content("Meris", "One")
     assert box.cache_key() == key_before
-
-
-def test_dialogue_box_draw_emits_expected_primitives() -> None:
-    backend = NullRenderer()
-    boxed_style = TextboxStyle(
-        layout_mode="classic",
-        show_nameplate_box=True,
-        gradient_top=None,
-        gradient_bottom=None,
-    )
-    box = DialogueBox(1280, 720, style=boxed_style)
-    box.set_content("Meris", "You have returned.")
-
-    box.draw(backend)
-
-    rects = [c for c in backend.ui_calls if c["kind"] == "rect"]
-    texts = [c for c in backend.ui_calls if c["kind"] == "text"]
-
-    # Box background plus the speaker nameplate.
-    assert len(rects) == 2
-    # Nameplate label, dialogue text, and the advance arrow.
-    assert len(texts) == 3
-    assert texts[0]["text"] == "Meris"
-    assert texts[1]["text"] == "You have returned."
 
 
 def test_dialogue_box_cinematic_draw_emits_gradient_and_inline_text() -> None:
@@ -447,28 +379,6 @@ class _FakePrompt:
         self.options = options
 
 
-def test_overlay_draws_all_three_layers_when_appropriate() -> None:
-    backend = NullRenderer()
-    overlay = UIOverlay(
-        1280,
-        720,
-        dialogue_style=TextboxStyle(
-            layout_mode="classic",
-            show_nameplate_box=True,
-            gradient_top=None,
-            gradient_bottom=None,
-        ),
-        choice_style=ChoiceMenuStyle(),
-    )
-
-    ui = UIState(speaker="Meris", text="Choose.")
-    overlay.draw(backend, ui, _FakePrompt(_options(2)))
-
-    rects = [c for c in backend.ui_calls if c["kind"] == "rect"]
-    # Textbox + nameplate + two choice buttons.
-    assert len(rects) == 4
-
-
 def test_overlay_cinematic_mode_draws_layers() -> None:
     backend = NullRenderer()
     overlay = UIOverlay(1280, 720)
@@ -619,43 +529,6 @@ def test_dialogue_box_layout_contains() -> None:
 # ── Backend primitives ─────────────────────────────────────────────────────
 
 
-@pytest.mark.skipif(importlib.util.find_spec("PIL") is None, reason="Pillow not installed")
-def test_pil_renderer_implements_uidraw_backend() -> None:
-    from eager.backends.renderers.pil import PILRenderer
-
-    renderer = PILRenderer(width=320, height=240)
-    for method in ("draw_rect", "draw_gradient_rect", "draw_text", "draw_image", "measure_text"):
-        assert callable(getattr(renderer, method))
-
-
-@pytest.mark.skipif(importlib.util.find_spec("PIL") is None, reason="Pillow not installed")
-def test_pil_draw_rect_repaints_frame_buffer() -> None:
-    from eager.backends.renderers.pil import PILRenderer
-    from eager.core.types import WHITE
-
-    renderer = PILRenderer(width=64, height=64)
-    renderer.clear()
-    before = renderer.image.convert("RGB").getpixel((32, 32))
-
-    renderer.draw_rect(0, 0, 64, 64, WHITE)
-    after = renderer.image.convert("RGB").getpixel((32, 32))
-    assert isinstance(after, tuple)
-    assert after != before
-    assert after[0] > 200
-
-
-@pytest.mark.skipif(importlib.util.find_spec("PIL") is None, reason="Pillow not installed")
-def test_pil_measure_text_scales_with_font_size() -> None:
-    from eager.backends.renderers.pil import PILRenderer
-
-    renderer = PILRenderer(width=320, height=240)
-    small = renderer.measure_text("Meris", font_size=12)
-    large = renderer.measure_text("Meris", font_size=30)
-
-    assert large[0] >= small[0]
-    assert all(v > 0 for v in small)
-
-
 @pytest.mark.skipif(importlib.util.find_spec("pyglet") is None, reason="Pyglet not installed")
 def test_pyglet_flip_y_converts_top_left_to_bottom_left() -> None:
     from eager.backends.renderers.pyglet import PygletRenderer
@@ -715,7 +588,7 @@ def test_dialogue_box_typewriter_reveal_draws_partial_text_and_hides_arrow() -> 
 
 def test_choice_menu_selection_highlight_and_prefix() -> None:
     backend = NullRenderer()
-    menu = ChoiceMenu(1280, 720, style=ChoiceMenuStyle(layout_mode="classic", show_numbering=True))
+    menu = ChoiceMenu(1280, 720, style=ChoiceMenuStyle(show_numbering=True))
     opts = [ChoiceOption(0, "Fight"), ChoiceOption(1, "Flee")]
     menu.set_options(opts)
 
@@ -724,12 +597,14 @@ def test_choice_menu_selection_highlight_and_prefix() -> None:
     texts_unselected = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
     assert texts_unselected == ["[1]  Fight", "[2]  Flee"]
 
-    # Select first option
+    # Select first option (cinematic mode draws selection accent bar)
     backend.ui_calls.clear()
     menu.selected_index = 0
     menu.draw(backend)
     texts_selected = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
-    assert texts_selected == ["> [1]  Fight", "[2]  Flee"]
+    assert texts_selected == ["[1]  Fight", "[2]  Flee"]
+    rects_selected = [c for c in backend.ui_calls if c["kind"] == "rect"]
+    assert len(rects_selected) > 0
 
 
 def test_ui_overlay_status_badge_rendering() -> None:
@@ -830,129 +705,6 @@ def test_dialogue_box_typewriter_reveal_float_visible_chars() -> None:
     assert combined_text == "Hello br"
 
 
-def test_ui_overlay_error_overlay() -> None:
-    backend = NullRenderer()
-    overlay = UIOverlay(1280, 720)
-    state = UIState(speaker="Narrator", text="Normal text")
-
-    overlay.error_overlay = "Scene not found: 'missing_scene'"
-    overlay.draw(backend, state)
-
-    texts = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
-    assert "Scene Not Found" in texts
-    assert "Scene not found: 'missing_scene'" in texts
-
-    # Clear error overlay
-    backend.ui_calls.clear()
-    overlay.error_overlay = None
-    overlay.draw(backend, state)
-    texts_cleared = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
-    assert "Scene Not Found" not in texts_cleared
-
-
-def test_input_box_modal_rendering() -> None:
-    from eager.core.events import InputPromptEvent
-
-    backend = NullRenderer()
-    overlay = UIOverlay(1280, 720)
-    state = UIState(speaker="Narrator", text="What is your name?")
-    prompt = InputPromptEvent(var_name="player_name", prompt="What is your name?", default="Hero")
-
-    overlay.draw(backend, state, active_input_prompt=prompt, input_text="Valiant")
-
-    texts = [c["text"] for c in backend.ui_calls if c["kind"] == "text"]
-    assert "What is your name?" in texts
-    assert "Valiant" in texts
-    assert "Press Enter to confirm" in texts
-
-    # Overlay cursor update
-    overlay.input_box.update(0.6)
-    assert overlay.input_box.cursor_visible is False
-    overlay.input_box.update(0.6)
-    assert overlay.input_box.cursor_visible is True
-
-
-def test_theme_and_styles_unification() -> None:
-    """Theme must bridge cleanly to TextboxStyle and ChoiceMenuStyle."""
-    from eager.core.theme import Theme
-    from eager.core.types import Color
-    from eager.ui.components import (
-        ChoiceMenu,
-        ChoiceMenuStyle,
-        DialogueBox,
-        QuickMenu,
-        TextboxStyle,
-        UIOverlay,
-    )
-
-    custom_theme = Theme(
-        name="crimson_gold",
-        bg_color=Color(0.1, 0.0, 0.0, 1.0),
-        primary_color=Color(0.8, 0.1, 0.1, 1.0),
-        accent_color=Color(1.0, 0.8, 0.2, 1.0),
-        text_color=Color(0.98, 0.98, 0.98, 1.0),
-        muted_text_color=Color(0.7, 0.6, 0.6, 1.0),
-        dialogue_box_fill=Color(0.15, 0.02, 0.02, 0.95),
-        dialogue_box_border=Color(1.0, 0.8, 0.2, 0.3),
-        nameplate_fill=Color(0.3, 0.05, 0.05, 0.9),
-        nameplate_text=Color(1.0, 0.85, 0.3, 1.0),
-        button_fill=Color(0.25, 0.04, 0.04, 0.85),
-        button_hover=Color(0.45, 0.08, 0.08, 0.95),
-        button_border=Color(1.0, 0.8, 0.2, 0.5),
-        button_text=Color(1.0, 1.0, 1.0, 1.0),
-        font_size=20,
-    )
-
-    from eager.ui.components import choice_menu_style_from_theme, textbox_style_from_theme
-
-    # 1. textbox_style_from_theme and TextboxStyle.from_theme
-    tb_style = textbox_style_from_theme(custom_theme)
-    assert tb_style.box_fill == custom_theme.dialogue_box_fill
-    assert tb_style.nameplate_text == custom_theme.nameplate_text
-    assert tb_style.show_nameplate_box is True
-    assert tb_style.text_font_size == 19  # 20 - 1
-
-    from_tb = TextboxStyle.from_theme(custom_theme)
-    assert from_tb == tb_style
-
-    # 2. choice_menu_style_from_theme and ChoiceMenuStyle.from_theme
-    choice_style = choice_menu_style_from_theme(custom_theme)
-    assert choice_style.button_fill == custom_theme.button_fill
-    assert choice_style.button_hover_fill == custom_theme.button_hover
-    assert choice_style.accent_bar_color == custom_theme.accent_color
-    assert choice_style.text_font_size == 18  # 20 - 2
-
-    from_choice = ChoiceMenuStyle.from_theme(custom_theme)
-    assert from_choice == choice_style
-
-    # 3. UIOverlay configured with Theme
-    overlay = UIOverlay(1280, 720, theme=custom_theme)
-    assert overlay.dialogue_box.style.box_fill == custom_theme.dialogue_box_fill
-    assert overlay.choice_menu.style.button_fill == custom_theme.button_fill
-    assert overlay.quick_menu.theme == custom_theme
-
-    # 4. set_theme dynamic update
-    alt_theme = Theme(name="ice_blue", dialogue_box_fill=Color(0.0, 0.1, 0.3, 0.9))
-    overlay.set_theme(alt_theme)
-    assert overlay.dialogue_box.style.box_fill == alt_theme.dialogue_box_fill
-
-    # 5. Direct DialogueBox, ChoiceMenu, QuickMenu theme support
-    diag_box = DialogueBox(theme=custom_theme)
-    assert diag_box.style.box_fill == custom_theme.dialogue_box_fill
-    diag_box.set_theme(alt_theme)
-    assert diag_box.style.box_fill == alt_theme.dialogue_box_fill
-
-    cmenu = ChoiceMenu(theme=custom_theme)
-    assert cmenu.style.button_fill == custom_theme.button_fill
-    cmenu.set_theme(alt_theme)
-    assert cmenu.style.button_fill == alt_theme.button_fill
-
-    qmenu = QuickMenu(theme=custom_theme)
-    assert qmenu.theme == custom_theme
-    qmenu.set_theme(alt_theme)
-    assert qmenu.theme == alt_theme
-
-
 def test_hud_components_scale_font_sizes_with_viewport_height() -> None:
     backend_720 = NullRenderer()
     backend_1440 = NullRenderer()
@@ -994,26 +746,7 @@ def test_hud_components_scale_font_sizes_with_viewport_height() -> None:
     ctext_1440 = next(c for c in backend_c1440.ui_calls if c["kind"] == "text")
     assert ctext_1440["font_size"] == 28
 
-    # 3. InputBox font scaling
-    ibox_720 = InputBox(1280, 720)
-    ibox_720.set_prompt("Name:", default="Hero")
-    backend_i720 = NullRenderer()
-    ibox_720.draw(backend_i720)
-    itexts_720 = [c for c in backend_i720.ui_calls if c["kind"] == "text"]
-    assert itexts_720[0]["font_size"] == 15  # prompt
-    assert itexts_720[1]["font_size"] == 15  # buffer
-    assert itexts_720[2]["font_size"] == 11  # hint
-
-    ibox_1440 = InputBox(2560, 1440)
-    ibox_1440.set_prompt("Name:", default="Hero")
-    backend_i1440 = NullRenderer()
-    ibox_1440.draw(backend_i1440)
-    itexts_1440 = [c for c in backend_i1440.ui_calls if c["kind"] == "text"]
-    assert itexts_1440[0]["font_size"] == 30  # prompt
-    assert itexts_1440[1]["font_size"] == 30  # buffer
-    assert itexts_1440[2]["font_size"] == 22  # hint
-
-    # 4. QuickMenu font scaling
+    # 3. QuickMenu font scaling
     qmenu_720 = QuickMenu(1280, 720)
     backend_q720 = NullRenderer()
     qmenu_720.draw(backend_q720)
@@ -1051,10 +784,6 @@ def test_ui_overlay_delegation_methods() -> None:
     assert overlay.get_selected_choice() == 1
     assert overlay.choice_menu.selected_index == 1
 
-    # Input text delegation
-    overlay.set_input_text("Hello")
-    assert overlay.input_box.text_buffer == "Hello"
-
     # Dialogue reveal delegation
     overlay.dialogue_box.set_content("Alice", "Test text")
     overlay.dialogue_box.visible_chars = 3
@@ -1069,51 +798,8 @@ def test_ui_overlay_delegation_methods() -> None:
     assert overlay.quick_menu.hovered_action == "save"
 
 
-def test_ui_overlay_draw_nvl_markup_scaling_and_overflow() -> None:
-    from eager.core.ui_state import NVLEntry, UIState
-
-    overlay = UIOverlay(1280, 720)
-    ui_state = UIState()
-    ui_state.nvl_mode = True
-    ui_state.nvl_entries = [
-        NVLEntry(speaker="Alice", text="Line with {b}bold{/b} and {color=#ff0000}color{/color}"),
-    ]
-    backend = NullRenderer()
-    overlay.draw_nvl(backend, ui_state)
-
-    # Check text tag was parsed and rendered with segment styling
-    text_calls = [c for c in backend.ui_calls if c["kind"] == "text"]
-    joined_text = "".join(c["text"] for c in text_calls)
-    assert "Line with bold and color" in joined_text
-    assert not any("{b}" in c["text"] for c in text_calls)
-    assert any(c["text"] == "bold" and c.get("bold") is True for c in text_calls)
-
-    # Check font scaling on 1440p
-    overlay_1440 = UIOverlay(2560, 1440)
-    backend_1440 = NullRenderer()
-    overlay_1440.draw_nvl(backend_1440, ui_state)
-    text_calls_1440 = [c for c in backend_1440.ui_calls if c["kind"] == "text"]
-    assert any(c["font_size"] == 28 for c in text_calls_1440)  # 14 * 2 = 28
-
-    # Overflow tail-fitting: add 100 entries so it exceeds max height
-    ui_state_large = UIState()
-    ui_state_large.nvl_mode = True
-    ui_state_large.nvl_entries = [
-        NVLEntry(speaker=None, text=f"Entry {i}") for i in range(100)
-    ]
-    backend_overflow = NullRenderer()
-    overlay.draw_nvl(backend_overflow, ui_state_large)
-    calls_overflow = [c for c in backend_overflow.ui_calls if c["kind"] == "text"]
-    # Most recent entry (Entry 99) should definitely be drawn
-    assert any(c["text"] == "Entry 99" for c in calls_overflow)
-    # Old entry (Entry 0) should be dropped due to overflow tail-fitting
-    assert not any(c["text"] == "Entry 0" for c in calls_overflow)
-
-
-
-
 def test_ui_overlay_hit_test_quick_action_syncs_with_visibility() -> None:
-    from eager.core.events import ChoiceOption, ChoicePromptEvent, InputPromptEvent
+    from eager.core.events import ChoiceOption, ChoicePromptEvent
 
     overlay = UIOverlay(1280, 720)
     qx, qy = 720.0, 705.0  # Inside QuickMenu Log button
@@ -1128,17 +814,7 @@ def test_ui_overlay_hit_test_quick_action_syncs_with_visibility() -> None:
     overlay.sync(state, choice_prompt=choice)
     assert overlay.hit_test_quick_action(qx, qy) is None
 
-    # Active input prompt -> quick menu hidden, hit_test returns None
-    prompt = InputPromptEvent(var_name="name", prompt="Name:")
-    overlay.sync(state, input_prompt=prompt)
-    assert overlay.hit_test_quick_action(qx, qy) is None
-
     # Story finished -> quick menu hidden, hit_test returns None
     finished_state = UIState(speaker="Alice", text="End", is_finished=True)
     overlay.sync(finished_state)
     assert overlay.hit_test_quick_action(qx, qy) is None
-
-    # NVL mode with empty dialogue_box.text -> quick menu visible, hit_test works
-    nvl_state = UIState(speaker="", text="", nvl_mode=True)
-    overlay.sync(nvl_state)
-    assert overlay.hit_test_quick_action(qx, qy) == "log"

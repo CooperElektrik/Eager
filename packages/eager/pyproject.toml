@@ -28,13 +28,9 @@ keywords = ["narrative-engine", "visual-novel", "screenplay", "dsl", "eager"]
 dependencies = []
 
 [project.optional-dependencies]
-pil = ["pillow>=10.0"]
 pyglet = ["pyglet>=2.0"]
-audio = ["miniaudio>=0.12.4"]
 gui = [
-    "pillow>=10.0",
     "pyglet>=2.0",
-    "miniaudio>=0.12.4",
 ]
 dev = [
     "pytest>=8.0",

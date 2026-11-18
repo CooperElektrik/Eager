@@ -3,7 +3,6 @@
 import pytest
 
 from eager.backends.renderers.null import NullRenderer
-from eager.backends.renderers.pil import PIL_AVAILABLE, PILRenderer
 from eager.core.types import BLACK, Vec2
 from eager.stage.compositor import StageCompositor
 
@@ -318,12 +317,6 @@ def test_extreme_coordinates_and_negative_scales_rendering() -> None:
     assert frame_items["offscreen_tl/idle"].scale_y == 0.0
     assert frame_items["offscreen_tl/idle"].rotation == 1440.5
 
-    # Render with PILRenderer
-    if PIL_AVAILABLE:
-        pil_backend = PILRenderer(1280, 720)
-        img = pil_backend.render_compositor(comp, 1280, 720)
-        assert img.size == (1280, 720)
-
 
 def test_opacity_culling_boundaries() -> None:
     """Verify strict opacity culling: opacity <= 0 is culled, > 0 is preserved."""
@@ -350,11 +343,6 @@ def test_opacity_culling_boundaries() -> None:
     assert any("actor_tiny" in a for a in rendered_assets)
     assert any("actor_full" in a for a in rendered_assets)
 
-    if PIL_AVAILABLE:
-        pil_backend = PILRenderer(1280, 720)
-        img = pil_backend.render_compositor(comp, 1280, 720)
-        assert img.size == (1280, 720)
-
 
 def test_snapshot_serialization_with_extreme_values() -> None:
     """Verify compositor state serialization preserves extreme values accurately."""
@@ -377,32 +365,5 @@ def test_snapshot_serialization_with_extreme_values() -> None:
     assert restored_elem.state.scale.x == -2.0
     assert restored_elem.state.scale.y == 0.0
     assert restored_elem.state.rotation == 1440.5
-
-
-def test_compositor_save_load_preserves_custom_particles_and_weather_count() -> None:
-    from eager.stage.particles import ParticleEmitter, ParticleStampLUT
-
-    comp = StageCompositor(1920, 1080)
-    comp.set_weather("rain", count=42)
-    custom_lut = ParticleStampLUT.from_shape("spark", base_size=10, color=(120, 200, 255))
-    custom_emitter = ParticleEmitter("custom_fx", custom_lut, max_particles=33, layer="foreground", z_order=250000)
-    comp.add_particle_emitter(custom_emitter)
-
-    state = comp.save_state()
-
-    restored = StageCompositor(1920, 1080)
-    restored.load_state(state)
-
-    weather_em = restored.get_particle_emitter("weather")
-    assert weather_em is not None
-    assert weather_em.max_particles == 42
-    assert weather_em.preset == "rain"
-
-    custom_em = restored.get_particle_emitter("custom_fx")
-    assert custom_em is not None
-    assert custom_em.max_particles == 33
-    assert custom_em.z_order == 250000
-    assert custom_em.lut._shape == "spark"
-    assert custom_em.lut._color == (120, 200, 255)
 
 

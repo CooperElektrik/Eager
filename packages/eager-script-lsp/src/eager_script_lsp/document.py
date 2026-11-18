@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from eager.core.i18n import get_beat_occurrence
 from eager.script import (
     ParsedChoiceSet,
     ParsedItem,
@@ -184,35 +183,6 @@ class ScriptDocument:
                 return anon
 
         return current_scene
-
-    def get_beat_occurrence(self, line_0: int) -> int:
-        """Compute the 1-based occurrence count of the beat at 0-based line_0."""
-        scene_id = self.get_scene_at_line(line_0)
-        item = self.get_item_at_line(line_0)
-        if not scene_id or not item:
-            return 1
-
-        if self.scene_graph and scene_id in self.scene_graph.nodes:
-            node = self.scene_graph.nodes[scene_id]
-            for idx, b in enumerate(node.body):
-                if getattr(b, "line_number", None) == item.line_number:
-                    return get_beat_occurrence(node.body, idx)
-
-        scene_items: list[Any] = []
-        in_scene = False
-        for ast_item in self.ast_items:
-            if isinstance(ast_item, ParsedLabel):
-                if in_scene:
-                    break
-                if ast_item.name == scene_id:
-                    in_scene = True
-            elif in_scene:
-                scene_items.append(ast_item)
-
-        for idx, b in enumerate(scene_items):
-            if getattr(b, "line_number", None) == item.line_number:
-                return get_beat_occurrence(scene_items, idx)
-        return 1
 
     def parse(self) -> None:
         """Parse the document with eager.script and index token spans and symbols."""

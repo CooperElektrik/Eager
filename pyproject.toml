@@ -17,8 +17,6 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.4.0",
     "pyglet>=2.0",
-    "pillow>=10.0",
-    "miniaudio>=0.12.4",
     "import-linter>=2.0",
     "mkdocs>=1.6",
     "mkdocs-material>=9.5",
@@ -112,7 +110,7 @@ forbidden_modules = [
 name = "eager renderer backends are mutually independent"
 type = "independence"
 modules = [
-    "eager.backends.renderers.pil",
+    "eager.backends.renderers.null",
     "eager.backends.renderers.pyglet",
 ]
 

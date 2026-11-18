@@ -5,9 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from lsprotocol.types import (
-    CallHierarchyIncomingCall,
-    CallHierarchyItem,
-    CallHierarchyOutgoingCall,
     DocumentSymbol,
     Location,
     Position,
@@ -23,11 +20,8 @@ if TYPE_CHECKING:
 __all__ = [
     "compute_definition",
     "compute_document_symbols",
-    "compute_incoming_calls",
-    "compute_outgoing_calls",
     "compute_references",
     "compute_workspace_symbols",
-    "prepare_call_hierarchy",
 ]
 
 
@@ -314,104 +308,3 @@ def compute_workspace_symbols(workspace: WorkspaceIndex, query: str) -> list[Sym
 
     return results
 
-
-def prepare_call_hierarchy(
-    doc: ScriptDocument,
-    workspace: WorkspaceIndex,
-    position: Position,
-) -> list[CallHierarchyItem] | None:
-    """Prepare call hierarchy for the scene at the cursor."""
-    scene_id = doc.get_scene_at_line(position.line)
-    if not scene_id:
-        return None
-    sym = workspace.get_scene(scene_id)
-    if not sym:
-        return None
-
-    item = CallHierarchyItem(
-        name=sym.display_name,
-        kind=SymbolKind.Function,
-        detail=f"Scene ID: {sym.id}",
-        uri=sym.uri,
-        range=sym.range,
-        selection_range=sym.range,
-    )
-    return [item]
-
-
-def compute_incoming_calls(
-    workspace: WorkspaceIndex,
-    item: CallHierarchyItem,
-) -> list[CallHierarchyIncomingCall]:
-    """Return all incoming transition predecessors for the scene."""
-    scene_id = item.detail.replace("Scene ID: ", "") if item.detail else item.name
-    sym = workspace.get_scene(scene_id)
-    if not sym:
-        return []
-
-    incoming: list[CallHierarchyIncomingCall] = []
-    for pred_id in sorted(sym.predecessors):
-        pred_sym = workspace.get_scene(pred_id)
-        if pred_sym:
-            caller_item = CallHierarchyItem(
-                name=pred_sym.display_name,
-                kind=SymbolKind.Function,
-                detail=f"Scene ID: {pred_sym.id}",
-                uri=pred_sym.uri,
-                range=pred_sym.range,
-                selection_range=pred_sym.range,
-            )
-            # Find exact reference ranges from pred_sym to sym
-            ranges: list[Range] = []
-            for src_uri, r in workspace.references.get(scene_id, []):
-                if src_uri == pred_sym.uri:
-                    ranges.append(r)
-            if not ranges:
-                ranges = [pred_sym.range]
-
-            incoming.append(
-                CallHierarchyIncomingCall(
-                    from_=caller_item,
-                    from_ranges=ranges,
-                )
-            )
-    return incoming
-
-
-def compute_outgoing_calls(
-    workspace: WorkspaceIndex,
-    item: CallHierarchyItem,
-) -> list[CallHierarchyOutgoingCall]:
-    """Return all outgoing transition successors for the scene."""
-    scene_id = item.detail.replace("Scene ID: ", "") if item.detail else item.name
-    sym = workspace.get_scene(scene_id)
-    if not sym:
-        return []
-
-    outgoing: list[CallHierarchyOutgoingCall] = []
-    for succ_id in sorted(sym.successors):
-        succ_sym = workspace.get_scene(succ_id)
-        if succ_sym:
-            target_item = CallHierarchyItem(
-                name=succ_sym.display_name,
-                kind=SymbolKind.Function,
-                detail=f"Scene ID: {succ_sym.id}",
-                uri=succ_sym.uri,
-                range=succ_sym.range,
-                selection_range=succ_sym.range,
-            )
-            # Find transition ranges from sym to succ_id
-            ranges: list[Range] = []
-            for src_uri, r in workspace.references.get(succ_id, []):
-                if src_uri == sym.uri:
-                    ranges.append(r)
-            if not ranges:
-                ranges = [sym.range]
-
-            outgoing.append(
-                CallHierarchyOutgoingCall(
-                    to=target_item,
-                    from_ranges=ranges,
-                )
-            )
-    return outgoing

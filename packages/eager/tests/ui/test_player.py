@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from eager.core.events import ChoiceOption, ChoicePromptEvent, InputPromptEvent
+from eager.core.events import ChoiceOption, ChoicePromptEvent
 from eager.core.input import InputAction, Keymap
-from eager.core.types import DebugOverlayMode
 from eager.script import parse_graph
 from eager.ui.player import BasePlayer
 
@@ -50,23 +49,13 @@ def test_base_player_lifecycle_and_state_sync() -> None:
     session.overlay = MagicMock()
     session.screens = None
     session.active_choice_prompt = None
-    session.active_input_prompt = None
     session.is_finished = False
 
     player = BasePlayer(
         session=session,
         width=1280,
         height=720,
-        show_fps=True,
     )
-
-    assert player.show_fps is True
-    assert player.debug_mode == DebugOverlayMode.FPS
-
-    # Toggle debug overlay
-    player.toggle_debug_overlay()
-    assert player.show_fps is False
-    assert player.debug_mode == DebugOverlayMode.OFF
 
     # Story advancement
     player.advance_story()
@@ -80,11 +69,6 @@ def test_base_player_lifecycle_and_state_sync() -> None:
     session.rollback.return_value = True
     assert player.rollback() is True
     session.rollback.assert_called_once()
-
-    # Hot reload
-    session.hot_reload.return_value = True
-    assert player.hot_reload() is True
-    session.hot_reload.assert_called_once()
 
     # Viewport resize
     player.on_resize(1920, 1080)
@@ -101,7 +85,6 @@ def test_base_player_input_routing() -> None:
     session = MagicMock()
     session.keymap = Keymap()
     session.active_choice_prompt = None
-    session.active_input_prompt = None
     session.is_finished = False
 
     player = BasePlayer(session=session)
@@ -131,27 +114,9 @@ def test_base_player_input_routing() -> None:
     assert player.handle_key_press("num_1") is True
     session.handle_input.assert_called_with(InputAction.CHOOSE, index=0)
 
-    # Key press: Text input prompt
-    player.active_choice_prompt = None
-    input_ev = InputPromptEvent(var_name="name", prompt="Name:")
-    player.active_input_prompt = input_ev
-    session.active_input_prompt = input_ev
 
-    assert player.handle_key_press("backspace") is True
-    session.handle_input.assert_called_with(InputAction.TEXT_BACKSPACE)
-
-    assert player.handle_key_press("a", char="A") is True
-    session.handle_input.assert_called_with(InputAction.TEXT_CHAR, char="A")
-
-    assert player.handle_key_press("return") is True
-    session.handle_input.assert_called_with(InputAction.CONFIRM)
-
-    assert player.handle_text_input("Bob") is True
-
-
-def test_concrete_players_inherit_base_player() -> None:
+def test_pyglet_player_inherits_base_player() -> None:
     from eager.session import GameSession
-    from eager.ui.pil_player import PILPlayer
     from eager.ui.pyglet_player import PygletPlayer
 
     screenplay = """
@@ -161,93 +126,19 @@ def test_concrete_players_inherit_base_player() -> None:
     graph = parse_graph(screenplay)
     session = GameSession(graph)
 
-    pil_player = PILPlayer(session=session, visible=False)
     pyglet_player = PygletPlayer(session=session, visible=False)
 
     try:
-        assert isinstance(pil_player, BasePlayer)
         assert isinstance(pyglet_player, BasePlayer)
-        assert hasattr(pil_player, "advance_story")
         assert hasattr(pyglet_player, "advance_story")
-        assert hasattr(pil_player, "normalize_keysym")
         assert hasattr(pyglet_player, "normalize_keysym")
     finally:
-        pil_player.close()
         pyglet_player.close()
 
 
-def test_pil_player_right_click_scroll_and_resolution_scale() -> None:
+def test_base_player_shift_tab_and_resize() -> None:
     from unittest.mock import MagicMock
 
-    import eager.script
-    from eager.core.input import InputAction
-    from eager.session.session import GameSession
-    from eager.ui.pil_player import PILPlayer
-
-    graph = eager.script.parse_graph("## Start --- start\nHello world.\n<<\n")
-    session = GameSession(graph)
-    session.handle_input = MagicMock(wraps=session.handle_input)  # type: ignore[method-assign]
-
-    player = PILPlayer(session=session, width=1280, height=720, visible=False)
-    try:
-        # _on_right_click should not raise TypeError and should pass button="mouse_right"
-        player._on_right_click(None)
-        session.handle_input.assert_called_with(InputAction.GAME_MENU, button="mouse_right")
-
-        # handle_scroll should route InputAction.SCROLL with dy
-        player.handle_scroll(1.0)
-        session.handle_input.assert_called_with(InputAction.SCROLL, dy=1.0)
-
-        # set_resolution_scale should resize viewport and clear _photo
-        player._photo = object()
-        player.set_resolution_scale(1.25)
-        assert player.width == 1600
-        assert player.height == 900
-        assert player._photo is None
-    finally:
-        player.close()
-
-
-def test_pil_player_applies_saved_resolution_scale_on_startup_and_with_prior_listener() -> None:
-    import eager.script
-    from eager.session.session import GameSession
-    from eager.ui.pil_player import PILPlayer
-
-    class DummyListener:
-        def on_request_fullscreen(self) -> None:
-            pass
-
-        def on_request_quit(self) -> None:
-            pass
-
-        def on_state_restored(self) -> None:
-            pass
-
-    graph = eager.script.parse_graph("## Start --- start\nHello world.\n<<\n")
-    session = GameSession(graph)
-    session.add_lifecycle_listener(DummyListener())
-    session.preferences.resolution_scale = 1.25
-
-    player = PILPlayer(session=session, width=1280, height=720, visible=False)
-    try:
-        # Applied on startup
-        assert player.width == 1600
-        assert player.height == 900
-
-        # apply_preferences still reaches player despite DummyListener being first
-        session.preferences.resolution_scale = 0.75
-        session.apply_preferences()
-        assert player.width == 960
-        assert player.height == 540
-    finally:
-        player.close()
-
-
-def test_base_player_input_box_blocks_shortcuts_and_shift_tab() -> None:
-    from unittest.mock import MagicMock
-
-    from eager.core.events import InputPromptEvent
-    from eager.core.input import InputAction
     from eager.ui.player import BasePlayer
     from eager.ui.screens.builtin import TitleScreen
     from eager.ui.screens.screen import ScreenManager
@@ -259,26 +150,12 @@ def test_base_player_input_box_blocks_shortcuts_and_shift_tab() -> None:
     mgr.register(title)
     session.screens = mgr
     session.active_choice_prompt = None
-    session.active_input_prompt = None
     session.is_finished = False
 
     player = BasePlayer(session=session)
     player.close = MagicMock()  # type: ignore[method-assign]
 
-    # 1. InputBox active: 'q' with char=None (Pyglet style) must NOT trigger QUIT/close
-    input_ev = InputPromptEvent(var_name="name", prompt="Name:")
-    player.active_input_prompt = input_ev
-    assert player.handle_key_press("q") is True
-    player.close.assert_not_called()
-    assert player.handle_key_press("tab") is True
-    session.handle_input.assert_not_called()
-
-    # Escape still reaches GAME_MENU
-    assert player.handle_key_press("escape") is True
-    session.handle_input.assert_called_with(InputAction.GAME_MENU)
-
-    # 2. Shift+Tab navigates backward on active Screen
-    player.active_input_prompt = None
+    # Shift+Tab navigates backward on active Screen
     mgr.show("title", session)
     title.handle_key("down")
     title.handle_key("down")
@@ -286,7 +163,7 @@ def test_base_player_input_box_blocks_shortcuts_and_shift_tab() -> None:
     assert player.handle_key_press("tab", is_shift=True) is True
     assert title._focused_button_index == 0
 
-    # 3. on_resize updates screens viewport
+    # on_resize updates screens viewport
     player.on_resize(1920, 1080)
     assert mgr.viewport_width == 1920
     assert mgr.viewport_height == 1080

@@ -9,14 +9,12 @@ from eager.core.events import (
 )
 
 
-def test_events_to_dict():
+def test_events_type_properties():
     enter = SceneEnterEvent("intro", "Introduction", 1)
     assert enter.type == "scene_enter"
-    assert enter.to_dict()["scene_id"] == "intro"
 
     diag = DialogueEvent("Alice", "Hello world!", "voice1", "happy", 2)
     assert diag.type == "dialogue"
-    assert diag.to_dict()["speaker"] == "Alice"
 
     narr = NarrationEvent("A quiet night.", 3)
     assert narr.type == "narration"
@@ -25,9 +23,7 @@ def test_events_to_dict():
     opt2 = ChoiceOption(1, "Go right", "right_path", 11)
     choice = ChoicePromptEvent(options=(opt1, opt2), line_number=9)
     assert choice.type == "choice_prompt"
-    opts = choice.to_dict()["options"]
-    assert isinstance(opts, list)
-    assert len(opts) == 2
+    assert len(choice.options) == 2
 
     exit_ev = SceneExitEvent("intro", "jump", "next", 12)
     assert exit_ev.type == "scene_exit"

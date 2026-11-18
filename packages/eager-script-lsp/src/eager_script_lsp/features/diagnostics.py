@@ -158,24 +158,6 @@ def compute_diagnostics(doc: ScriptDocument, workspace: WorkspaceIndex) -> list[
                 )
             )
 
-    # 4. i18n explicit beat ID consistency (duplicate beat IDs within scene)
-    seen_beat_ids: dict[str, set[str]] = {}
-    for span in doc.spans:
-        if span.kind == "beat_id_tag":
-            scene_id = doc.get_scene_at_line(span.start_line) or "_preamble"
-            scene_set = seen_beat_ids.setdefault(scene_id, set())
-            if span.value in scene_set:
-                diagnostics.append(
-                    Diagnostic(
-                        range=span.range,
-                        message=f"Duplicate explicit beat id '{span.value}' within scene '{scene_id}'",
-                        severity=DiagnosticSeverity.Information,
-                        source="eager-i18n",
-                    )
-                )
-            else:
-                scene_set.add(span.value)
-
     return diagnostics
 
 

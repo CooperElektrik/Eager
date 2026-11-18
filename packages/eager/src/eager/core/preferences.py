@@ -26,8 +26,6 @@ class Preferences:
     skip_unseen: bool = False
     autosave_enabled: bool = True
     fullscreen: bool = False
-    resolution_scale: float = 1.0
-    language: str = "default"
 
     @classmethod
     def load(cls, file_path: Path) -> Preferences:

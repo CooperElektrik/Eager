@@ -6,8 +6,7 @@ from typing import Any, cast
 from typing import Any as GameSessionProtocol
 
 from eager.core.types import WHITE, Color, Rect
-from eager.script import parse_graph
-from eager.script.project import ProjectConfig, merge_graphs
+from eager.script.project import ProjectConfig
 from eager.ui.screens import Button, ScreenManager, TitleScreen
 
 
@@ -152,7 +151,7 @@ class TestScreensAndProject:
         assert len(backend.rects) > 0
         assert any("Awesome Game" in t[0] for t in backend.texts)
 
-    def test_project_config_and_graph_merge(self):
+    def test_project_config_load(self):
         with tempfile.TemporaryDirectory() as td:
             toml_path = Path(td) / "game.toml"
             toml_path.write_text("""
@@ -167,14 +166,6 @@ height = 720
             cfg = ProjectConfig.load(toml_path)
             assert cfg.title == "Merged Novel"
             assert cfg.virtual_width == 1280
-
-        # Merge graphs
-        g1 = parse_graph("## Part 1 --- p1\nNarrator: Chapter 1")
-        g2 = parse_graph("## Part 2 --- p2\nNarrator: Chapter 2")
-        merged = merge_graphs([g1, g2])
-        assert len(merged.nodes) == 2
-        assert "p1" in merged.nodes
-        assert "p2" in merged.nodes
 
     def test_widgets_grid(self):
         from eager.core.types import Rect
@@ -221,7 +212,7 @@ height = 720
         assert pref_screen.handle_mouse_click(back_btn.rect.x + 5, back_btn.rect.y + 5)
         assert not session.screens.is_active
 
-    def test_preferences_screen_language_selection(self):
+    def test_preferences_screen_toggles(self):
         from eager.ui.screens import PreferencesScreen
 
         class DummyPreferences:
@@ -231,65 +222,39 @@ height = 720
             voice_volume = 1.0
             text_speed = 50.0
             auto_forward_time = 3.0
-            language = "default"
             fullscreen = False
             skip_unseen = False
             autosave_enabled = False
-            resolution_scale = 1.0
-
-        class DummyTranslationManager:
-            def available_locales(self):
-                return ["default", "es", "ja"]
 
         class DummySession:
             def __init__(self):
                 self.preferences = DummyPreferences()
-                self.translation_manager = DummyTranslationManager()
                 self.screens = ScreenManager()
-                self.chosen_locale = "default"
 
             def apply_preferences(self):
                 pass
-
-            def set_language(self, locale: str):
-                self.chosen_locale = locale
-                self.preferences.language = locale
 
         session = DummySession()
         pref_screen = PreferencesScreen()
         session.screens.register(pref_screen)
         session.screens.show("preferences", _as_session(session))
 
-        # Button 0 is Back, Buttons 1..3 are languages (default, es, ja), Buttons 4..6 are options, Buttons 7..10 are scale
-        assert len(pref_screen.buttons) == 11
-        assert "DEFAULT" in pref_screen.buttons[1].text
-        assert "ES" in pref_screen.buttons[2].text
-        assert "JA" in pref_screen.buttons[3].text
-        assert "Fullscreen" in pref_screen.buttons[4].text
-        assert "Skip Unseen" in pref_screen.buttons[5].text
-        assert "Autosave" in pref_screen.buttons[6].text
-        assert "0.75x" in pref_screen.buttons[7].text
-        assert "1.00x" in pref_screen.buttons[8].text
-
-        # Click Spanish (buttons[2])
-        es_btn = pref_screen.buttons[2]
-        assert pref_screen.handle_mouse_click(es_btn.rect.x + 5, es_btn.rect.y + 5)
-        assert session.chosen_locale == "es"
-        assert session.preferences.language == "es"
-
-        # After clicking, screen re-initializes on_enter, so active marker updates
-        assert "[ ES ]" in pref_screen.buttons[2].text
+        # Button 0 is Back, Buttons 1..3 are Fullscreen, Skip Unseen, Autosave
+        assert len(pref_screen.buttons) == 4
+        assert "Fullscreen" in pref_screen.buttons[1].text
+        assert "Skip Unseen" in pref_screen.buttons[2].text
+        assert "Autosave" in pref_screen.buttons[3].text
 
         # Test options buttons (Fullscreen & Skip Unseen toggles)
-        fs_btn = pref_screen.buttons[4]
+        fs_btn = pref_screen.buttons[1]
         assert "[ OFF ]" in fs_btn.text
         assert pref_screen.handle_mouse_click(fs_btn.rect.x + 5, fs_btn.rect.y + 5)
-        assert "[ ON ]" in pref_screen.buttons[4].text
+        assert "[ ON ]" in pref_screen.buttons[1].text
 
-        skip_btn = pref_screen.buttons[5]
+        skip_btn = pref_screen.buttons[2]
         assert "[ OFF ]" in skip_btn.text
         assert pref_screen.handle_mouse_click(skip_btn.rect.x + 5, skip_btn.rect.y + 5)
-        assert "[ ON ]" in pref_screen.buttons[5].text
+        assert "[ ON ]" in pref_screen.buttons[2].text
         assert session.preferences.skip_unseen is True
 
         # Test on_exit auto-save
@@ -638,17 +603,17 @@ height = 720
         backend_720 = MockUIDrawBackend()
         backend_1080 = MockUIDrawBackend()
 
-        # 1. TitleScreen: title (32) and button (16)
+        # 1. TitleScreen: title (36) and button (16)
         title_720 = TitleScreen("Title Test", viewport_width=1280, viewport_height=720)
         title_720.draw(backend_720, 1280, 720)
         texts_720 = {t[0]: t[3].get("font_size") for t in backend_720.texts}
-        assert texts_720["Title Test"] == 32
+        assert texts_720["Title Test"] == 36
         assert texts_720["Start Game"] == 16
 
         title_1080 = TitleScreen("Title Test", viewport_width=1920, viewport_height=1080)
         title_1080.draw(backend_1080, 1920, 1080)
         texts_1080 = {t[0]: t[3].get("font_size") for t in backend_1080.texts}
-        assert texts_1080["Title Test"] == 48  # 32 * 1.5
+        assert texts_1080["Title Test"] == 54  # 36 * 1.5
         assert texts_1080["Start Game"] == 24  # 16 * 1.5
 
         # 2. SaveLoadScreen: header (28) and back button (16)
@@ -666,7 +631,7 @@ height = 720
         assert texts_1080["Save Game"] == 42  # 28 * 1.5
         assert texts_1080["Back"] == 24  # 16 * 1.5
 
-        # 3. PreferencesScreen: header (28), labels (16, 18), back button (16)
+        # 3. PreferencesScreen: header (28), labels (16), back button (16)
         backend_720.texts.clear()
         backend_1080.texts.clear()
         pref_720 = PreferencesScreen(viewport_width=1280, viewport_height=720)
@@ -674,7 +639,6 @@ height = 720
         texts_720 = {t[0]: t[3].get("font_size") for t in backend_720.texts}
         assert texts_720["Preferences"] == 28
         assert texts_720["Master Volume"] == 16
-        assert texts_720["Language"] == 18
         assert texts_720["Back"] == 16
 
         pref_1080 = PreferencesScreen(viewport_width=1920, viewport_height=1080)
@@ -682,7 +646,6 @@ height = 720
         texts_1080 = {t[0]: t[3].get("font_size") for t in backend_1080.texts}
         assert texts_1080["Preferences"] == 42  # 28 * 1.5
         assert texts_1080["Master Volume"] == 24  # 16 * 1.5
-        assert texts_1080["Language"] == 27  # 18 * 1.5
         assert texts_1080["Back"] == 24  # 16 * 1.5
 
         # 4. HistoryScreen: header (28), empty (16), entry (14)
@@ -699,21 +662,6 @@ height = 720
         texts_1080 = {t[0]: t[3].get("font_size") for t in backend_1080.texts}
         assert texts_1080["Dialogue History"] == 42  # 28 * 1.5
         assert texts_1080["No dialogue recorded yet."] == 24  # 16 * 1.5
-
-    def test_screen_manager_and_screen_theme_propagation(self):
-        """ScreenManager theme updates must propagate to registered screens."""
-        from eager.core.theme import Theme
-        from eager.ui.screens import ScreenManager, TitleScreen
-
-        custom_theme = Theme(name="custom_dark", font_size=20, title_font_size=40)
-        mgr = ScreenManager(theme=custom_theme)
-        title = TitleScreen("Themed Title")
-        mgr.register(title)
-        assert title.theme.name == "custom_dark"
-
-        new_theme = Theme(name="new_theme", font_size=18, title_font_size=36)
-        mgr.set_theme(new_theme)
-        assert title.theme.name == "new_theme"
 
     def test_game_menu_screen_layout_and_actions(self):
         """GameMenuScreen must provide Resume, Save, Load, History, Preferences, Title, and Quit buttons."""
@@ -890,11 +838,7 @@ height = 720
                 self.screens = ScreenManager()
                 self.save_manager = DummySaveManager()
                 self.mode = "screen"
-                self.ui_dirty = False
                 self.player = DummyPlayer()
-
-            def mark_ui_dirty(self) -> None:
-                self.ui_dirty = True
 
             def notify_state_restored(self) -> None:
                 self.player.on_state_restored()
@@ -914,7 +858,6 @@ height = 720
         slot_btn.action()
         assert not session.screens.is_active
         assert session.mode == "game"
-        assert session.ui_dirty is True
         assert session.player.restored is True
 
     def test_history_screen_multiline_text_wrapping(self):
@@ -960,26 +903,6 @@ height = 720
         narrator_pieces = [t for t in backend.texts if len(t[0]) > 10 and t[0] in long_speech]
         assert len(narrator_pieces) >= 2
 
-    def test_save_slot_button_renders_thumbnail(self, tmp_path):
-        """SaveSlotButton must call backend.draw_image when thumbnail file exists."""
-        from eager.core.types import Rect
-        from eager.ui.screens.widgets import SaveSlotButton
-
-        thumb_file = tmp_path / "thumb_slot_1.png"
-        thumb_file.write_bytes(b"mock_png_bytes")
-
-        btn = SaveSlotButton(
-            Rect(10, 10, 300, 150),
-            "Slot 1\n2026-10-13 15:30\n\"Some dialogue\"",
-            thumbnail_path=thumb_file,
-        )
-        backend = MockUIDrawBackend()
-        btn.draw(backend, Color.from_hex("#333333"), Color.from_hex("#555555"), Color.from_hex("#777777"), Color.from_hex("#ffffff"))
-
-        # Verify draw_image was called with the thumbnail file path
-        assert len(backend.images) == 1
-        assert backend.images[0][0] == str(thumb_file)
-
     def test_screen_keyboard_navigation(self):
         """Screen.handle_key allows navigating and activating buttons via keyboard."""
         from eager.core.types import Rect
@@ -1019,13 +942,10 @@ height = 720
 
     def test_lazy_backend_imports(self):
         """Renderers are exposed directly from eager.backends.renderers."""
-        from eager.backends.renderers import NullRenderer, PILRenderer, PygletRenderer
+        from eager.backends.renderers import NullRenderer, PygletRenderer
 
         null_r = NullRenderer()
         assert null_r is not None
-        pil_r = PILRenderer(width=800, height=600)
-        assert pil_r.width == 800
-        assert pil_r.height == 600
         pyglet_r = PygletRenderer(width=800, height=600)
         assert pyglet_r.width == 800
         assert pyglet_r.height == 600

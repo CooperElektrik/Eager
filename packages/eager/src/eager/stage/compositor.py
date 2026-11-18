@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from typing import Any
 
-from eager.backends.types import RenderBackend, RenderItem
+from eager.backends.types import RenderItem
 from eager.core.easing import get_easing
-from eager.core.layout import LayoutResolver, ViewportTransform
-from eager.core.lighting import LightmapState, PointLight
+from eager.core.layout import LayoutResolver
 from eager.core.timeline import Timeline
-from eager.core.timing import FrameClock
 from eager.core.types import BLACK, WHITE, Anchor, Color, TransitionKind, Vec2
-from eager.stage.particles import ParticleBatch, ParticleEmitter
 from eager.stage.stage import ElementState, Stage, StageElement
 
 __all__ = [
@@ -50,40 +46,10 @@ class StageCompositor:
         self._shake_elapsed: float = 0.0
         self._shake_offset: Vec2 = Vec2(0.0, 0.0)
 
-        # Frame timing clock for FPS measurement (ticked in step()).
-        self.clock: FrameClock = FrameClock()
-
-        # Expressive particle emitters & screen-space lighting
-        self._particle_emitters: dict[str, ParticleEmitter] = {}
-        self._active_weather_preset: str | None = None
-        self.lighting: LightmapState = LightmapState()
-
     @property
     def shake_offset(self) -> Vec2:
         """Current camera shake offset applied to non-exempt layers."""
         return self._shake_offset
-
-    # ------------------------------------------------------------------ #
-    # FPS properties (delegate to the internal FrameClock)
-    # ------------------------------------------------------------------ #
-
-    @property
-    def fps(self) -> float:
-        """Instantaneous frames-per-second (1 / last step interval).
-
-        Returns ``0.0`` until at least two :meth:`step` calls have been made.
-        """
-        return self.clock.fps
-
-    @property
-    def fps_avg(self) -> float:
-        """Rolling-average FPS over the last 60 :meth:`step` calls."""
-        return self.clock.fps_avg
-
-    @property
-    def fps_overall(self) -> float:
-        """Average FPS across all :meth:`step` calls since creation/reset."""
-        return self.clock.fps_overall
 
     # =========================================================================
     # Background Operations
@@ -709,170 +675,6 @@ class StageCompositor:
         self._shake_elapsed = 0.0
 
     # =========================================================================
-    # Debug & Inspection
-    # =========================================================================
-
-    def debug_info(self) -> dict[str, Any]:
-        """Return a structured, serializable snapshot of the compositor's runtime state.
-
-        Intended for debug overlays, logging, or test introspection. The
-        returned dict contains:
-
-        - ``virtual_stage``: dimensions of the virtual stage.
-        - ``fps``: frame-rate statistics — instantaneous FPS, 60-frame rolling
-          average, overall average, total frames stepped, and elapsed time.
-        - ``shake``: camera-shake intensity, total duration, elapsed time, and
-          current offset vector.
-        - ``timeline``: active tween count plus a per-tween summary
-          (target, property, progress, remaining).
-        - ``layers``: ordered list of layers (by z-order) with per-element
-          debug info (id, asset, position, opacity, scale, rotation, anchor,
-          tint, z_index, visible, flip flags).
-        - ``render_list``: the current frame's computed render list (same
-          data the backend would draw), as a list of dicts.
-
-        The entire structure is JSON-serializable.
-        """
-        # Timeline summary
-        tween_summaries = self.timeline.active_tweens()
-
-        # Layer + element summary (sorted by z-order, stable with insertion order)
-        layer_summaries: list[dict[str, Any]] = []
-        for layer in self.stage.get_sorted_layers():
-            elements = [
-                {
-                    "element_id": elem.element_id,
-                    "asset_id": elem.asset_id,
-                    "position": elem.position.to_dict(),
-                    "opacity": round(elem.opacity, 6),
-                    "scale": elem.state.scale.to_dict(),
-                    "rotation": round(elem.state.rotation, 4),
-                    "anchor": elem.state.anchor.value,
-                    "tint": elem.state.tint.to_hex(),
-                    "z_index": elem.state.z_index,
-                    "visible": elem.visible,
-                    "flip_h": elem.state.flip_h,
-                    "flip_v": elem.state.flip_v,
-                }
-                for elem in layer.get_sorted_elements()
-            ]
-            layer_summaries.append(
-                {
-                    "name": layer.name,
-                    "z_order": layer.z_order,
-                    "visible": layer.visible,
-                    "opacity": round(layer.opacity, 6),
-                    "element_count": len(layer.elements),
-                    "elements": elements,
-                }
-            )
-
-        # Current render list (the actual draw commands for this frame)
-        render_items = [item.to_dict() for item in self.render_list()]
-
-        return {
-            "virtual_stage": {
-                "width": self.virtual_width,
-                "height": self.virtual_height,
-                "ground_y": self.layout.ground_y,
-            },
-            "fps": {
-                "instantaneous": round(self.clock.fps, 2),
-                "avg_60": round(self.clock.fps_avg, 2),
-                "overall": round(self.clock.fps_overall, 2),
-                "frames_stepped": self.clock.frame_count,
-                "elapsed": round(self.clock.elapsed, 4),
-            },
-            "shake": {
-                "intensity": round(self._shake_intensity, 6),
-                "duration": round(self._shake_duration, 6),
-                "elapsed": round(self._shake_elapsed, 6),
-                "offset": self._shake_offset.to_dict(),
-                "active": self._shake_elapsed < self._shake_duration,
-            },
-            "timeline": {
-                "active_tween_count": self.timeline.active_count,
-                "active_tweens": tween_summaries,
-            },
-            "layers": layer_summaries,
-            "render_list": render_items,
-        }
-
-    def debug_repr(self, *, include_layers: bool = True) -> str:
-        """Render a human-readable, multi-line debug report of the compositor state.
-
-        Suitable for printing to stdout or drawing into an on-screen text overlay
-        in any renderer (e.g. a Pyglet label).
-
-        Pass ``include_layers=False`` to omit the per-layer element listing when
-        you only want a compact status line (shake + timelines).
-        """
-        info = self.debug_info()
-        lines: list[str] = ["Eager-Graphics — StageCompositor debug report"]
-        lines.append("-" * 48)
-
-        vs = info["virtual_stage"]
-        lines.append(
-            f"  Virtual stage : {vs['width']}x{vs['height']}  (ground_y={vs['ground_y']})"
-        )
-
-        fps = info["fps"]
-        lines.append(
-            f"  FPS           : {fps['instantaneous']:.1f} "
-            f"(avg {fps['avg_60']:.1f}, overall {fps['overall']:.1f}, "
-            f"{fps['frames_stepped']} frames, {fps['elapsed']:.3f}s)"
-        )
-
-        sh = info["shake"]
-        offset = sh["offset"]
-        lines.append(
-            f"  Camera shake  : intensity={sh['intensity']:.3f} "
-            f"duration={sh['duration']:.3f} elapsed={sh['elapsed']:.3f} "
-            f"offset=({offset['x']:.2f}, {offset['y']:.2f}) "
-            f"{'[ACTIVE]' if sh['active'] else '[idle]'}"
-        )
-
-        tl = info["timeline"]
-        lines.append(f"  Timeline      : {tl['active_tween_count']} active tween(s)")
-        for tw in tl["active_tweens"]:
-            lines.append(
-                f"    tween {tw['target']} -> {tw['property']} "
-                f"[{tw['progress'] * 100:5.1f}%] "
-                f"remaining={tw['remaining']:.3f}s / {tw['duration']:.3f}s"
-            )
-
-        lines.append(f"  Render list   : {len(info['render_list'])} item(s)")
-        for item in info["render_list"]:
-            lines.append(
-                f"    [{item['layer']}] z={item['z_order']} "
-                f"{item['asset_id']} @ ({item['x']:.1f}, {item['y']:.1f}) "
-                f"opacity={item['opacity']:.2f}"
-            )
-
-        if include_layers:
-            lines.append("")
-            lines.append("  Layers (sorted)")
-            lines.append("-" * 48)
-            for layer in info["layers"]:
-                lines.append(
-                    f"  · {layer['name']} (z={layer['z_order']}) "
-                    f"{'hidden' if not layer['visible'] else ''} "
-                    f"opacity={layer['opacity']:.2f} "
-                    f"elements={layer['element_count']}"
-                )
-                for elem in layer["elements"]:
-                    pos = elem["position"]
-                    lines.append(
-                        f"      {elem['element_id']} <{elem['asset_id']}> "
-                        f"pos=({pos['x']:.1f}, {pos['y']:.1f}) "
-                        f"opacity={elem['opacity']:.2f} "
-                        f"z={elem['z_index']} "
-                        f"{'invisible' if not elem['visible'] else ''}".rstrip()
-                    )
-
-        return "\n".join(lines)
-
-    # =========================================================================
     # Lifecycle & Render Output
     # =========================================================================
 
@@ -893,92 +695,9 @@ class StageCompositor:
         else:
             self._shake_offset = Vec2(0.0, 0.0)
 
-        # 3. Update particle emitters
-        if self._particle_emitters:
-            bounds = (0.0, 0.0, float(self.virtual_width), float(self.virtual_height))
-            for emitter in self._particle_emitters.values():
-                emitter.update(dt, bounds)
-
-    # =========================================================================
-    # Headless Game Loop
-    # =========================================================================
-
     def step(self, dt: float = 1.0 / 60.0) -> None:
-        """Advance the compositor by a single fixed-timestep frame.
-
-        This is a convenience alias for :meth:`update` with a default fixed
-        timestep of ``1/60`` seconds (≈60 FPS), intended for headless game
-        loops that don't have a display-bound scheduler like Pyglet's
-        ``clock.schedule_interval``.
-
-        The caller is still responsible for rendering the resulting
-        :meth:`render_list` via any :class:`~eager.backends.types.RenderBackend`
-        (e.g. :class:`~eager.backends.renderers.null.NullRenderer`).
-
-        The internal :class:`~eager.core.timing.FrameClock` is ticked on every
-        call, so :attr:`fps`, :attr:`fps_avg`, and :attr:`fps_overall`
-        reflect real wall-clock frame throughput.
-        """
+        """Advance the compositor by a single fixed-timestep frame."""
         self.update(dt)
-        self.clock.tick()
-
-    def run_headless(
-        self,
-        render_backend: RenderBackend | None = None,
-        *,
-        dt: float = 1.0 / 60.0,
-        max_steps: int | None = None,
-        until: Callable[[], bool] | None = None,
-        render: bool = False,
-    ) -> int:
-        """Run a headless game loop, advancing the compositor frame-by-frame.
-
-        This lets Eager-Graphics run as a pure logic stage with no window or GPU —
-        either to simulate a fixed slice of time, or to drive the timeline
-        until a caller-supplied condition (e.g. "all tweens resolved") is met.
-
-        Args:
-            render_backend: If provided and render is True, each step's render_list
-                is flushed through the backend via begin_frame / draw_item / end_frame.
-            dt: Fixed timestep per frame in seconds. Defaults to 1/60.
-            max_steps: Hard cap on the number of frames. If None, the loop runs
-                until until returns True. At least one of max_steps or until must be provided.
-            until: A zero-argument predicate called after each step. When it returns
-                True, the loop stops.
-            render: If True, flush each frame through render_backend.
-
-        Returns:
-            The number of frames actually stepped.
-
-        Raises:
-            ValueError: If both max_steps and until are None, or if render is True
-                without a render_backend.
-        """
-        if render and render_backend is None:
-            msg = "render=True requires a render_backend"
-            raise ValueError(msg)
-        if max_steps is None and until is None:
-            msg = "run_headless requires either max_steps or an until predicate"
-            raise ValueError(msg)
-
-        steps = 0
-        while True:
-            if max_steps is not None and steps >= max_steps:
-                break
-            if until is not None and until():
-                break
-
-            self.step(dt)
-            steps += 1
-
-            if render and render_backend is not None:
-                render_backend.begin_frame()
-                render_backend.clear(BLACK)
-                for item in self.render_list():
-                    render_backend.draw_item(item)
-                render_backend.end_frame()
-
-        return steps
 
     def render_list(self) -> list[RenderItem]:
         """Compute and yield an ordered list of RenderItems ready for drawing."""
@@ -1042,9 +761,6 @@ class StageCompositor:
                 "stage": stage_dict,
                 "virtual_width": self.virtual_width,
                 "virtual_height": self.virtual_height,
-                "lighting": self.lighting.to_dict(),
-                "weather": self._active_weather_preset,
-                "particle_emitters": [e.to_dict() for e in self._particle_emitters.values()],
             }
 
         # Build mapping from ElementState id to (layer_name, element_id)
@@ -1106,9 +822,6 @@ class StageCompositor:
             "stage": stage_dict,
             "virtual_width": self.virtual_width,
             "virtual_height": self.virtual_height,
-            "lighting": self.lighting.to_dict(),
-            "weather": self._active_weather_preset,
-            "particle_emitters": [e.to_dict() for e in self._particle_emitters.values()],
         }
 
     def load_state(self, state: dict[str, Any]) -> None:
@@ -1125,100 +838,7 @@ class StageCompositor:
         if "virtual_height" in state:
             self.virtual_height = int(state["virtual_height"])
 
-        if "lighting" in state and isinstance(state["lighting"], dict):
-            self.lighting = LightmapState.from_dict(state["lighting"])
-        else:
-            self.lighting.clear()
-
-        self._particle_emitters.clear()
-        self._active_weather_preset = None
-        if "particle_emitters" in state and isinstance(state["particle_emitters"], list):
-            from eager.stage.particles import ParticleEmitter
-
-            for ed in state["particle_emitters"]:
-                if isinstance(ed, dict):
-                    self.add_particle_emitter(ParticleEmitter.from_dict(ed))
-            self._active_weather_preset = state.get("weather")
-        else:
-            weather = state.get("weather")
-            if weather:
-                self.set_weather(weather)
-            else:
-                self.set_weather(None)
-
     def clear(self) -> None:
-        """Clear all animations, particle systems, lighting, and reset all stage layers."""
+        """Clear all animations and reset all stage layers."""
         self.timeline.clear()
         self.stage.clear()
-        self._particle_emitters.clear()
-        self._active_weather_preset = None
-        self.lighting.clear()
-
-    # =========================================================================
-    # Particle Systems & Lighting Operations
-    # =========================================================================
-
-    def set_weather(self, preset: str | None, count: int | None = None) -> None:
-        """Set or clear full-screen weather effect (rain, snow, sakura, embers)."""
-        if not preset or preset.strip().lower() in ("clear", "none", "off", "stop"):
-            self.remove_particle_emitter("weather")
-            self._active_weather_preset = None
-            return
-
-        from eager.stage.particles import ParticleEmitter
-
-        p = preset.strip().lower()
-        if p == "rain":
-            emitter = ParticleEmitter.create_rain("weather", count=count or 250)
-        elif p == "snow":
-            emitter = ParticleEmitter.create_snow("weather", count=count or 200)
-        elif p in ("sakura", "petals", "cherry"):
-            emitter = ParticleEmitter.create_sakura("weather", count=count or 150)
-        elif p in ("embers", "fire", "sparks"):
-            emitter = ParticleEmitter.create_embers("weather", count=count or 100)
-        else:
-            emitter = ParticleEmitter.create_snow("weather", count=count or 200)
-
-        self.add_particle_emitter(emitter)
-        self._active_weather_preset = p
-
-    def add_particle_emitter(self, emitter: ParticleEmitter) -> None:
-        """Register an active particle emitter system."""
-        self._particle_emitters[emitter.emitter_id] = emitter
-
-    def remove_particle_emitter(self, emitter_id: str) -> None:
-        """Remove a registered particle emitter by ID."""
-        self._particle_emitters.pop(emitter_id, None)
-
-    def get_particle_emitter(self, emitter_id: str) -> ParticleEmitter | None:
-        """Look up an active particle emitter by ID."""
-        return self._particle_emitters.get(emitter_id)
-
-    def clear_particle_emitters(self) -> None:
-        """Clear all registered particle emitters."""
-        self._particle_emitters.clear()
-
-    def get_particle_batches(self, transform: ViewportTransform) -> list[ParticleBatch]:
-        """Generate screen-projected particle batches in z-order."""
-        batches: list[ParticleBatch] = []
-        for emitter in sorted(self._particle_emitters.values(), key=lambda e: e.z_order):
-            batches.append(emitter.build_batch(transform))
-        return batches
-
-    def set_ambient_light(self, color: Color, intensity: float = 1.0) -> None:
-        """Set ambient lighting color and intensity."""
-        self.lighting.ambient = color
-        self.lighting.ambient_intensity = intensity
-        self.lighting.enabled = (color != WHITE) or bool(self.lighting.lights) or (intensity != 1.0)
-
-    def add_light(self, light: PointLight) -> None:
-        """Add a dynamic point light to the stage."""
-        self.lighting.add_light(light)
-
-    def remove_light(self, light: PointLight) -> None:
-        """Remove a dynamic point light."""
-        self.lighting.remove_light(light)
-
-    def clear_lights(self) -> None:
-        """Clear all dynamic lights and reset ambient light."""
-        self.lighting.clear()

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import collections
 import copy
-import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -57,7 +56,6 @@ class StorySnapshot:
     variables: dict[str, Any]
     visited_scenes: tuple[str, ...]
     pending_choice_beat: int | None = None
-    pending_input_beat: int | None = None
     next_transition_target: str | None = None
     just_entered_scene: bool = False
     is_ended: bool = False
@@ -76,7 +74,6 @@ class StorySnapshot:
             "variables": copy.deepcopy(self.variables),
             "visited_scenes": list(self.visited_scenes),
             "pending_choice_beat": self.pending_choice_beat,
-            "pending_input_beat": self.pending_input_beat,
             "next_transition_target": self.next_transition_target,
             "just_entered_scene": self.just_entered_scene,
             "is_ended": self.is_ended,
@@ -84,10 +81,6 @@ class StorySnapshot:
             "preamble_index": self.preamble_index,
             "preamble_done": self.preamble_done,
         }
-
-    def to_json(self, indent: int | None = None) -> str:
-        """Serialize snapshot to a JSON formatted string."""
-        return json.dumps(self.to_dict(), indent=indent)
 
     @classmethod
     def from_dict(
@@ -109,7 +102,6 @@ class StorySnapshot:
             variables=variables,
             visited_scenes=visited_scenes,
             pending_choice_beat=data.get("pending_choice_beat"),
-            pending_input_beat=data.get("pending_input_beat"),
             next_transition_target=data.get("next_transition_target"),
             just_entered_scene=data.get("just_entered_scene", False),
             is_ended=data.get("is_ended", False),
@@ -117,11 +109,6 @@ class StorySnapshot:
             preamble_index=data.get("preamble_index", 0),
             preamble_done=data.get("preamble_done", True),
         )
-
-    @classmethod
-    def from_json(cls, json_str: str) -> StorySnapshot:
-        """Restore a StorySnapshot from a JSON formatted string."""
-        return cls.from_dict(json.loads(json_str))
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,7 +120,6 @@ class Checkpoint:
     audio: dict[str, Any] | AudioMixerSaveState
     backlog_len: int
     ui: dict[str, Any]
-    active_input_prompt: dict[str, Any] | None = None
     backlog: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, object]:
@@ -144,7 +130,6 @@ class Checkpoint:
             "audio": copy.deepcopy(dict(self.audio)),
             "backlog_len": self.backlog_len,
             "ui": copy.deepcopy(self.ui),
-            "active_input_prompt": copy.deepcopy(self.active_input_prompt),
         }
         if self.backlog is not None:
             d["backlog"] = copy.deepcopy(self.backlog)
@@ -168,60 +153,35 @@ class Checkpoint:
             audio=audio if isinstance(audio, dict) else {},
             backlog_len=backlog_len,
             ui=ui if isinstance(ui, dict) else {},
-            active_input_prompt=data.get("active_input_prompt")
-            if isinstance(data.get("active_input_prompt"), dict)
-            else None,
             backlog=backlog_entries if isinstance(backlog_entries, list) else None,
         )
 
 
 class CheckpointHistory:
-    """Bounded history stack for interactive story checkpoints with redo support."""
+    """Bounded history stack for interactive story checkpoints."""
 
     def __init__(self, max_history: int = 100) -> None:
         self.max_history = max_history
         self._history: collections.deque[Checkpoint] = collections.deque(maxlen=max_history)
-        self._redo_stack: list[Checkpoint] = []
 
     def push(self, checkpoint: Checkpoint) -> None:
-        """Add a checkpoint to the history and clear redo stack."""
+        """Add a checkpoint to the history."""
         self._history.append(checkpoint)
-        self._redo_stack.clear()
 
     def pop(self) -> Checkpoint | None:
-        """Remove and return the most recent checkpoint, preserving it on redo stack."""
+        """Remove and return the most recent checkpoint."""
         if not self._history:
             return None
-        cp = self._history.pop()
-        self._redo_stack.append(cp)
-        return cp
-
-    def roll_forward(self) -> Checkpoint | None:
-        """Pop a checkpoint from redo stack and push it back to history."""
-        if not self._redo_stack:
-            return None
-        cp = self._redo_stack.pop()
-        self._history.append(cp)
-        return cp
+        return self._history.pop()
 
     def clear(self) -> None:
-        """Clear all stored checkpoints and redo stack."""
+        """Clear all stored checkpoints."""
         self._history.clear()
-        self._redo_stack.clear()
-
-    def clear_redo(self) -> None:
-        """Clear only the redo stack."""
-        self._redo_stack.clear()
 
     @property
     def can_rollback(self) -> bool:
         """True if there is at least one previous checkpoint to restore."""
         return len(self._history) > 1
-
-    @property
-    def can_roll_forward(self) -> bool:
-        """True if there is at least one popped checkpoint that can be restored forward."""
-        return len(self._redo_stack) > 0
 
     @property
     def depth(self) -> int:

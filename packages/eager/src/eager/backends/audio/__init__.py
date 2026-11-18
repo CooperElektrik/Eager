@@ -7,17 +7,14 @@ from typing import TYPE_CHECKING
 from eager.core.audio import NullAudioBackend
 
 __all__ = [
-    "MiniaudioAudioBackend",
     "NullAudioBackend",
     "PygletAudioBackend",
 ]
 
 if TYPE_CHECKING:
-    from eager.backends.audio.miniaudio import MiniaudioAudioBackend
     from eager.backends.audio.pyglet import PygletAudioBackend
 
 _LAZY_EXPORTS = {
-    "MiniaudioAudioBackend": "eager.backends.audio.miniaudio",
     "PygletAudioBackend": "eager.backends.audio.pyglet",
 }
 

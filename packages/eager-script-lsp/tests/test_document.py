@@ -181,22 +181,6 @@ def test_choice_text_scans_inline_tags_and_variables():
     assert any(s.value == "#ffd700" for s in colors)
 
 
-def test_document_get_beat_occurrence_multiple_identical_beats():
-    text = """## Start --- start
-Alice: Hello!
-Alice: Other text
-Alice: Hello!
-"""
-    doc = ScriptDocument("file:///dup_beats.es", text)
-    # Line 1 is first 'Alice: Hello!' -> occurrence 1
-    occ1 = doc.get_beat_occurrence(1)
-    assert occ1 == 1
-
-    # Line 3 is second 'Alice: Hello!' -> occurrence 2
-    occ2 = doc.get_beat_occurrence(3)
-    assert occ2 == 2
-
-
 def test_include_directive_syntax_and_masking():
     text = '@include "other.es"\n## Start --- start\nNarrator: Hi\n'
     doc = ScriptDocument("file:///main.es", text)

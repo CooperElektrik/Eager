@@ -7,10 +7,8 @@ from eager.core.exceptions import (
     AudioError,
     ColorParseError,
     EagerCoreError,
-    I18nError,
     StorageError,
 )
-from eager.core.i18n import TranslationCatalog, TranslationManager
 from eager.core.storage import atomic_write_json
 from eager.core.types import Color
 
@@ -24,9 +22,6 @@ def test_exception_inheritance_hierarchy():
 
     assert issubclass(StorageError, EagerCoreError)
     assert not issubclass(StorageError, OSError)
-
-    assert issubclass(I18nError, EagerCoreError)
-    assert not issubclass(I18nError, ValueError)
 
 
 def test_exception_instantiation_with_informative_context():
@@ -63,12 +58,3 @@ def test_storage_error_on_non_serializable(tmp_path):
     target = tmp_path / "bad.json"
     with pytest.raises(StorageError, match="Failed to serialize data"):
         atomic_write_json(target, object())
-
-
-def test_i18n_error_on_empty_locale():
-    mgr = TranslationManager()
-    with pytest.raises(I18nError, match="Locale cannot be empty"):
-        mgr.set_locale("")
-
-    with pytest.raises(I18nError, match="Expected mapping"):
-        TranslationCatalog.from_dict("not_a_mapping")  # pyright: ignore[reportArgumentType]

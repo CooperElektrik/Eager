@@ -6,24 +6,8 @@ from typing import Any
 
 import pytest
 
-from eager.backends.renderers.pil import PIL_AVAILABLE, PILAssetResolver, PILRenderer
-from eager.core.types import BLACK, WHITE, Anchor, ScaleMode
+from eager.core.types import WHITE, Anchor
 from eager.stage import StageCompositor
-
-
-def test_pil_builtin_color_rect_is_1x1_white() -> None:
-    """PILAssetResolver should return a 1x1 RGBA Image with (255, 255, 255, 255)."""
-    assert PIL_AVAILABLE, "Pillow is required for this test"
-    resolver = PILAssetResolver(asset_dir=None)
-    img = resolver.get_image("__builtin_color_rect__")
-
-    assert img.size == (1, 1)
-    assert img.mode == "RGBA"
-    assert img.getpixel((0, 0)) == (255, 255, 255, 255)
-    assert resolver.is_asset_opaque("__builtin_color_rect__") is True
-
-    # Cache check
-    assert resolver.get_image("__builtin_color_rect__") is img
 
 
 def test_pyglet_builtin_color_rect_is_1x1_white() -> None:
@@ -44,48 +28,6 @@ def test_pyglet_builtin_color_rect_is_1x1_white() -> None:
 
     # Cache check
     assert resolver.get_texture("__builtin_color_rect__") is tex
-
-
-def test_pil_flash_renders_white_not_pastel() -> None:
-    """PILRenderer should render a default flash as pure white, not a tinted pastel."""
-    assert PIL_AVAILABLE, "Pillow is required for this test"
-    comp = StageCompositor(1920, 1080)
-    # Flash is default white
-    comp.flash(duration=0.5, color=WHITE)
-
-    renderer = PILRenderer(1920, 1080, scale_mode=ScaleMode.STRETCH)
-    rendered_img = renderer.render_compositor(comp, 1920, 1080)
-
-    # Check center and corners of the rendered frame
-    coords = [(0, 0), (960, 540), (1919, 1079), (100, 100)]
-    for coord in coords:
-        pixel = rendered_img.getpixel(coord)
-        assert isinstance(pixel, tuple)
-        assert pixel[:3] == (255, 255, 255), f"Expected white at {coord}, got {pixel}"
-
-
-def test_pil_fade_out_does_not_hang() -> None:
-    """fade_out animation should complete and not cause headless loop to hang."""
-    comp = StageCompositor(1920, 1080)
-    comp.set_background("bg/room", transition="cut")
-    comp.fade_out(duration=0.3, color=BLACK)
-
-    # Advance loop until tween completes
-    steps = comp.run_headless(
-        dt=0.1,
-        max_steps=50,
-        until=lambda: not comp.timeline.has_tweens(),
-    )
-    assert steps <= 5, f"Expected fade_out to finish within 5 steps at dt=0.1, took {steps}"
-    assert not comp.timeline.has_tweens()
-
-    # PILRenderer should render the full black overlay
-    if PIL_AVAILABLE:
-        renderer = PILRenderer(1920, 1080, scale_mode=ScaleMode.STRETCH)
-        rendered_img = renderer.render_compositor(comp, 1920, 1080)
-        px = rendered_img.getpixel((960, 540))
-        assert isinstance(px, tuple)
-        assert px[:3] == (0, 0, 0)
 
 
 def test_fade_in_with_custom_color() -> None:
@@ -137,15 +79,3 @@ def test_overlay_scale_produces_stage_sized_coverage() -> None:
     assert item.anchor == Anchor.TOP_LEFT
     assert item.x == 0.0
     assert item.y == 0.0
-
-    if PIL_AVAILABLE:
-        resolver = PILAssetResolver()
-        base_tex = resolver.get_image(item.asset_id)
-        assert base_tex.width == 1
-        assert base_tex.height == 1
-
-        # Effective virtual dimensions
-        eff_w = base_tex.width * abs(item.scale_x)
-        eff_h = base_tex.height * abs(item.scale_y)
-        assert eff_w == 1920.0
-        assert eff_h == 1080.0

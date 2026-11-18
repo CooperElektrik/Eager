@@ -1,5 +1,6 @@
 """Unit tests for StorySnapshot, variable management, and persistent state isolation."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,6 @@ import eager.script
 from eager.core.events import (
     ChoicePromptEvent,
     DialogueEvent,
-    InputPromptEvent,
     SceneEnterEvent,
     SceneExitEvent,
 )
@@ -61,8 +61,8 @@ def test_snapshot_serialization() -> None:
     assert isinstance(variables, dict) and variables["hp"] == 100
 
     # JSON round-trip
-    json_str = snapshot.to_json(indent=2)
-    parsed = StorySnapshot.from_json(json_str)
+    json_str = json.dumps(snapshot.to_dict(), indent=2)
+    parsed = StorySnapshot.from_dict(json.loads(json_str))
     assert snapshot == parsed
 
 
@@ -183,10 +183,12 @@ def test_prng_state_restoration_mersenne_twister() -> None:
     _ = [vm1._rng.random() for _ in range(10)]
 
     # Save snapshot and round-trip through JSON (which converts inner tuples to lists)
+    import json
+
     snap = vm1.save()
     assert snap.rng_state is not None
-    json_str = snap.to_json()
-    restored_snap = StorySnapshot.from_json(json_str)
+    json_str = json.dumps(snap.to_dict())
+    restored_snap = StorySnapshot.from_dict(json.loads(json_str))
 
     # Confirm that JSON deserialized the MT state vector as a list
     assert restored_snap.rng_state is not None
@@ -204,7 +206,7 @@ def test_prng_state_restoration_mersenne_twister() -> None:
     assert expected_next == actual_next
 
 
-def test_load_pending_choice_and_input_beat_id() -> None:
+def test_load_pending_choice() -> None:
     src = """
 ## Start --- start
 Alice: Before choices
@@ -213,8 +215,6 @@ Alice: Before choices
 
 ## Scene A --- a
 Alice: Picked A
-~ input hero_name What is your name?
-Alice: Hero is [hero_name]
 """
     graph = eager.script.parse_graph(src)
     vm = StoryVM(graph)
@@ -222,32 +222,13 @@ Alice: Hero is [hero_name]
     vm.step()  # Alice: Before choices
     choice_evt = vm.step()  # ChoicePromptEvent
     assert isinstance(choice_evt, ChoicePromptEvent)
-    orig_choice_beat_id = choice_evt.beat_id
 
     # Save while choice is pending and restore into new VM
     snap = vm.save()
     vm2 = StoryVM(graph)
     vm2.load(snap)
     assert vm2.pending_choice is not None
-    assert vm2.pending_choice.beat_id == orig_choice_beat_id
-
-    # Proceed with choice
-    vm.choose(0)
-    vm.step()  # SceneEnter Scene A
-    vm.step()  # Alice: Picked A
-    input_evt = vm.step()  # InputPromptEvent
-    assert isinstance(input_evt, InputPromptEvent)
-    orig_input_beat_id = input_evt.beat_id
-    assert orig_input_beat_id is not None
-
-    # Save while input is pending and restore into new VM
-    snap_input = vm.save()
-    vm3 = StoryVM(graph)
-    vm3.load(snap_input)
-    assert vm3.pending_input is not None
-    assert vm3.pending_input.beat_id == orig_input_beat_id
-    assert vm3.pending_input.prompt == input_evt.prompt
-    assert vm3.pending_input.var_name == input_evt.var_name
+    assert len(vm2.pending_choice.options) == 2
 
 
 def test_persistent_variable_mutation_and_rollback_isolation(tmp_path: Path) -> None:

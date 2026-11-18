@@ -31,6 +31,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from eager.core.layout import scale_font_size
 from eager.core.text import (
     _WRAP_CACHE,
     TextAnchor,
@@ -38,7 +39,6 @@ from eager.core.text import (
     parse_text_tags,
     wrap_text,
 )
-from eager.core.theme import Theme
 from eager.core.types import Color
 
 if TYPE_CHECKING:
@@ -53,7 +53,6 @@ __all__ = [
     "DialogueBox",
     "DialogueBoxLayout",
     "EndNotice",
-    "InputBox",
     "QuickMenu",
     "TextAnchor",
     "TextboxStyle",
@@ -91,12 +90,7 @@ _TRANSPARENT = Color(0.0, 0.0, 0.0, 0.0)
 
 @dataclass(frozen=True, slots=True)
 class TextboxStyle:
-    """Visual styling for :class:`DialogueBox`.
-
-    Configures a clean, minimal cinematic scrim docked to the bottom of the screen.
-    """
-
-    layout_mode: str = "cinematic"  # "cinematic" or "classic"
+    """Visual styling for :class:`DialogueBox` (cinematic bottom scrim)."""
 
     box_fill: Color = _CINEMATIC_BOX_FILL
     box_border: Color = _CINEMATIC_TOP_BORDER
@@ -135,37 +129,6 @@ class TextboxStyle:
         """Return the horizontal gutter either side of the textbox."""
         return float(max(self.min_margin, int(viewport_width * self.margin_ratio)))
 
-    @classmethod
-    def from_theme(cls, theme: Theme, **overrides: Any) -> TextboxStyle:
-        """Create a TextboxStyle aligned with a visual Theme configuration."""
-        return textbox_style_from_theme(theme, **overrides)
-
-
-def textbox_style_from_theme(theme: Theme, **overrides: Any) -> TextboxStyle:
-    """Create a :class:`TextboxStyle` aligned with a visual :class:`Theme`."""
-    show_box = theme.nameplate_fill.a > 0.05
-    nameplate_border = theme.dialogue_box_border if show_box else Color(0.0, 0.0, 0.0, 0.0)
-
-    kwargs: dict[str, Any] = {
-        "layout_mode": theme.layout_mode,
-        "box_fill": theme.dialogue_box_fill,
-        "box_border": theme.dialogue_box_border,
-        "box_border_width": 1.0 if theme.dialogue_box_border.a > 0.05 else 0.0,
-        "gradient_mid": theme.dialogue_box_fill,
-        "gradient_bottom": theme.dialogue_box_fill,
-        "nameplate_fill": theme.nameplate_fill,
-        "nameplate_border": nameplate_border,
-        "nameplate_text": theme.nameplate_text,
-        "show_nameplate_box": show_box,
-        "text_color": theme.text_color,
-        "text_font_size": max(12, theme.font_size - 1) if theme.font_size != 16 else 15,
-        "nameplate_font_size": max(12, theme.font_size - 1) if theme.font_size != 16 else 15,
-        "arrow_color": theme.accent_color,
-        "arrow_font_size": max(10, theme.font_size - 2) if theme.font_size != 16 else 14,
-    }
-    kwargs.update(overrides)
-    return TextboxStyle(**kwargs)
-
 
 @dataclass(frozen=True, slots=True)
 class DialogueBoxLayout:
@@ -196,15 +159,8 @@ class DialogueBox:
         height: int = 720,
         *,
         style: TextboxStyle | None = None,
-        theme: Theme | None = None,
     ) -> None:
-        if style is not None:
-            self.style = style
-        elif theme is not None:
-            self.style = textbox_style_from_theme(theme)
-        else:
-            self.style = TextboxStyle()
-        self.theme: Theme | None = theme
+        self.style = style if style is not None else TextboxStyle()
         self.viewport_width = width
         self.viewport_height = height
         self.speaker: str | None = None
@@ -215,11 +171,6 @@ class DialogueBox:
         self.is_read: bool = False
         self.visible_chars: int | float | None = None
         self.speaker_color: Color | None = None
-
-    def set_theme(self, theme: Theme) -> None:
-        """Apply styling from a Theme."""
-        self.theme = theme
-        self.style = textbox_style_from_theme(theme)
 
     # ── state ──────────────────────────────────────────────────────────
 
@@ -269,11 +220,6 @@ class DialogueBox:
             self.visible_chars,
         )
 
-    def scale_font_size(self, base_size: float) -> int:
-        """Scale a base font size proportionally with the viewport height (reference 720p)."""
-        scale = float(self.viewport_height) / 720.0
-        return max(1, round(float(base_size) * scale))
-
     # ── layout ─────────────────────────────────────────────────────────
 
     def nameplate_width(self) -> float:
@@ -286,38 +232,15 @@ class DialogueBox:
         """Compute the textbox and nameplate rectangles for the current state."""
         style = self.style
         vw, vh = self.viewport_width, self.viewport_height
-
-        if style.layout_mode == "cinematic":
-            box_w = float(vw)
-            box_h = style.box_height(vh)
-            box_x = 0.0
-            box_y = float(vh) - box_h - style.bottom_gap
-            nameplate = None
-            return DialogueBoxLayout(
-                box=(box_x, box_y, box_w, box_h),
-                nameplate=nameplate,
-                show_arrow=self.show_advance_arrow and bool(self.text),
-            )
-        else:
-            box_w = float(vw - style.box_margin(vw) * 2)
-            box_h = style.box_height(vh)
-            box_x = style.box_margin(vw)
-            box_y = float(vh) - box_h - style.bottom_gap
-
-            has_speaker = bool(self.speaker)
-            nameplate: tuple[float, float, float, float] | None = None
-            if has_speaker and style.show_nameplate_box:
-                name_w = self.nameplate_width()
-                name_h = 30.0
-                name_x = box_x + 15.0
-                name_y = box_y - style.nameplate_overlap
-                nameplate = (name_x, name_y, name_w, name_h)
-
-            return DialogueBoxLayout(
-                box=(box_x, box_y, box_w, box_h),
-                nameplate=nameplate,
-                show_arrow=self.show_advance_arrow and bool(self.text),
-            )
+        box_w = float(vw)
+        box_h = style.box_height(vh)
+        box_x = 0.0
+        box_y = float(vh) - box_h - style.bottom_gap
+        return DialogueBoxLayout(
+            box=(box_x, box_y, box_w, box_h),
+            nameplate=None,
+            show_arrow=self.show_advance_arrow and bool(self.text),
+        )
 
     # ── drawing ────────────────────────────────────────────────────────
 
@@ -331,15 +254,10 @@ class DialogueBox:
         box_x, box_y, box_w, box_h = layout.box
 
         # Background: gradient scrim or solid rect
-        if (
-            style.layout_mode == "cinematic"
-            and style.gradient_top is not None
-            and style.gradient_mid is not None
-        ):
+        if style.gradient_top is not None and style.gradient_mid is not None:
             mid_col = style.gradient_mid
             fade_h = min(getattr(style, "fade_height", 55.0), box_h * 0.45)
             body_h = box_h - fade_h
-            # 1. Top transition fade
             backend.draw_gradient_rect(
                 box_x,
                 box_y,
@@ -348,7 +266,6 @@ class DialogueBox:
                 style.gradient_top,
                 mid_col,
             )
-            # 2. Rich dark reading plate
             bot_col = (
                 style.gradient_bottom
                 if style.gradient_bottom is not None
@@ -362,18 +279,6 @@ class DialogueBox:
                 mid_col,
                 bot_col,
             )
-        elif (
-            style.gradient_top is not None
-            and style.gradient_bottom is not None
-        ):
-            backend.draw_gradient_rect(
-                box_x,
-                box_y,
-                box_w,
-                box_h,
-                style.gradient_top,
-                style.gradient_bottom,
-            )
         else:
             backend.draw_rect(
                 box_x,
@@ -385,30 +290,8 @@ class DialogueBox:
                 border_width=style.box_border_width,
             )
 
-        if style.layout_mode == "cinematic" and style.box_border_width > 0 and style.box_border.a > 0:
+        if style.box_border_width > 0 and style.box_border.a > 0:
             backend.draw_rect(box_x, box_y, box_w, style.box_border_width, style.box_border)
-
-        if layout.nameplate is not None:
-            nx, ny, nw, nh = layout.nameplate
-            backend.draw_rect(
-                nx,
-                ny,
-                nw,
-                nh,
-                style.nameplate_fill,
-                border_color=style.nameplate_border,
-                border_width=1.0,
-            )
-            assert self.speaker is not None
-            nameplate_fs = self.scale_font_size(style.nameplate_font_size)
-            backend.draw_text(
-                nx + 12.0,
-                ny + (nh / 2.0),
-                self.speaker,
-                font_size=nameplate_fs,
-                color=self.speaker_color if self.speaker_color is not None else style.nameplate_text,
-                anchor_y=TextAnchor.MIDDLE,
-            )
 
         # Side image offset
         text_start_x = box_x + style.text_padding
@@ -422,28 +305,25 @@ class DialogueBox:
             text_start_x += img_size + 15.0
             text_max_w -= img_size + 15.0
 
-        if style.layout_mode == "cinematic":
-            content_y = box_y + getattr(style, "fade_height", 55.0) + 6.0
-            speaker_offset_y = 0.0
-            if self.speaker:
-                nameplate_fs = self.scale_font_size(style.nameplate_font_size)
-                backend.draw_text(
-                    text_start_x,
-                    content_y,
-                    self.speaker,
-                    font_size=nameplate_fs,
-                    color=self.speaker_color if self.speaker_color is not None else style.nameplate_text,
-                )
-                speaker_offset_y = float(nameplate_fs) + 12.0
-            dialogue_start_y = content_y + speaker_offset_y
-        else:
-            dialogue_start_y = box_y + 24.0
+        content_y = box_y + getattr(style, "fade_height", 55.0) + 6.0
+        speaker_offset_y = 0.0
+        if self.speaker:
+            nameplate_fs = scale_font_size(style.nameplate_font_size, self.viewport_height)
+            backend.draw_text(
+                text_start_x,
+                content_y,
+                self.speaker,
+                font_size=nameplate_fs,
+                color=self.speaker_color if self.speaker_color is not None else style.nameplate_text,
+            )
+            speaker_offset_y = float(nameplate_fs) + 12.0
+        dialogue_start_y = content_y + speaker_offset_y
 
         formatted = parse_text_tags(self.text)
         if not formatted.plain_text:
             return
 
-        text_fs = self.scale_font_size(style.text_font_size)
+        text_fs = scale_font_size(style.text_font_size, self.viewport_height)
         line_height = text_fs * 1.35
         lines = get_wrapped_lines(
             formatted.plain_text,
@@ -506,33 +386,27 @@ class DialogueBox:
                     x_cursor += piece_w
         if layout.show_arrow and is_fully_revealed:
             arrow_sym = getattr(style, "arrow_symbol", "▼")
-            arrow_x = (
-                box_x + box_w - (style.text_padding if style.layout_mode == "cinematic" else 30.0)
-            )
+            arrow_x = box_x + box_w - style.text_padding
             # When previously read, use a subtle golden tint (_CINEMATIC_SPEAKER_COLOR)
             arrow_col = (
                 _CINEMATIC_SPEAKER_COLOR if self.is_read else style.arrow_color
             )
-            arrow_fs = self.scale_font_size(style.arrow_font_size)
+            arrow_fs = scale_font_size(style.arrow_font_size, self.viewport_height)
             backend.draw_text(
                 arrow_x,
                 box_y + box_h - 25.0,
                 arrow_sym,
                 font_size=arrow_fs,
                 color=arrow_col,
-                anchor_x=TextAnchor.RIGHT if style.layout_mode == "cinematic" else TextAnchor.LEFT,
+                anchor_x=TextAnchor.RIGHT,
             )
 
 
 
 @dataclass(frozen=True, slots=True)
 class ChoiceMenuStyle:
-    """Visual styling for :class:`ChoiceMenu`.
+    """Visual styling for :class:`ChoiceMenu`."""
 
-    Configures clean, minimal card buttons with subtle hover highlighting.
-    """
-
-    layout_mode: str = "cinematic"  # "cinematic" or "classic"
     button_fill: Color = _CINEMATIC_CHOICE_FILL
     button_border: Color = _CINEMATIC_CHOICE_BORDER
     button_border_width: float = 1.0
@@ -557,44 +431,6 @@ class ChoiceMenuStyle:
         """Return the button width for a viewport of *viewport_width* pixels."""
         return float(min(self.button_width, int(viewport_width * self.button_width_ratio)))
 
-    @classmethod
-    def from_theme(cls, theme: Theme, **overrides: Any) -> ChoiceMenuStyle:
-        """Create a ChoiceMenuStyle aligned with a visual Theme configuration."""
-        return choice_menu_style_from_theme(theme, **overrides)
-
-
-def choice_menu_style_from_theme(theme: Theme, **overrides: Any) -> ChoiceMenuStyle:
-    """Create a :class:`ChoiceMenuStyle` aligned with a visual :class:`Theme`."""
-    disabled_fill = Color(
-        theme.button_fill.r * 0.5,
-        theme.button_fill.g * 0.5,
-        theme.button_fill.b * 0.5,
-        theme.button_fill.a * 0.75,
-    )
-    disabled_border = Color(
-        theme.button_border.r * 0.5,
-        theme.button_border.g * 0.5,
-        theme.button_border.b * 0.5,
-        theme.button_border.a * 0.5,
-    )
-    kwargs: dict[str, Any] = {
-        "layout_mode": theme.layout_mode,
-        "show_numbering": theme.show_numbering,
-        "button_fill": theme.button_fill,
-        "button_border": theme.button_border,
-        "button_border_width": 1.0 if theme.button_border.a > 0.05 else 0.0,
-        "button_hover_fill": theme.button_hover,
-        "button_hover_border": theme.accent_color,
-        "accent_bar_color": theme.accent_color,
-        "text_color": theme.button_text,
-        "disabled_text_color": theme.muted_text_color,
-        "disabled_button_fill": disabled_fill,
-        "disabled_button_border": disabled_border,
-        "text_font_size": max(12, theme.font_size - 2) if theme.font_size != 16 else 14,
-    }
-    kwargs.update(overrides)
-    return ChoiceMenuStyle(**kwargs)
-
 
 class ChoiceMenu:
     """Vertically stacked, centre-aligned branch-selection buttons.
@@ -610,24 +446,12 @@ class ChoiceMenu:
         height: int = 720,
         *,
         style: ChoiceMenuStyle | None = None,
-        theme: Theme | None = None,
     ) -> None:
-        if style is not None:
-            self.style = style
-        elif theme is not None:
-            self.style = choice_menu_style_from_theme(theme)
-        else:
-            self.style = ChoiceMenuStyle()
-        self.theme: Theme | None = theme
+        self.style = style if style is not None else ChoiceMenuStyle()
         self.viewport_width = width
         self.viewport_height = height
         self.options: tuple[ChoiceOption, ...] = ()
         self.selected_index: int | None = None
-
-    def set_theme(self, theme: Theme) -> None:
-        """Apply styling from a Theme."""
-        self.theme = theme
-        self.style = choice_menu_style_from_theme(theme)
 
     def set_viewport(self, width: int, height: int) -> None:
         """Update the viewport the component lays itself out against."""
@@ -652,11 +476,6 @@ class ChoiceMenu:
             tuple((opt.index, opt.text, opt.enabled) for opt in self.options),
             self.selected_index,
         )
-
-    def scale_font_size(self, base_size: float) -> int:
-        """Scale a base font size proportionally with the viewport height (reference 720p)."""
-        scale = float(self.viewport_height) / 720.0
-        return max(1, round(float(base_size) * scale))
 
     def layout(self) -> tuple[tuple[float, float, float, float], ...]:
         """Compute one ``(x, y, w, h)`` rectangle per option, top to bottom."""
@@ -725,14 +544,13 @@ class ChoiceMenu:
                 border_width=style.button_border_width,
             )
 
-            # Left accent highlight bar on selection/hover in cinematic mode
-            if is_selected and style.layout_mode == "cinematic":
+            # Left accent highlight bar on selection/hover
+            if is_selected:
                 backend.draw_rect(bx, by, 3.0, bh, style.accent_bar_color)
 
             lock_prefix = style.lock_symbol if not is_enabled else ""
             if style.show_numbering:
-                prefix = "> " if (is_selected and style.layout_mode == "classic") else ""
-                label_text = f"{prefix}[{index + 1}]  {lock_prefix}{opt.text}"
+                label_text = f"[{index + 1}]  {lock_prefix}{opt.text}"
             else:
                 label_text = f"{lock_prefix}{opt.text}"
 
@@ -741,157 +559,11 @@ class ChoiceMenu:
                 bx + style.text_padding,
                 by + (bh / 2.0),
                 label_text,
-                font_size=self.scale_font_size(style.text_font_size),
+                font_size=scale_font_size(style.text_font_size, self.viewport_height),
                 color=text_col,
                 anchor_y=TextAnchor.MIDDLE,
             )
 
-
-class InputBox:
-    """Centered modal prompt for textual input with text buffer and blinking cursor."""
-
-    def __init__(
-        self,
-        width: int = 1280,
-        height: int = 720,
-        *,
-        box_width: float = 600.0,
-        box_height: float = 180.0,
-        theme: Theme | None = None,
-    ) -> None:
-        self.viewport_width = width
-        self.viewport_height = height
-        self.box_width = box_width
-        self.box_height = box_height
-        self.theme = theme
-        self.prompt: str = ""
-        self.text_buffer: str = ""
-        self.cursor_visible: bool = True
-        self.cursor_timer: float = 0.0
-
-    def set_theme(self, theme: Theme) -> None:
-        """Apply theme styling."""
-        self.theme = theme
-
-    def set_viewport(self, width: int, height: int) -> None:
-        """Update viewport dimensions."""
-        self.viewport_width = width
-        self.viewport_height = height
-
-    def set_prompt(self, prompt: str, default: str = "") -> None:
-        """Set active prompt string and initialize text buffer if empty."""
-        self.prompt = prompt
-        self.text_buffer = default
-
-    def clear(self) -> None:
-        """Clear prompt and buffer."""
-        self.prompt = ""
-        self.text_buffer = ""
-        self.cursor_visible = True
-        self.cursor_timer = 0.0
-
-    def update(self, dt: float) -> None:
-        """Update blinking cursor timer."""
-        self.cursor_timer += dt
-        if self.cursor_timer >= 0.53:
-            self.cursor_timer = 0.0
-            self.cursor_visible = not self.cursor_visible
-
-    def layout(self) -> tuple[float, float, float, float]:
-        """Compute the modal dialog (x, y, w, h) centered on screen."""
-        bw = min(self.box_width, float(self.viewport_width) - 40.0)
-        bh = min(self.box_height, float(self.viewport_height) - 40.0)
-        bx = (float(self.viewport_width) - bw) / 2.0
-        by = (float(self.viewport_height) - bh) / 2.0
-        return (bx, by, bw, bh)
-
-    def scale_font_size(self, base_size: float) -> int:
-        """Scale a base font size proportionally with the viewport height (reference 720p)."""
-        scale = float(self.viewport_height) / 720.0
-        return max(1, round(float(base_size) * scale))
-
-    def draw(self, backend: UIDrawBackend) -> None:
-        """Render modal backdrop, dialog box, prompt label, input field, and blinking cursor."""
-        vw = float(self.viewport_width)
-        vh = float(self.viewport_height)
-
-        # 1. Semi-transparent full-screen backdrop overlay
-        backend.draw_rect(0.0, 0.0, vw, vh, Color(0.0, 0.0, 0.0, 0.65))
-
-        # 2. Centered dialog box
-        bx, by, bw, bh = self.layout()
-        bg_col = self.theme.dialogue_box_fill if self.theme else Color(0.08, 0.10, 0.14, 0.95)
-        border_col = self.theme.dialogue_box_border if self.theme else Color(0.40, 0.45, 0.55, 0.85)
-        backend.draw_rect(bx, by, bw, bh, bg_col, border_color=border_col, border_width=1.5)
-
-        # 3. Prompt label
-        prompt_x = bx + 28.0
-        prompt_y = by + 26.0
-        prompt_col = self.theme.accent_color if self.theme else Color(0.95, 0.86, 0.62, 1.0)
-        prompt_fs = self.scale_font_size(15)
-        backend.draw_text(
-            prompt_x,
-            prompt_y,
-            self.prompt or "Enter input:",
-            font_size=prompt_fs,
-            color=prompt_col,
-            bold=True,
-            font_family=self.theme.font_family if self.theme else None,
-        )
-
-        # 4. Text input field
-        field_x = bx + 28.0
-        field_y = by + 68.0
-        field_w = bw - 56.0
-        field_h = 42.0
-        field_bg = Color(0.03, 0.04, 0.06, 0.90)
-        field_border = Color(0.30, 0.36, 0.45, 0.90)
-        backend.draw_rect(
-            field_x,
-            field_y,
-            field_w,
-            field_h,
-            field_bg,
-            border_color=field_border,
-            border_width=1.0,
-        )
-
-        # 5. Text buffer content
-        text_x = field_x + 14.0
-        text_y = field_y + (field_h / 2.0)
-        text_col = Color(0.95, 0.96, 0.98, 1.0)
-        input_fs = self.scale_font_size(15)
-        backend.draw_text(
-            text_x,
-            text_y,
-            self.text_buffer,
-            font_size=input_fs,
-            color=text_col,
-            anchor_y=TextAnchor.MIDDLE,
-        )
-
-        # 6. Blinking cursor
-        if self.cursor_visible:
-            # Measure width of current buffer to place cursor
-            text_w, _ = backend.measure_text(self.text_buffer, font_size=input_fs)
-            cursor_x = text_x + text_w + 2.0
-            cursor_h = 20.0
-            cursor_y = text_y - (cursor_h / 2.0)
-            cursor_col = Color(0.95, 0.86, 0.62, 0.95)
-            backend.draw_rect(cursor_x, cursor_y, 2.0, cursor_h, cursor_col)
-
-        # 7. Help cue (Enter to submit)
-        hint_y = by + bh - 24.0
-        hint_col = Color(0.55, 0.60, 0.68, 0.70)
-        backend.draw_text(
-            bx + bw - 28.0,
-            hint_y,
-            "Press Enter to confirm",
-            font_size=self.scale_font_size(11),
-            color=hint_col,
-            anchor_x=TextAnchor.RIGHT,
-            anchor_y=TextAnchor.MIDDLE,
-        )
 
 
 class EndNotice:
@@ -910,23 +582,15 @@ class EndNotice:
         banner_fill: Color | None = None,
         text_color: Color | None = None,
         font_size: int = 16,
-        theme: Theme | None = None,
     ) -> None:
         self.viewport_width = width
         self.viewport_height = height
         self.message = message or self.DEFAULT_MESSAGE
         self.banner_height = banner_height
         self.bottom_gap = bottom_gap
-        self.theme = theme
-        self.banner_fill = banner_fill if banner_fill is not None else (theme.dialogue_box_fill if theme else _END_BANNER_FILL)
-        self.text_color = text_color if text_color is not None else (theme.text_color if theme else _END_TEXT)
+        self.banner_fill = banner_fill if banner_fill is not None else _END_BANNER_FILL
+        self.text_color = text_color if text_color is not None else _END_TEXT
         self.font_size = font_size
-
-    def set_theme(self, theme: Theme) -> None:
-        """Apply theme styling."""
-        self.theme = theme
-        self.banner_fill = theme.dialogue_box_fill
-        self.text_color = theme.text_color
 
     def set_viewport(self, width: int, height: int) -> None:
         """Update the viewport the component lays itself out against."""
@@ -946,11 +610,6 @@ class EndNotice:
             self.banner_height,
         )
 
-    def scale_font_size(self, base_size: float) -> int:
-        """Scale a base font size proportionally with the viewport height (reference 720p)."""
-        scale = float(self.viewport_height) / 720.0
-        return max(1, round(float(base_size) * scale))
-
     def draw(self, backend: UIDrawBackend) -> None:
         """Render the end-of-story banner through *backend*."""
         bx, by, bw, bh = self.layout()
@@ -959,7 +618,7 @@ class EndNotice:
             bx + (bw / 2.0),
             by + (bh / 2.0),
             self.message,
-            font_size=self.scale_font_size(self.font_size),
+            font_size=scale_font_size(self.font_size, self.viewport_height),
             color=self.text_color,
             anchor_x=TextAnchor.CENTER,
             anchor_y=TextAnchor.MIDDLE,
@@ -984,18 +643,11 @@ class QuickMenu:
         self,
         viewport_width: int = 1280,
         viewport_height: int = 720,
-        *,
-        theme: Theme | None = None,
     ) -> None:
         self.viewport_width = viewport_width
         self.viewport_height = viewport_height
         self.hovered_action: str | None = None
         self.is_read: bool = False
-        self.theme: Theme | None = theme
-
-    def set_theme(self, theme: Theme) -> None:
-        """Apply styling from a Theme."""
-        self.theme = theme
 
     def set_viewport(self, width: int, height: int) -> None:
         """Update viewport dimensions for quick menu layout."""
@@ -1026,23 +678,12 @@ class QuickMenu:
                 return act_id
         return None
 
-    def scale_font_size(self, base_size: float) -> int:
-        """Scale a base font size proportionally with the viewport height (reference 720p)."""
-        scale = float(self.viewport_height) / 720.0
-        return max(1, round(float(base_size) * scale))
-
     def draw(self, backend: UIDrawBackend) -> None:
         """Render quick action buttons cleanly without harsh boxes."""
-        if self.theme is not None:
-            text_col = self.theme.muted_text_color
-            hover_col = self.theme.text_color
-            hover_pill = Color(self.theme.button_hover.r, self.theme.button_hover.g, self.theme.button_hover.b, 0.25)
-            read_skip_col = self.theme.accent_color
-        else:
-            text_col = Color(0.68, 0.72, 0.78, 0.65)
-            hover_col = Color(0.95, 0.96, 0.98, 1.0)
-            hover_pill = Color(1.0, 1.0, 1.0, 0.08)
-            read_skip_col = Color(0.95, 0.86, 0.62, 0.85)
+        text_col = Color(0.68, 0.72, 0.78, 0.65)
+        hover_col = Color(0.95, 0.96, 0.98, 1.0)
+        hover_pill = Color(1.0, 1.0, 1.0, 0.08)
+        read_skip_col = Color(0.95, 0.86, 0.62, 0.85)
 
         for act_id, label, bx, by, bw, bh in self.layout():
             is_hovered = getattr(self, "hovered_action", None) == act_id
@@ -1058,7 +699,7 @@ class QuickMenu:
                 bx + bw / 2.0,
                 by + bh / 2.0,
                 label,
-                font_size=self.scale_font_size(11),
+                font_size=scale_font_size(11, self.viewport_height),
                 color=col,
                 anchor_x=TextAnchor.CENTER,
                 anchor_y=TextAnchor.MIDDLE,
@@ -1087,57 +728,28 @@ class UIOverlay:
     height: int = 720
     dialogue_style: TextboxStyle | None = None
     choice_style: ChoiceMenuStyle | None = None
-    theme: Theme | None = None
-    error_overlay: str | None = None
     toast_text: str | None = None
     toast_timer: float = 0.0
     dialogue_box: DialogueBox = field(init=False)
     choice_menu: ChoiceMenu = field(init=False)
-    input_box: InputBox = field(init=False)
     end_notice: EndNotice = field(init=False)
     quick_menu: QuickMenu = field(init=False)
-    _nvl_mode: bool = field(init=False, default=False)
     _is_finished: bool = field(init=False, default=False)
 
     def __post_init__(self) -> None:
-        """Initialize child UI components using current theme and dimensions."""
-        if isinstance(self.theme, dict):
-            try:
-                self.theme = Theme(**self.theme)
-            except (TypeError, ValueError, AttributeError):
-                self.theme = None
-        if self.theme is not None:
-            if self.dialogue_style is None:
-                self.dialogue_style = textbox_style_from_theme(self.theme)
-            if self.choice_style is None:
-                self.choice_style = choice_menu_style_from_theme(self.theme)
-
+        """Initialize child UI components using current dimensions."""
         self.dialogue_box = DialogueBox(
             self.width,
             self.height,
             style=self.dialogue_style,
-            theme=self.theme if self.dialogue_style is None else None,
         )
         self.choice_menu = ChoiceMenu(
             self.width,
             self.height,
             style=self.choice_style,
-            theme=self.theme if self.choice_style is None else None,
         )
-        self.input_box = InputBox(self.width, self.height, theme=self.theme)
-        self.end_notice = EndNotice(self.width, self.height, theme=self.theme)
-        self.quick_menu = QuickMenu(self.width, self.height, theme=self.theme)
-
-    def set_theme(self, theme: Theme) -> None:
-        """Apply a new Theme across the overlay and all child components."""
-        self.theme = theme
-        self.dialogue_style = textbox_style_from_theme(theme)
-        self.choice_style = choice_menu_style_from_theme(theme)
-        self.dialogue_box.set_theme(theme)
-        self.choice_menu.set_theme(theme)
-        self.quick_menu.set_theme(theme)
-        self.input_box.set_theme(theme)
-        self.end_notice.set_theme(theme)
+        self.end_notice = EndNotice(self.width, self.height)
+        self.quick_menu = QuickMenu(self.width, self.height)
 
     # ── state ──────────────────────────────────────────────────────────
 
@@ -1147,7 +759,6 @@ class UIOverlay:
         self.height = height
         self.dialogue_box.set_viewport(width, height)
         self.choice_menu.set_viewport(width, height)
-        self.input_box.set_viewport(width, height)
         self.end_notice.set_viewport(width, height)
         self.quick_menu.set_viewport(width, height)
 
@@ -1168,13 +779,10 @@ class UIOverlay:
         self,
         ui_state: UIState,
         choice_prompt: Any | None = None,
-        input_prompt: Any | None = None,
-        input_text: str | None = None,
         *,
         is_read: bool = False,
     ) -> None:
         """Mirror narrative state onto the child components."""
-        self._nvl_mode = bool(getattr(ui_state, "nvl_mode", False))
         self._is_finished = bool(getattr(ui_state, "is_finished", False))
         self.dialogue_box.set_content(
             ui_state.speaker,
@@ -1191,7 +799,7 @@ class UIOverlay:
             ui_state.visible_chars is None or int(ui_state.visible_chars) >= plain_len
         )
         self.dialogue_box.show_advance_arrow = (
-            choice_prompt is None and input_prompt is None and is_revealed
+            choice_prompt is None and is_revealed
         )
 
         if choice_prompt is None:
@@ -1199,188 +807,35 @@ class UIOverlay:
         else:
             self.choice_menu.set_options(choice_prompt.options)
 
-        if input_prompt is None:
-            self.input_box.clear()
-        else:
-            prompt_str = getattr(input_prompt, "prompt", "Enter input:")
-            default_val = (
-                input_text
-                if input_text is not None
-                else getattr(input_prompt, "default", "")
-            )
-            self.input_box.set_prompt(prompt_str, default=default_val)
-
     # ── drawing ────────────────────────────────────────────────────────
-
-    def draw_nvl(
-        self,
-        backend: UIDrawBackend,
-        ui_state: UIState,
-        choice_prompt: Any | None = None,
-    ) -> None:
-        """Draw full-screen NVL mode text display with theme styling and typewriter reveal."""
-        margin_x = float(self.width) * 0.1
-        margin_y = float(self.height) * 0.08
-        box_w = float(self.width) - margin_x * 2.0
-        box_h = float(self.height) - margin_y * 2.0
-
-        bg_col = self.theme.dialogue_box_fill if self.theme else Color(0.02, 0.03, 0.05, 0.88)
-        border_col = self.theme.dialogue_box_border if self.theme else Color(0.3, 0.4, 0.5, 0.8)
-        font_family = self.theme.font_family if self.theme else None
-        default_text_col = self.theme.text_color if self.theme else Color(0.95, 0.95, 0.95, 1.0)
-        default_speaker_col = getattr(ui_state, "speaker_color", None) or (
-            self.theme.nameplate_text if self.theme else Color(1.0, 0.9, 0.45, 1.0)
-        )
-
-        # Semi-transparent background
-        backend.draw_rect(
-            margin_x,
-            margin_y,
-            box_w,
-            box_h,
-            bg_col,
-            border_color=border_col,
-            border_width=1.5,
-        )
-
-        curr_y = margin_y + 25.0
-        text_max_w = box_w - 40.0
-        font_size = self.scale_font_size(14)
-        speaker_font_size = self.scale_font_size(13)
-        line_height = font_size * 1.4
-        max_content_h = box_h - 45.0
-
-        # Pre-wrap and measure entries to tail-fit the most recent visible entries
-        prepared_entries: list[tuple[Any, Any, list[tuple[str, int, int]], float]] = []
-        for entry in ui_state.nvl_entries:
-            formatted = parse_text_tags(entry.text)
-            lines = get_wrapped_lines(
-                formatted.plain_text,
-                text_max_w,
-                backend.measure_text,
-                font_size=font_size,
-                font_family=font_family,
-            )
-            h = (line_height * 1.1 if entry.speaker else 0.0) + len(lines) * line_height + 10.0
-            prepared_entries.append((entry, formatted, lines, h))
-
-        # Tail-fit entries that fit within max_content_h
-        visible_entries: list[tuple[Any, Any, list[tuple[str, int, int]], float]] = []
-        total_h = 0.0
-        for item in reversed(prepared_entries):
-            entry, formatted, lines, h = item
-            if total_h + h <= max_content_h or not visible_entries:
-                visible_entries.append(item)
-                total_h += h
-            else:
-                break
-        visible_entries.reverse()
-
-        last_entry_obj = ui_state.nvl_entries[-1] if ui_state.nvl_entries else None
-
-        for entry, formatted, lines, _ in visible_entries:
-            if curr_y + line_height > margin_y + box_h - 20.0:
-                break
-            if entry.speaker:
-                spk_col = getattr(ui_state, "speaker_color", None) or default_speaker_col
-                backend.draw_text(
-                    margin_x + 20.0,
-                    curr_y,
-                    entry.speaker,
-                    font_size=speaker_font_size,
-                    color=spk_col,
-                    bold=True,
-                    font_family=font_family,
-                )
-                curr_y += line_height * 1.1
-
-            is_last = (entry is last_entry_obj)
-            visible_limit = (
-                max(0, int(ui_state.visible_chars))
-                if (is_last and ui_state.visible_chars is not None)
-                else len(formatted.plain_text)
-            )
-
-            seg_spans: list[tuple[int, int, Any]] = []
-            cur_pos = 0
-            for seg in formatted.segments:
-                seg_len = len(seg.text)
-                seg_spans.append((cur_pos, cur_pos + seg_len, seg))
-                cur_pos += seg_len
-
-            for line_str, line_start, line_end in lines:
-                if line_start >= visible_limit or curr_y + line_height > margin_y + box_h - 20.0:
-                    break
-                visible_line_end = min(line_end, visible_limit)
-                x_cursor = margin_x + 20.0
-
-                for seg_start, seg_end, seg in seg_spans:
-                    overlap_start = max(line_start, seg_start)
-                    overlap_end = min(visible_line_end, seg_end)
-                    if overlap_start < overlap_end:
-                        piece_text = seg.text[overlap_start - seg_start : overlap_end - seg_start]
-                        seg_fs = max(1, round(font_size * seg.size_mult))
-                        seg_col = seg.color if seg.color is not None else default_text_col
-                        backend.draw_text(
-                            x_cursor,
-                            curr_y,
-                            piece_text,
-                            font_size=seg_fs,
-                            color=seg_col,
-                            bold=seg.bold,
-                            italic=seg.italic,
-                            font_family=font_family,
-                        )
-                        piece_w, _ = backend.measure_text(
-                            piece_text,
-                            font_size=seg_fs,
-                            bold=seg.bold,
-                            italic=seg.italic,
-                            font_family=font_family,
-                        )
-                        x_cursor += piece_w
-                curr_y += line_height
-            curr_y += 10.0
 
     def draw(
         self,
         backend: UIDrawBackend,
         ui_state: UIState,
         choice_prompt: Any | None = None,
-        active_input_prompt: Any | None = None,
-        input_text: str | None = None,
         *,
         is_finished: bool | None = None,
         show_quick_menu: bool = False,
         status_badge: str | None = None,
         is_read: bool = False,
     ) -> None:
-        """Draw the dialogue box or NVL display, choice menu, input box, quick menu, status badge, and end notice."""
+        """Draw the dialogue box, choice menu, quick menu, status badge, and end notice."""
         self.sync(
             ui_state,
             choice_prompt,
-            active_input_prompt,
-            input_text=input_text,
             is_read=is_read,
         )
         finished = ui_state.is_finished if is_finished is None else is_finished
         self._is_finished = bool(finished)
 
-        if not finished:
-            if ui_state.nvl_mode:
-                self.draw_nvl(backend, ui_state, choice_prompt)
-                if show_quick_menu and not self.choice_menu.options and not self.input_box.prompt:
-                    self.quick_menu.draw(backend)
-            elif self.dialogue_box.text:
-                self.dialogue_box.draw(backend)
-                if show_quick_menu and not self.choice_menu.options and not self.input_box.prompt:
-                    self.quick_menu.draw(backend)
+        if not finished and self.dialogue_box.text:
+            self.dialogue_box.draw(backend)
+            if show_quick_menu and not self.choice_menu.options:
+                self.quick_menu.draw(backend)
 
         if self.choice_menu.options:
             self.choice_menu.draw(backend)
-
-        if self.input_box.prompt:
-            self.input_box.draw(backend)
 
         if status_badge and not finished:
             badge_w, badge_h = 84.0, 26.0
@@ -1393,7 +848,7 @@ class UIOverlay:
                 bx + badge_w / 2.0,
                 by + badge_h / 2.0,
                 status_badge,
-                font_size=self.scale_font_size(12),
+                font_size=scale_font_size(12, self.height),
                 color=Color(0.92, 0.93, 0.95, 0.95),
                 anchor_x=TextAnchor.CENTER,
                 anchor_y=TextAnchor.MIDDLE,
@@ -1417,56 +872,14 @@ class UIOverlay:
                 tx + tw / 2.0,
                 ty + th / 2.0,
                 self.toast_text,
-                font_size=self.scale_font_size(14),
+                font_size=scale_font_size(14, self.height),
                 color=Color(0.95, 0.96, 0.98, 1.0),
                 anchor_x=TextAnchor.CENTER,
                 anchor_y=TextAnchor.MIDDLE,
             )
 
-        if self.error_overlay:
-            self._draw_error_overlay(backend, self.error_overlay)
-        elif finished:
+        if finished:
             self.end_notice.draw(backend)
-
-    def scale_font_size(self, base_size: float) -> int:
-        """Scale a base font size proportionally with the viewport height (reference 720p)."""
-        scale = float(self.height) / 720.0
-        return max(1, round(float(base_size) * scale))
-
-    def _draw_error_overlay(self, backend: UIDrawBackend, message: str) -> None:
-        """Draw a safe error overlay box centered on screen."""
-        box_w = min(float(self.width) - 80.0, 680.0)
-        box_h = 160.0
-        bx = (float(self.width) - box_w) / 2.0
-        by = (float(self.height) - box_h) / 2.0
-
-        fill = Color(0.12, 0.03, 0.03, 0.94)
-        border = Color(0.85, 0.25, 0.25, 0.95)
-        backend.draw_rect(bx, by, box_w, box_h, fill, border_color=border, border_width=2.0)
-
-        backend.draw_text(
-            bx + 24.0,
-            by + 24.0,
-            "Scene Not Found",
-            font_size=self.scale_font_size(18),
-            color=Color(1.0, 0.4, 0.4, 1.0),
-            bold=True,
-        )
-        backend.draw_text(
-            bx + 24.0,
-            by + 64.0,
-            message,
-            font_size=self.scale_font_size(14),
-            color=Color(0.95, 0.95, 0.95, 1.0),
-        )
-        backend.draw_text(
-            bx + 24.0,
-            by + 112.0,
-            "Hot-Reload: Edit screenplay and press Shift+R to reload.",
-            font_size=self.scale_font_size(12),
-            color=Color(0.7, 0.7, 0.75, 0.8),
-        )
-
 
     # ── input ──────────────────────────────────────────────────────────
 
@@ -1479,8 +892,7 @@ class UIOverlay:
         if (
             self._is_finished
             or self.choice_menu.options
-            or self.input_box.prompt
-            or (not self._nvl_mode and not self.dialogue_box.text)
+            or not self.dialogue_box.text
         ):
             return None
         return self.quick_menu.hit_test(x, y)
@@ -1498,16 +910,6 @@ class UIOverlay:
         """Update the displayed choice menu options."""
         if self.choice_menu is not None:
             self.choice_menu.set_options(options)
-
-    def set_input_text(self, text: str) -> None:
-        """Update the text buffer displayed by the input box."""
-        if self.input_box is not None:
-            self.input_box.text_buffer = text
-
-    def update_input(self, dt: float) -> None:
-        """Advance cursor animation or timers in the input box."""
-        if self.input_box is not None:
-            self.input_box.update(dt)
 
     def set_dialogue_visible_chars(
         self,

@@ -29,10 +29,6 @@ from eager.script.ast import (
     ParsedReturn,
     ParsedSet,
     ParseError,
-    from_dict,
-    from_json,
-    to_dict,
-    to_json,
 )
 from eager.script.graph import (
     EdgeKind,
@@ -44,11 +40,7 @@ from eager.script.graph import (
 )
 from eager.script.hooks import (
     HookArgs,
-    InputHookArgs,
-    is_input_hook,
     parse_hook_args,
-    parse_input_args,
-    parse_input_hook,
 )
 from eager.script.includes import (
     IncludeError,
@@ -76,9 +68,6 @@ from eager.script.parser import (
 )
 from eager.script.project import (
     ProjectConfig,
-    load_project_graph,
-    merge_graphs,
-    resolve_project_scripts,
 )
 from eager.script.tokens import ParseResult, TokenSpan
 from eager.script.validator import (
@@ -106,7 +95,6 @@ __all__ = [
     "EdgeKind",
     "HookArgs",
     "IncludeError",
-    "InputHookArgs",
     "ParseError",
     "ParseResult",
     "ParsedAppend",
@@ -142,24 +130,14 @@ __all__ = [
     "ValidationResult",
     "__version__",
     "discover_includes",
-    "from_dict",
-    "from_json",
-    "is_input_hook",
-    "load_project_graph",
-    "merge_graphs",
     "parse",
     "parse_file",
     "parse_graph",
     "parse_hook_args",
-    "parse_input_args",
-    "parse_input_hook",
     "parse_iter",
     "parse_with_tokens",
     "resolve_includes",
-    "resolve_project_scripts",
     "slugify",
-    "to_dict",
     "to_graph",
-    "to_json",
     "validate",
 ]

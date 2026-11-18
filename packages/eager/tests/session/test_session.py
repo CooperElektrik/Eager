@@ -14,7 +14,6 @@ from eager.core.events import (
     ChoiceOption,
     ChoicePromptEvent,
     DialogueEvent,
-    InputPromptEvent,
     NarrationEvent,
 )
 from eager.core.input import InputAction
@@ -234,66 +233,6 @@ def test_session_handle_input_actions() -> None:
     assert session.ui_hidden is True
     session.handle_input(InputAction.HIDE_UI)
     assert session.ui_hidden is False
-
-
-def test_session_input_prompt_checkpoint_restoration_and_mode_rollback() -> None:
-    input_script = """
-## Start --- start
-Alice: Hello traveler!
-~ input hero_name "Enter name:" "Traveler"
-Alice: Welcome, [hero_name]!
-"""
-    graph = eager.script.parse_graph(input_script)
-    session = GameSession(graph)
-
-    # 1. Advance to first dialogue (Alice: Hello traveler!)
-    ev1 = session.advance()
-    assert ev1 is not None
-    assert session.director.ui_state.text == "Hello traveler!"
-
-    # 2. Advance to input prompt
-    ev2 = session.advance()
-    assert ev2 is not None
-    assert ev2.type == "input_prompt"
-    assert isinstance(ev2, InputPromptEvent)
-    assert session.active_input_prompt is not None
-    assert session.active_input_prompt.var_name == "hero_name"
-    assert session.active_input_prompt.prompt == "Enter name:"
-    assert session.active_input_prompt.default == "Traveler"
-
-    # 3. Submit player input
-    ev3 = session.submit_input("Valiant")
-    assert ev3 is not None
-    assert session.director.ui_state.text == "Welcome, Valiant!"
-    assert session.active_input_prompt is None
-    assert session.mode == "game"
-
-    # 4. Advance to end of story
-    ev4 = session.advance()
-    assert ev4 is not None
-    assert ev4.type == "story_end"
-    assert session.is_finished is True
-    assert session.mode == "ended"
-
-    # 5. Rollback from ended state: mode must reset to != "ended" ("game")
-    ok1 = session.rollback()
-    assert ok1 is True
-    assert session.is_finished is False
-    assert session.mode == "game"
-    assert session.director.ui_state.text == "Welcome, Valiant!"
-
-    # 6. Rollback again onto input prompt: restores active_input_prompt
-    ok2 = session.rollback()
-    assert ok2 is True
-    assert session.mode == "game"
-    assert session.active_input_prompt is not None
-    assert session.active_input_prompt.var_name == "hero_name"
-    assert session.active_input_prompt.prompt == "Enter name:"
-    assert session.active_input_prompt.default == "Traveler"
-
-    # 7. Resubmit input with different value
-    session.submit_input("Champion")
-    assert session.director.ui_state.text == "Welcome, Champion!"
 
 
 def test_session_screens_and_extended_inputs() -> None:
@@ -530,46 +469,6 @@ Alice: {voice:alice_02.ogg} Second line with voice.
     assert any(c[0] == "voice" and isinstance(c[1], str) and "direct_call.ogg" in c[1] for c in mock_backend.calls)
 
 
-def test_session_input_prompt_handle_input_wiring() -> None:
-    input_script = """
-## Start --- start
-Alice: What is your name?
-~ input hero_name "Enter name:" "Traveler"
-Alice: Welcome, [hero_name]!
-"""
-    graph = eager.script.parse_graph(input_script)
-    session = GameSession(graph)
-
-    session.advance()  # Alice: What is your name?
-    ev = session.advance()  # input_prompt
-    assert ev is not None
-    assert isinstance(ev, InputPromptEvent)
-    assert ev.type == "input_prompt"
-    assert ev.prompt == "Enter name:"
-    assert ev.default == "Traveler"
-    assert session.active_input_prompt is not None
-    assert session.input_text == "Traveler"
-
-    # Reset input_text to test typing
-    session.input_text = ""
-    # Test TEXT_CHAR
-    for ch in "Hero":
-        session.handle_input(InputAction.TEXT_CHAR, char=ch)
-    assert session.input_text == "Hero"
-
-    # Test TEXT_BACKSPACE
-    session.handle_input(InputAction.TEXT_BACKSPACE)
-    assert session.input_text == "Her"
-
-    session.handle_input(InputAction.TEXT_CHAR, char="o")
-    assert session.input_text == "Hero"
-
-    # Test CONFIRM (Enter)
-    session.handle_input(InputAction.CONFIRM)
-    assert session.active_input_prompt is None
-    assert session.director.ui_state.text == "Welcome, Hero!"
-
-
 def test_session_seen_beats_tracking_and_skip_unseen_protection(tmp_path) -> None:
     test_script = """
 ## Start --- start
@@ -588,17 +487,15 @@ Alice: Line 3
     # Advance through Line 1
     ev1 = session.advance()
     assert isinstance(ev1, DialogueEvent)
-    assert ev1.beat_id is not None
     seen1 = session.persistent.get("seen_beats")
     assert isinstance(seen1, list)
-    assert ev1.beat_id in seen1
+    assert len(seen1) == 2  # SceneEnter + Line 1
     assert session.is_current_beat_read() is True
 
     # 2. Advance through Line 2
     ev2 = session.advance()
     assert isinstance(ev2, DialogueEvent)
-    assert ev2.beat_id is not None
-    assert ev2.beat_id in session.persistent["seen_beats"]
+    assert len(session.persistent["seen_beats"]) == 3
 
     # 3. Create a fresh session with same persistent data (playthrough 2)
     # Line 1 and 2 are seen, but Line 3 has not been seen yet
@@ -622,8 +519,7 @@ Alice: Line 3
     assert session2.skip_mode is False
 
     # 4. Now Line 3 has been recorded into seen_beats
-    ev3_beat_id = getattr(session2._last_event, "beat_id", None)
-    assert ev3_beat_id in session2.persistent["seen_beats"]
+    assert len(session2.persistent["seen_beats"]) == 4
 
     # 5. Playthrough 3: with all lines now seen, skip mode should skip through to the end
     session3 = GameSession(script_file, save_dir=save_dir)
@@ -631,99 +527,6 @@ Alice: Line 3
     session3.skip_mode = True
     session3.update(0.1)
     assert session3.is_finished is True
-
-
-def test_session_roll_forward_redo_stack() -> None:
-    test_script = """
-## Start --- start
-Alice: Line 1
-Alice: Line 2
-Alice: Line 3
-? Option A (scene_a)
-? Option B (scene_b)
-
-## Scene A --- scene_a
-Alice: Reached Scene A!
-
-## Scene B --- scene_b
-Alice: Reached Scene B!
-"""
-    graph = eager.script.parse_graph(test_script)
-    session = GameSession(graph)
-
-    # Initially cannot roll forward
-    assert session.checkpoints.can_roll_forward is False
-    assert session.roll_forward() is False
-
-    # Advance through lines 1, 2, 3
-    session.advance()
-    assert session.director.ui_state.text == "Line 1"
-
-    session.advance()
-    assert session.director.ui_state.text == "Line 2"
-
-    session.advance()
-    assert session.director.ui_state.text == "Line 3"
-
-    # Advance to choice prompt
-    ev_choice = session.advance()
-    assert ev_choice is not None and ev_choice.type == "choice_prompt"
-    assert session.active_choice_prompt is not None
-
-    # Roll back from choice prompt to Line 3
-    assert session.handle_input(InputAction.ROLLBACK) is True
-    assert session.director.ui_state.text == "Line 3"
-    assert session.active_choice_prompt is None
-    assert session.checkpoints.can_roll_forward is True
-
-    # Roll back from Line 3 to Line 2
-    assert session.handle_input(InputAction.ROLLBACK) is True
-    assert session.director.ui_state.text == "Line 2"
-
-    # Roll back from Line 2 to Line 1
-    assert session.handle_input(InputAction.ROLLBACK) is True
-    assert session.director.ui_state.text == "Line 1"
-
-    # Now roll forward using InputAction.ROLL_FORWARD back to Line 2
-    assert session.handle_input(InputAction.ROLL_FORWARD) is True
-    assert session.director.ui_state.text == "Line 2"
-
-    # Roll forward to Line 3
-    assert session.handle_input(InputAction.ROLL_FORWARD) is True
-    assert session.director.ui_state.text == "Line 3"
-
-    # Roll forward to Choice Prompt (restores choice menu without re-triggering choices)
-    assert session.handle_input(InputAction.ROLL_FORWARD) is True
-    assert session.active_choice_prompt is not None
-    assert session.checkpoints.can_roll_forward is False
-
-    # Cannot roll forward any further
-    assert session.handle_input(InputAction.ROLL_FORWARD) is False
-
-    # Rollback 1 step to Line 3
-    session.rollback()
-    assert session.director.ui_state.text == "Line 3"
-    assert session.checkpoints.can_roll_forward is True
-
-    # If the player advances past the head or makes a new interaction, redo stack is cleared
-    session.advance()
-    assert session.active_choice_prompt is not None
-    # Now redo stack is cleared because a new checkpoint was pushed
-    assert session.checkpoints.can_roll_forward is False
-    assert session.roll_forward() is False
-
-    # Test choice clears redo stack as well
-    session.rollback()
-    assert session.director.ui_state.text == "Line 3"
-    assert session.checkpoints.can_roll_forward is True
-
-    # Roll forward to choice prompt
-    session.roll_forward()
-    assert session.active_choice_prompt is not None
-    # Make a choice
-    session.choose(0)
-    assert session.director.ui_state.text == "Reached Scene A!"
-    assert session.checkpoints.can_roll_forward is False
 
 
 def test_session_voice_aware_auto_forward() -> None:
@@ -1046,11 +849,6 @@ Alice: Are you ready to choose?
     assert session.rollback() is True
     assert session.director.ui_state.text == "You wake up in a quiet room."
 
-    # Roll forward re-applies e2 (Dialogue)
-    assert session.roll_forward() is True
-    assert session.director.ui_state.speaker == "Alice"
-    assert session.director.ui_state.text == "Are you ready to choose?"
-
 
 def test_session_rollback_across_choice() -> None:
     story = """
@@ -1253,8 +1051,8 @@ Narrator: Done.
 
 
 def test_headless_session_wires_concrete_subsystems_with_null_backends() -> None:
-    from eager.backends.audio.null import NullAudioBackend
     from eager.backends.renderers.null import NullRenderBackend
+    from eager.core.audio import NullAudioBackend
     from eager.stage.director import StageDirector
     from eager.ui.components import UIOverlay
     from eager.ui.screens.screen import ScreenManager
@@ -1275,118 +1073,19 @@ def test_headless_session_wires_concrete_subsystems_with_null_backends() -> None
     assert session.director.ui_state.speaker == "Alice"
 
 
-def test_session_warp_resets_finished_and_clears_dialogue() -> None:
-    story = """
-## Start --- start
-Alice: Beginning
-> end_scene
-
-## End Scene --- end_scene
-Alice: The End
-"""
-    graph = eager.script.parse_graph(story)
-    session = GameSession(graph, headless=True)
-    session.advance()
-    session.advance()
-    # Finish the story
-    session.advance()
-    assert session.is_finished is True
-    assert session.director.ui_state.is_finished is True
-
-    # Warp back to start
-    success = session.warp("start")
-    assert success is True
-    assert session.is_finished is False
-    assert session.mode == "game"
-    assert session.director.ui_state.is_finished is False
-    assert session.director.ui_state.text == ""  # Never None!
-    assert isinstance(session.director.ui_state.text, str)
-
-
-def test_session_project_dir_locales_and_config_dimensions(tmp_path: Path) -> None:
-    import json
-
+def test_session_project_dir_and_config_dimensions(tmp_path: Path) -> None:
     from eager.script.project import ProjectConfig
 
-    # Create project directory with locales and game.toml
+    # Create project directory with main.es
     proj_dir = tmp_path / "my_project"
     proj_dir.mkdir()
-    locales_dir = proj_dir / "locales"
-    locales_dir.mkdir()
-    # Write a JSON translation catalog in locales/es.json
-    (locales_dir / "es.json").write_text(
-        json.dumps({
-            "locale": "es",
-            "strings": {"Hello": "Hola"},
-            "speakers": {},
-        }),
-        encoding="utf-8",
-    )
-    script_file = proj_dir / "story.es"
+    script_file = proj_dir / "main.es"
     script_file.write_text("## Start --- start\nAlice: Hello\n", encoding="utf-8")
 
     cfg = ProjectConfig(virtual_width=1280, virtual_height=720, title="Test VN")
     session = GameSession(proj_dir, config=cfg, headless=True)
     assert session.virtual_width == 1280
     assert session.virtual_height == 720
-    assert "es" in session.translation_manager.catalogs
-
-
-def test_hot_reload_refreshes_translation_and_character_styling(tmp_path: Path) -> None:
-    import json
-
-    proj_dir = tmp_path / "reload_proj"
-    proj_dir.mkdir()
-    locales_dir = proj_dir / "locales"
-    locales_dir.mkdir()
-
-    # Spanish translation catalog
-    (locales_dir / "es.json").write_text(
-        json.dumps({
-            "locale": "es",
-            "strings": {"start.greeting": "Hola"},
-            "speakers": {"h": "Hoshiko ES"},
-        }),
-        encoding="utf-8",
-    )
-
-    script_file = proj_dir / "main.es"
-    script_file.write_text(
-        """@character h "Hoshiko" color=#112233
-## Start --- start
-h: Hello {id=greeting}
-""",
-        encoding="utf-8",
-    )
-
-    session = GameSession(proj_dir, headless=True)
-    session.advance()
-    assert session.director.ui_state.speaker == "Hoshiko"
-    assert session.director.ui_state.text == "Hello"
-    assert session.director.ui_state.speaker_color == Color.from_hex("#112233")
-
-    # Switch to Spanish and hot-reload to verify presentation refresh picks up locale & character styling
-    session.translation_manager.set_locale("es")
-    session.hot_reload()
-    assert session.director.ui_state.speaker == "Hoshiko ES"
-    assert session.director.ui_state.text == "Hola"
-    assert session.director.ui_state.speaker_color == Color.from_hex("#112233")
-
-    # Update locale catalog on disk
-    (locales_dir / "es.json").write_text(
-        json.dumps({
-            "locale": "es",
-            "strings": {"start.greeting": "Hola amigo!"},
-            "speakers": {"h": "Hoshiko Reloaded"},
-        }),
-        encoding="utf-8",
-    )
-
-    # Hot reload picks up disk changes
-    session.hot_reload()
-    assert session.director.ui_state.speaker == "Hoshiko Reloaded"
-    assert session.director.ui_state.text == "Hola amigo!"
-    assert session.director.ui_state.speaker_color == Color.from_hex("#112233")
 
 
 def test_session_restart_story_and_return_to_title(tmp_path: Path) -> None:

@@ -14,6 +14,7 @@ __all__ = [
     "LayoutResolver",
     "PositionFactory",
     "ViewportTransform",
+    "scale_font_size",
 ]
 
 
@@ -238,3 +239,9 @@ class LayoutResolver:
 
     # Alias for API compatibility with spec
     compute_viewport_transform = compute_viewport
+
+
+def scale_font_size(base_size: float, viewport_height: int) -> int:
+    """Scale a base font size proportionally with viewport height (reference 720p)."""
+    scale = float(viewport_height) / 720.0
+    return max(1, round(float(base_size) * scale))

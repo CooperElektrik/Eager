@@ -1,7 +1,6 @@
 """Tests for standalone Eager-Script screenplay parser and AST serialization."""
 
 import ast
-import json
 from pathlib import Path
 
 import pytest
@@ -24,9 +23,7 @@ from eager.script import (
     ParseError,
     parse,
     parse_iter,
-    to_dict,
     to_graph,
-    to_json,
     validate,
 )
 
@@ -291,7 +288,7 @@ def test_parse_iter_equivalence() -> None:
     """Verify parse_iter yields exactly identical AST items as parse."""
     parsed_list = parse(SAMPLE_SCRIPT)
     iter_list = list(parse_iter(SAMPLE_SCRIPT))
-    assert to_dict(parsed_list) == to_dict(iter_list)
+    assert parsed_list == iter_list
 
 
 def test_character_quoted_attributes_with_spaces() -> None:
@@ -306,27 +303,6 @@ def test_character_quoted_attributes_with_spaces() -> None:
     assert attr_dict.get("title") == "The Great Magician"
     assert attr_dict.get("color") == "#ff0000"
     assert attr_dict.get("role") == "Protagonist and Leader"
-
-
-def test_to_dict_and_to_json() -> None:
-    script = """
-    ## Start --- start_label
-    Alice: Hello!
-    > start_label
-    """
-    items = parse(script)
-    dicts = to_dict(items)
-    assert len(dicts) == 3
-    assert dicts[0]["type"] == "label"
-    assert dicts[0]["name"] == "start_label"
-    assert dicts[1]["type"] == "dialogue"
-    assert dicts[1]["speaker"] == "Alice"
-    assert dicts[2]["type"] == "jump"
-    assert dicts[2]["target"] == "start_label"
-
-    json_str = to_json(items)
-    loaded = json.loads(json_str)
-    assert loaded == dicts
 
 
 INLINE_CHOICE_SCRIPT = """\
@@ -428,22 +404,7 @@ def test_targetless_option_without_block_rejected() -> None:
 
 
 def test_parse_iter_matches_parse_for_inline_blocks() -> None:
-    assert to_dict(parse(INLINE_CHOICE_SCRIPT)) == to_dict(list(parse_iter(INLINE_CHOICE_SCRIPT)))
-
-
-def test_to_dict_serializes_inline_body() -> None:
-    dicts = to_dict(parse(INLINE_CHOICE_SCRIPT))
-    choice_set = next(d for d in dicts if d["type"] == "choice_set")
-    options = choice_set["options"]
-    assert isinstance(options, list)
-    first = options[0]
-    second = options[1]
-    assert isinstance(first, dict) and isinstance(second, dict)
-    assert first["target"] is None
-    assert first["body"][0]["type"] == "set"
-    assert second["body"][0]["type"] == "dialogue"
-    # Round-trips through JSON
-    assert json.loads(to_json(parse(INLINE_CHOICE_SCRIPT))) == dicts
+    assert parse(INLINE_CHOICE_SCRIPT) == list(parse_iter(INLINE_CHOICE_SCRIPT))
 
 
 def test_validator_accepts_inline_blocks_and_reachable_continuation() -> None:
@@ -783,20 +744,6 @@ def test_parser_unicode_emoji_and_symbols() -> None:
     assert "🛡️" in items[1].options[1].text
 
 
-def test_parser_unicode_to_dict_to_json_roundtrip() -> None:
-    """to_dict and to_json preserve unicode strings without escape corruption."""
-    script = "Alice: こんにちは！ 🌸"
-    items = parse(script)
-    dict_data = to_dict(items)
-    assert dict_data[0]["speaker"] == "Alice"
-    assert dict_data[0]["text"] == "こんにちは！ 🌸"
-
-    json_str = to_json(items)
-    decoded = json.loads(json_str)
-    assert decoded[0]["speaker"] == "Alice"
-    assert decoded[0]["text"] == "こんにちは！ 🌸"
-
-
 def test_ast_source_span_tracking() -> None:
     """AST items track exact 0-based column ranges (start_col, end_col)."""
     script = """\
@@ -890,11 +837,6 @@ def test_ast_source_span_tracking() -> None:
     assert char_stmt.start_col == 4
     assert char_stmt.end_col == 44
 
-    # Verify to_dict includes start_col and end_col
-    d = alice.to_dict()
-    assert d["start_col"] == 4
-    assert d["end_col"] == 31
-
 
 def test_ast_recovery_error_spans() -> None:
     """Recovery mode populates start_col and end_col on ParsedError."""
@@ -905,66 +847,6 @@ def test_ast_recovery_error_spans() -> None:
     assert isinstance(err, ParsedError)
     assert err.start_col == 4
     assert err.end_col == 26
-    d = err.to_dict()
-    assert d["start_col"] == 4
-    assert d["end_col"] == 26
-
-
-def test_ast_node_subclass_and_bidirectional_serialization() -> None:
-    from eager.script import (
-        AstNode,
-        EagerScriptError,
-        ParseError,
-        from_json,
-        to_dict,
-        to_json,
-    )
-    from eager.script.expr import ExprError
-
-    assert issubclass(ParseError, EagerScriptError)
-    assert issubclass(ExprError, EagerScriptError)
-
-    script = """\
-@character alice "Alice" asset_prefix=char/alice
-@default score = 10
-## Intro --- intro
-Alice (happy): Welcome to the demonstration!
-+ And then some more text.
-* fresh box text
-Narrator: Just a narrator line.
-~ play bgm track.ogg
-$ score = score + 5
-@if score > 10
-    > win
-@elif score == 10
-    >> sub_scene
-@else
-    @end
-? Option 1
-    Alice: You picked option 1.
-    > label_1
-? Option 2 (label_2)
-<<
-"""
-    items = parse(script)
-    for item in items:
-        assert isinstance(item, AstNode)
-        assert hasattr(item, "line_number")
-        assert hasattr(item, "start_col")
-        assert hasattr(item, "end_col")
-
-    dicts = to_dict(items)
-    assert len(dicts) == len(items)
-    json_str = to_json(items)
-
-    restored = from_json(json_str)
-    assert len(restored) == len(items)
-    for orig, res in zip(items, restored):
-        assert type(orig) is type(res)
-        assert orig.to_dict() == res.to_dict()
-        assert res.line_number == orig.line_number
-        assert res.start_col == orig.start_col
-        assert res.end_col == orig.end_col
 
 
 def test_inline_comment_quote_and_apostrophe_handling() -> None:

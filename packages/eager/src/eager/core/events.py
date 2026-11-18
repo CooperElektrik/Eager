@@ -14,7 +14,6 @@ __all__ = [
     "DialogueEvent",
     "FreshBoxEvent",
     "HookEvent",
-    "InputPromptEvent",
     "NarrationEvent",
     "SceneEnterEvent",
     "SceneExitEvent",
@@ -38,19 +37,6 @@ class SceneEnterEvent:
         """Event type identifier ('scene_enter')."""
         return "scene_enter"
 
-    def to_dict(self) -> dict[str, object]:
-        """Serialize event to a dictionary.
-
-        Returns:
-            Dictionary containing event attributes.
-        """
-        return {
-            "type": self.type,
-            "scene_id": self.scene_id,
-            "display_name": self.display_name,
-            "line_number": self.line_number,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class DialogueEvent:
@@ -61,33 +47,12 @@ class DialogueEvent:
     voice: str | None
     emotion: str | None
     line_number: int
-    beat_id: str | None = None
     character_id: str | None = None
 
     @property
     def type(self) -> str:
         """Event type identifier ('dialogue')."""
         return "dialogue"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize event to a dictionary.
-
-        Returns:
-            Dictionary containing dialogue fields and metadata.
-        """
-        data: dict[str, object] = {
-            "type": self.type,
-            "speaker": self.speaker,
-            "text": self.text,
-            "voice": self.voice,
-            "emotion": self.emotion,
-            "line_number": self.line_number,
-        }
-        if self.beat_id is not None:
-            data["beat_id"] = self.beat_id
-        if self.character_id is not None:
-            data["character_id"] = self.character_id
-        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,27 +61,11 @@ class AppendEvent:
 
     text: str
     line_number: int
-    beat_id: str | None = None
 
     @property
     def type(self) -> str:
         """Event type identifier ('append')."""
         return "append"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize event to a dictionary.
-
-        Returns:
-            Dictionary containing append text and line info.
-        """
-        data: dict[str, object] = {
-            "type": self.type,
-            "text": self.text,
-            "line_number": self.line_number,
-        }
-        if self.beat_id is not None:
-            data["beat_id"] = self.beat_id
-        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,27 +74,11 @@ class FreshBoxEvent:
 
     text: str
     line_number: int
-    beat_id: str | None = None
 
     @property
     def type(self) -> str:
         """Event type identifier ('fresh_box')."""
         return "fresh_box"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize event to a dictionary.
-
-        Returns:
-            Dictionary containing fresh box text and line info.
-        """
-        data: dict[str, object] = {
-            "type": self.type,
-            "text": self.text,
-            "line_number": self.line_number,
-        }
-        if self.beat_id is not None:
-            data["beat_id"] = self.beat_id
-        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,27 +87,11 @@ class NarrationEvent:
 
     text: str
     line_number: int
-    beat_id: str | None = None
 
     @property
     def type(self) -> str:
         """Event type identifier ('narration')."""
         return "narration"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize event to a dictionary.
-
-        Returns:
-            Dictionary containing narration text and line info.
-        """
-        data: dict[str, object] = {
-            "type": self.type,
-            "text": self.text,
-            "line_number": self.line_number,
-        }
-        if self.beat_id is not None:
-            data["beat_id"] = self.beat_id
-        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,14 +104,9 @@ class ChoiceOption:
     line_number: int = 0
     condition: str | None = None
     enabled: bool = True
-    beat_id: str | None = None
 
     def to_dict(self) -> dict[str, object]:
-        """Serialize choice option to a dictionary.
-
-        Returns:
-            Dictionary containing option details.
-        """
+        """Serialize choice option to a dictionary."""
         data: dict[str, object] = {
             "index": self.index,
             "text": self.text,
@@ -204,26 +116,16 @@ class ChoiceOption:
         }
         if self.condition is not None:
             data["condition"] = self.condition
-        if self.beat_id is not None:
-            data["beat_id"] = self.beat_id
         return data
 
     @classmethod
     def from_dict(cls, data: Mapping[str, object]) -> ChoiceOption:
-        """Construct ChoiceOption from dictionary.
-
-        Args:
-            data: Mapping containing choice option fields.
-
-        Returns:
-            Deserialized ChoiceOption instance.
-        """
+        """Construct ChoiceOption from dictionary."""
         idx_val = data["index"]
         text_val = data["text"]
         target_val = data.get("target")
         line_val = data.get("line_number", 0)
         cond_val = data.get("condition")
-        beat_val = data.get("beat_id")
         return cls(
             index=int(idx_val) if isinstance(idx_val, (int, str)) else 0,
             text=str(text_val),
@@ -231,7 +133,6 @@ class ChoiceOption:
             line_number=int(line_val) if isinstance(line_val, (int, str)) else 0,
             condition=str(cond_val) if cond_val is not None else None,
             enabled=bool(data.get("enabled", True)),
-            beat_id=str(beat_val) if beat_val is not None else None,
         )
 
 
@@ -241,27 +142,11 @@ class ChoicePromptEvent:
 
     options: tuple[ChoiceOption, ...]
     line_number: int
-    beat_id: str | None = None
 
     @property
     def type(self) -> str:
         """Event type identifier ('choice_prompt')."""
         return "choice_prompt"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize choice prompt event to a dictionary.
-
-        Returns:
-            Dictionary containing options and line number.
-        """
-        data: dict[str, object] = {
-            "type": self.type,
-            "options": [opt.to_dict() for opt in self.options],
-            "line_number": self.line_number,
-        }
-        if self.beat_id is not None:
-            data["beat_id"] = self.beat_id
-        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,19 +161,6 @@ class HookEvent:
     def type(self) -> str:
         """Event type identifier ('hook')."""
         return "hook"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize hook event to a dictionary.
-
-        Returns:
-            Dictionary containing hook name and arguments.
-        """
-        return {
-            "type": self.type,
-            "hook_name": self.hook_name,
-            "args": self.args,
-            "line_number": self.line_number,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -305,20 +177,6 @@ class SceneExitEvent:
         """Event type identifier ('scene_exit')."""
         return "scene_exit"
 
-    def to_dict(self) -> dict[str, object]:
-        """Serialize scene exit event to a dictionary.
-
-        Returns:
-            Dictionary containing transition kind and target.
-        """
-        return {
-            "type": self.type,
-            "scene_id": self.scene_id,
-            "transition_kind": self.transition_kind,
-            "target": self.target,
-            "line_number": self.line_number,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class StoryEndEvent:
@@ -332,51 +190,6 @@ class StoryEndEvent:
         """Event type identifier ('story_end')."""
         return "story_end"
 
-    def to_dict(self) -> dict[str, object]:
-        """Serialize story end event to a dictionary.
-
-        Returns:
-            Dictionary containing terminal scene ID and reason.
-        """
-        return {
-            "type": self.type,
-            "scene_id": self.scene_id,
-            "reason": self.reason,
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class InputPromptEvent:
-    """Emitted when story prompts the player for textual input ('~ input var prompt')."""
-
-    var_name: str
-    prompt: str
-    default: str = ""
-    line_number: int = 0
-    beat_id: str | None = None
-
-    @property
-    def type(self) -> str:
-        """Event type identifier ('input_prompt')."""
-        return "input_prompt"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize input prompt event to a dictionary.
-
-        Returns:
-            Dictionary containing input variable, prompt, and default text.
-        """
-        data: dict[str, object] = {
-            "type": self.type,
-            "var_name": self.var_name,
-            "prompt": self.prompt,
-            "default": self.default,
-            "line_number": self.line_number,
-        }
-        if self.beat_id is not None:
-            data["beat_id"] = self.beat_id
-        return data
-
 
 StoryEvent: TypeAlias = (
     SceneEnterEvent
@@ -388,5 +201,4 @@ StoryEvent: TypeAlias = (
     | HookEvent
     | SceneExitEvent
     | StoryEndEvent
-    | InputPromptEvent
 )

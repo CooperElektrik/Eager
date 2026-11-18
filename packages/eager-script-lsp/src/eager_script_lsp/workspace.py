@@ -12,7 +12,6 @@ from eager.core.assets import (
     AssetReference,
     resolve_candidate_paths,
 )
-from eager.core.i18n import TranslationCatalog
 from eager.script import (
     IncludeError,
     ParseError,
@@ -21,7 +20,7 @@ from eager.script import (
     resolve_includes,
     to_graph,
 )
-from eager.script.project import ProjectConfig, merge_graphs
+from eager.script.project import ProjectConfig
 from lsprotocol.types import Range
 from pygls.uris import from_fs_path, to_fs_path
 
@@ -239,7 +238,6 @@ class WorkspaceIndex:
         self.root_path = root_path.resolve()
         self.config: ProjectConfig = ProjectConfig()
         self.asset_dir: Path = self.root_path / "assets"
-        self.locales_dir: Path = self.root_path / "locales"
 
         self.documents: dict[str, ScriptDocument] = {}
         self.labels: dict[str, SceneSymbol] = {}
@@ -247,26 +245,22 @@ class WorkspaceIndex:
         self.variables: dict[str, VariableSymbol] = {}
         self.references: dict[str, list[tuple[str, Range]]] = {}
         self.asset_index: AssetIndex = AssetIndex()
-        self.translation_catalogs: dict[str, TranslationCatalog] = {}
         self.merged_graph: SceneGraph | None = None
         self.merge_errors: list[str] = []
 
     def initialize(self) -> None:
-        """Scan workspace, load configuration, discover assets, locales, and .es files."""
+        """Scan workspace, load configuration, discover assets, and .es files."""
         # 1. Load project config
         game_toml = self.root_path / "game.toml"
         if game_toml.is_file():
             self.config = ProjectConfig.load(game_toml)
 
-        # Resolve asset and locales dir
+        # Resolve asset dir
         if not self.asset_dir.is_dir() and (self.root_path.parent / "assets").is_dir():
             self.asset_dir = self.root_path.parent / "assets"
-        if not self.locales_dir.is_dir() and (self.root_path.parent / "locales").is_dir():
-            self.locales_dir = self.root_path.parent / "locales"
 
-        # 2. Index assets & locales
+        # 2. Index assets
         self.asset_index.scan_assets(self.asset_dir)
-        self._load_locales()
 
         # 3. Discover and index all .es screenplay files
         es_files: list[Path] = []
@@ -346,21 +340,6 @@ class WorkspaceIndex:
     def get_variable(self, var_name: str) -> VariableSymbol | None:
         """Look up indexed variable symbol by name."""
         return self.variables.get(var_name)
-
-    def _load_locales(self) -> None:
-        """Load JSON translation catalogs from locales directory."""
-        self.translation_catalogs.clear()
-        if not self.locales_dir.is_dir():
-            return
-        for p in self.locales_dir.glob("*.json"):
-            if not p.is_file() or p.name.startswith((".", "template")):
-                continue
-            locale_code = p.stem
-            try:
-                cat = TranslationCatalog.load_json(p)
-                self.translation_catalogs[locale_code] = cat
-            except (OSError, ValueError) as e:
-                logger.error("Failed to load locale %s: %s", p, e)
 
     def _rebuild_index(self) -> None:
         """Reconstruct symbol tables and attempt cross-file graph merge."""
@@ -523,14 +502,14 @@ class WorkspaceIndex:
                     target_id = occ.name
                     self.references.setdefault(target_id, []).append((uri, occ.span.range))
 
-        # Step 2: Cross-file graph topology & predecessor/successor linkage
-        try:
-            if valid_graphs:
-                self.merged_graph = merge_graphs(valid_graphs, strict=False)
-            else:
-                self.merged_graph = None
-        except (ValueError, TypeError, KeyError) as e:
-            self.merge_errors.append(str(e))
+        # Step 2: Entry script @include graph
+        entry_path = (self.root_path / self.config.entry_script).resolve()
+        entry_uri = path_to_uri(entry_path)
+        if entry_uri in resolved_doc_graphs:
+            self.merged_graph = resolved_doc_graphs[entry_uri]
+        elif valid_graphs:
+            self.merged_graph = valid_graphs[0]
+        else:
             self.merged_graph = None
 
         # Populate predecessors & successors on SceneSymbols

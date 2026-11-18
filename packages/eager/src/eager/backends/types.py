@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from eager.core.types import WHITE, Anchor, Color
 
@@ -32,47 +32,10 @@ class RenderItem:
     layer: str
     z_order: int
 
-    def to_dict(self) -> dict[str, Any]:
-        """Convert render item to dictionary for serialization / IPC transmission."""
-        return {
-            "asset_id": self.asset_id,
-            "x": self.x,
-            "y": self.y,
-            "opacity": self.opacity,
-            "scale_x": self.scale_x,
-            "scale_y": self.scale_y,
-            "rotation": self.rotation,
-            "anchor": self.anchor.value,
-            "tint": self.tint.to_dict(),
-            "flip_h": self.flip_h,
-            "flip_v": self.flip_v,
-            "layer": self.layer,
-            "z_order": self.z_order,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> RenderItem:
-        """Construct RenderItem from dictionary."""
-        return cls(
-            asset_id=data["asset_id"],
-            x=float(data["x"]),
-            y=float(data["y"]),
-            opacity=float(data.get("opacity", 1.0)),
-            scale_x=float(data.get("scale_x", 1.0)),
-            scale_y=float(data.get("scale_y", 1.0)),
-            rotation=float(data.get("rotation", 0.0)),
-            anchor=Anchor.from_str(data.get("anchor", "bottom_center")),
-            tint=Color.from_dict(data.get("tint", {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0})),
-            flip_h=bool(data.get("flip_h", False)),
-            flip_v=bool(data.get("flip_v", False)),
-            layer=data.get("layer", "characters"),
-            z_order=int(data.get("z_order", 0)),
-        )
-
 
 @runtime_checkable
 class RenderBackend(Protocol):
-    """Protocol implemented by the rendering backends (Null, PIL, Pyglet)."""
+    """Protocol implemented by the rendering backends (Null, Pyglet)."""
 
     def begin_frame(self) -> None:
         """Invoked at the beginning of each frame render pass."""
@@ -84,14 +47,6 @@ class RenderBackend(Protocol):
 
     def draw_item(self, item: RenderItem) -> None:
         """Render a single compositor item to the target display buffer."""
-        ...
-
-    def draw_particles(self, batch: Any) -> None:
-        """Render a pre-baked particle batch to the display buffer."""
-        ...
-
-    def render_lightmap(self, lightmap: Any) -> None:
-        """Composite a screen-space low-res lightmap onto the display buffer."""
         ...
 
     def end_frame(self) -> None:

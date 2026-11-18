@@ -12,15 +12,10 @@ from __future__ import annotations
 
 import shlex
 from dataclasses import dataclass, field
-from typing import Any
 
 __all__ = [
     "HookArgs",
-    "InputHookArgs",
-    "is_input_hook",
     "parse_hook_args",
-    "parse_input_args",
-    "parse_input_hook",
 ]
 
 
@@ -69,16 +64,6 @@ class HookArgs:
         if lower in ("false", "0", "no", "off"):
             return False
         return default
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "positional": list(self.positional),
-            "at": self.at,
-            "with": self.with_,
-            "to": self.to,
-            "kwargs": dict(self.kwargs),
-        }
 
 
 def parse_hook_args(raw_args: str) -> HookArgs:
@@ -155,61 +140,4 @@ def parse_hook_args(raw_args: str) -> HookArgs:
         to=to_val,
         kwargs=kwargs,
     )
-
-
-@dataclass(frozen=True, slots=True)
-class InputHookArgs:
-    """Structured representation of parsed input hook arguments (~ input var_name [default=val] Prompt text)."""
-
-    var_name: str
-    prompt: str
-    default: str = ""
-
-
-def is_input_hook(raw_hook: str) -> bool:
-    """Return True if the hook command name is exactly 'input'."""
-    parts = raw_hook.strip().split(None, 1)
-    return bool(parts and parts[0] == "input")
-
-
-def parse_input_args(raw_args: str | HookArgs) -> InputHookArgs:
-    """Parse the arguments tail of an input hook (~ input <args>).
-
-    Understands:
-    - ~ input var_name "Prompt text" "Default value"
-    - ~ input var_name prompt="Prompt text" default="Default value"
-    - ~ input var_name default="Default value" Prompt text
-    - ~ input var_name Prompt text
-    - ~ input var_name
-    - ~ input
-    """
-    parsed = parse_hook_args(raw_args) if isinstance(raw_args, str) else raw_args
-    pos = parsed.positional
-    var_name = pos[0] if pos else "player_input"
-    default_text = parsed.kwargs.get("default", "")
-
-    if "prompt" in parsed.kwargs:
-        prompt_text = parsed.kwargs["prompt"]
-    elif len(pos) == 3 and not default_text:
-        prompt_text = pos[1]
-        default_text = pos[2]
-    elif len(pos) >= 2:
-        prompt_text = " ".join(pos[1:])
-    else:
-        prompt_text = "Enter input:"
-
-    return InputHookArgs(var_name=var_name, prompt=prompt_text, default=default_text)
-
-
-def parse_input_hook(raw_hook: str) -> InputHookArgs | None:
-    """Parse a full hook string without leading '~' (e.g. 'input hero_name ...').
-
-    Returns an InputHookArgs instance if the command is 'input', or None if it is
-    another hook command.
-    """
-    parts = raw_hook.strip().split(None, 1)
-    if not parts or parts[0] != "input":
-        return None
-    args = parts[1] if len(parts) > 1 else ""
-    return parse_input_args(args)
 

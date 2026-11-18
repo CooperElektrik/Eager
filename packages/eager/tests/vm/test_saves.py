@@ -10,7 +10,7 @@ import pytest
 from eager.core.input import InputAction
 from eager.core.persistent import PersistentData
 from eager.core.preferences import Preferences
-from eager.core.saves import SaveData, SaveManager, SaveMetadata, SaveMigrationError
+from eager.core.saves import SaveData, SaveManager, SaveMetadata
 from eager.core.state import Checkpoint, CheckpointHistory, StorySnapshot
 from eager.session import GameSession
 
@@ -32,10 +32,9 @@ Alice: You took path B.
 # CheckpointHistory
 # ---------------------------------------------------------------------------
 
-def test_checkpoint_history_push_pop_roll_forward() -> None:
+def test_checkpoint_history_push_pop() -> None:
     ch = CheckpointHistory(max_history=5)
     assert not ch.can_rollback
-    assert not ch.can_roll_forward
     assert ch.depth == 0
 
     cp1 = Checkpoint(story={"scene": "1"}, visual={}, audio={}, backlog_len=1, ui={})
@@ -50,19 +49,10 @@ def test_checkpoint_history_push_pop_roll_forward() -> None:
     assert ch.depth == 2
     assert ch.get_latest() == cp2
 
-    # Pop cp2 onto redo stack
     popped = ch.pop()
     assert popped == cp2
     assert ch.depth == 1
     assert not ch.can_rollback
-    assert ch.can_roll_forward
-
-    # Roll forward restores cp2
-    rf = ch.roll_forward()
-    assert rf == cp2
-    assert ch.depth == 2
-    assert ch.can_rollback
-    assert not ch.can_roll_forward
 
 
 def test_checkpoint_history_max_capacity() -> None:
@@ -76,17 +66,12 @@ def test_checkpoint_history_max_capacity() -> None:
     assert latest.story["i"] == 4
 
 
-def test_checkpoint_history_clear_and_clear_redo() -> None:
+def test_checkpoint_history_clear() -> None:
     ch = CheckpointHistory(max_history=5)
     cp1 = Checkpoint(story={"s": 1}, visual={}, audio={}, backlog_len=0, ui={})
     cp2 = Checkpoint(story={"s": 2}, visual={}, audio={}, backlog_len=0, ui={})
     ch.push(cp1)
     ch.push(cp2)
-    ch.pop()
-    assert ch.can_roll_forward
-
-    ch.clear_redo()
-    assert not ch.can_roll_forward
 
     ch.clear()
     assert ch.depth == 0
@@ -129,23 +114,14 @@ def test_save_manager_crud(tmp_path: Path) -> None:
     assert len(manager.list_slots()) == 0
 
 
-def test_save_and_load_active_input_prompt(tmp_path: Path) -> None:
-    manager = SaveManager(tmp_path)
-    prompt_data = {"var_name": "hero_name", "prompt": "Enter name:", "default": "Traveler"}
+def test_save_data_roundtrip() -> None:
     cp = Checkpoint(
         story={"current_scene": "start"},
         visual={},
         audio={},
         backlog_len=0,
         ui={},
-        active_input_prompt=prompt_data,
     )
-
-    manager.save_slot("input_slot", cp)
-    loaded = manager.load_slot("input_slot")
-    assert loaded is not None
-    assert loaded.active_input_prompt == prompt_data
-
     # Also test SaveData directly
     save_data = SaveData(
         metadata=SaveMetadata(
@@ -158,9 +134,9 @@ def test_save_and_load_active_input_prompt(tmp_path: Path) -> None:
         checkpoint=cp,
     )
     d = save_data.to_dict()
-    assert d["checkpoint"]["active_input_prompt"] == prompt_data
+    assert d["checkpoint"]["story"]["current_scene"] == "start"
     restored = SaveData.from_dict(d)
-    assert restored.checkpoint.active_input_prompt == prompt_data
+    assert restored.checkpoint.story["current_scene"] == "start"
 
 
 def test_quicksave_and_autosave(tmp_path: Path) -> None:
@@ -459,20 +435,6 @@ def test_game_session_save_and_load(tmp_path: Path) -> None:
     assert session.active_choice_prompt is not None
 
 
-def test_game_session_set_language_custom_save_dir(tmp_path: Path) -> None:
-    script_path = tmp_path / "game_story.es"
-    script_path.write_text(PERSISTENCE_SAMPLE_SCRIPT, encoding="utf-8")
-
-    custom_dir = tmp_path / "custom_pref_save"
-    custom_dir.mkdir(parents=True, exist_ok=True)
-    session = GameSession(script_path, save_dir=custom_dir)
-    session.set_language("ja")
-    pref_file = custom_dir / "preferences.json"
-    assert pref_file.exists()
-    saved_pref = Preferences.load(pref_file)
-    assert saved_pref.language == "ja"
-
-
 def test_game_session_playtime_and_screenshot(tmp_path: Path) -> None:
     script_path = tmp_path / "game_story.es"
     script_path.write_text(PERSISTENCE_SAMPLE_SCRIPT, encoding="utf-8")
@@ -570,91 +532,5 @@ def test_save_data_version_declaration() -> None:
     restored = SaveData.from_dict(d)
     assert restored.version == 2
     assert restored.metadata.version == 2
-
-
-def test_load_slot_unversioned_legacy_auto_upgrade(tmp_path: Path) -> None:
-    from eager.core.storage import atomic_write_json
-
-    manager = SaveManager(tmp_path)
-    legacy_data = {
-        "metadata": {
-            "slot_name": "legacy",
-            "timestamp": "2026-10-22T00:00:00",
-            "scene_id": "intro",
-            "scene_name": "Intro",
-            "dialogue_snippet": "Legacy",
-            "playtime_seconds": 0.0,
-        },
-        "checkpoint": {
-            "story": {"current_scene": "intro"},
-            "visual": {"layer": "bg"},
-            "audio": {},
-            "backlog_len": 0,
-            "ui": {},
-        },
-    }
-    slot_file = tmp_path / "legacy.json"
-    atomic_write_json(slot_file, legacy_data)
-
-    cp = manager.load_slot("legacy")
-    assert cp is not None
-    assert cp.story.get("current_scene") == "intro"
-    assert cp.visual.get("layer") == "bg"
-
-
-def test_load_slot_v1_auto_migrates_to_v2_by_default(tmp_path: Path) -> None:
-    # Save a v1 slot explicitly
-    cp = Checkpoint(
-        story={"current_scene": "intro", "version": 1},
-        visual={"sprites": ["hero"]},
-        audio={},
-        backlog_len=0,
-        ui={"text": "V1 save"},
-    )
-    SaveManager(tmp_path, target_version=1).save_slot("v1_slot", cp)
-
-    # Load with default SaveManager (target_version=2)
-    default_manager = SaveManager(tmp_path)
-    assert default_manager.target_version == 2
-    loaded = default_manager.load_slot("v1_slot")
-    assert loaded is not None
-    assert loaded.story.get("current_scene") == "intro"
-    meta = default_manager.get_slot_metadata("v1_slot")
-    assert meta is not None
-    assert meta.dialogue_snippet == "V1 save"
-
-
-
-def test_load_slot_newer_version_raises_save_migration_error(tmp_path: Path) -> None:
-    manager = SaveManager(tmp_path, target_version=1)
-    cp = Checkpoint(
-        story={"current_scene": "room"},
-        visual={},
-        audio={},
-        backlog_len=0,
-        ui={},
-    )
-    SaveManager(tmp_path, target_version=3).save_slot("slot_future", cp)
-
-    with pytest.raises(SaveMigrationError) as ctx:
-        manager.load_slot("slot_future")
-    assert "newer than target" in str(ctx.value)
-
-
-def test_load_slot_missing_migration_raises_save_migration_error(tmp_path: Path) -> None:
-    manager = SaveManager(tmp_path, target_version=3)
-    cp = Checkpoint(
-        story={"current_scene": "room", "version": 1},
-        visual={},
-        audio={},
-        backlog_len=0,
-        ui={},
-    )
-    SaveManager(tmp_path, target_version=1).save_slot("slot_gap", cp)
-
-    # target_version is 3, but no migration registered for v1
-    with pytest.raises(SaveMigrationError) as ctx:
-        manager.load_slot("slot_gap")
-    assert "No migration registered" in str(ctx.value)
 
 

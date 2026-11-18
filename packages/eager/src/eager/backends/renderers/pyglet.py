@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 try:
     import pyglet
@@ -19,19 +19,11 @@ except ImportError as err:
     raise ImportError(msg) from err
 
 from eager.backends._assets import resolve_visual_asset_candidates, validate_asset_path
-from eager.backends._placeholder import generate_placeholder_pil, placeholder_base_color
 from eager.backends.audio.pyglet import PygletAudioBackend
 from eager.backends.exceptions import AssetSecurityError, RenderError
-from eager.backends.fonts import register_pyglet_default_font
 from eager.backends.types import RenderBackend, RenderItem
 from eager.core.layout import LayoutResolver, ViewportTransform
-from eager.core.timing import FrameClock
 from eager.core.types import BLACK, WHITE, Anchor, Color, ScaleMode
-
-if TYPE_CHECKING:
-    from eager.core.lighting import LightmapState
-
-        
 
 logger = logging.getLogger(__name__)
 
@@ -111,112 +103,13 @@ class PygletAssetResolver:
                 return file_path
         return None
 
-    def _resolve_composite_texture(
-        self,
-        prefix: str,
-        layer_names: list[str],
-        default_width: int,
-        default_height: int,
-    ) -> pyglet.image.AbstractImage:
-        """Composite constituent sprite layers into a single hardware texture."""
-        try:
-            from PIL import Image
-
-            first_path = self._find_asset_file(f"{prefix}/{layer_names[0]}")
-            if first_path is not None:
-                with Image.open(first_path) as raw:
-                    base_img = raw.convert("RGBA")
-            else:
-                raw_tex = self.get_texture(
-                    f"{prefix}/{layer_names[0]}", default_width, default_height
-                )
-                img_data = raw_tex.get_image_data()
-                base_img = Image.frombytes(
-                    "RGBA",
-                    (img_data.width, img_data.height),
-                    img_data.get_data("RGBA", img_data.width * 4),
-                )
-
-            for layer in layer_names[1:]:
-                layer_path = self._find_asset_file(f"{prefix}/{layer}")
-                if layer_path is not None:
-                    with Image.open(layer_path) as raw:
-                        overlay = raw.convert("RGBA")
-                else:
-                    raw_tex = self.get_texture(
-                        f"{prefix}/{layer}", default_width, default_height
-                    )
-                    img_data = raw_tex.get_image_data()
-                    overlay = Image.frombytes(
-                        "RGBA",
-                        (img_data.width, img_data.height),
-                        img_data.get_data("RGBA", img_data.width * 4),
-                    )
-
-                if overlay.size != base_img.size:
-                    full_overlay = Image.new("RGBA", base_img.size, (0, 0, 0, 0))
-                    full_overlay.paste(overlay, (0, 0))
-                    base_img.alpha_composite(full_overlay)
-                else:
-                    base_img.alpha_composite(overlay)
-
-            w, h = base_img.size
-            img_data = pyglet.image.ImageData(w, h, "RGBA", base_img.tobytes(), pitch=-w * 4)
-            return self._clamp_texture(img_data.get_texture())
-        except ImportError:
-            base_tex = self.get_texture(
-                f"{prefix}/{layer_names[0]}", default_width, default_height
-            )
-            base_data = base_tex.get_image_data()
-            w, h = base_data.width, base_data.height
-            base_bytes = bytearray(base_data.get_data("RGBA", w * 4))
-
-            for layer in layer_names[1:]:
-                overlay_tex = self.get_texture(
-                    f"{prefix}/{layer}", default_width, default_height
-                )
-                overlay_data = overlay_tex.get_image_data()
-                if overlay_data.width == w and overlay_data.height == h:
-                    overlay_bytes = overlay_data.get_data("RGBA", w * 4)
-                    for i in range(0, len(base_bytes), 4):
-                        sa = overlay_bytes[i + 3]
-                        if sa == 0:
-                            continue
-                        if sa == 255:
-                            base_bytes[i : i + 4] = overlay_bytes[i : i + 4]
-                            continue
-                        da = base_bytes[i + 3]
-                        if da == 0:
-                            base_bytes[i : i + 4] = overlay_bytes[i : i + 4]
-                            continue
-                        inv_sa = 255 - sa
-                        a_out = sa + (da * inv_sa) // 255
-                        if a_out > 0:
-                            sr, sg, sb = (
-                                overlay_bytes[i],
-                                overlay_bytes[i + 1],
-                                overlay_bytes[i + 2],
-                            )
-                            dr, dg, db = (
-                                base_bytes[i],
-                                base_bytes[i + 1],
-                                base_bytes[i + 2],
-                            )
-                            base_bytes[i] = (sr * sa + dr * da * inv_sa // 255) // a_out
-                            base_bytes[i + 1] = (sg * sa + dg * da * inv_sa // 255) // a_out
-                            base_bytes[i + 2] = (sb * sa + db * da * inv_sa // 255) // a_out
-                            base_bytes[i + 3] = a_out
-
-            img_data = pyglet.image.ImageData(w, h, "RGBA", bytes(base_bytes), pitch=w * 4)
-            return self._clamp_texture(img_data.get_texture())
-
     def get_texture(
         self,
         asset_id: str,
         default_width: int = 400,
         default_height: int = 800,
     ) -> pyglet.image.AbstractImage:
-        """Retrieve texture from cache, load from disk, or generate fallback."""
+        """Retrieve texture from cache, load from disk, or generate a 1x1 fallback."""
         if asset_id in self._cache:
             return self._cache[asset_id]
 
@@ -224,31 +117,6 @@ class PygletAssetResolver:
             tex = pyglet.image.ImageData(1, 1, "RGBA", bytes([255, 255, 255, 255]))
             self._cache[asset_id] = tex
             return tex
-
-        # Direct absolute file path check (e.g. save slot thumbnails from save directory)
-        direct_path = Path(asset_id)
-        if direct_path.is_absolute() and direct_path.is_file():
-            try:
-                tex = self._clamp_texture(pyglet.image.load(str(direct_path)).get_texture())
-                self._cache[asset_id] = tex
-                return tex
-            except (OSError, ImageDecodeException):
-                pass
-
-        # Composite layered sprite resolution (e.g. "hoshiko/base+uniform+smile")
-        if "+" in asset_id and "/" in asset_id:
-            prefix, layers_str = asset_id.rsplit("/", 1)
-            layer_names = [pt.strip() for pt in layers_str.split("+") if pt.strip()]
-            if len(layer_names) > 1:
-                tex = self._resolve_composite_texture(
-                    prefix, layer_names, default_width, default_height
-                )
-                self._cache[asset_id] = tex
-                return tex
-            elif len(layer_names) == 1:
-                return self.get_texture(
-                    f"{prefix}/{layer_names[0]}", default_width, default_height
-                )
 
         # 1. Attempt loading from disk if asset_dir configured
         if self.asset_dir is not None:
@@ -261,60 +129,14 @@ class PygletAssetResolver:
                 except (OSError, ImageDecodeException):
                     pass
 
-        # 2. Generate placeholder texture
-        img = self._generate_placeholder(asset_id, default_width, default_height)
+        # 2. Missing asset fallback (1x1 solid color)
+        logger.warning("Missing visual asset %r; using solid fallback texture", asset_id)
+        img = pyglet.image.ImageData(1, 1, "RGBA", bytes([48, 56, 72, 255]))
         tex = self._clamp_texture(img.get_texture())
         self._cache[asset_id] = tex
         return tex
 
-    # Alias matching the PIL resolver
     get_image = get_texture
-
-    def _generate_placeholder(
-        self,
-        asset_id: str,
-        width: int,
-        height: int,
-    ) -> pyglet.image.AbstractImage:
-        """Procedurally generate a solid/gradient patterned placeholder texture."""
-        # 1. Attempt high-quality procedural generation via shared Pillow helper
-        try:
-            base, _ = generate_placeholder_pil(asset_id, width, height)
-            w, h = base.size
-            return pyglet.image.ImageData(w, h, "RGBA", base.tobytes(), pitch=-w * 4)
-        except ImportError:
-            pass
-
-        w, h, r, g, b = placeholder_base_color(asset_id, width, height)
-
-        # 2. Fast pure-Python gradient generation fallback
-        num_bands = 32
-        border_thickness = 4
-        white4 = b"\xff\xff\xff\xff"
-        w_mid = max(0, w - border_thickness * 2)
-
-        parts: list[bytes] = []
-        border_row = white4 * w
-        parts.append(border_row * border_thickness)
-
-        body_h = max(0, h - border_thickness * 2)
-        band_h = body_h // num_bands
-        rem = body_h % num_bands
-
-        for i in range(num_bands):
-            grad = 1.0 - (i / num_bands) * 0.25
-            cr, cg, cb = int(r * grad), int(g * grad), int(b * grad)
-            row = (
-                (white4 * border_thickness)
-                + (bytes([cr, cg, cb, 255]) * w_mid)
-                + (white4 * border_thickness)
-            )
-            count = band_h + (1 if i < rem else 0)
-            parts.append(row * count)
-
-        parts.append(border_row * border_thickness)
-        buf = b"".join(parts)
-        return pyglet.image.ImageData(w, h, "RGBA", buf)
 
 
 @functools.lru_cache(maxsize=4096)
@@ -383,7 +205,6 @@ class PygletRenderer(RenderBackend):
 
         # Stage Sprite pooling
         self._pooled_stage_sprites: list[pyglet.sprite.Sprite] = []
-        self._active_sprites: list[pyglet.sprite.Sprite] = []
         self._sprite_cursor: int = 0
 
         # UI element pools
@@ -405,23 +226,12 @@ class PygletRenderer(RenderBackend):
         self._bar_right: Rectangle | None = None
         self._bar_bottom: Rectangle | None = None
         self._bar_top: Rectangle | None = None
-        self._letterbox_bars: list[Rectangle] = []
 
         # Clear state tracking to deduplicate glClearColor calls
         self._last_clear_color: Color | None = None
 
-        self.clock: FrameClock = FrameClock()
         self.frame_count: int = 0
         self.last_frame: list[RenderItem] = []
-
-        # Particle pooling & lightmap state
-        self._stamp_textures: dict[int, pyglet.image.AbstractImage] = {}
-        self._pooled_particle_sprites: list[pyglet.sprite.Sprite] = []
-        self._particle_cursor: int = 0
-        self._lightmap_sprite: pyglet.sprite.Sprite | None = None
-        self._screen_lightmap_sprite: pyglet.sprite.Sprite | None = None
-        self._lightmap_blend_mode: str = "multiply"
-        self.last_frame_particles: int = 0
 
         # Initial viewport & letterbox setup
         self._update_viewport_and_letterbox()
@@ -569,20 +379,9 @@ class PygletRenderer(RenderBackend):
             if self._bar_top is not None and self._bar_top.visible:
                 self._bar_top.visible = False
 
-        self._letterbox_bars = [
-            b for b in (self._bar_left, self._bar_right, self._bar_bottom, self._bar_top)
-            if b is not None and b.visible
-        ]
-
     def begin_frame(self) -> None:
         """Prepare for new frame rendering pass."""
-        self._active_sprites.clear()
         self._sprite_cursor = 0
-        self._particle_cursor = 0
-        if self._lightmap_sprite is not None:
-            self._lightmap_sprite.visible = False
-        if self._screen_lightmap_sprite is not None:
-            self._screen_lightmap_sprite.visible = False
         self._rect_cursor = 0
         self._box_cursor = 0
         self._grad_cursor = 0
@@ -698,8 +497,6 @@ class PygletRenderer(RenderBackend):
         if not sprite.visible:
             sprite.visible = True
 
-        self._active_sprites.append(sprite)
-
     def end_frame(self) -> None:
         """Conclude frame render pass, drawing stage elements and letterbox bars."""
         # Hide any unused stage sprites in the pool
@@ -708,14 +505,7 @@ class PygletRenderer(RenderBackend):
             if sp.visible:
                 sp.visible = False
 
-        # Hide any unused particle sprites in the pool
-        for i in range(self._particle_cursor, len(self._pooled_particle_sprites)):
-            sp = self._pooled_particle_sprites[i]
-            if sp.visible:
-                sp.visible = False
-
         self.frame_count += 1
-        self.clock.tick()
 
         # Submit batched stage sprites and letterbox bars in a single OpenGL batch
         self._stage_batch.draw()
@@ -760,25 +550,6 @@ class PygletRenderer(RenderBackend):
         self._ui_batch.draw()
         self._ui_flushed = True
 
-    # ------------------------------------------------------------------ #
-    # FPS properties (delegate to the FrameClock for a uniform API)
-    # ------------------------------------------------------------------ #
-
-    @property
-    def fps(self) -> float:
-        """Instantaneous frames-per-second (1 / last frame interval)."""
-        return self.clock.fps
-
-    @property
-    def fps_avg(self) -> float:
-        """Rolling-average FPS over the last 60 rendered frames."""
-        return self.clock.fps_avg
-
-    @property
-    def fps_overall(self) -> float:
-        """Average FPS across all frames rendered since the renderer was created."""
-        return self.clock.fps_overall
-
     def render_compositor(
         self,
         compositor: Any,
@@ -806,222 +577,7 @@ class PygletRenderer(RenderBackend):
         for item in items:
             self.draw_item(item)
 
-        if hasattr(compositor, "get_particle_batches") and self._current_transform is not None:
-            for pbatch in compositor.get_particle_batches(self._current_transform):
-                self.draw_particles(pbatch)
-
-        if hasattr(compositor, "lighting") and compositor.lighting.enabled:
-            self.render_lightmap(compositor.lighting)
-
         self.end_frame()
-
-    def draw_particles(self, batch: Any) -> None:
-        """Render a pre-baked particle batch in Pyglet."""
-        if self._current_transform is None:
-            return
-        self.last_frame_particles = len(batch.particles)
-        if not batch.particles:
-            return
-
-        lut = batch.lut
-        win_w = self.window.width if self.window is not None else self.width
-        win_h = self.window.height if self.window is not None else self.height
-        group = self._get_stage_group(batch.z_order)
-
-        for x, y, scale_idx, angle_idx, alpha_idx in batch.particles:
-            stamp = lut.get_stamp(scale_idx, angle_idx, alpha_idx)
-            dest_x = x + round(stamp.off_x)
-            dest_y = y + round(stamp.off_y)
-            sw, sh = stamp.width, stamp.height
-            if dest_x + sw <= 0 or dest_y + sh <= 0 or dest_x >= win_w or dest_y >= win_h:
-                continue
-
-            stamp_id = id(stamp)
-            tex = self._stamp_textures.get(stamp_id)
-            if tex is None:
-                from PIL import Image
-
-                rgba_img = Image.merge("RGBA", (*stamp.color.split(), stamp.mask))
-                tex = pyglet.image.ImageData(
-                    sw, sh, "RGBA", rgba_img.tobytes(), pitch=-sw * 4
-                ).get_texture()
-                PygletAssetResolver._clamp_texture(tex)
-                self._stamp_textures[stamp_id] = tex
-
-            fy = self._flip_y(float(dest_y), float(sh))
-            fx = float(dest_x)
-
-            if self._particle_cursor < len(self._pooled_particle_sprites):
-                sp = self._pooled_particle_sprites[self._particle_cursor]
-                if sp.image != tex:
-                    sp.image = tex
-                if sp.x != fx or sp.y != fy:
-                    sp.position = (fx, fy, 0)
-                if sp.group is not group:
-                    sp.group = group
-                if not sp.visible:
-                    sp.visible = True
-            else:
-                sp = pyglet.sprite.Sprite(
-                    tex,
-                    x=fx,
-                    y=fy,
-                    batch=self._stage_batch,
-                    group=group,
-                )
-                self._pooled_particle_sprites.append(sp)
-            self._particle_cursor += 1
-
-    def render_lightmap(self, lightmap: LightmapState) -> None:
-        """Composite a screen-space low-res lightmap onto the display buffer."""
-        intensity = getattr(lightmap, "ambient_intensity", 1.0)
-        if not lightmap.enabled or (lightmap.ambient == WHITE and intensity == 1.0 and not lightmap.lights):
-            if self._lightmap_sprite is not None and self._lightmap_sprite.visible:
-                self._lightmap_sprite.visible = False
-            if self._screen_lightmap_sprite is not None and self._screen_lightmap_sprite.visible:
-                self._screen_lightmap_sprite.visible = False
-            return
-
-        win_w = self.window.width if self.window is not None else self.width
-        win_h = self.window.height if self.window is not None else self.height
-
-        from PIL import Image, ImageDraw
-
-        low_w = max(16, win_w // 8)
-        low_h = max(9, win_h // 8)
-        amb = lightmap.ambient
-        amb_rgb = (
-            max(0, min(255, round(amb.r * intensity * 255))),
-            max(0, min(255, round(amb.g * intensity * 255))),
-            max(0, min(255, round(amb.b * intensity * 255))),
-        )
-        lightmap_img = Image.new("RGB", (low_w, low_h), amb_rgb)
-        screen_img: Image.Image | None = None
-        screen_draw: ImageDraw.ImageDraw | None = None
-
-        transform = self._current_transform
-        sc_x = (transform.scale_x / 8.0) if transform else (1.0 / 8.0)
-        sc_y = (transform.scale_y / 8.0) if transform else (1.0 / 8.0)
-        off_x = (transform.offset_x / 8.0) if transform else 0.0
-        off_y = (transform.offset_y / 8.0) if transform else 0.0
-
-        if lightmap.lights:
-            draw = ImageDraw.Draw(lightmap_img)
-            for light in lightmap.lights:
-                lx = off_x + light.x * sc_x
-                ly = off_y + light.y * sc_y
-                lr = max(1.0, light.radius * sc_x)
-                x0 = round(lx - lr)
-                y0 = round(ly - lr)
-                x1 = round(lx + lr)
-                y1 = round(ly + lr)
-                if x1 <= 0 or y1 <= 0 or x0 >= low_w or y0 >= low_h:
-                    continue
-
-                col = light.color
-                c_rgb = (round(col.r * 255), round(col.g * 255), round(col.b * 255))
-                is_screen = getattr(light, "mode", "multiply") == "screen"
-                if is_screen and screen_img is None:
-                    screen_img = Image.new("RGB", (low_w, low_h), (0, 0, 0))
-                    screen_draw = ImageDraw.Draw(screen_img)
-
-                steps = max(2, min(8, round(lr)))
-                for s in range(steps, 0, -1):
-                    f = s / steps
-                    r_step = lr * f
-                    bx0 = round(lx - r_step)
-                    by0 = round(ly - r_step)
-                    bx1 = round(lx + r_step)
-                    by1 = round(ly + r_step)
-                    alpha_factor = (1.0 - f) * light.intensity
-                    if is_screen and screen_draw is not None:
-                        r_val = round(c_rgb[0] * alpha_factor)
-                        g_val = round(c_rgb[1] * alpha_factor)
-                        b_val = round(c_rgb[2] * alpha_factor)
-                        fill_col = (
-                            max(0, min(255, r_val)),
-                            max(0, min(255, g_val)),
-                            max(0, min(255, b_val)),
-                        )
-                        screen_draw.ellipse([bx0, by0, bx1, by1], fill=fill_col)
-                    else:
-                        r_val = round(amb_rgb[0] + (c_rgb[0] - amb_rgb[0]) * alpha_factor)
-                        g_val = round(amb_rgb[1] + (c_rgb[1] - amb_rgb[1]) * alpha_factor)
-                        b_val = round(amb_rgb[2] + (c_rgb[2] - amb_rgb[2]) * alpha_factor)
-                        fill_col = (
-                            max(0, min(255, r_val)),
-                            max(0, min(255, g_val)),
-                            max(0, min(255, b_val)),
-                        )
-                        draw.ellipse([bx0, by0, bx1, by1], fill=fill_col)
-
-        rgba_lightmap = lightmap_img.convert("RGBA")
-        tex = pyglet.image.ImageData(
-            low_w, low_h, "RGBA", rgba_lightmap.tobytes(), pitch=-low_w * 4
-        ).get_texture()
-        PygletAssetResolver._clamp_texture(tex)
-
-        blend_mode = "screen" if getattr(lightmap, "blend_mode", "multiply") == "screen" else "multiply"
-        if blend_mode == "screen":
-            blend_src = pyglet.gl.GL_ONE
-            blend_dest = pyglet.gl.GL_ONE_MINUS_SRC_COLOR
-        else:
-            blend_src = pyglet.gl.GL_DST_COLOR
-            blend_dest = pyglet.gl.GL_ZERO
-
-        blend_group = self._get_stage_group(999999)
-        if self._lightmap_sprite is None or self._lightmap_blend_mode != blend_mode:
-            if self._lightmap_sprite is not None:
-                self._lightmap_sprite.delete()
-            self._lightmap_blend_mode = blend_mode
-            self._lightmap_sprite = pyglet.sprite.Sprite(
-                tex,
-                x=0,
-                y=0,
-                blend_src=blend_src,
-                blend_dest=blend_dest,
-                batch=self._stage_batch,
-                group=blend_group,
-            )
-        else:
-            self._lightmap_sprite.image = tex
-            self._lightmap_sprite.position = (0, 0, 0)
-            self._lightmap_sprite.group = blend_group
-            self._lightmap_sprite.visible = True
-
-        self._lightmap_sprite.scale_x = win_w / max(1, low_w)
-        self._lightmap_sprite.scale_y = win_h / max(1, low_h)
-
-        if screen_img is not None:
-            rgba_screen = screen_img.convert("RGBA")
-            screen_tex = pyglet.image.ImageData(
-                low_w, low_h, "RGBA", rgba_screen.tobytes(), pitch=-low_w * 4
-            ).get_texture()
-            PygletAssetResolver._clamp_texture(screen_tex)
-            screen_group = self._get_stage_group(1_000_000)
-            if self._screen_lightmap_sprite is None:
-                self._screen_lightmap_sprite = pyglet.sprite.Sprite(
-                    screen_tex,
-                    x=0,
-                    y=0,
-                    blend_src=pyglet.gl.GL_ONE,
-                    blend_dest=pyglet.gl.GL_ONE_MINUS_SRC_COLOR,
-                    batch=self._stage_batch,
-                    group=screen_group,
-                )
-            else:
-                self._screen_lightmap_sprite.image = screen_tex
-                self._screen_lightmap_sprite.position = (0, 0, 0)
-                self._screen_lightmap_sprite.group = screen_group
-                self._screen_lightmap_sprite.visible = True
-            self._screen_lightmap_sprite.scale_x = win_w / max(1, low_w)
-            self._screen_lightmap_sprite.scale_y = win_h / max(1, low_h)
-        elif self._screen_lightmap_sprite is not None and self._screen_lightmap_sprite.visible:
-            self._screen_lightmap_sprite.visible = False
-
-    # ------------------------------------------------------------------ #
-    # Introspection
-    # ------------------------------------------------------------------ #
 
     def __len__(self) -> int:
         """Return the number of draw commands in the last rendered frame."""
@@ -1031,65 +587,7 @@ class PygletRenderer(RenderBackend):
         """Return a string representation of the Pyglet renderer state."""
         return (
             f"PygletRenderer(width={self.width}, height={self.height}, "
-            f"frame_count={self.frame_count}, last_frame_items={len(self.last_frame)}, "
-            f"fps={self.clock.fps:.1f})"
-        )
-
-    def debug_info(self) -> dict[str, Any]:
-        """Return a structured diagnostic snapshot of the Pyglet renderer state."""
-        return {
-            "performance": {
-                "fps": round(self.fps, 1),
-                "fps_avg": round(self.fps_avg, 1),
-                "fps_overall": round(self.fps_overall, 1),
-                "frame_count": self.frame_count,
-                "dt_ms": round(self.clock.dt * 1000.0, 2),
-            },
-            "stage": {
-                "active_sprites": len(self._active_sprites),
-                "pooled_sprites": len(self._pooled_stage_sprites),
-                "sprite_cursor": self._sprite_cursor,
-                "groups": len(self._stage_groups),
-            },
-            "ui_pools": {
-                "rectangles": {"cursor": self._rect_cursor, "pooled": len(self._rect_pool)},
-                "boxes": {"cursor": self._box_cursor, "pooled": len(self._box_pool)},
-                "gradients": {"cursor": self._grad_cursor, "pooled": len(self._grad_pool)},
-                "labels": {"cursor": self._label_cursor, "pooled": len(self._label_pool)},
-                "sprites": {"cursor": self._ui_sprite_cursor, "pooled": len(self._ui_sprite_pool)},
-                "groups": len(self._ui_groups),
-            },
-            "caches": {
-                "textures": len(getattr(self.asset_resolver, "_cache", {})),
-                "regions": len(self._region_cache),
-            },
-            "backend": {
-                "renderer": "pyglet",
-                "width": self.width,
-                "height": self.height,
-                "scale_mode": self.scale_mode.value if hasattr(self.scale_mode, "value") else str(self.scale_mode),
-            },
-        }
-
-    def debug_repr(self) -> str:
-        """Return a formatted multi-line diagnostic string."""
-        info = self.debug_info()
-        perf = info["performance"]
-        stage = info["stage"]
-        ui = info["ui_pools"]
-        caches = info["caches"]
-        backend = info["backend"]
-        return (
-            f"── Eager Debug: Pyglet Backend ──────────────────────────\n"
-            f"FPS: {perf['fps']:.1f} (avg: {perf['fps_avg']:.1f}) | Frame: {perf['frame_count']} | dt: {perf['dt_ms']:.1f}ms\n"
-            f"Mode: {backend['renderer']} ({backend['width']}x{backend['height']}, {backend['scale_mode']})\n"
-            f"Stage Sprites: active={stage['active_sprites']} | pool={stage['pooled_sprites']} | groups={stage['groups']}\n"
-            f"UI Pools: rects={ui['rectangles']['cursor']}/{ui['rectangles']['pooled']}, "
-            f"boxes={ui['boxes']['cursor']}/{ui['boxes']['pooled']}, "
-            f"grads={ui['gradients']['cursor']}/{ui['gradients']['pooled']}, "
-            f"labels={ui['labels']['cursor']}/{ui['labels']['pooled']}, "
-            f"sprites={ui['sprites']['cursor']}/{ui['sprites']['pooled']}\n"
-            f"Caches: textures={caches['textures']} | regions={caches['regions']}"
+            f"frame_count={self.frame_count}, last_frame_items={len(self.last_frame)})"
         )
 
     # ------------------------------------------------------------------ #
@@ -1431,7 +929,7 @@ class PygletRenderer(RenderBackend):
 
     def _ui_font_name(self) -> str:
         """Return the font family used for UI text."""
-        return register_pyglet_default_font()
+        return "sans-serif"
 
     def measure_text(
         self,

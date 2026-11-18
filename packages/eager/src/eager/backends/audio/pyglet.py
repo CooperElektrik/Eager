@@ -39,21 +39,10 @@ class PygletAudioBackend:
         *,
         loop: bool = False,
         volume: float = 1.0,
-        fade_in: float = 0.0,
         loop_start: float | None = None,
         loop_end: float | None = None,
     ) -> None:
-        """Start playback of an audio asset using Pyglet media player.
-
-        Args:
-            channel: Target audio channel name.
-            asset_path: File path or resource identifier of the audio track.
-            loop: Whether the audio track repeats when finished. Defaults to False.
-            volume: Normalized volume level in the range [0.0, 1.0]. Defaults to 1.0.
-            fade_in: Fade in duration in seconds. Defaults to 0.0.
-            loop_start: Optional loop start timestamp in seconds.
-            loop_end: Optional loop end timestamp in seconds.
-        """
+        """Start playback of an audio asset using Pyglet media player."""
         path_str = str(asset_path)
         if channel in self._players:
             old_player = self._players[channel]
@@ -144,13 +133,8 @@ class PygletAudioBackend:
             self._players.pop(channel, None)
             self._loop_points.pop(channel, None)
 
-    def stop(self, channel: str, *, fade_out: float = 0.0) -> None:
-        """Halt playback and delete the player for a channel.
-
-        Args:
-            channel: Target audio channel name.
-            fade_out: Duration in seconds to fade out before stopping.
-        """
+    def stop(self, channel: str) -> None:
+        """Halt playback and delete the player for a channel."""
         player = self._players.get(channel)
         if player is not None:
             try:

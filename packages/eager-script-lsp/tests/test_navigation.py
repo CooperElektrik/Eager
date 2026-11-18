@@ -11,10 +11,7 @@ from eager_script_lsp.document import ScriptDocument
 from eager_script_lsp.features.navigation import (
     compute_definition,
     compute_document_symbols,
-    compute_incoming_calls,
-    compute_outgoing_calls,
     compute_references,
-    prepare_call_hierarchy,
 )
 from eager_script_lsp.workspace import WorkspaceIndex, normalize_uri
 
@@ -62,37 +59,6 @@ $ score += 1
     assert len(symbols) > 0
     names = [s.name for s in symbols]
     assert "Preamble" in names or "Scene One" in names
-
-
-def test_call_hierarchy():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        root = Path(tmpdir).resolve()
-        f1 = root / "story.es"
-        f1.write_text("""## Start --- start
-> middle
-
-## Middle --- middle
-> finish
-
-## Finish --- finish
-Narrator: Done
-""", encoding="utf-8")
-
-        index = WorkspaceIndex(root)
-        index.initialize()
-        doc = index.get_document(f1.as_uri())
-        assert doc is not None
-
-        # Middle scene
-        items = prepare_call_hierarchy(doc, index, Position(line=3, character=5))
-        assert items is not None and len(items) == 1
-        item = items[0]
-
-        incoming = compute_incoming_calls(index, item)
-        assert any("Start" in inc.from_.name for inc in incoming)
-
-        outgoing = compute_outgoing_calls(index, item)
-        assert any("Finish" in out.to.name for out in outgoing)
 
 
 def test_definition_characters_variables_and_assets():

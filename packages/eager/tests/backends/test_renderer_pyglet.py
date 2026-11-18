@@ -15,7 +15,7 @@ from eager.backends.audio.pyglet import PygletAudioBackend
 from eager.backends.renderers.pyglet import PygletAssetResolver, PygletRenderer
 from eager.backends.types import RenderItem
 from eager.core.layout import LayoutResolver
-from eager.core.types import Anchor, Color, DebugOverlayMode, ScaleMode
+from eager.core.types import Anchor, Color, ScaleMode
 from eager.script import parse_graph
 from eager.stage import StageCompositor
 from eager.ui.pyglet_player import PygletPlayer
@@ -35,20 +35,20 @@ def invisible_window() -> Iterator[Window]:
 def test_pyglet_asset_resolver_placeholders() -> None:
     resolver = PygletAssetResolver(asset_dir=None)
 
-    # 1. Background placeholder
+    # 1. Background fallback
     bg_tex = resolver.get_texture("bg/castle_gate")
     assert bg_tex is not None
-    assert bg_tex.width == 1920
-    assert bg_tex.height == 1080
+    assert bg_tex.width == 1
+    assert bg_tex.height == 1
 
     # Cache should return exact same instance
     assert resolver.get_texture("bg/castle_gate") is bg_tex
 
-    # 2. Character placeholder
+    # 2. Character fallback
     char_tex = resolver.get_texture("alice/cheerful", default_width=400, default_height=800)
     assert char_tex is not None
-    assert char_tex.width == 400
-    assert char_tex.height == 800
+    assert char_tex.width == 1
+    assert char_tex.height == 1
     assert resolver.get_texture("alice/cheerful") is char_tex
 
     # Different asset_id should yield different texture
@@ -68,28 +68,26 @@ def test_pyglet_renderer_draw_items(invisible_window: Window) -> None:
     renderer.render_compositor(compositor, invisible_window.width, invisible_window.height)
 
     # Verify that sprites were created and rendered
-    assert len(renderer._active_sprites) == 3
-    bg_sprite, alice_sprite, bob_sprite = renderer._active_sprites
+    assert renderer._sprite_cursor == 3
+    bg_sprite, alice_sprite, bob_sprite = renderer._pooled_stage_sprites[:renderer._sprite_cursor]
 
-    # Background fills 1280x720 window
-    assert pytest.approx(bg_sprite.width, 0.1) == 1280
-    assert pytest.approx(bg_sprite.height, 0.1) == 720
+    # Background scales to 1280x720 window
+    assert pytest.approx(bg_sprite.scale_x, 0.01) == 1280 / 1920
+    assert pytest.approx(bg_sprite.scale_y, 0.01) == 720 / 1080
     assert bg_sprite.x == 0.0
     assert bg_sprite.y == 720.0
 
     # Alice (character on left: x=480 in 1920 space -> 320 in 1280 space)
-    # Character size 400x800 -> 266.67 x 533.33 in 1280x720 window
-    assert pytest.approx(alice_sprite.width, 0.1) == 400 * (1280 / 1920)
-    assert pytest.approx(alice_sprite.height, 0.1) == 800 * (720 / 1080)
+    assert pytest.approx(alice_sprite.scale_x, 0.01) == 1280 / 1920
+    assert pytest.approx(alice_sprite.scale_y, 0.01) == 720 / 1080
     assert pytest.approx(alice_sprite.x, 0.1) == 320.0
     assert pytest.approx(alice_sprite.y, 0.1) == 0.0
 
     # Bob (character on right: x=1440 in 1920 space -> 960 in 1280 space)
-    assert pytest.approx(bob_sprite.width, 0.1) == 400 * (1280 / 1920)
-    assert pytest.approx(bob_sprite.height, 0.1) == 800 * (720 / 1080)
+    assert pytest.approx(bob_sprite.scale_x, 0.01) == -(1280 / 1920)
+    assert pytest.approx(bob_sprite.scale_y, 0.01) == 720 / 1080
     assert pytest.approx(bob_sprite.x, 0.1) == 960.0
     assert pytest.approx(bob_sprite.y, 0.1) == 0.0
-    assert bob_sprite.scale_x < 0
 
 
 def test_pyglet_renderer_draw_item_properties(invisible_window: Window) -> None:
@@ -120,8 +118,8 @@ def test_pyglet_renderer_draw_item_properties(invisible_window: Window) -> None:
     )
 
     renderer.draw_item(item)
-    assert len(renderer._active_sprites) == 1
-    sprite = renderer._active_sprites[0]
+    assert renderer._sprite_cursor == 1
+    sprite = renderer._pooled_stage_sprites[:renderer._sprite_cursor][0]
 
     # Verify opacity calculation (0.75 * 255 = ~191)
     assert sprite.opacity == round(0.75 * 255)
@@ -134,8 +132,8 @@ def test_pyglet_renderer_draw_item_properties(invisible_window: Window) -> None:
     # Verify accurate position and dimension
     assert pytest.approx(sprite.x, 0.1) == 640.0
     assert pytest.approx(sprite.y, 0.1) == 0.0
-    assert pytest.approx(sprite.width, 0.1) == 400 * 1.2 * (1280 / 1920)
-    assert pytest.approx(sprite.height, 0.1) == 800 * 1.2 * (720 / 1080)
+    assert pytest.approx(sprite.scale_x, 0.01) == -1.2 * (1280 / 1920)
+    assert pytest.approx(sprite.scale_y, 0.01) == 1.2 * (720 / 1080)
 
     renderer.end_frame()
 
@@ -224,8 +222,8 @@ def test_pyglet_renderer_anchors_and_rotation(invisible_window: Window) -> None:
         z_order=10,
     )
     renderer.draw_item(center_item)
-    assert len(renderer._active_sprites) == 1
-    sp = renderer._active_sprites[0]
+    assert renderer._sprite_cursor == 1
+    sp = renderer._pooled_stage_sprites[:renderer._sprite_cursor][0]
     # Anchor point in 1280x720 window: (640, 360)
     assert pytest.approx(sp.x, 0.1) == 640.0
     assert pytest.approx(sp.y, 0.1) == 360.0
@@ -248,8 +246,8 @@ def test_pyglet_renderer_anchors_and_rotation(invisible_window: Window) -> None:
         z_order=20,
     )
     renderer.draw_item(tl_item)
-    assert len(renderer._active_sprites) == 2
-    sp_tl = renderer._active_sprites[1]
+    assert renderer._sprite_cursor == 2
+    sp_tl = renderer._pooled_stage_sprites[:renderer._sprite_cursor][1]
     # Screen coord: (100 * 2/3, 100 * 2/3) = (66.67, 66.67). Pyglet Y: 720 - 66.67 = 653.33
     assert pytest.approx(sp_tl.x, 0.1) == 100.0 * (1280 / 1920)
     assert pytest.approx(sp_tl.y, 0.1) == 720.0 - (100.0 * (720 / 1080))
@@ -366,14 +364,7 @@ def test_pyglet_player_run_and_input_handling(monkeypatch: pytest.MonkeyPatch) -
     assert run_called == [0.0]
 
     try:
-        # FPS overlay toggle cycles FPS -> DETAILED -> OFF
-        assert player.debug_mode == DebugOverlayMode.FPS
-        player.on_key_press(pyglet.window.key.F3, 0)
-        assert player.debug_mode == DebugOverlayMode.DETAILED
-        player.on_key_press(pyglet.window.key.F3, 0)
-        assert player.debug_mode == DebugOverlayMode.OFF
-        assert not player.show_fps
-        player.on_draw()  # FPS draw skipped when show_fps is False
+        player.on_draw()
 
         # Advance to choice prompt
         player.advance_story()
@@ -434,32 +425,32 @@ def test_pyglet_stage_sprite_pooling(invisible_window: Window) -> None:
 
     # Frame 1: 2 items
     renderer.render_compositor(compositor, invisible_window.width, invisible_window.height)
-    assert len(renderer._active_sprites) == 2
+    assert renderer._sprite_cursor == 2
     assert len(renderer._pooled_stage_sprites) == 2
-    bg_sp1, alice_sp1 = renderer._active_sprites
+    bg_sp1, alice_sp1 = renderer._pooled_stage_sprites[:renderer._sprite_cursor]
     assert bg_sp1.visible is True
     assert alice_sp1.visible is True
 
     # Frame 2: Same 2 items should reuse the exact same Sprite instances
     renderer.render_compositor(compositor, invisible_window.width, invisible_window.height)
-    assert len(renderer._active_sprites) == 2
-    assert renderer._active_sprites[0] is bg_sp1
-    assert renderer._active_sprites[1] is alice_sp1
+    assert renderer._sprite_cursor == 2
+    assert renderer._pooled_stage_sprites[:renderer._sprite_cursor][0] is bg_sp1
+    assert renderer._pooled_stage_sprites[:renderer._sprite_cursor][1] is alice_sp1
 
     # Frame 3: Add a 3rd character
     compositor.show_character("bob", "serious", position="right", duration=0.0)
     renderer.render_compositor(compositor, invisible_window.width, invisible_window.height)
-    assert len(renderer._active_sprites) == 3
+    assert renderer._sprite_cursor == 3
     assert len(renderer._pooled_stage_sprites) == 3
-    assert renderer._active_sprites[0] is bg_sp1
-    assert renderer._active_sprites[1] is alice_sp1
+    assert renderer._pooled_stage_sprites[:renderer._sprite_cursor][0] is bg_sp1
+    assert renderer._pooled_stage_sprites[:renderer._sprite_cursor][1] is alice_sp1
 
     # Frame 4: Hide both characters -> only background remains
     compositor.hide_character("alice", duration=0.0)
     compositor.hide_character("bob", duration=0.0)
     renderer.render_compositor(compositor, invisible_window.width, invisible_window.height)
-    assert len(renderer._active_sprites) == 1
-    assert renderer._active_sprites[0] is bg_sp1
+    assert renderer._sprite_cursor == 1
+    assert renderer._pooled_stage_sprites[:renderer._sprite_cursor][0] is bg_sp1
     # Unused pooled sprites should be hidden (visible=False)
     assert len(renderer._pooled_stage_sprites) == 3
     assert renderer._pooled_stage_sprites[1].visible is False
@@ -539,7 +530,6 @@ def test_pyglet_letterbox_caching(invisible_window: Window) -> None:
 
     # 1600x720 window with 16:9 (1280x720) stage -> pillarbox bars with offset_x = (1600-1280)/2 = 160
     renderer.render_compositor(compositor, 1600, 720)
-    assert len(renderer._letterbox_bars) == 2
     left_bar = renderer._bar_left
     right_bar = renderer._bar_right
     assert left_bar is not None and left_bar.visible is True
@@ -614,231 +604,6 @@ def test_pyglet_asset_resolver_path_traversal_with_index(tmp_path: Path) -> None
         resolver.get_texture("../../../secret")
 
 
-
-def test_pyglet_player_mouse_handlers_sync_active_input_prompt() -> None:
-    """Verify on_mouse_press and on_mouse_scroll sync active_input_prompt."""
-    screenplay = """
-    ## Start --- start
-    Alice: Hi!
-    ~ input hero_name Enter your name:
-    Alice: Welcome [hero_name]
-    Alice: Another line
-    """
-    from eager.session import GameSession
-
-    graph = parse_graph(screenplay)
-    session = GameSession(graph)
-
-    player = PygletPlayer(
-        session=session,
-        width=800,
-        height=600,
-        visible=False,
-    )
-    try:
-        assert player.active_input_prompt is None
-        # Complete typewriter text reveal so next click advances to input prompt
-        if session.text_reveal is not None:
-            session.text_reveal.complete_immediately()
-        # Left click should advance to the input prompt
-        player.on_mouse_press(100, 100, 1, 0)
-        assert player.active_input_prompt is not None
-        assert player.active_input_prompt.var_name == "hero_name"
-
-        # Submit input and advance to Another line
-        session.submit_input("Champion")
-        player.advance_story()
-        assert player.active_input_prompt is None
-
-        # Scroll up 1: rollback to 'Welcome Champion'
-        player.on_mouse_scroll(100, 100, 0, 1.0)
-        assert player.active_input_prompt is None
-
-        # Scroll up 2: rollback onto input prompt
-        player.on_mouse_scroll(100, 100, 0, 1.0)
-        assert player.active_input_prompt is not None
-        assert player.active_input_prompt.var_name == "hero_name"
-    finally:
-        player.close()
-
-
-def test_pyglet_renderer_save_frame(invisible_window: Window, tmp_path: Path) -> None:
-    renderer = PygletRenderer(width=1280, height=720, window=invisible_window)
-    out_file = tmp_path / "screenshot.png"
-    renderer.save_frame(out_file)
-    assert out_file.exists()
-    assert out_file.stat().st_size > 0
-
-
-def test_pyglet_player_fullscreen_and_keymap(tmp_path: Path) -> None:
-    from eager.session import GameSession
-
-    script = """
-## Start --- start
-Alice: Fullscreen test
-"""
-    graph = parse_graph(script)
-    session = GameSession(graph)
-    player = PygletPlayer(session=session, width=1280, height=720, visible=False)
-    try:
-        # Fullscreen toggle method
-        assert player.fullscreen is False
-        player.toggle_fullscreen()
-        # Key press 'f' maps to InputAction.FULLSCREEN
-        handled = player.handle_key_press("f")
-        assert handled is True
-        # Key press 'f11' also maps to InputAction.FULLSCREEN
-        handled_f11 = player.handle_key_press("f11")
-        assert handled_f11 is True
-    finally:
-        player.close()
-
-
-def test_pyglet_renderer_debug_info_and_player_cycle(tmp_path: Path) -> None:
-    from eager.core.types import DebugOverlayMode
-    from eager.session import GameSession
-
-    script = """
-## Start --- start
-Alice: Debug overlay test
-"""
-    graph = parse_graph(script)
-    session = GameSession(graph)
-    player = PygletPlayer(session=session, width=1280, height=720, visible=False, show_fps=False)
-    try:
-        # Check renderer debug_info and debug_repr
-        info = player.renderer.debug_info()
-        assert "performance" in info
-        assert "stage" in info
-        assert "ui_pools" in info
-        assert "caches" in info
-        assert "backend" in info
-        repr_str = player.renderer.debug_repr()
-        assert "Eager Debug: Pyglet Backend" in repr_str
-
-        # Initial mode should be OFF
-        assert player.debug_mode == DebugOverlayMode.OFF
-
-        # Cycle 1: OFF -> FPS
-        m1 = player.cycle_debug_overlay()
-        assert m1 == DebugOverlayMode.FPS
-        assert player.show_fps is True
-
-        # Cycle 2: FPS -> DETAILED
-        m2 = player.cycle_debug_overlay()
-        assert m2 == DebugOverlayMode.DETAILED
-        assert player.show_fps is True
-
-        # Cycle 3: DETAILED -> OFF
-        m3 = player.cycle_debug_overlay()
-        assert m3 == DebugOverlayMode.OFF
-        assert player.show_fps is False
-
-        # toggle_debug_overlay delegates to cycle_debug_overlay
-        player.toggle_debug_overlay()
-        assert player.debug_mode == DebugOverlayMode.FPS
-    finally:
-        player.close()
-
-
-def test_pyglet_draw_particles_and_render_lightmap(invisible_window: Window) -> None:
-    from eager.core.lighting import LightmapState, PointLight
-    from eager.core.types import WHITE
-    from eager.stage.particles import ParticleEmitter
-
-    renderer = PygletRenderer(window=invisible_window)
-    comp = StageCompositor(1920, 1080)
-    transform = comp.layout.compute_viewport_transform(1280, 720)
-    renderer._current_transform = transform
-    emitter = ParticleEmitter.create_snow("test_snow", count=25)
-    batch = emitter.build_batch(transform)
-
-    renderer.begin_frame()
-    renderer.draw_particles(batch)
-    assert renderer.last_frame_particles == 25
-    assert len(renderer._pooled_particle_sprites) > 0
-    # Visible pooled sprites
-    assert any(sp.visible for sp in renderer._pooled_particle_sprites)
-
-    # Lighting
-    lightmap = LightmapState(
-        ambient=Color(0.2, 0.2, 0.4, 1.0),
-        lights=[PointLight(x=640, y=360, radius=200, color=WHITE, intensity=1.5)],
-        enabled=True,
-    )
-    renderer.render_lightmap(lightmap)
-    assert renderer._lightmap_sprite is not None
-    assert renderer._lightmap_sprite.visible is True
-
-    renderer.end_frame()
-
-
-def test_pyglet_render_error_and_asset_security_error(tmp_path: Path, invisible_window: Window) -> None:
-    from eager.backends.exceptions import AssetSecurityError, RenderError
-    from eager.core.types import WHITE
-
-    renderer = PygletRenderer(window=invisible_window)
-    renderer._current_transform = None
-    item = RenderItem("test", 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, Anchor.CENTER, WHITE, False, False, "foreground", 10)
-    # draw_item without viewport transform raises RenderError (and RuntimeError)
-    with pytest.raises(RenderError):
-        renderer.draw_item(item)
-
-    with pytest.raises(RuntimeError):
-        renderer.draw_item(item)
-
-    # Path traversal raises AssetSecurityError (and ValueError)
-    resolver = PygletAssetResolver(asset_dir=tmp_path)
-    with pytest.raises(AssetSecurityError):
-        resolver.get_texture("../escape_attempt")
-    with pytest.raises(ValueError):
-        resolver.get_texture("../escape_attempt")
-
-
-def test_pyglet_renderer_lightmap_blend_modes(monkeypatch: pytest.MonkeyPatch) -> None:
-    import pyglet
-
-    from eager.backends.renderers.pyglet import PygletRenderer
-    from eager.core.lighting import LightmapState, PointLight
-    from eager.core.types import Color
-
-    created_sprites: list[dict[str, Any]] = []
-
-    class FakeSprite:
-        def __init__(self, img: Any, x: float = 0, y: float = 0, blend_src: int = 770, blend_dest: int = 771, batch: Any = None, group: Any = None) -> None:
-            self.image = img
-            self.position = (x, y, 0)
-            self.blend_src = blend_src
-            self.blend_dest = blend_dest
-            self.group = group
-            self.visible = True
-            self.scale_x = 1.0
-            self.scale_y = 1.0
-            created_sprites.append({"blend_src": blend_src, "blend_dest": blend_dest, "sprite": self})
-
-        def delete(self) -> None:
-            pass
-
-    monkeypatch.setattr(pyglet.sprite, "Sprite", FakeSprite)
-    monkeypatch.setattr(
-        pyglet.image.ImageData,
-        "get_texture",
-        lambda self: type("FakeTex", (), {"id": 1, "target": 3553})(),
-    )
-
-    renderer = PygletRenderer(width=320, height=180)
-    lm = LightmapState(
-        enabled=True,
-        ambient=Color(0.2, 0.2, 0.3, 1.0),
-        lights=[PointLight(x=100, y=100, radius=50, mode="screen")],
-    )
-    renderer.render_lightmap(lm)
-
-    assert len(created_sprites) == 2
-    assert created_sprites[0]["blend_src"] == pyglet.gl.GL_DST_COLOR
-    assert created_sprites[0]["blend_dest"] == pyglet.gl.GL_ZERO
-    assert created_sprites[1]["blend_src"] == pyglet.gl.GL_ONE
-    assert created_sprites[1]["blend_dest"] == pyglet.gl.GL_ONE_MINUS_SRC_COLOR
 
 
 def test_pyglet_renderer_draw_text_updates_pooled_label_font_name(monkeypatch: pytest.MonkeyPatch) -> None:

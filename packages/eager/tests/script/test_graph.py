@@ -1,6 +1,5 @@
 """Unit tests for SceneGraph model and transformation."""
 
-import json
 
 from eager.script import (
     ParsedChoiceSet,
@@ -175,49 +174,6 @@ def test_hubs_and_branching_points() -> None:
     assert graph.branching_points() == ["courtyard", "combat_start"]
 
 
-def test_to_dict_and_to_json() -> None:
-    graph = parse_graph(SAMPLE_SCRIPT)
-
-    # With body included
-    d_full = graph.to_dict(include_body=True)
-    assert d_full["entry"] == "courtyard"
-    assert "nodes" in d_full
-    assert "edges" in d_full
-    assert "preamble" in d_full
-    assert "body" in d_full["nodes"]["courtyard"]
-    assert len(d_full["nodes"]["courtyard"]["body"]) > 0
-
-    json_str = graph.to_json(include_body=True, indent=2)
-    parsed_json = json.loads(json_str)
-    assert parsed_json["entry"] == "courtyard"
-
-    # Without body included
-    d_slim = graph.to_dict(include_body=False)
-    assert "body" not in d_slim["nodes"]["courtyard"]
-    assert d_slim["preamble"] == []
-
-
-def test_to_dot() -> None:
-    graph = parse_graph(SAMPLE_SCRIPT)
-    dot = graph.to_dot()
-    assert "digraph SceneGraph {" in dot
-    assert '"courtyard"' in dot
-    assert '"peaceful_entry"' in dot
-    assert 'label="Announce yourself peacefully"' in dot
-    assert 'style="dashed"' in dot  # call edge
-    assert dot.endswith("}")
-
-
-def test_to_mermaid() -> None:
-    graph = parse_graph(SAMPLE_SCRIPT)
-    mermaid = graph.to_mermaid()
-    assert "flowchart TD" in mermaid
-    assert 'courtyard["Courtyard"]' in mermaid
-    assert "courtyard -->|Announce yourself peacefully| peaceful_entry" in mermaid
-    assert "combat_start -.->|call| trigger_combat" in mermaid
-    assert "peaceful_entry --> finish" in mermaid
-
-
 def test_empty_and_preamble_only_graph() -> None:
     empty_graph = to_graph([])
     assert empty_graph.entry is None
@@ -317,43 +273,6 @@ def test_nested_inline_blocks_lower_recursively() -> None:
 def test_empty_graph_unaffected() -> None:
     graph = to_graph([])
     assert graph.anonymous_scenes() == []
-
-
-def test_find_path_linear_and_branching() -> None:
-    graph = parse_graph(SAMPLE_SCRIPT)
-    # Entry to finish via peaceful_entry
-    path = graph.find_path("courtyard", "finish")
-    assert path is not None
-    assert path[0] == "courtyard"
-    assert path[-1] == "finish"
-    assert path == ["courtyard", "peaceful_entry", "finish"] or path == ["courtyard", "combat_start", "finish"]
-
-    # Direct path between adjacent
-    assert graph.find_path("peaceful_entry", "finish") == ["peaceful_entry", "finish"]
-    # Same node
-    assert graph.find_path("courtyard", "courtyard") == ["courtyard"]
-    # Non-existent target or backwards path
-    assert graph.find_path("finish", "courtyard") is None
-    assert graph.find_path("courtyard", "nonexistent") is None
-
-
-def test_find_root_ancestor() -> None:
-    script = """
-## Intro --- intro
-Narrator: Hello.
-
-## Sub A --- sub_a
-Narrator: Branch A.
-> sub_b
-
-## Sub B --- sub_b
-Narrator: Branch B.
-"""
-    graph = parse_graph(script)
-    # sub_b's root ancestor should be sub_a
-    assert graph.find_root_ancestor("sub_b") == "sub_a"
-    # intro has no predecessors
-    assert graph.find_root_ancestor("intro") is None
 
 
 def test_graph_elif_else_cumulative_condition_accumulation() -> None:

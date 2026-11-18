@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import datetime
 import logging
 import shutil
@@ -10,7 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
 
-from eager.core.exceptions import StorageError
 from eager.core.state import Checkpoint
 from eager.core.storage import atomic_write_json, safe_read_json
 
@@ -18,14 +16,9 @@ __all__ = [
     "SaveData",
     "SaveManager",
     "SaveMetadata",
-    "SaveMigrationError",
 ]
 
 logger = logging.getLogger(__name__)
-
-
-class SaveMigrationError(StorageError):
-    """Raised when save data cannot be migrated to the target schema version."""
 
 
 def _backup_corrupt_slot(path: Path) -> None:
@@ -50,7 +43,6 @@ class SaveMetadata:
     scene_name: str | None
     dialogue_snippet: str | None
     playtime_seconds: float = 0.0
-    thumbnail_path: str | None = None
     version: int = 2
 
     def to_dict(self) -> dict[str, Any]:
@@ -63,7 +55,6 @@ class SaveMetadata:
             "scene_name": self.scene_name,
             "dialogue_snippet": self.dialogue_snippet,
             "playtime_seconds": self.playtime_seconds,
-            "thumbnail_path": self.thumbnail_path,
         }
 
     @classmethod
@@ -75,8 +66,8 @@ class SaveMetadata:
         playtime_raw = data.get("playtime_seconds", 0.0)
         playtime_seconds = float(0.0 if playtime_raw is None else playtime_raw)
 
-        version_raw = data.get("version", 1)
-        version = int(1 if version_raw is None else version_raw)
+        version_raw = data.get("version", 2)
+        version = int(2 if version_raw is None else version_raw)
 
         slot_name = data.get("slot_name", "")
         if not isinstance(slot_name, str):
@@ -89,7 +80,6 @@ class SaveMetadata:
         scene_id = data.get("scene_id")
         scene_name = data.get("scene_name")
         dialogue_snippet = data.get("dialogue_snippet")
-        thumbnail_path = data.get("thumbnail_path")
 
         return cls(
             slot_name=slot_name,
@@ -98,7 +88,6 @@ class SaveMetadata:
             scene_name=scene_name if isinstance(scene_name, str) or scene_name is None else str(scene_name),
             dialogue_snippet=dialogue_snippet if isinstance(dialogue_snippet, str) or dialogue_snippet is None else str(dialogue_snippet),
             playtime_seconds=playtime_seconds,
-            thumbnail_path=thumbnail_path if isinstance(thumbnail_path, str) or thumbnail_path is None else str(thumbnail_path),
             version=version,
         )
 
@@ -154,17 +143,6 @@ class SaveData:
         return cls(metadata=meta, checkpoint=cp, version=version)
 
 
-def _migrate_save_data_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
-    """Migrate save data from schema v1 to v2."""
-    data = copy.deepcopy(data)
-    data["version"] = 2
-    metadata = data.get("metadata")
-    if isinstance(metadata, dict):
-        metadata.setdefault("thumbnail_path", None)
-        metadata["version"] = 2
-    return data
-
-
 class SaveManager:
     """Manages reading, writing, listing, and organizing game save files."""
 
@@ -173,50 +151,11 @@ class SaveManager:
         save_dir: Path,
         max_autosaves: int = 5,
         max_quicksaves: int = 5,
-        *,
-        target_version: int = SaveData.CURRENT_VERSION,
     ) -> None:
         self.save_dir = save_dir
         self.save_dir.mkdir(parents=True, exist_ok=True)
         self.max_autosaves = max_autosaves
         self.max_quicksaves = max_quicksaves
-        self.target_version = target_version
-
-    def upgrade_save_data(
-        self,
-        data: dict[str, Any],
-        *,
-        target_version: int | None = None,
-    ) -> dict[str, Any]:
-        """Upgrade save data dictionary to target schema version."""
-        target = self.target_version if target_version is None else target_version
-        data = copy.deepcopy(data)
-        current_v = int(data.get("version", 0))
-
-        if current_v > target:
-            msg = f"Save file version {current_v} is newer than target version {target}."
-            raise SaveMigrationError(msg)
-
-        if current_v == target:
-            return data
-
-        if current_v == 0:
-            data["version"] = 1
-            if "checkpoint" in data and isinstance(data["checkpoint"], dict):
-                cp = data["checkpoint"]
-                if "story" in cp and isinstance(cp["story"], dict):
-                    cp["story"].setdefault("version", 1)
-            current_v = 1
-
-        if current_v == 1 and target >= 2:
-            data = _migrate_save_data_v1_to_v2(data)
-            current_v = 2
-
-        if current_v != target:
-            msg = f"No migration registered to upgrade save data from version {current_v} to {target}."
-            raise SaveMigrationError(msg)
-
-        return data
 
     def _slot_path(self, slot_name: str) -> Path:
         """Get file path for given slot name."""
@@ -247,22 +186,16 @@ class SaveManager:
             scene_name=extra.get("scene_name", scene_id),
             dialogue_snippet=dialogue_snippet[:100] if dialogue_snippet else None,
             playtime_seconds=float(extra.get("playtime_seconds", 0.0)),
-            thumbnail_path=extra.get("thumbnail_path"),
-            version=self.target_version,
+            version=SaveData.CURRENT_VERSION,
         )
 
-        save_obj = SaveData(metadata=meta, checkpoint=checkpoint, version=self.target_version)
+        save_obj = SaveData(metadata=meta, checkpoint=checkpoint, version=SaveData.CURRENT_VERSION)
         path = self._slot_path(slot_name)
         atomic_write_json(path, save_obj.to_dict())
         return meta
 
-    def load_slot(
-        self,
-        slot_name: str,
-        *,
-        target_version: int | None = None,
-    ) -> Checkpoint | None:
-        """Load checkpoint from a named slot, migrating schema if necessary."""
+    def load_slot(self, slot_name: str) -> Checkpoint | None:
+        """Load checkpoint from a named slot."""
         path = self._slot_path(slot_name)
         if not path.is_file():
             return None
@@ -273,11 +206,7 @@ class SaveManager:
             return None
 
         try:
-            migrated_data = self.upgrade_save_data(
-                data,
-                target_version=target_version,
-            )
-            save_obj = SaveData.from_dict(migrated_data)
+            save_obj = SaveData.from_dict(data)
             return save_obj.checkpoint
         except (TypeError, ValueError, AttributeError, KeyError) as err:
             logger.warning("Corrupted save slot %s (%s); backing up and returning None", path, err)
@@ -371,30 +300,21 @@ class SaveManager:
         *,
         prefix: str = "quick",
         max_slots: int | None = None,
-        target_version: int | None = None,
     ) -> Checkpoint | None:
         """Load from most recent quicksave slot (or custom prefix)."""
         limit = self.max_quicksaves if max_slots is None else max_slots
         slot = self._latest_rotated_slot(prefix, limit)
         if slot is None:
             return None
-        return self.load_slot(
-            slot,
-            target_version=target_version,
-        )
+        return self.load_slot(slot)
 
     def autosave(self, checkpoint: Checkpoint, **extra: Any) -> SaveMetadata:
         """Save to circular autosave slot."""
         return self.quicksave(checkpoint, prefix="auto", max_slots=self.max_autosaves, **extra)
 
-    def autoload(
-        self,
-        *,
-        target_version: int | None = None,
-    ) -> Checkpoint | None:
+    def autoload(self) -> Checkpoint | None:
         """Load from most recent autosave slot."""
         return self.quickload(
             prefix="auto",
             max_slots=self.max_autosaves,
-            target_version=target_version,
         )

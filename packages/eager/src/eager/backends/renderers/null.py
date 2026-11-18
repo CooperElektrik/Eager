@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from eager.backends.types import RenderItem
-from eager.core.timing import FrameClock
 from eager.core.types import BLACK, WHITE, Color
 
 __all__ = [
@@ -24,12 +23,9 @@ class NullRenderer:
     def __init__(self) -> None:
         self.last_frame: list[RenderItem] = []
         self._frame_buffer: list[RenderItem] = []
-        self.last_particle_batches: list[tuple[str, int]] = []
-        self.last_lightmaps: list[tuple[bool, int]] = []
         self.frame_count: int = 0
         self.clear_color: Color = BLACK
         self._in_frame: bool = False
-        self.clock: FrameClock = FrameClock()
         self.ui_calls: list[dict[str, Any]] = []
 
     def begin_frame(self) -> None:
@@ -51,24 +47,6 @@ class NullRenderer:
             raise RuntimeError(msg)
         self._frame_buffer.append(item)
 
-    def draw_particles(self, batch: object) -> None:
-        """Record a particle batch draw call."""
-        if not self._in_frame:
-            msg = "draw_particles called outside of begin_frame/end_frame block"
-            raise RuntimeError(msg)
-        emitter_id = getattr(batch, "emitter_id", "")
-        particles = getattr(batch, "particles", [])
-        self.last_particle_batches.append((emitter_id, len(particles)))
-
-    def render_lightmap(self, lightmap: object) -> None:
-        """Record a screen-space lightmap draw call."""
-        if not self._in_frame:
-            msg = "render_lightmap called outside of begin_frame/end_frame block"
-            raise RuntimeError(msg)
-        enabled = getattr(lightmap, "enabled", False)
-        lights = getattr(lightmap, "lights", [])
-        self.last_lightmaps.append((enabled, len(lights)))
-
     def end_frame(self) -> None:
         """Finalize the current frame, publishing draw calls."""
         if not self._in_frame:
@@ -78,19 +56,6 @@ class NullRenderer:
         self._frame_buffer = []
         self._in_frame = False
         self.frame_count += 1
-        self.clock.tick()
-
-    @property
-    def fps(self) -> float:
-        return self.clock.fps
-
-    @property
-    def fps_avg(self) -> float:
-        return self.clock.fps_avg
-
-    @property
-    def fps_overall(self) -> float:
-        return self.clock.fps_overall
 
     def render_compositor(
         self,
@@ -103,15 +68,6 @@ class NullRenderer:
         items = compositor.render_list()
         for item in items:
             self.draw_item(item)
-        get_batches = getattr(compositor, "get_particle_batches", None)
-        layout = getattr(compositor, "layout", None)
-        if get_batches is not None and layout is not None:
-            transform = layout.compute_viewport_transform(window_width, window_height)
-            for batch in get_batches(transform):
-                self.draw_particles(batch)
-        lighting = getattr(compositor, "lighting", None)
-        if lighting is not None and lighting.enabled:
-            self.render_lightmap(lighting)
         self.end_frame()
 
     def draw_rect(
@@ -239,8 +195,7 @@ class NullRenderer:
     def __repr__(self) -> str:
         return (
             f"NullRenderer(frame_count={self.frame_count}, "
-            f"last_frame_items={len(self.last_frame)}, "
-            f"fps={self.clock.fps:.1f})"
+            f"last_frame_items={len(self.last_frame)})"
         )
 
 

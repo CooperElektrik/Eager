@@ -6,7 +6,6 @@ from typing import Any
 from typing import Any as GameSessionProtocol
 
 from eager.backends.types import UIDrawBackend
-from eager.core.theme import Theme
 from eager.ui.screens.widgets import Button, Label, Slider
 
 __all__ = [
@@ -21,12 +20,10 @@ class Screen:
     def __init__(
         self,
         name: str,
-        theme: Theme | None = None,
         viewport_width: int = 1280,
         viewport_height: int = 720,
     ) -> None:
         self.name: str = name
-        self.theme: Theme = theme if theme is not None else Theme()
         self.viewport_width: int = viewport_width
         self.viewport_height: int = viewport_height
         self.buttons: list[Button] = []
@@ -51,16 +48,6 @@ class Screen:
             self.viewport_width = width
             self.viewport_height = height
             self.rebuild_layout()
-
-    def scale_font_size(self, base_size: float) -> int:
-        """Scale a base font size proportionally with the viewport height (reference 720p)."""
-        scale = float(self.viewport_height) / 720.0
-        return max(1, round(float(base_size) * scale))
-
-    def set_theme(self, theme: Theme) -> None:
-        """Update screen visual theme and recompute layout."""
-        self.theme = theme
-        self.rebuild_layout()
 
     def rebuild_layout(self) -> None:
         """Recompute layout/geometry of widgets based on current viewport dimensions."""
@@ -192,14 +179,12 @@ class ScreenManager:
         self,
         viewport_width: int = 1280,
         viewport_height: int = 720,
-        theme: Theme | None = None,
     ) -> None:
         self.screens: dict[str, Screen] = {}
         self.active_screen: Screen | None = None
         self._history_stack: list[str] = []
         self.viewport_width: int = viewport_width
         self.viewport_height: int = viewport_height
-        self.theme: Theme | None = theme
 
     def set_viewport(self, width: int, height: int) -> None:
         """Update viewport dimensions for all registered screens."""
@@ -208,20 +193,8 @@ class ScreenManager:
         for screen in self.screens.values():
             screen.set_viewport(width, height)
 
-    def set_theme(self, theme: Theme) -> None:
-        """Update visual theme across all registered screens."""
-        self.theme = theme
-        for screen in self.screens.values():
-            screen.set_theme(theme)
-
     def register(self, screen: Screen) -> None:
-        """Register a Screen instance into the screen registry.
-
-        Args:
-            screen: Screen instance to register.
-        """
-        if self.theme is not None and (screen.theme is None or screen.theme.name == "default"):
-            screen.set_theme(self.theme)
+        """Register a Screen instance into the screen registry."""
         self.screens[screen.name] = screen
         screen.set_viewport(self.viewport_width, self.viewport_height)
 

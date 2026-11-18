@@ -15,16 +15,14 @@ from eager.core.events import (
     DialogueEvent,
     FreshBoxEvent,
     HookEvent,
-    InputPromptEvent,
     NarrationEvent,
     SceneEnterEvent,
     SceneExitEvent,
     StoryEndEvent,
 )
-from eager.core.types import WHITE, Color
+from eager.core.types import Color
 from eager.stage.compositor import StageCompositor
 from eager.stage.director import StageDirector
-from eager.ui.components import UIOverlay
 
 _E = TypeVar("_E")
 
@@ -309,59 +307,6 @@ def test_director_ui_state_append_and_fresh_box() -> None:
     assert director.ui_state.text == "three"
 
 
-def test_director_auto_highlight_speaker_and_dimming() -> None:
-    from eager.core.types import WHITE, Color, Vec2
-
-    comp = StageCompositor(1920, 1080)
-    director = StageDirector(
-        comp,
-        auto_highlight_speaker=True,
-        dim_color=Color(0.65, 0.65, 0.70, 1.0),
-        highlight_duration=0.2,
-        pop_scale=1.05,
-    )
-    disp = MockEventDispatcher()
-    director.bind(disp)
-    director.register_character("alice")
-    director.register_character("bob")
-
-    # Put alice and bob on stage
-    comp.show_character("alice", position="left", duration=0.0)
-    comp.show_character("bob", position="right", duration=0.0)
-
-    char_layer = comp.stage.get_layer("characters")
-    assert char_layer is not None
-    alice_elem = char_layer.get_element("alice")
-    bob_elem = char_layer.get_element("bob")
-    assert alice_elem is not None and bob_elem is not None
-    assert alice_elem.state.tint == WHITE
-    assert bob_elem.state.tint == WHITE
-
-    # Alice speaks: Alice should be WHITE (and pop_scale), Bob should dim
-    disp.emit_event(DialogueEvent(speaker="alice", text="Hi Bob!", voice=None, emotion=None, line_number=1))
-    # Run timeline to finish tweens
-    comp.update(0.25)
-    assert alice_elem.state.tint == WHITE
-    assert alice_elem.state.scale == Vec2(1.05, 1.05)
-    assert bob_elem.state.tint == Color(0.65, 0.65, 0.70, 1.0)
-    assert bob_elem.state.scale == Vec2(1.0, 1.0)
-
-    # Bob speaks: Bob should tween to WHITE and pop_scale, Alice dims to dim_color and restores scale
-    disp.emit_event(DialogueEvent(speaker="bob", text="Hi Alice!", voice=None, emotion=None, line_number=2))
-    comp.update(0.25)
-    assert bob_elem.state.tint == WHITE
-    assert bob_elem.state.scale == Vec2(1.05, 1.05)
-    assert alice_elem.state.tint == Color(0.65, 0.65, 0.70, 1.0)
-    assert alice_elem.state.scale == Vec2(1.0, 1.0)
-
-    # NarrationEvent fires: All sprites restore to WHITE and scale 1.0
-    disp.emit_event(NarrationEvent(text="A quiet wind blows.", line_number=3))
-    comp.update(0.25)
-    assert alice_elem.state.tint == WHITE
-    assert alice_elem.state.scale == Vec2(1.0, 1.0)
-    assert bob_elem.state.tint == WHITE
-
-
 def test_director_character_color_and_name_resolution() -> None:
     comp = StageCompositor()
     director = StageDirector(comp)
@@ -377,40 +322,8 @@ def test_director_character_color_and_name_resolution() -> None:
     assert director.ui_state.speaker_color == Color.from_hex("#ff77aa")
 
 
-def test_director_auto_highlight_speaker_hop() -> None:
-    from eager.core.types import WHITE, Vec2
-
-    comp = StageCompositor(1920, 1080)
-    director = StageDirector(
-        comp,
-        auto_highlight_speaker=True,
-        highlight_duration=0.1,
-        pop_hop=15.0,
-    )
-    disp = MockEventDispatcher()
-    director.bind(disp)
-
-    comp.show_character("alice", position="center", duration=0.0)
-    char_layer = comp.stage.get_layer("characters")
-    assert char_layer is not None
-    alice_elem = char_layer.get_element("alice")
-    assert alice_elem is not None
-    initial_y = alice_elem.position.y
-
-    # Alice speaks: hops up by 15px
-    disp.emit_event(DialogueEvent(speaker="alice", text="Hop!", voice=None, emotion=None, line_number=1))
-    comp.update(0.15)
-    assert alice_elem.position == Vec2(alice_elem.position.x, initial_y - 15.0)
-
-    # NarrationEvent: returns to original initial_y
-    disp.emit_event(NarrationEvent(text="Landing.", line_number=2))
-    comp.update(0.15)
-    assert alice_elem.position == Vec2(alice_elem.position.x, initial_y)
-    assert alice_elem.state.tint == WHITE
-
-
 # ---------------------------------------------------------------------- #
-# Scene, Image, Side Image & NVL Director Hooks
+# Scene, Image, Side Image Director Hooks
 # ---------------------------------------------------------------------- #
 
 
@@ -461,46 +374,6 @@ def test_side_image_resolution():
     assert director.resolve_side_image("unknown", None) is None
 
 
-def test_nvl_mode_and_overlay():
-    compositor = StageCompositor()
-    director = StageDirector(compositor)
-
-    # Toggle NVL mode on
-    director.handle_nvl("on")
-    assert director.ui_state.nvl_mode is True
-
-    from eager.core.events import AppendEvent, DialogueEvent, NarrationEvent
-
-    director.handle_dialogue_event(DialogueEvent(speaker="Alice", text="First NVL line.", voice=None, emotion=None, line_number=1))
-    director.handle_dialogue_event(DialogueEvent(speaker="Bob", text="Second NVL line.", voice=None, emotion=None, line_number=2))
-    director.handle_narration_event(NarrationEvent(text="And narrator spoke.", line_number=3))
-
-    assert len(director.ui_state.nvl_entries) == 3
-    assert director.ui_state.nvl_entries[0].speaker == "Alice"
-    assert director.ui_state.nvl_entries[1].text == "Second NVL line."
-
-    # Append
-    director.handle_append_event(AppendEvent(text="More narrator text.", line_number=4))
-    assert "More narrator text." in director.ui_state.nvl_entries[2].text
-
-    # Draw through NullRenderer to verify UIOverlay renders NVL without error
-    renderer = NullRenderer()
-    overlay = UIOverlay(1280, 720)
-    overlay.draw(renderer, director.ui_state)
-
-    # Verify rect was drawn for NVL window
-    rects = [c for c in renderer.ui_calls if c["kind"] == "rect"]
-    assert len(rects) > 0
-
-    # Clear NVL
-    director.handle_nvl_clear("")
-    assert len(director.ui_state.nvl_entries) == 0
-
-    # Toggle NVL off
-    director.handle_nvl("off")
-    assert director.ui_state.nvl_mode is False
-
-
 # ---------------------------------------------------------------------- #
 # Audio Hooks & Voice Integration
 # ---------------------------------------------------------------------- #
@@ -547,8 +420,8 @@ class TestDirectorAudioHooks:
         assert backend.calls[-1][0] == "play"
         assert backend.calls[-1][1] == "music"
         assert backend.calls[-1][3] is True  # loop
-        assert backend.calls[-1][6] == 12.5  # loop_start
-        assert backend.calls[-1][7] == 95.0  # loop_end
+        assert backend.calls[-1][5] == 12.5  # loop_start
+        assert backend.calls[-1][6] == 95.0  # loop_end
 
     def test_stage_director_voice_playback_and_auto_stop(self) -> None:
         backend = NullAudioBackend()
@@ -599,9 +472,8 @@ class TestDirectorAudioHooks:
         director.bind(dispatcher)
 
         # When skip is not active, sound and voice play
-        # (sound effects are polyphonic by default -> sound_0 pool slot)
         dispatcher.dispatch(HookEvent(hook_name="play", args="sound click.ogg", line_number=1))
-        assert backend.calls[-1][1] == "sound_0"
+        assert backend.calls[-1][1] == "sound"
 
         dispatcher.dispatch(DialogueEvent(speaker="Alice", text="Voice line", voice="alice_v.ogg", emotion=None, line_number=2))
         assert backend.calls[-1][1] == "voice"
@@ -622,113 +494,6 @@ class TestDirectorAudioHooks:
         dispatcher.dispatch(HookEvent(hook_name="play", args="music bgm.ogg", line_number=6))
         assert backend.calls[-1][0] == "play"
         assert backend.calls[-1][1] == "music"
-
-    def test_stage_director_sound_polyphony_by_default(self) -> None:
-        backend = NullAudioBackend()
-        mixer = AudioMixer(backend=backend)
-        compositor = StageCompositor()
-        director = StageDirector(compositor, audio=mixer)
-        dispatcher = EventDispatcher()
-        director.bind(dispatcher)
-
-        # Overlapping SFX layer instead of cutting off
-        dispatcher.dispatch(HookEvent(hook_name="play", args="sound thunder.ogg", line_number=1))
-        dispatcher.dispatch(HookEvent(hook_name="play", args="sound click.ogg", line_number=2))
-        plays = [c for c in backend.calls if c[0] == "play"]
-        assert [p[1] for p in plays] == ["sound_0", "sound_1"]
-        assert mixer.channels["sound_0"].is_playing
-        assert mixer.channels["sound_1"].is_playing
-        assert mixer.channels["sound_0"].current_asset == "thunder.ogg"
-        assert mixer.channels["sound_1"].current_asset == "click.ogg"
-
-        # ~ stop sound fans out to the whole pool
-        dispatcher.dispatch(HookEvent(hook_name="stop", args="sound", line_number=3))
-        assert not mixer.is_playing("sound")
-
-    def test_stage_director_sound_polyphony_opt_out_and_opt_in(self) -> None:
-        backend = NullAudioBackend()
-        mixer = AudioMixer(backend=backend)
-        compositor = StageCompositor()
-        director = StageDirector(compositor, audio=mixer)
-        dispatcher = EventDispatcher()
-        director.bind(dispatcher)
-
-        # Legacy single-voice cutoff
-        dispatcher.dispatch(HookEvent(hook_name="play", args="sound a.ogg auto_channels=false", line_number=1))
-        dispatcher.dispatch(HookEvent(hook_name="play", args="sound b.ogg auto_channels=false", line_number=2))
-        plays = [c for c in backend.calls if c[0] == "play"]
-        assert all(p[1] == "sound" for p in plays)
-        assert mixer.channels["sound"].current_asset == "b.ogg"
-
-        # Other channels stay single by default but can opt in
-        backend.calls.clear()
-        dispatcher.dispatch(HookEvent(hook_name="play", args="music sting.ogg auto_channels=true", line_number=3))
-        assert backend.calls[-1][1] == "music_0"
-
-    def test_stage_director_sound_volume_inheritance(self) -> None:
-        backend = NullAudioBackend()
-        mixer = AudioMixer(backend=backend)
-        compositor = StageCompositor()
-        director = StageDirector(compositor, audio=mixer)
-        dispatcher = EventDispatcher()
-        director.bind(dispatcher)
-
-        # Track volume configured before playback carries into pool slots.
-        dispatcher.dispatch(HookEvent(hook_name="volume", args="sound 0.5", line_number=1))
-        dispatcher.dispatch(HookEvent(hook_name="play", args="sound click.ogg", line_number=2))
-        assert mixer.channels["sound_0"].volume == pytest.approx(0.5)
-
-        # An explicit hook volume overrides the inherited one.
-        dispatcher.dispatch(HookEvent(hook_name="play", args="sound bang.ogg volume=0.9", line_number=3))
-        assert mixer.channels["sound_1"].volume == pytest.approx(0.9)
-
-    def test_stage_director_explicit_slot_inherits_base_volume(self) -> None:
-        backend = NullAudioBackend()
-        mixer = AudioMixer(backend=backend)
-        compositor = StageCompositor()
-        director = StageDirector(compositor, audio=mixer)
-        dispatcher = EventDispatcher()
-        director.bind(dispatcher)
-
-        dispatcher.dispatch(HookEvent(hook_name="volume", args="sound 0.5", line_number=1))
-        dispatcher.dispatch(HookEvent(hook_name="play", args="sound_0 click.ogg", line_number=2))
-        assert mixer.channels["sound_0"].volume == pytest.approx(0.5)
-
-    def test_stage_director_max_polyphony_zero_is_unbounded(self) -> None:
-        backend = NullAudioBackend()
-        mixer = AudioMixer(backend=backend)
-        compositor = StageCompositor()
-        director = StageDirector(compositor, audio=mixer)
-        dispatcher = EventDispatcher()
-        director.bind(dispatcher)
-
-        for i in range(16):
-            dispatcher.dispatch(
-                HookEvent(hook_name="play", args=f"sound s{i}.ogg auto_channels=true", line_number=i)
-            )
-        dispatcher.dispatch(
-            HookEvent(hook_name="play", args="sound extra.ogg auto_channels=true max_polyphony=0", line_number=100)
-        )
-        # Unbounded: grows to sound_16 instead of stealing sound_0.
-        assert backend.calls[-1][1] == "sound_16"
-        assert mixer.channels["sound_0"].current_asset == "s0.ogg"
-
-    def test_stage_director_input_prompt_event_handling(self) -> None:
-        compositor = StageCompositor(1920, 1080)
-        director = StageDirector(compositor)
-        dispatcher = EventDispatcher()
-        director.bind(dispatcher)
-
-        # Dispatch InputPromptEvent
-        input_ev = InputPromptEvent(var_name="player_name", prompt="What is your name?", default="Hero")
-        dispatcher.dispatch(input_ev)
-
-        # Director UI state records the prompt
-        assert hasattr(director.ui_state, "active_input_prompt")
-        assert director.ui_state.active_input_prompt is not None
-        assert director.ui_state.active_input_prompt.var_name == "player_name"
-        assert director.ui_state.active_input_prompt.prompt == "What is your name?"
-        assert director.ui_state.active_input_prompt.default == "Hero"
 
     def test_ui_choice_menu_zero_and_many_options(self) -> None:
         from eager.ui.components import ChoiceMenu
@@ -753,8 +518,8 @@ class TestDirectorAudioHooks:
         assert menu_many.hit_test(-100, -100) is None
         assert menu_many.hit_test(2000, 2000) is None
 
-    def test_stage_director_audio_shorthand_hooks(self) -> None:
-        """Verify ~ play_bgm, ~ play_sound, ~ stop_bgm shorthand hooks route correctly."""
+    def test_stage_director_audio_generic_hooks(self) -> None:
+        """Verify ~ play, ~ stop, ~ pause, ~ resume hooks route correctly."""
         backend = NullAudioBackend()
         audio = AudioMixer(backend=backend)
         comp = StageCompositor(1920, 1080)
@@ -762,118 +527,29 @@ class TestDirectorAudioHooks:
         dispatcher = EventDispatcher()
         director.bind(dispatcher)
 
-        dispatcher.dispatch(HookEvent(hook_name="play_bgm", args="theme.ogg fade=1.0 loop=True", line_number=1))
+        dispatcher.dispatch(HookEvent(hook_name="play", args="music theme.ogg fade=1.0 loop=True", line_number=1))
         assert audio.channels["music"].is_playing
         assert backend.calls[-1][0] == "play"
         assert backend.calls[-1][1] == "music"
 
-        dispatcher.dispatch(HookEvent(hook_name="play_sound", args="hit.ogg volume=0.7", line_number=2))
-        assert "sound_0" in audio.channels or "sound" in audio.channels
+        dispatcher.dispatch(HookEvent(hook_name="play", args="sound hit.ogg volume=0.7", line_number=2))
+        assert "sound" in audio.channels
         assert backend.calls[-1][0] == "play"
-        assert isinstance(backend.calls[-1][1], str)
-        assert backend.calls[-1][1].startswith("sound")
+        assert backend.calls[-1][1] == "sound"
 
-        dispatcher.dispatch(HookEvent(hook_name="play_voice", args="voice_line.ogg", line_number=3))
+        dispatcher.dispatch(HookEvent(hook_name="play", args="voice voice_line.ogg", line_number=3))
         assert audio.channels["voice"].is_playing
         assert backend.calls[-1][0] == "play"
         assert backend.calls[-1][1] == "voice"
 
-        dispatcher.dispatch(HookEvent(hook_name="stop_bgm", args="fade=0.5", line_number=4))
+        dispatcher.dispatch(HookEvent(hook_name="pause", args="music", line_number=4))
+        assert audio.channels["music"].is_paused is True
+
+        dispatcher.dispatch(HookEvent(hook_name="resume", args="music", line_number=5))
+        assert audio.channels["music"].is_paused is False
+
+        dispatcher.dispatch(HookEvent(hook_name="stop", args="music fade=0.5", line_number=6))
         assert audio.channels["music"].fade_duration == 0.5
-
-    def test_stage_director_weather_and_ambient_hooks(self) -> None:
-        """Verify ~ weather, ~ ambient, and ~ light hooks manipulate stage compositor state."""
-        comp = StageCompositor(1920, 1080)
-        director = StageDirector(comp)
-        dispatcher = EventDispatcher()
-        director.bind(dispatcher)
-
-        # 1. Weather
-        dispatcher.dispatch(HookEvent(hook_name="weather", args="rain count=120", line_number=10))
-        assert comp._active_weather_preset == "rain"
-        emitter = comp.get_particle_emitter("weather")
-        assert emitter is not None
-        assert emitter.max_particles == 120
-
-        dispatcher.dispatch(HookEvent(hook_name="weather", args="clear", line_number=11))
-        assert comp._active_weather_preset is None
-        assert comp.get_particle_emitter("weather") is None
-
-        # 2. Ambient lighting
-        dispatcher.dispatch(HookEvent(hook_name="ambient", args="#334455 intensity=0.8", line_number=12))
-        assert comp.lighting.enabled is True
-        assert comp.lighting.ambient == Color.from_hex("#334455")
-
-        dispatcher.dispatch(HookEvent(hook_name="ambient", args="clear", line_number=13))
-        assert comp.lighting.enabled is False
-        assert comp.lighting.ambient == WHITE
-
-        # 3. Dynamic point light
-        dispatcher.dispatch(HookEvent(hook_name="light", args="add x=500 y=300 radius=150 color=#ffaa00 mode=screen", line_number=14))
-        assert len(comp.lighting.lights) == 1
-        light = comp.lighting.lights[0]
-        assert light.x == 500
-        assert light.y == 300
-        assert light.radius == 150
-        assert light.mode == "screen"
-
-        dispatcher.dispatch(HookEvent(hook_name="light", args="clear", line_number=15))
-        assert len(comp.lighting.lights) == 0
-
-    def test_stage_compositor_lighting_and_weather_serialization(self) -> None:
-        """Verify save_state and load_state preserve lighting and active weather particle effects."""
-        comp = StageCompositor(1920, 1080)
-        comp.set_weather("snow", count=100)
-        comp.set_ambient_light(Color.from_hex("#223344"))
-
-        snap = comp.save_state()
-        assert snap.get("weather") == "snow"
-        assert "lighting" in snap
-        assert snap["lighting"]["enabled"] is True
-
-        new_comp = StageCompositor(1920, 1080)
-        assert new_comp._active_weather_preset is None
-        assert new_comp.lighting.enabled is False
-
-        new_comp.load_state(snap)
-        assert new_comp._active_weather_preset == "snow"
-        assert new_comp.get_particle_emitter("weather") is not None
-        assert new_comp.lighting.enabled is True
-        assert new_comp.lighting.ambient == Color.from_hex("#223344")
-
-    def test_director_queue_pause_resume(self) -> None:
-        """Verify ~ queue, ~ pause, ~ resume hooks."""
-        from eager.core.audio import AudioMixer, NullAudioBackend
-        from eager.core.dispatcher import EventDispatcher
-        from eager.core.events import HookEvent
-
-        audio = AudioMixer(backend=NullAudioBackend())
-        comp = StageCompositor()
-        director = StageDirector(comp, audio=audio)
-        dispatcher = EventDispatcher()
-        director.bind(dispatcher)
-
-        # 1. Play and Queue
-        dispatcher.dispatch(HookEvent(hook_name="play_music", args="track1.ogg", line_number=1))
-        assert audio.channels["music"].current_asset == "track1.ogg"
-        assert audio.channels["music"].is_playing is True
-
-        dispatcher.dispatch(HookEvent(hook_name="queue_music", args="track2.ogg", line_number=2))
-        assert audio.channels["music"].queue == ["track2.ogg"]
-
-        # 2. Pause and Resume
-        dispatcher.dispatch(HookEvent(hook_name="pause_music", args="", line_number=3))
-        assert audio.channels["music"].is_paused is True
-
-        dispatcher.dispatch(HookEvent(hook_name="resume_music", args="", line_number=4))
-        assert audio.channels["music"].is_paused is False
-
-        # 3. Pause all and Resume all
-        dispatcher.dispatch(HookEvent(hook_name="pause", args="", line_number=5))
-        assert audio.channels["music"].is_paused is True
-
-        dispatcher.dispatch(HookEvent(hook_name="resume", args="", line_number=6))
-        assert audio.channels["music"].is_paused is False
 
     def test_director_hide_image_and_hide_element(self) -> None:
         """Verify ~ image, ~ hide_image, and ~ hide_element hooks."""
@@ -902,8 +578,8 @@ class TestDirectorAudioHooks:
         dispatcher.dispatch(HookEvent(hook_name="hide_element", args="custom_layer icon", line_number=4))
         assert custom_layer.get_element("icon") is None
 
-    def test_director_scene_bg_and_speaker_highlight(self) -> None:
-        """Verify ~ scene_bg and ~ speaker_highlight hooks."""
+    def test_director_scene_bg(self) -> None:
+        """Verify ~ scene_bg hook."""
         from eager.core.dispatcher import EventDispatcher
         from eager.core.events import HookEvent, SceneEnterEvent
 
@@ -912,12 +588,10 @@ class TestDirectorAudioHooks:
         dispatcher = EventDispatcher()
         director.bind(dispatcher)
 
-        # 1. scene_bg
         dispatcher.dispatch(HookEvent(hook_name="scene_bg", args="intro bg/forest with dissolve duration=1.0", line_number=1))
         assert "intro" in director.scene_backgrounds
         assert director.scene_backgrounds["intro"] == ("bg/forest", "dissolve", 1.0)
 
-        # Trigger scene enter
         dispatcher.dispatch(SceneEnterEvent(scene_id="intro", display_name="Intro", line_number=1))
         comp.step(1.0)
         bg_layer = comp.stage.get_layer("background")
@@ -925,49 +599,6 @@ class TestDirectorAudioHooks:
         bg_elem = bg_layer.get_element("bg_main")
         assert bg_elem is not None
         assert bg_elem.asset_id == "bg/forest"
-
-        # 2. speaker_highlight
-        dispatcher.dispatch(HookEvent(hook_name="speaker_highlight", args="on dim=#444444 duration=0.4 scale=1.05", line_number=2))
-        assert director.auto_highlight_speaker is True
-        assert director.highlight_duration == 0.4
-        assert director.pop_scale == 1.05
-        assert director.dim_color == Color.from_hex("#444444")
-
-        dispatcher.dispatch(HookEvent(hook_name="speaker_highlight", args="off", line_number=3))
-        assert director.auto_highlight_speaker is False
-
-    def test_director_custom_particles_and_weather_coexistence(self) -> None:
-        """Verify custom particle emitters do not overwrite active weather."""
-        from eager.core.dispatcher import EventDispatcher
-        from eager.core.events import HookEvent
-
-        comp = StageCompositor()
-        director = StageDirector(comp)
-        dispatcher = EventDispatcher()
-        director.bind(dispatcher)
-
-        # Start weather
-        dispatcher.dispatch(HookEvent(hook_name="weather", args="rain count=200", line_number=1))
-        assert comp.get_particle_emitter("weather") is not None
-        assert comp._active_weather_preset == "rain"
-
-        # Start custom particle emitter alongside weather
-        dispatcher.dispatch(HookEvent(hook_name="particles", args="snow count=50", line_number=2))
-        # Weather is still rain!
-        assert comp.get_particle_emitter("weather") is not None
-        assert comp._active_weather_preset == "rain"
-        # Custom snow emitter coexists!
-        assert comp.get_particle_emitter("particles_snow") is not None
-
-        # Custom shape emitter with custom ID
-        dispatcher.dispatch(HookEvent(hook_name="particles", args="my_sparks shape=spark count=30 color=#ffaa00", line_number=3))
-        assert comp.get_particle_emitter("my_sparks") is not None
-
-        # Remove specific emitter
-        dispatcher.dispatch(HookEvent(hook_name="particles", args="my_sparks clear", line_number=4))
-        assert comp.get_particle_emitter("my_sparks") is None
-        assert comp.get_particle_emitter("particles_snow") is not None
-        assert comp.get_particle_emitter("weather") is not None
 
 
 

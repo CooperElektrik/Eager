@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-from lsprotocol.types import Color, Position, Range
-
 from eager_script_lsp.document import ScriptDocument
 from eager_script_lsp.features.tokens import (
-    compute_color_presentation,
-    compute_document_colors,
     compute_folding_ranges,
     compute_semantic_tokens,
 )
@@ -25,29 +21,6 @@ Hoshiko (smile): Hi!
     assert len(tokens.data) > 0
     # Data is encoded in multiples of 5 integers: [deltaLine, deltaStartChar, length, tokenType, tokenModifiers]
     assert len(tokens.data) % 5 == 0
-
-
-def test_document_colors_and_presentation():
-    text = """@character hoshiko "Hoshiko" color=#ff77aa
-~ flash color=#00ff00
-Narrator: Colored {color=#112233}text{/color}
-"""
-    doc = ScriptDocument("file:///test.es", text)
-    colors = compute_document_colors(doc)
-    assert len(colors) == 3
-    # Check normalized color values [0.0, 1.0]
-    assert colors[1].color.red == 0.0
-    assert colors[1].color.green == 1.0
-    assert colors[1].color.blue == 0.0
-    assert colors[1].color.alpha == 1.0
-
-    # Color presentation
-    pres = compute_color_presentation(
-        Color(red=1.0, green=0.0, blue=0.0, alpha=1.0),
-        Range(start=Position(line=0, character=0), end=Position(line=0, character=7)),
-    )
-    assert len(pres) == 1
-    assert pres[0].label == "#ff0000"
 
 
 def test_folding_ranges():

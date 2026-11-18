@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
-from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol, TypeAlias, runtime_checkable
+from typing import Protocol, TypeAlias, runtime_checkable
 
 
 class EagerScriptError(Exception):
@@ -39,10 +37,6 @@ class AstNode(Protocol):
         """Node type discriminator string."""
         ...
 
-    def to_dict(self) -> dict[str, object]:
-        """Serialize AST node to a dictionary."""
-        ...
-
 
 @dataclass(frozen=True, slots=True)
 class ParsedInclude(AstNode):
@@ -57,16 +51,6 @@ class ParsedInclude(AstNode):
     def type(self) -> str:
         """Node type discriminator string ('include')."""
         return "include"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize include node to a dictionary."""
-        return {
-            "type": self.type,
-            "path": self.path,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,17 +68,6 @@ class ParsedError(AstNode):
         """Node type discriminator string ('error')."""
         return "error"
 
-    def to_dict(self) -> dict[str, object]:
-        """Serialize error node to a dictionary."""
-        return {
-            "type": self.type,
-            "message": self.message,
-            "line_number": self.line_number,
-            "line_text": self.line_text,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class ParsedLabel(AstNode):
@@ -110,21 +83,6 @@ class ParsedLabel(AstNode):
     def type(self) -> str:
         """Node type discriminator string ('label')."""
         return "label"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize section label node to a dictionary.
-
-        Returns:
-            Dictionary containing node type, label name, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "name": self.name,
-            "display_name": self.display_name,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,23 +102,6 @@ class ParsedDialogue(AstNode):
         """Node type discriminator string ('dialogue')."""
         return "dialogue"
 
-    def to_dict(self) -> dict[str, object]:
-        """Serialize dialogue node to a dictionary.
-
-        Returns:
-            Dictionary containing speaker, text, voice, emotion, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "speaker": self.speaker,
-            "text": self.text,
-            "voice": self.voice,
-            "emotion": self.emotion,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class ParsedAppend(AstNode):
@@ -175,20 +116,6 @@ class ParsedAppend(AstNode):
     def type(self) -> str:
         """Node type discriminator string ('append')."""
         return "append"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize append beat node to a dictionary.
-
-        Returns:
-            Dictionary containing node type, append text, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "text": self.text,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,20 +132,6 @@ class ParsedFreshBox(AstNode):
         """Node type discriminator string ('fresh_box')."""
         return "fresh_box"
 
-    def to_dict(self) -> dict[str, object]:
-        """Serialize fresh box beat node to a dictionary.
-
-        Returns:
-            Dictionary containing node type, text, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "text": self.text,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class ParsedNarration(AstNode):
@@ -233,20 +146,6 @@ class ParsedNarration(AstNode):
     def type(self) -> str:
         """Node type discriminator string ('narration')."""
         return "narration"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize narration beat node to a dictionary.
-
-        Returns:
-            Dictionary containing node type, narration text, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "text": self.text,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,23 +175,6 @@ class ParsedChoiceOption(AstNode):
         """True when the option carries an anonymous inline block instead of a target."""
         return bool(self.body)
 
-    def to_dict(self) -> dict[str, object]:
-        """Serialize choice option node to a dictionary.
-
-        Returns:
-            Dictionary containing choice option fields, column span, and lowering metadata.
-        """
-        return {
-            "type": self.type,
-            "text": self.text,
-            "target": self.target,
-            "line_number": self.line_number,
-            "condition": self.condition,
-            "body": [item.to_dict() for item in self.body],
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class ParsedChoiceSet(AstNode):
@@ -307,20 +189,6 @@ class ParsedChoiceSet(AstNode):
     def type(self) -> str:
         """Node type discriminator string ('choice_set')."""
         return "choice_set"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize choice set node to a dictionary.
-
-        Returns:
-            Dictionary containing serialized choice options list, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "options": [option.to_dict() for option in self.options],
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -337,20 +205,6 @@ class ParsedJump(AstNode):
         """Node type discriminator string ('jump')."""
         return "jump"
 
-    def to_dict(self) -> dict[str, object]:
-        """Serialize jump node to a dictionary.
-
-        Returns:
-            Dictionary containing target scene ID, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "target": self.target,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class ParsedCall(AstNode):
@@ -366,20 +220,6 @@ class ParsedCall(AstNode):
         """Node type discriminator string ('call')."""
         return "call"
 
-    def to_dict(self) -> dict[str, object]:
-        """Serialize call node to a dictionary.
-
-        Returns:
-            Dictionary containing subroutine target scene ID, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "target": self.target,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class ParsedReturn(AstNode):
@@ -393,19 +233,6 @@ class ParsedReturn(AstNode):
     def type(self) -> str:
         """Node type discriminator string ('return')."""
         return "return"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize return node to a dictionary.
-
-        Returns:
-            Dictionary containing node type, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -421,20 +248,6 @@ class ParsedHook(AstNode):
     def type(self) -> str:
         """Node type discriminator string ('hook')."""
         return "hook"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize hook node to a dictionary.
-
-        Returns:
-            Dictionary containing hook name, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "hook_name": self.hook_name,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -453,22 +266,6 @@ class ParsedSet(AstNode):
         """Node type discriminator string ('set')."""
         return "set"
 
-    def to_dict(self) -> dict[str, object]:
-        """Serialize set node to a dictionary.
-
-        Returns:
-            Dictionary containing target variable, operator, expression, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "target": self.target,
-            "op": self.op,
-            "expr_src": self.expr_src,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class ParsedDefault(AstNode):
@@ -484,21 +281,6 @@ class ParsedDefault(AstNode):
     def type(self) -> str:
         """Node type discriminator string ('default')."""
         return "default"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize default variable definition node to a dictionary.
-
-        Returns:
-            Dictionary containing variable name, expression, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "name": self.name,
-            "expr_src": self.expr_src,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -517,22 +299,6 @@ class ParsedCharacter(AstNode):
         """Node type discriminator string ('character')."""
         return "character"
 
-    def to_dict(self) -> dict[str, object]:
-        """Serialize character definition node to a dictionary.
-
-        Returns:
-            Dictionary containing character id, display name, attributes, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "id": self.id,
-            "name": self.name,
-            "attrs": list(self.attrs),
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class ParsedIf(AstNode):
@@ -547,20 +313,6 @@ class ParsedIf(AstNode):
     def type(self) -> str:
         """Node type discriminator string ('if')."""
         return "if"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize if node to a dictionary.
-
-        Returns:
-            Dictionary containing expression source, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "expr_src": self.expr_src,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -577,20 +329,6 @@ class ParsedElif(AstNode):
         """Node type discriminator string ('elif')."""
         return "elif"
 
-    def to_dict(self) -> dict[str, object]:
-        """Serialize elif node to a dictionary.
-
-        Returns:
-            Dictionary containing expression source, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "expr_src": self.expr_src,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class ParsedElse(AstNode):
@@ -605,19 +343,6 @@ class ParsedElse(AstNode):
         """Node type discriminator string ('else')."""
         return "else"
 
-    def to_dict(self) -> dict[str, object]:
-        """Serialize else node to a dictionary.
-
-        Returns:
-            Dictionary containing node type, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class ParsedEnd(AstNode):
@@ -631,19 +356,6 @@ class ParsedEnd(AstNode):
     def type(self) -> str:
         """Node type discriminator string ('end')."""
         return "end"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize end node to a dictionary.
-
-        Returns:
-            Dictionary containing node type, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -661,21 +373,6 @@ class ParsedCondJump(AstNode):
         """Node type discriminator string ('cond_jump')."""
         return "cond_jump"
 
-    def to_dict(self) -> dict[str, object]:
-        """Serialize conditional jump node to a dictionary.
-
-        Returns:
-            Dictionary containing condition expression, target index, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "condition": self.condition,
-            "target_index": self.target_index,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class ParsedLocalJump(AstNode):
@@ -690,20 +387,6 @@ class ParsedLocalJump(AstNode):
     def type(self) -> str:
         """Node type discriminator string ('local_jump')."""
         return "local_jump"
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize local jump node to a dictionary.
-
-        Returns:
-            Dictionary containing target index, line number, and column span.
-        """
-        return {
-            "type": self.type,
-            "target_index": self.target_index,
-            "line_number": self.line_number,
-            "start_col": self.start_col,
-            "end_col": self.end_col,
-        }
 
 
 ParsedItem: TypeAlias = (
@@ -731,226 +414,6 @@ ParsedItem: TypeAlias = (
     | ParsedLocalJump
 )
 
-
-def to_dict(items: Sequence[ParsedItem]) -> list[dict[str, object]]:
-    """Convert a sequence of parsed AST items into dictionaries."""
-    return [item.to_dict() for item in items]
-
-
-def to_json(items: Sequence[ParsedItem], *, indent: int | None = 2) -> str:
-    """Serialize parsed AST items to a JSON string."""
-    return json.dumps(to_dict(items), indent=indent)
-
-
-def from_dict(data: dict[str, Any]) -> ParsedItem:
-    """Polymorphically deserialize a dictionary to a ParsedItem AST node."""
-    if not isinstance(data, dict):
-        raise TypeError(f"AST node data must be a dict, got {type(data).__name__}")
-    node_type = data.get("type")
-    line_number = int(data.get("line_number", 0))
-    start_col = int(data.get("start_col", 0))
-    end_col = int(data.get("end_col", 0))
-
-    match node_type:
-        case "include":
-            return ParsedInclude(
-                path=str(data["path"]),
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "error":
-            return ParsedError(
-                message=str(data["message"]),
-                line_number=line_number,
-                line_text=str(data.get("line_text", "")),
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "label":
-            return ParsedLabel(
-                name=str(data["name"]),
-                display_name=str(data.get("display_name", "")),
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "dialogue":
-            return ParsedDialogue(
-                speaker=str(data["speaker"]),
-                text=str(data["text"]),
-                voice=data.get("voice"),
-                line_number=line_number,
-                emotion=data.get("emotion"),
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "append":
-            return ParsedAppend(
-                text=str(data["text"]),
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "fresh_box":
-            return ParsedFreshBox(
-                text=str(data["text"]),
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "narration":
-            return ParsedNarration(
-                text=str(data["text"]),
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "choice_option":
-            body = tuple(from_dict(item) for item in data.get("body", []))
-            return ParsedChoiceOption(
-                text=str(data["text"]),
-                target=data.get("target"),
-                line_number=line_number,
-                condition=data.get("condition"),
-                body=body,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "choice_set":
-            options = tuple(
-                ParsedChoiceOption(
-                    text=str(opt["text"]),
-                    target=opt.get("target"),
-                    line_number=int(opt.get("line_number", 0)),
-                    condition=opt.get("condition"),
-                    body=tuple(from_dict(item) for item in opt.get("body", [])),
-                    start_col=int(opt.get("start_col", 0)),
-                    end_col=int(opt.get("end_col", 0)),
-                )
-                if isinstance(opt, dict)
-                else opt
-                for opt in data.get("options", [])
-            )
-            return ParsedChoiceSet(
-                options=options,
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "jump":
-            return ParsedJump(
-                target=str(data["target"]),
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "call":
-            return ParsedCall(
-                target=str(data["target"]),
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "return":
-            return ParsedReturn(
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "hook":
-            return ParsedHook(
-                hook_name=str(data.get("hook_name") or data.get("name", "")),
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "set":
-            return ParsedSet(
-                target=str(data.get("target") or data.get("name", "")),
-                op=str(data.get("op", "=")),
-                expr_src=str(data["expr_src"]),
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "default":
-            return ParsedDefault(
-                name=str(data["name"]),
-                expr_src=str(data["expr_src"]),
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "character":
-            attrs_raw = data.get("attrs", ())
-            if isinstance(attrs_raw, dict):
-                attrs = tuple((str(k), str(v)) for k, v in attrs_raw.items())
-            else:
-                attrs = tuple(
-                    (str(pair[0]), str(pair[1]))
-                    for pair in attrs_raw
-                    if isinstance(pair, (list, tuple)) and len(pair) >= 2
-                )
-            return ParsedCharacter(
-                id=str(data.get("id") or data.get("identifier", "")),
-                name=str(data.get("name", "")),
-                attrs=attrs,
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "if":
-            return ParsedIf(
-                expr_src=str(data.get("expr_src") or data.get("condition", "")),
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "elif":
-            return ParsedElif(
-                expr_src=str(data.get("expr_src") or data.get("condition", "")),
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "else":
-            return ParsedElse(
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "end":
-            return ParsedEnd(
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "cond_jump":
-            return ParsedCondJump(
-                condition=str(data["condition"]),
-                target_index=int(data["target_index"]),
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case "local_jump":
-            return ParsedLocalJump(
-                target_index=int(data["target_index"]),
-                line_number=line_number,
-                start_col=start_col,
-                end_col=end_col,
-            )
-        case _:
-            raise ValueError(f"Unknown AST node type: {node_type!r}")
-
-
-def from_json(json_str: str) -> list[ParsedItem]:
-    """Deserialize a JSON string into a list of ParsedItem AST nodes."""
-    raw = json.loads(json_str)
-    if not isinstance(raw, list):
-        raise TypeError(f"Expected list in JSON for AST items, got {type(raw).__name__}")
-    return [from_dict(item) for item in raw]
 
 
 __all__ = [
@@ -980,8 +443,4 @@ __all__ = [
     "ParsedNarration",
     "ParsedReturn",
     "ParsedSet",
-    "from_dict",
-    "from_json",
-    "to_dict",
-    "to_json",
 ]

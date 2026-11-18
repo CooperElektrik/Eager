@@ -271,7 +271,7 @@ def extract_asset_references(
                         )
                     )
 
-            elif hook_cmd in ("play", "queue"):
+            elif hook_cmd == "play":
                 track_kw = hook_kwargs.get("track")
                 chan_kw = hook_kwargs.get("channel")
                 chan: str | None = None
@@ -286,35 +286,6 @@ def extract_asset_references(
                     chan = chan_kw.strip().lower()
                     track = track_kw.strip()
                 if chan and track:
-                    kind = "voice" if chan == "voice" else "audio"
-                    references.append(
-                        AssetReference(
-                            kind=kind,
-                            identifier=track,
-                            line_number=item.line_number,
-                            scene_id=scene_id,
-                            channel=chan,
-                        )
-                    )
-
-            elif hook_cmd in (
-                "play_bgm",
-                "play_sfx",
-                "play_music",
-                "play_sound",
-                "play_voice",
-                "play_ambient",
-                "queue_bgm",
-                "queue_sfx",
-                "queue_music",
-                "queue_sound",
-                "queue_voice",
-                "queue_ambient",
-            ):
-                track_val = hook_kwargs.get("track") or (positional[0] if positional else None)
-                if track_val:
-                    track = track_val.strip()
-                    chan = hook_cmd.replace("play_", "").replace("queue_", "")
                     kind = "voice" if chan == "voice" else "audio"
                     references.append(
                         AssetReference(
@@ -360,23 +331,10 @@ def extract_asset_references(
 
 
 def _expand_character_expression(raw_expr: str, cfg: dict[str, str]) -> list[str]:
-    """Expand character expression alias into constituent layer names."""
+    """Expand character expression alias into its target expression name."""
     if not raw_expr:
         return ["default"]
-    if raw_expr in cfg:
-        target = cfg[raw_expr]
-        return [p.strip() for p in target.replace(",", "+").split("+") if p.strip()]
-    if "+" in raw_expr or "," in raw_expr:
-        tokens = [p.strip() for p in raw_expr.replace(",", "+").split("+") if p.strip()]
-        layers: list[str] = []
-        for tok in tokens:
-            resolved = cfg.get(tok, tok)
-            for sub in resolved.replace(",", "+").split("+"):
-                s = sub.strip()
-                if s and s not in layers:
-                    layers.append(s)
-        return layers if layers else [raw_expr]
-    return [raw_expr]
+    return [cfg.get(raw_expr, raw_expr)]
 
 
 def _candidate_paths_for_character_layer(cid: str, layer: str, cfg: dict[str, str]) -> list[str]:

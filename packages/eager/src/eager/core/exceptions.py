@@ -6,7 +6,6 @@ __all__ = [
     "AudioError",
     "ColorParseError",
     "EagerCoreError",
-    "I18nError",
     "StorageError",
 ]
 
@@ -30,7 +29,3 @@ class ColorParseError(EagerCoreError):
 
 class StorageError(EagerCoreError):
     """Raised when atomic write or persistent storage operations fail."""
-
-
-class I18nError(EagerCoreError):
-    """Raised when translation catalog operations or locale switching fails."""

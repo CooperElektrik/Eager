@@ -6,12 +6,24 @@ from collections.abc import Callable
 from typing import Any as GameSessionProtocol
 
 from eager.backends.types import UIDrawBackend
+from eager.core.layout import scale_font_size
 from eager.core.text import get_wrapped_lines, parse_text_tags
-from eager.core.theme import Theme
 from eager.core.types import Color, Rect
 from eager.ui.components import TextAnchor
 from eager.ui.screens.screen import Screen
 from eager.ui.screens.widgets import Button, Grid, Label, SaveSlotButton, Slider
+
+_BG_COLOR = Color(0.05, 0.06, 0.09, 0.94)
+_PRIMARY_COLOR = Color(0.24, 0.48, 0.88, 1.0)
+_ACCENT_COLOR = Color(0.95, 0.86, 0.62, 1.0)
+_TEXT_COLOR = Color(0.94, 0.95, 0.97, 1.0)
+_MUTED_TEXT_COLOR = Color(0.65, 0.68, 0.72, 0.60)
+_BUTTON_FILL = Color(0.08, 0.10, 0.14, 0.90)
+_BUTTON_HOVER = Color(0.16, 0.20, 0.28, 0.96)
+_BUTTON_BORDER = Color(1.0, 1.0, 1.0, 0.14)
+_BUTTON_TEXT = Color(0.94, 0.95, 0.97, 1.0)
+_TITLE_FONT_SIZE = 36
+_FONT_SIZE = 16
 
 
 class TitleScreen(Screen):
@@ -20,11 +32,10 @@ class TitleScreen(Screen):
     def __init__(
         self,
         title: str = "Eager Visual Novel",
-        theme: Theme | None = None,
         viewport_width: int = 1280,
         viewport_height: int = 720,
     ) -> None:
-        super().__init__("title", theme=theme, viewport_width=viewport_width, viewport_height=viewport_height)
+        super().__init__("title", viewport_width=viewport_width, viewport_height=viewport_height)
         self.title: str = title
         self.session: GameSessionProtocol | None = None
         self.rebuild_layout()
@@ -116,15 +127,15 @@ class TitleScreen(Screen):
         vh = float(self.viewport_height)
 
         # Background
-        backend.draw_rect(0, 0, width, height, self.theme.bg_color)
+        backend.draw_rect(0, 0, width, height, _BG_COLOR)
 
         # Title
         backend.draw_text(
             vw / 2.0,
             vh * (160.0 / 720.0),
             self.title,
-            color=self.theme.accent_color,
-            font_size=self.scale_font_size(self.theme.title_font_size),
+            color=_ACCENT_COLOR,
+            font_size=scale_font_size(_TITLE_FONT_SIZE, self.viewport_height),
             anchor_x=TextAnchor.CENTER,
             anchor_y=TextAnchor.TOP,
         )
@@ -133,11 +144,11 @@ class TitleScreen(Screen):
         for b in self.buttons:
             b.draw(
                 backend,
-                fill_color=self.theme.button_fill,
-                hover_color=self.theme.button_hover,
-                border_color=self.theme.button_border,
-                text_color=self.theme.button_text,
-                font_size=self.scale_font_size(self.theme.font_size),
+                fill_color=_BUTTON_FILL,
+                hover_color=_BUTTON_HOVER,
+                border_color=_BUTTON_BORDER,
+                text_color=_BUTTON_TEXT,
+                font_size=scale_font_size(_FONT_SIZE, self.viewport_height),
             )
 
 
@@ -146,11 +157,10 @@ class GameMenuScreen(Screen):
 
     def __init__(
         self,
-        theme: Theme | None = None,
         viewport_width: int = 1280,
         viewport_height: int = 720,
     ) -> None:
-        super().__init__("game_menu", theme=theme, viewport_width=viewport_width, viewport_height=viewport_height)
+        super().__init__("game_menu", viewport_width=viewport_width, viewport_height=viewport_height)
         self.session: GameSessionProtocol | None = None
         self.rebuild_layout()
 
@@ -235,8 +245,8 @@ class GameMenuScreen(Screen):
             vw / 2.0,
             vh * (100.0 / 720.0),
             "Game Menu",
-            color=self.theme.accent_color,
-            font_size=self.scale_font_size(self.theme.title_font_size),
+            color=_ACCENT_COLOR,
+            font_size=scale_font_size(_TITLE_FONT_SIZE, self.viewport_height),
             anchor_x=TextAnchor.CENTER,
             anchor_y=TextAnchor.TOP,
         )
@@ -244,11 +254,11 @@ class GameMenuScreen(Screen):
         for b in self.buttons:
             b.draw(
                 backend,
-                fill_color=self.theme.button_fill,
-                hover_color=self.theme.button_hover,
-                border_color=self.theme.button_border,
-                text_color=self.theme.button_text,
-                font_size=self.scale_font_size(self.theme.font_size),
+                fill_color=_BUTTON_FILL,
+                hover_color=_BUTTON_HOVER,
+                border_color=_BUTTON_BORDER,
+                text_color=_BUTTON_TEXT,
+                font_size=scale_font_size(_FONT_SIZE, self.viewport_height),
             )
 
 
@@ -258,11 +268,10 @@ class SaveLoadScreen(Screen):
     def __init__(
         self,
         mode: str = "save",
-        theme: Theme | None = None,
         viewport_width: int = 1280,
         viewport_height: int = 720,
     ) -> None:
-        super().__init__(mode, theme=theme, viewport_width=viewport_width, viewport_height=viewport_height)
+        super().__init__(mode, viewport_width=viewport_width, viewport_height=viewport_height)
         self.mode: str = mode  # "save" or "load"
         self.current_tab: str = "slots"  # "slots", "quick", "auto"
         self.delete_mode: bool = False
@@ -346,19 +355,15 @@ class SaveLoadScreen(Screen):
                                 screens.hide_all(self.session)
                             if hasattr(self.session, "mode"):
                                 self.session.mode = "game"
-                            if hasattr(self.session, "mark_ui_dirty"):
-                                self.session.mark_ui_dirty()
                             if hasattr(self.session, "notify_state_restored"):
                                 self.session.notify_state_restored()
                 return slot_action
 
-            thumb_path = getattr(meta, "thumbnail_path", None) if meta else None
             self.buttons.append(
                 SaveSlotButton(
                     cell,
                     label,
                     action=make_action(slot_name),
-                    thumbnail_path=thumb_path,
                 )
             )
 
@@ -450,24 +455,24 @@ class SaveLoadScreen(Screen):
         grid_w = vw * (840.0 / 1280.0)
         grid_x = (vw - grid_w) / 2.0
 
-        backend.draw_rect(0, 0, width, height, self.theme.bg_color)
+        backend.draw_rect(0, 0, width, height, _BG_COLOR)
         backend.draw_text(
             grid_x,
             vh * (40.0 / 720.0),
             "Save Game" if self.mode == "save" else "Load Game",
-            color=self.theme.text_color,
-            font_size=self.scale_font_size(28),
+            color=_TEXT_COLOR,
+            font_size=scale_font_size(28, self.viewport_height),
             anchor_x=TextAnchor.LEFT,
             anchor_y=TextAnchor.TOP,
         )
         for b in self.buttons:
             b.draw(
                 backend,
-                fill_color=self.theme.button_fill,
-                hover_color=self.theme.button_hover,
-                border_color=self.theme.button_border,
-                text_color=self.theme.button_text,
-                font_size=self.scale_font_size(self.theme.font_size),
+                fill_color=_BUTTON_FILL,
+                hover_color=_BUTTON_HOVER,
+                border_color=_BUTTON_BORDER,
+                text_color=_BUTTON_TEXT,
+                font_size=scale_font_size(_FONT_SIZE, self.viewport_height),
             )
 
 
@@ -476,11 +481,10 @@ class PreferencesScreen(Screen):
 
     def __init__(
         self,
-        theme: Theme | None = None,
         viewport_width: int = 1280,
         viewport_height: int = 720,
     ) -> None:
-        super().__init__("preferences", theme=theme, viewport_width=viewport_width, viewport_height=viewport_height)
+        super().__init__("preferences", viewport_width=viewport_width, viewport_height=viewport_height)
         self.session: GameSessionProtocol | None = None
         self.rebuild_layout()
 
@@ -529,8 +533,8 @@ class PreferencesScreen(Screen):
                     label_text,
                     label_x,
                     sy + label_offset_y,
-                    color=self.theme.text_color,
-                    font_size=self.scale_font_size(16),
+                    color=_TEXT_COLOR,
+                    font_size=scale_font_size(16, self.viewport_height),
                 )
             )
             self.sliders.append(
@@ -566,8 +570,8 @@ class PreferencesScreen(Screen):
                 "Text Speed",
                 label_x,
                 speed_y + label_offset_y,
-                color=self.theme.text_color,
-                font_size=self.scale_font_size(16),
+                color=_TEXT_COLOR,
+                font_size=scale_font_size(16, self.viewport_height),
             )
         )
         self.sliders.append(
@@ -594,8 +598,8 @@ class PreferencesScreen(Screen):
                 "Auto Forward",
                 label_x,
                 auto_y + label_offset_y,
-                color=self.theme.text_color,
-                font_size=self.scale_font_size(16),
+                color=_TEXT_COLOR,
+                font_size=scale_font_size(16, self.viewport_height),
             )
         )
         self.sliders.append(
@@ -620,58 +624,18 @@ class PreferencesScreen(Screen):
         )
         self._restore_focus_highlight()
 
-        # Language Selector
-        tm = getattr(self.session, "translation_manager", None)
-        available_locales = tm.available_locales() if tm is not None else ["default"]
-        current_locale = getattr(prefs, "language", "default") if prefs else "default"
-
-        lang_x = vw * (680.0 / 1280.0)
-        lang_y = base_y
-        self.labels.append(
-            Label(
-                "Language",
-                lang_x,
-                lang_y + label_offset_y,
-                color=self.theme.text_color,
-                font_size=self.scale_font_size(18),
-            )
-        )
-
-        lang_btn_w = vw * (140.0 / 1280.0)
-        lang_btn_h = vh * (36.0 / 720.0)
+        # Options toggles (Fullscreen, Skip Unseen, Autosave)
+        opts_x = vw * (680.0 / 1280.0)
+        opts_y = base_y
         lang_offset_y = vh * (36.0 / 720.0)
         lang_step_y = vh * (46.0 / 720.0)
-
-        for l_idx, loc in enumerate(available_locales):
-            btn_y = lang_y + lang_offset_y + l_idx * lang_step_y
-            btn_label = f"[ {loc.upper()} ]" if loc.lower() == current_locale.lower() else f"  {loc.upper()}  "
-
-            def make_lang_cb(target_loc: str):
-                def cb() -> None:
-                    if self.session is not None and hasattr(self.session, "set_language"):
-                        self.session.set_language(target_loc)
-                    elif prefs is not None:
-                        prefs.language = target_loc
-                    self.rebuild_layout()
-                return cb
-
-            self.buttons.append(
-                Button(
-                    Rect(lang_x, btn_y, lang_btn_w, lang_btn_h),
-                    btn_label,
-                    action=make_lang_cb(loc),
-                )
-            )
-
-        # Options toggles (Fullscreen & Skip Unseen)
-        opts_y = base_y + 4 * step_y
         self.labels.append(
             Label(
                 "Options",
-                lang_x,
+                opts_x,
                 opts_y + label_offset_y,
-                color=self.theme.text_color,
-                font_size=self.scale_font_size(18),
+                color=_TEXT_COLOR,
+                font_size=scale_font_size(18, self.viewport_height),
             )
         )
 
@@ -692,7 +656,7 @@ class PreferencesScreen(Screen):
 
         self.buttons.append(
             Button(
-                Rect(lang_x, opts_y + lang_offset_y, opt_btn_w, opt_btn_h),
+                Rect(opts_x, opts_y + lang_offset_y, opt_btn_w, opt_btn_h),
                 fs_label,
                 action=toggle_fs_cb,
             )
@@ -710,7 +674,7 @@ class PreferencesScreen(Screen):
 
         self.buttons.append(
             Button(
-                Rect(lang_x, opts_y + lang_offset_y + lang_step_y, opt_btn_w, opt_btn_h),
+                Rect(opts_x, opts_y + lang_offset_y + lang_step_y, opt_btn_w, opt_btn_h),
                 skip_label,
                 action=toggle_skip_cb,
             )
@@ -728,51 +692,11 @@ class PreferencesScreen(Screen):
 
         self.buttons.append(
             Button(
-                Rect(lang_x, opts_y + lang_offset_y + 2 * lang_step_y, opt_btn_w, opt_btn_h),
+                Rect(opts_x, opts_y + lang_offset_y + 2 * lang_step_y, opt_btn_w, opt_btn_h),
                 autosave_label,
                 action=toggle_autosave_cb,
             )
         )
-
-        # Resolution Scale selector
-        scale_x = vw * (960.0 / 1280.0)
-        scale_y = base_y
-        current_scale = getattr(prefs, "resolution_scale", 1.0) if prefs else 1.0
-        self.labels.append(
-            Label(
-                "Scale",
-                scale_x,
-                scale_y + label_offset_y,
-                color=self.theme.text_color,
-                font_size=self.scale_font_size(18),
-            )
-        )
-        scale_options = [0.75, 1.0, 1.25, 1.5]
-        scale_btn_w = vw * (120.0 / 1280.0)
-        scale_btn_h = vh * (36.0 / 720.0)
-        for s_idx, sc_val in enumerate(scale_options):
-            s_btn_y = scale_y + lang_offset_y + s_idx * lang_step_y
-            is_cur = abs(current_scale - sc_val) < 0.05
-            s_label = f"[ {sc_val:.2f}x ]" if is_cur else f"  {sc_val:.2f}x  "
-
-            def make_scale_cb(val: float):
-                def cb() -> None:
-                    if prefs is not None:
-                        prefs.resolution_scale = val
-                        if self.session is not None and hasattr(self.session, "apply_preferences"):
-                            self.session.apply_preferences()
-                        if self.session is not None and hasattr(self.session, "save_preferences"):
-                            self.session.save_preferences()
-                    self.rebuild_layout()
-                return cb
-
-            self.buttons.append(
-                Button(
-                    Rect(scale_x, s_btn_y, scale_btn_w, scale_btn_h),
-                    s_label,
-                    action=make_scale_cb(sc_val),
-                )
-            )
         self._restore_focus_highlight()
 
     def on_enter(self, session: GameSessionProtocol) -> None:
@@ -808,13 +732,13 @@ class PreferencesScreen(Screen):
         vw = float(self.viewport_width)
         vh = float(self.viewport_height)
 
-        backend.draw_rect(0, 0, width, height, self.theme.bg_color)
+        backend.draw_rect(0, 0, width, height, _BG_COLOR)
         backend.draw_text(
             vw * (100.0 / 1280.0),
             vh * (40.0 / 720.0),
             "Preferences",
-            color=self.theme.text_color,
-            font_size=self.scale_font_size(28),
+            color=_TEXT_COLOR,
+            font_size=scale_font_size(28, self.viewport_height),
             anchor_x=TextAnchor.LEFT,
             anchor_y=TextAnchor.TOP,
         )
@@ -823,16 +747,16 @@ class PreferencesScreen(Screen):
             lbl.draw(backend)
 
         for s in self.sliders:
-            s.draw(backend, bar_color=self.theme.button_fill, fill_color=self.theme.primary_color)
+            s.draw(backend, bar_color=_BUTTON_FILL, fill_color=_PRIMARY_COLOR)
 
         for b in self.buttons:
             b.draw(
                 backend,
-                fill_color=self.theme.button_fill,
-                hover_color=self.theme.button_hover,
-                border_color=self.theme.button_border,
-                text_color=self.theme.button_text,
-                font_size=self.scale_font_size(self.theme.font_size),
+                fill_color=_BUTTON_FILL,
+                hover_color=_BUTTON_HOVER,
+                border_color=_BUTTON_BORDER,
+                text_color=_BUTTON_TEXT,
+                font_size=scale_font_size(_FONT_SIZE, self.viewport_height),
             )
 
 
@@ -841,11 +765,10 @@ class HistoryScreen(Screen):
 
     def __init__(
         self,
-        theme: Theme | None = None,
         viewport_width: int = 1280,
         viewport_height: int = 720,
     ) -> None:
-        super().__init__("history", theme=theme, viewport_width=viewport_width, viewport_height=viewport_height)
+        super().__init__("history", viewport_width=viewport_width, viewport_height=viewport_height)
         self.session: GameSessionProtocol | None = None
         self.scroll_offset: int = 0
         self._last_built_scroll_offset: int | None = None
@@ -1012,19 +935,19 @@ class HistoryScreen(Screen):
         else:
             entries = []
 
-        backend.draw_rect(0, 0, width, height, self.theme.bg_color)
+        backend.draw_rect(0, 0, width, height, _BG_COLOR)
         title_x = vw * (100.0 / 1280.0)
         title_y = vh * (40.0 / 720.0)
-        title_font_size = self.scale_font_size(28)
-        empty_font_size = self.scale_font_size(16)
-        entry_font_size = self.scale_font_size(14)
-        btn_font_size = self.scale_font_size(self.theme.font_size)
+        title_font_size = scale_font_size(28, self.viewport_height)
+        empty_font_size = scale_font_size(16, self.viewport_height)
+        entry_font_size = scale_font_size(14, self.viewport_height)
+        btn_font_size = scale_font_size(_FONT_SIZE, self.viewport_height)
 
         backend.draw_text(
             title_x,
             title_y,
             "Dialogue History",
-            color=self.theme.text_color,
+            color=_TEXT_COLOR,
             font_size=title_font_size,
             anchor_x=TextAnchor.LEFT,
             anchor_y=TextAnchor.TOP,
@@ -1035,7 +958,7 @@ class HistoryScreen(Screen):
                 title_x,
                 vh * (120.0 / 720.0),
                 "No dialogue recorded yet.",
-                color=self.theme.muted_text_color,
+                color=_MUTED_TEXT_COLOR,
                 font_size=empty_font_size,
             )
         else:
@@ -1085,7 +1008,7 @@ class HistoryScreen(Screen):
                         entry_x,
                         curr_y,
                         spk_text,
-                        color=self.theme.accent_color,
+                        color=_ACCENT_COLOR,
                         font_size=entry_font_size,
                         bold=True,
                     )
@@ -1093,7 +1016,7 @@ class HistoryScreen(Screen):
                         entry_x + speaker_name_w,
                         curr_y,
                         ": ",
-                        color=self.theme.accent_color,
+                        color=_ACCENT_COLOR,
                         font_size=entry_font_size,
                     )
 
@@ -1115,7 +1038,7 @@ class HistoryScreen(Screen):
                             entry_x + speaker_total_w,
                             ly,
                             line_str,
-                            color=self.theme.text_color,
+                            color=_TEXT_COLOR,
                             font_size=entry_font_size,
                         )
                 else:
@@ -1137,7 +1060,7 @@ class HistoryScreen(Screen):
                             entry_x,
                             ly,
                             line_str,
-                            color=self.theme.muted_text_color,
+                            color=_MUTED_TEXT_COLOR,
                             font_size=entry_font_size,
                         )
                 rendered_lines = min(len(lines), 3)
@@ -1147,10 +1070,10 @@ class HistoryScreen(Screen):
         for b in self.buttons:
             b.draw(
                 backend,
-                fill_color=self.theme.button_fill,
-                hover_color=self.theme.button_hover,
-                border_color=self.theme.button_border,
-                text_color=self.theme.button_text,
+                fill_color=_BUTTON_FILL,
+                hover_color=_BUTTON_HOVER,
+                border_color=_BUTTON_BORDER,
+                text_color=_BUTTON_TEXT,
                 font_size=btn_font_size,
             )
 

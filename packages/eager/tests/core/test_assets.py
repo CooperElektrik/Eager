@@ -196,17 +196,13 @@ def test_extract_asset_references_ambient_and_track_kwarg() -> None:
     import eager.script
 
     script = """## Start --- start
-~ play_ambient rain_loop
-~ queue_ambient wind_loop
+~ play ambient rain_loop
 ~ play music track=theme_main
-~ queue_bgm track="boss_theme"
 <<
 """
     graph = eager.script.parse_graph(script)
     refs, _ = extract_asset_references(graph)
     audio_refs = [(r.channel, r.identifier) for r in refs if r.kind == "audio"]
     assert ("ambient", "rain_loop") in audio_refs
-    assert ("ambient", "wind_loop") in audio_refs
     assert ("music", "theme_main") in audio_refs
-    assert ("bgm", "boss_theme") in audio_refs
 

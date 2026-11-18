@@ -7,7 +7,6 @@ import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from eager.core.events import InputPromptEvent
 from eager.core.state import Checkpoint, StorySnapshot
 
 if TYPE_CHECKING:
@@ -16,11 +15,6 @@ if TYPE_CHECKING:
 
 def capture_checkpoint(session: GameSession) -> Checkpoint:
     """Generate a unified checkpoint of the current session state."""
-    input_data = (
-        session.active_input_prompt.to_dict()
-        if session.active_input_prompt is not None
-        else None
-    )
     visual_state = session.director.save_visual_state()
     ui_state_dict = session.director.save_ui_state()
 
@@ -30,7 +24,6 @@ def capture_checkpoint(session: GameSession) -> Checkpoint:
         audio=session.audio.save_state(),
         backlog_len=len(session.backlog),
         ui=ui_state_dict,
-        active_input_prompt=input_data,
         backlog=session.backlog.to_list(),
     )
 
@@ -52,27 +45,6 @@ def restore_checkpoint(session: GameSession, checkpoint: Checkpoint) -> None:
         session.backlog.entries = session.backlog.entries[: checkpoint.backlog_len]
 
     session.active_choice_prompt = session.vm.pending_choice
-    if session.vm.pending_input is not None:
-        session.active_input_prompt = session.vm.pending_input
-    elif checkpoint.active_input_prompt is not None:
-        inp = checkpoint.active_input_prompt
-        if isinstance(inp, dict):
-            session.active_input_prompt = InputPromptEvent(
-                var_name=inp.get("var_name", "player_input"),
-                prompt=inp.get("prompt", "Enter input:"),
-                default=inp.get("default", ""),
-                line_number=inp.get("line_number", 0),
-            )
-        else:
-            session.active_input_prompt = inp
-    else:
-        session.active_input_prompt = None
-
-    if session.active_input_prompt is not None:
-        session.input_text = getattr(session.active_input_prompt, "default", "")
-    else:
-        session.input_text = ""
-
     session.is_finished = session.vm.is_ended
     session.mode = "ended" if session.is_finished else "game"
 
@@ -103,7 +75,6 @@ def take_screenshot(
     if r is not None and hasattr(r, "save_frame"):
         r.save_frame(resolved_path, **kwargs)
     else:
-        # Headless fallback: minimal 1x1 valid PNG
         resolved_path.write_bytes(
             b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4"
             b"\x00\x00\x00\rIDATx\x9cc`\x00\x00\x00\x02\x00\x01H\xaf\xa4q\x00\x00\x00\x00IEND\xaeB`\x82"
@@ -112,36 +83,13 @@ def take_screenshot(
 
 
 def save_game(session: GameSession, slot_name: str) -> Any:
-    """Save current checkpoint to named slot, capturing a thumbnail screenshot."""
+    """Save current checkpoint to named slot."""
     cp = session.checkpoints.get_latest() or capture_checkpoint(session)
-    thumb_path: Path | None = None
-    try:
-        thumb_dir = session.save_manager.save_dir / "screenshots" / "thumbs"
-        thumb_dir.mkdir(parents=True, exist_ok=True)
-        target_thumb = thumb_dir / f"thumb_{slot_name}.png"
-        r = session.renderer or session._last_renderer
-        saved_screen = getattr(session.screens, "active_screen", None)
-        if (
-            r is not None
-            and saved_screen is not None
-            and hasattr(r, "draw_rect")
-            and hasattr(r, "save_frame")
-        ):
-            draw_w = int(getattr(session.overlay, "width", 1280))
-            draw_h = int(getattr(session.overlay, "height", 720))
-            session.draw(r, draw_w, draw_h, include_screens=False)
-            thumb_path = take_screenshot(session, target_path=target_thumb)
-        else:
-            thumb_path = take_screenshot(session, target_path=target_thumb)
-    except Exception:  # noqa: BLE001
-        # A missing renderer or screenshot failure must never break saving.
-        thumb_path = None
     return session.save_manager.save_slot(
         slot_name,
         cp,
         metadata_extra={
             "playtime_seconds": session._playtime,
-            "thumbnail_path": str(thumb_path) if thumb_path else None,
         },
     )
 
@@ -198,21 +146,6 @@ def rollback(session: GameSession) -> bool:
         return False
 
     restore_checkpoint(session, prev)
-    session.text_reveal = None
-    session.director.ui_state.visible_chars = None
-    return True
-
-
-def roll_forward(session: GameSession) -> bool:
-    """Step forward through the redo stack to restore previously rolled-back checkpoints."""
-    if not session.checkpoints.can_roll_forward:
-        return False
-
-    next_cp = session.checkpoints.roll_forward()
-    if next_cp is None:
-        return False
-
-    restore_checkpoint(session, next_cp)
     session.text_reveal = None
     session.director.ui_state.visible_chars = None
     return True

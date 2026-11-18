@@ -46,20 +46,6 @@ class SceneNode:
     hooks: tuple[str, ...]
     is_anonymous: bool = False
 
-    def to_dict(self, include_body: bool = True) -> dict[str, Any]:
-        """Convert scene node to a dictionary."""
-        data: dict[str, Any] = {
-            "id": self.id,
-            "display_name": self.display_name,
-            "line_number": self.line_number,
-            "speakers": list(self.speakers),
-            "hooks": list(self.hooks),
-            "anonymous": self.is_anonymous,
-        }
-        if include_body:
-            data["body"] = [item.to_dict() for item in self.body]
-        return data
-
 
 @dataclass(frozen=True, slots=True)
 class SceneEdge:
@@ -71,20 +57,6 @@ class SceneEdge:
     label: str | None
     line_number: int
     condition: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert edge to a dictionary."""
-        kind_str = self.kind.value if isinstance(self.kind, EdgeKind) else str(self.kind)
-        data: dict[str, Any] = {
-            "source": self.source,
-            "target": self.target,
-            "kind": kind_str,
-            "label": self.label,
-            "line_number": self.line_number,
-        }
-        if self.condition is not None:
-            data["condition"] = self.condition
-        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,148 +138,6 @@ class SceneGraph:
                 if not has_return:
                     terminals.append(nid)
         return terminals
-
-    def find_path(self, start: str, target: str) -> list[str] | None:
-        """Find the shortest directed path of scene IDs from start to target using BFS.
-
-        Returns a list of scene IDs [start, ..., target] if a path exists, or None.
-        """
-        if start not in self.nodes or target not in self.nodes:
-            return None
-        if start == target:
-            return [start]
-        queue: deque[list[str]] = deque([[start]])
-        visited: set[str] = {start}
-        while queue:
-            path = queue.popleft()
-            curr = path[-1]
-            for succ in self.successors(curr):
-                if succ == target:
-                    return path + [succ]
-                if succ in self.nodes and succ not in visited:
-                    visited.add(succ)
-                    queue.append(path + [succ])
-        return None
-
-    def find_root_ancestor(self, target: str) -> str | None:
-        """Find a root ancestor (in-degree 0 in its component) that can reach target.
-
-        Uses backward BFS over predecessors. If multiple roots exist, returns the first
-        found. Returns None if target has no predecessors or is not in the graph.
-        """
-        if target not in self.nodes:
-            return None
-        preds = self.predecessors(target)
-        if not preds:
-            return None
-
-        visited: set[str] = set()
-        queue: deque[str] = deque(preds)
-        ancestors: list[str] = []
-        while queue:
-            curr = queue.popleft()
-            if curr in visited or curr not in self.nodes:
-                continue
-            visited.add(curr)
-            ancestors.append(curr)
-            for p in self.predecessors(curr):
-                if p not in visited and p in self.nodes:
-                    queue.append(p)
-
-        for a in ancestors:
-            if not self.predecessors(a):
-                return a
-        return ancestors[0] if ancestors else None
-
-    def to_dict(self, include_body: bool = True) -> dict[str, Any]:
-        """Convert graph into a JSON-serializable dictionary."""
-        data: dict[str, Any] = {
-            "entry": self.entry,
-            "preamble": [item.to_dict() for item in self.preamble] if include_body else [],
-            "nodes": {
-                nid: node.to_dict(include_body=include_body) for nid, node in self.nodes.items()
-            },
-            "edges": [edge.to_dict() for edge in self.edges],
-            "characters": self.characters,
-            "defaults": [d.to_dict() for d in self.defaults],
-        }
-        return data
-
-    def to_json(self, include_body: bool = True, indent: int | None = 2) -> str:
-        """Serialize scene graph to a JSON string."""
-        import json
-
-        return json.dumps(self.to_dict(include_body=include_body), indent=indent)
-
-    def to_dot(self) -> str:
-        """Export scene graph to Graphviz DOT format."""
-        lines = [
-            "digraph SceneGraph {",
-            '  rankdir="LR";',
-            '  node [shape="box", style="rounded,filled", fillcolor="#f9f9f9", fontname="sans-serif"];',
-            '  edge [fontname="sans-serif", fontsize=10];',
-            "",
-        ]
-
-        for nid, node in self.nodes.items():
-            label_text = f"{node.display_name}\\n({node.id})"
-            safe_label = label_text.replace('"', '\\"')
-            safe_nid = nid.replace('"', '\\"')
-            if nid == self.entry:
-                lines.append(
-                    f'  "{safe_nid}" [label="{safe_label}", penwidth=2.0, color="#1976d2"];'
-                )
-            else:
-                lines.append(f'  "{safe_nid}" [label="{safe_label}"];')
-
-        if self.nodes and self.edges:
-            lines.append("")
-
-        for edge in self.edges:
-            safe_src = edge.source.replace('"', '\\"')
-            safe_tgt = edge.target.replace('"', '\\"')
-            attrs: list[str] = []
-            if edge.kind == "choice" and edge.label:
-                safe_edge_label = edge.label.replace('"', '\\"')
-                if edge.condition:
-                    safe_edge_label += f" [if {edge.condition}]"
-                attrs.append(f'label="{safe_edge_label}"')
-            elif edge.kind == "call":
-                attrs.append('label="call"')
-                attrs.append('style="dashed"')
-
-            attr_str = f" [{', '.join(attrs)}]" if attrs else ""
-            lines.append(f'  "{safe_src}" -> "{safe_tgt}"{attr_str};')
-
-        lines.append("}")
-        return "\n".join(lines)
-
-    def to_mermaid(self) -> str:
-        """Export scene graph to Mermaid flowchart format."""
-        lines = ["flowchart TD"]
-
-        for nid, node in self.nodes.items():
-            safe_label = node.display_name.replace('"', "'")
-            lines.append(f'    {nid}["{safe_label}"]')
-
-        for edge in self.edges:
-            src = edge.source
-            tgt = edge.target
-            if edge.kind == "choice":
-                if edge.label:
-                    lbl = edge.label
-                    if edge.condition:
-                        lbl += f" (if {edge.condition})"
-                    safe_choice = lbl.replace("|", "/").replace('"', "'")
-                    lines.append(f"    {src} -->|{safe_choice}| {tgt}")
-                else:
-                    lines.append(f"    {src} --> {tgt}")
-            elif edge.kind == "call":
-                lines.append(f"    {src} -.->|call| {tgt}")
-            else:
-                lines.append(f"    {src} --> {tgt}")
-
-        return "\n".join(lines)
 
 
 def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:

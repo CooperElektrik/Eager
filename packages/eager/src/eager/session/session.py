@@ -11,8 +11,8 @@ from eager.core.events import (
     ChoicePromptEvent,
     DialogueEvent,
     FreshBoxEvent,
-    InputPromptEvent,
     NarrationEvent,
+    SceneEnterEvent,
     StoryEndEvent,
     StoryEvent,
 )
@@ -30,26 +30,18 @@ if TYPE_CHECKING:
     from eager.ui.components import UIOverlay
     from eager.ui.screens.screen import ScreenManager
 
-from eager.script.project import load_project_graph, resolve_project_scripts
+from eager.script.graph import to_graph
+from eager.script.includes import resolve_includes
+from eager.script.parser import parse
 from eager.session._session_bootstrap import (
     create_default_screens,
     create_default_stage,
     create_default_ui,
-    discover_locales_dir,
     register_graph_characters,
     register_scene_backgrounds,
-    resolve_theme,
 )
 from eager.session._session_input import handle_input as _route_input
 from eager.session._session_input import handle_quick_action as _route_quick_action
-from eager.session._session_reload import (
-    clear_error_overlay,
-    refresh_presentation_after_reload,
-    set_error_overlay,
-)
-from eager.session._session_reload import (
-    hot_reload as _perform_hot_reload,
-)
 from eager.session._session_saves import (
     capture_checkpoint,
     restore_checkpoint,
@@ -64,9 +56,6 @@ from eager.session._session_saves import (
     quicksave as _quicksave,
 )
 from eager.session._session_saves import (
-    roll_forward as _roll_forward,
-)
-from eager.session._session_saves import (
     rollback as _rollback,
 )
 from eager.session._session_saves import (
@@ -75,8 +64,6 @@ from eager.session._session_saves import (
 from eager.session._session_saves import (
     take_screenshot as _take_screenshot,
 )
-from eager.session._session_warp import finalize_warp
-from eager.session._session_warp import warp as _perform_warp
 from eager.vm.runtime import StoryVM
 
 __all__ = [
@@ -96,7 +83,6 @@ class GameSession:
         "fresh_box",
         "choice_prompt",
         "story_end",
-        "input_prompt",
     })
 
     def __init__(
@@ -110,8 +96,6 @@ class GameSession:
         virtual_height: int = 1080,
         rollback_limit: int = 100,
         config: Any = None,
-        auto_reload: bool = False,
-        watch: bool = False,
         save_dir: str | Path | None = None,
         stage: StageDirector | Any | None = None,
         ui: UIOverlay | Any | None = None,
@@ -130,8 +114,6 @@ class GameSession:
                 virtual_height = config.virtual_height
         self.virtual_width = virtual_width
         self.virtual_height = virtual_height
-        self.auto_reload = auto_reload or watch
-        self._ui_dirty: bool = True
         self.config: Any = config
         if renderer is None and (headless or backend == "null"):
             from eager.backends.renderers.null import NullRenderBackend
@@ -141,23 +123,23 @@ class GameSession:
         self._last_renderer: Any = None
         self._playtime: float = 0.0
 
-        # Parse scene graph
+        # Parse scene graph via @include from entry script
         if isinstance(project_or_script, (str, Path)):
-            self.script_path = Path(project_or_script)
-            self.graph: SceneGraph = load_project_graph(self.script_path)
-            self._project_scripts = resolve_project_scripts(self.script_path)
+            target = Path(project_or_script)
+            if target.is_dir():
+                entry_name = getattr(config, "entry_script", None) or "main.es"
+                target = target / entry_name
+            self.script_path = target
+            items = parse(target.read_text(encoding="utf-8"))
+            self.graph: SceneGraph = to_graph(
+                resolve_includes(items, base_dir=target.parent, visited={target.resolve()})
+            )
         elif hasattr(project_or_script, "graph"):
             self.graph = cast("SceneGraph", project_or_script.graph)
         else:
             self.graph = cast("SceneGraph", project_or_script)
 
         from eager.core.audio import AudioMixer
-        from eager.core.i18n import TranslationManager
-
-        self.translation_manager = TranslationManager()
-        locales_dir = discover_locales_dir(self.script_path)
-        if locales_dir is not None:
-            self.translation_manager.load_directory(locales_dir)
 
         # Persistent state, preferences, and saves
         resolved_save_dir = (
@@ -175,22 +157,15 @@ class GameSession:
         else:
             self.vm = StoryVM(
                 self.graph,
-                translation_manager=self.translation_manager,
                 persistent=self.persistent,
             )
         self.dispatcher = EventDispatcher()
         if audio_backend is None and (headless or backend == "null"):
-            from eager.backends.audio.null import NullAudioBackend
+            from eager.core.audio import NullAudioBackend
 
             audio_backend = NullAudioBackend()
         self.audio = AudioMixer(backend=audio_backend, asset_dir=self.asset_dir)
         self.apply_preferences()
-
-        stage_kwargs: dict[str, Any] = {}
-        if config is not None:
-            for k in ("auto_highlight_speaker", "dim_color", "highlight_duration", "pop_scale", "pop_hop"):
-                if hasattr(config, k) and getattr(config, k) is not None:
-                    stage_kwargs[k] = getattr(config, k)
 
         if stage is not None:
             self.stage: StageDirector | Any = stage
@@ -200,7 +175,6 @@ class GameSession:
                 virtual_height=virtual_height,
                 audio=self.audio,
                 skip_mode_cb=lambda: self.skip_mode,
-                **stage_kwargs,
             )
         self.director: StageDirector | Any = self.stage
         self.compositor: StageCompositor | Any = getattr(self.stage, "compositor", None)
@@ -211,14 +185,13 @@ class GameSession:
 
         self.checkpoints = CheckpointHistory(max_history=rollback_limit)
         self.keymap = Keymap()
-        resolved_theme = resolve_theme(config) if config is not None else None
         if ui is not None:
             self.ui: UIOverlay | Any = ui
         else:
-            self.ui = create_default_ui(width=1280, height=720, theme=resolved_theme)
+            self.ui = create_default_ui(width=1280, height=720)
         self.overlay: UIOverlay | Any = self.ui
 
-        # Screens and Theme
+        # Screens
         if screens is not None:
             self.screens: ScreenManager | Any = screens
         else:
@@ -239,18 +212,11 @@ class GameSession:
         self.ui_hidden: bool = False
         self.is_finished: bool = False
         self.active_choice_prompt: ChoicePromptEvent | None = None
-        self.active_input_prompt: Any | None = None
-        self.input_text: str = ""
         self.text_reveal: Any | None = None
 
         self._last_event: StoryEvent | None = None
+        self._last_beat_key: str | None = None
         self._current_beat_previously_seen: bool = False
-        if self.script_path is not None:
-            from eager.core.watcher import FileWatcher
-
-            self.watcher: FileWatcher | None = FileWatcher(getattr(self, "_project_scripts", [self.script_path]))
-        else:
-            self.watcher = None
         self._lifecycle_listeners: list[Any] = []
 
     def add_lifecycle_listener(self, listener: Any) -> None:
@@ -276,7 +242,10 @@ class GameSession:
             self.save_preferences()
 
     def request_quit(self) -> bool:
-        """Notify registered host listeners to terminate the application."""
+        """Autosave if enabled and notify registered host listeners to terminate."""
+        if getattr(self.preferences, "autosave_enabled", True) and self.has_started:
+            cp = self.checkpoints.get_latest() or self._capture_checkpoint()
+            self.save_manager.autosave(cp, playtime_seconds=self._playtime)
         if not self._lifecycle_listeners:
             return False
         for listener in list(self._lifecycle_listeners):
@@ -295,48 +264,21 @@ class GameSession:
         return self._last_event is not None
 
     @property
-    def ui_dirty(self) -> bool:
-        """True if the UI overlay needs a redraw."""
-        return self._ui_dirty
-
-    def mark_ui_dirty(self) -> None:
-        """Mark the UI overlay as needing a redraw."""
-        self._ui_dirty = True
-
-    def consume_ui_dirty(self) -> bool:
-        """Return whether the UI was dirty and clear the dirty flag."""
-        was_dirty = self._ui_dirty
-        self._ui_dirty = False
-        return was_dirty
-
-    @property
     def playtime(self) -> float:
         """Accumulated session playtime in seconds."""
         return self._playtime
 
     def apply_preferences(self) -> None:
-        """Apply current preferences to audio mixer, translation locale, and subsystems."""
+        """Apply current preferences to audio mixer."""
         self.audio.set_master_volume(self.preferences.master_volume)
         self.audio.set_channel_volume("music", self.preferences.music_volume)
         self.audio.set_channel_volume("sound", self.preferences.sfx_volume)
         self.audio.set_channel_volume("voice", self.preferences.voice_volume)
         self.audio.set_channel_volume("ambient", getattr(self.preferences, "ambient_volume", 0.8))
-        self.vm.set_locale(self.preferences.language)
-        scale = getattr(self.preferences, "resolution_scale", 1.0)
-        for listener in list(getattr(self, "_lifecycle_listeners", ())):
-            set_scale = getattr(listener, "set_resolution_scale", None)
-            if callable(set_scale):
-                set_scale(scale)
 
     def save_preferences(self) -> None:
         """Persist current preferences to preferences.json in save directory."""
         self.preferences.save(self.save_manager.save_dir / "preferences.json")
-
-    def set_language(self, locale: str) -> None:
-        """Switch active language locale, updating VM and persisting preferences."""
-        self.preferences.language = locale
-        self.apply_preferences()
-        self.save_preferences()
 
     def play_voice(self, voice_path: str) -> None:
         """Replay a voice clip on the voice channel."""
@@ -345,10 +287,6 @@ class GameSession:
     def play_audio(self, channel: str, track: str) -> None:
         """Play an audio track on a specified channel."""
         self.audio.play(channel, track)
-
-    def queue_audio(self, channel: str, track: str) -> None:
-        """Queue an audio track to play after current playback completes."""
-        self.audio.queue(channel, track)
 
     def pause_audio(self, channel: str | None = None) -> None:
         """Pause playback on a specific channel, or all channels if channel is None."""
@@ -423,13 +361,11 @@ class GameSession:
         if self.active_choice_prompt is not None:
             return self.active_choice_prompt
 
-        if self.active_input_prompt is not None:
-            return self.active_input_prompt
-
         if hasattr(self.stage, "finish_animations"):
             self.stage.finish_animations()
 
         self.auto_timer = 0.0
+        entered_new_scene = False
 
         while not self.vm.is_ended:
             event = self.vm.step()
@@ -438,23 +374,29 @@ class GameSession:
                 self.mode = "ended"
                 break
 
+            if isinstance(event, SceneEnterEvent):
+                entered_new_scene = True
+
             prev_text = self.director.ui_state.text if event.type == "append" else None
 
             self.dispatcher.dispatch(event)
             self._last_event = event
 
-            # Record beat_id into persistent seen_beats
-            beat_id = getattr(event, "beat_id", None)
-            if beat_id:
+            # Record (scene_id, beat_index) into persistent seen_beats
+            scene_id = self.vm.current_scene_id
+            if scene_id is not None:
+                beat_key = f"{scene_id}:{self.vm.beat_index}"
+                self._last_beat_key = beat_key
                 seen_beats = self.persistent.get("seen_beats")
                 if not isinstance(seen_beats, list):
                     seen_beats = []
                     self.persistent["seen_beats"] = seen_beats
-                self._current_beat_previously_seen = beat_id in seen_beats
+                self._current_beat_previously_seen = beat_key in seen_beats
                 if not self._current_beat_previously_seen:
-                    seen_beats.append(beat_id)
+                    seen_beats.append(beat_key)
                     self.persistent.save()
             else:
+                self._last_beat_key = None
                 self._current_beat_previously_seen = False
 
             self._record_backlog_event(event)
@@ -469,7 +411,7 @@ class GameSession:
 
                         initial_chars = len(parse_text_tags(prev_text).plain_text)
                     self._setup_text_reveal(self.director.ui_state.text, initial_visible_chars=initial_chars)
-                elif event.type in ("choice_prompt", "input_prompt", "story_end"):
+                elif event.type in ("choice_prompt", "story_end"):
                     self.text_reveal = None
                     self.director.ui_state.visible_chars = None
 
@@ -477,16 +419,17 @@ class GameSession:
                     self.active_choice_prompt = event
                     if hasattr(self.overlay, "set_choice_options"):
                         self.overlay.set_choice_options(event.options)
-                elif isinstance(event, InputPromptEvent):
-                    self.active_input_prompt = event
-                    self.input_text = event.default
                 elif isinstance(event, StoryEndEvent):
                     self.is_finished = True
                     self.mode = "ended"
 
                 cp = self._capture_checkpoint()
                 self.checkpoints.push(cp)
-                if getattr(self.preferences, "autosave_enabled", True) and not self.skip_mode:
+                if (
+                    (entered_new_scene or isinstance(event, StoryEndEvent))
+                    and getattr(self.preferences, "autosave_enabled", True)
+                    and not self.skip_mode
+                ):
                     self.save_manager.autosave(cp, playtime_seconds=self._playtime)
                 return event
 
@@ -499,16 +442,6 @@ class GameSession:
                 self.save_manager.autosave(cp, playtime_seconds=self._playtime)
 
         return None
-
-    def submit_input(self, value: str) -> StoryEvent | None:
-        """Submit user text input for active input prompt and advance."""
-        if self.active_input_prompt is None:
-            return None
-        var_name = self.active_input_prompt.var_name
-        self.vm.set_variable(var_name, value)
-        self.active_input_prompt = None
-        self.input_text = ""
-        return self.advance()
 
     def choose(self, choice: int | str) -> StoryEvent | None:
         """Make a branching choice and advance to the next interactive point."""
@@ -529,19 +462,6 @@ class GameSession:
         self.vm.choose(choice)
         self.active_choice_prompt = None
         return self.advance()
-
-    def warp(
-        self,
-        target_scene: str,
-        *,
-        simulate: bool = True,
-        max_steps: int = 10000,
-    ) -> bool:
-        """Fast-forward / jump directly to target_scene, reconstructing stage and story state."""
-        return _perform_warp(self, target_scene, simulate=simulate, max_steps=max_steps)
-
-    def _finalize_warp(self, prev_skip: bool = False) -> bool:
-        return finalize_warp(self, prev_skip=prev_skip)
 
     def save_game(self, slot_name: str) -> Any:
         """Save current checkpoint to named slot, capturing a thumbnail screenshot."""
@@ -568,24 +488,14 @@ class GameSession:
         """True if there is at least one previous checkpoint to restore."""
         return self.checkpoints.can_rollback
 
-    @property
-    def can_roll_forward(self) -> bool:
-        """True if there is at least one popped checkpoint that can be restored forward."""
-        return self.checkpoints.can_roll_forward
-
     def rollback(self) -> bool:
         """Roll back to the previous interactive checkpoint."""
         return _rollback(self)
-
-    def roll_forward(self) -> bool:
-        """Step forward through the redo stack to restore previously rolled-back checkpoints."""
-        return _roll_forward(self)
 
     def restart_story(self) -> StoryEvent | None:
         """Reset the session to the beginning of the screenplay and advance the initial beat."""
         self.vm = StoryVM(
             self.graph,
-            translation_manager=self.translation_manager,
             persistent=self.persistent,
         )
         if hasattr(self.stage, "clear_stage"):
@@ -601,12 +511,10 @@ class GameSession:
         self.auto_mode = False
         self.auto_timer = 0.0
         self.active_choice_prompt = None
-        self.active_input_prompt = None
-        self.input_text = ""
         self.text_reveal = None
         self._last_event = None
+        self._last_beat_key = None
         self._current_beat_previously_seen = False
-        self._ui_dirty = True
 
         if hasattr(self.screens, "hide"):
             self.screens.hide(self)
@@ -620,21 +528,17 @@ class GameSession:
         self._skip_timer = 0.0
         self.auto_mode = False
         self.mode = "title"
-        self._ui_dirty = True
         if hasattr(self.screens, "show"):
             return bool(self.screens.show("title", self))
         return False
 
     def is_current_beat_read(self) -> bool:
         """Return True if the current beat was already seen in a previous playthrough."""
-        if self._last_event is None:
-            return False
-        beat_id = getattr(self._last_event, "beat_id", None)
-        if not beat_id:
+        if not self._last_beat_key:
             return False
         seen_beats = self.persistent.get("seen_beats")
         if isinstance(seen_beats, (list, set, tuple)):
-            return beat_id in seen_beats
+            return self._last_beat_key in seen_beats
         return False
 
     def update(self, dt: float) -> None:
@@ -644,9 +548,6 @@ class GameSession:
 
         self.director.step(dt)
         self.audio.update(dt)
-
-        if self.auto_reload and self.watcher is not None and self.watcher.check_modified():
-            self.hot_reload()
 
         if self.text_reveal is not None and not self.text_reveal.is_complete:
             self.text_reveal.update(dt)
@@ -658,17 +559,11 @@ class GameSession:
         if hasattr(self.overlay, "update_toast"):
             self.overlay.update_toast(dt)
 
-        if self.active_input_prompt is not None:
-            if hasattr(self.overlay, "update_input"):
-                self.overlay.update_input(dt)
-            elif getattr(self.overlay, "input_box", None) is not None:
-                self.overlay.input_box.update(dt)
-
         if self.skip_mode and not self.is_finished:
             if self.text_reveal is not None:
                 self.text_reveal.complete_immediately()
                 self.director.ui_state.visible_chars = None
-            if self.active_choice_prompt is not None or self.active_input_prompt is not None:
+            if self.active_choice_prompt is not None:
                 self.skip_mode = False
             else:
                 self._skip_timer += dt
@@ -679,7 +574,6 @@ class GameSession:
                     self.skip_mode
                     and not self.is_finished
                     and self.active_choice_prompt is None
-                    and self.active_input_prompt is None
                     and self._skip_timer >= step_interval
                 ):
                     self._skip_timer -= step_interval
@@ -695,7 +589,6 @@ class GameSession:
             self.auto_mode
             and not self.is_finished
             and self.active_choice_prompt is None
-            and self.active_input_prompt is None
         ):
             reveal_done = self.text_reveal is None or self.text_reveal.is_complete
             voice_playing = self.audio.is_playing("voice")
@@ -741,8 +634,6 @@ class GameSession:
                 ui_backend,
                 self.director.ui_state,
                 self.active_choice_prompt,
-                self.active_input_prompt,
-                input_text=self.input_text,
                 is_finished=self.is_finished,
                 show_quick_menu=True,
                 status_badge=status_badge,
@@ -768,16 +659,3 @@ class GameSession:
     def handle_input(self, action: InputAction, **payload: Any) -> Any:
         """Process semantic InputAction events."""
         return _route_input(self, action, **payload)
-
-    def _set_error_overlay(self, msg: str) -> None:
-        set_error_overlay(self, msg)
-
-    def _clear_error_overlay(self) -> None:
-        clear_error_overlay(self)
-
-    def _refresh_presentation_after_reload(self, new_scene: Any, display_idx: int) -> None:
-        refresh_presentation_after_reload(self, new_scene, display_idx)
-
-    def hot_reload(self, script_path: str | Path | None = None) -> bool:
-        """Hot-reload the screenplay from disk, hot-swapping the VM and reconciling state."""
-        return _perform_hot_reload(self, script_path=script_path)

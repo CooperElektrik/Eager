@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from eager.core.i18n import compute_beat_id
 from lsprotocol.types import (
     Hover,
     MarkupContent,
@@ -219,36 +218,8 @@ def compute_hover(
                 f"- **File:** `{disk_path.as_posix()}`",
                 f"- **Size:** {disk_path.stat().st_size:,} bytes",
             ]
-            # Try to get image dimensions with PIL
             if disk_path.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
-                try:
-                    from PIL import Image
-                    with Image.open(disk_path) as im:
-                        md_lines.append(f"- **Dimensions:** {im.width}×{im.height} px")
-                    md_lines.append(f"\n![preview]({disk_path.as_uri()})")
-                except (ImportError, OSError, ValueError):
-                    pass
-
-            return Hover(
-                contents=MarkupContent(kind=MarkupKind.Markdown, value="\n".join(md_lines)),
-                range=token.range,
-            )
-
-    # 7. Dialogue line (i18n translation table preview)
-    if token.kind in ("dialogue_text", "speaker"):
-        item = doc.get_item_at_line(position.line)
-        scene_id = doc.get_scene_at_line(position.line)
-        if item is not None and scene_id is not None and workspace.translation_catalogs:
-            occ = doc.get_beat_occurrence(position.line)
-            beat_id = compute_beat_id(scene_id, item, occurrence=occ)
-            md_lines = [
-                f"### Localization: `{beat_id}`",
-                "\n| Locale | Translation |",
-                "|:---|:---|",
-            ]
-            for loc_code, cat in sorted(workspace.translation_catalogs.items()):
-                trans = cat.strings.get(beat_id, "*(missing)*")
-                md_lines.append(f"| **{loc_code}** | {trans} |")
+                md_lines.append(f"\n![preview]({disk_path.as_uri()})")
 
             return Hover(
                 contents=MarkupContent(kind=MarkupKind.Markdown, value="\n".join(md_lines)),

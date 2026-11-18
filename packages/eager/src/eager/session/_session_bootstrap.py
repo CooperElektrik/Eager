@@ -1,13 +1,11 @@
 # pyright: reportImportCycles=false
-"""Subsystem factory, theme resolution, and graph registration helpers for GameSession."""
+"""Subsystem factory and graph registration helpers for GameSession."""
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from eager.core.theme import Theme
     from eager.session.session import GameSession
     from eager.stage.director import StageDirector
     from eager.ui.components import UIOverlay
@@ -40,44 +38,14 @@ def create_default_stage(
     return StageDirector(compositor, audio=audio, skip_mode_cb=skip_mode_cb, **kwargs)
 
 
-def resolve_theme(config: Any) -> Theme | None:
-    """Instantiate a Theme object from ProjectConfig if configured."""
-    if config is None:
-        return None
-    theme_name = getattr(config, "theme", None)
-    theme_overrides = getattr(config, "theme_overrides", {}) or {}
-    if not theme_name and not theme_overrides:
-        return None
-    kwargs: dict[str, Any] = {}
-    if theme_name:
-        kwargs["name"] = theme_name
-    kwargs.update(theme_overrides)
-    try:
-        from eager.core.theme import Theme
-
-        return Theme(**kwargs)
-    except (TypeError, ValueError, AttributeError):
-        return None
-
-
 def create_default_ui(
     width: int = 1280,
     height: int = 720,
-    theme: Theme | dict[str, Any] | None = None,
 ) -> UIOverlay:
     """Create the default UIOverlay instance."""
-    from eager.core.theme import Theme
     from eager.ui.components import UIOverlay
 
-    resolved_theme: Theme | None = None
-    if isinstance(theme, Theme):
-        resolved_theme = theme
-    elif isinstance(theme, dict):
-        try:
-            resolved_theme = Theme(**theme)
-        except (TypeError, ValueError, AttributeError):
-            resolved_theme = None
-    return UIOverlay(width=width, height=height, theme=resolved_theme)
+    return UIOverlay(width=width, height=height)
 
 
 def create_default_screens(
@@ -85,7 +53,6 @@ def create_default_screens(
     session: GameSession,
 ) -> ScreenManager:
     """Create the default ScreenManager with built-in modal screens registered."""
-    from eager.core.theme import Theme
     from eager.ui.screens import (
         GameMenuScreen,
         HistoryScreen,
@@ -97,38 +64,21 @@ def create_default_screens(
 
     w = int(getattr(getattr(session, "overlay", None), "width", 1280) or 1280)
     h = int(getattr(getattr(session, "overlay", None), "height", 720) or 720)
-    theme = getattr(getattr(session, "overlay", None), "theme", None)
-    if isinstance(theme, dict):
-        try:
-            theme = Theme(**theme)
-        except (TypeError, ValueError, AttributeError):
-            theme = None
 
-    mgr = ScreenManager(viewport_width=w, viewport_height=h, theme=theme)
+    mgr = ScreenManager(viewport_width=w, viewport_height=h)
     mgr.register(
         TitleScreen(
             title=getattr(config, "title", "Eager Visual Novel"),
-            theme=theme,
             viewport_width=w,
             viewport_height=h,
         )
     )
-    mgr.register(GameMenuScreen(theme=theme, viewport_width=w, viewport_height=h))
-    mgr.register(SaveLoadScreen("save", theme=theme, viewport_width=w, viewport_height=h))
-    mgr.register(SaveLoadScreen("load", theme=theme, viewport_width=w, viewport_height=h))
-    mgr.register(PreferencesScreen(theme=theme, viewport_width=w, viewport_height=h))
-    mgr.register(HistoryScreen(theme=theme, viewport_width=w, viewport_height=h))
+    mgr.register(GameMenuScreen(viewport_width=w, viewport_height=h))
+    mgr.register(SaveLoadScreen("save", viewport_width=w, viewport_height=h))
+    mgr.register(SaveLoadScreen("load", viewport_width=w, viewport_height=h))
+    mgr.register(PreferencesScreen(viewport_width=w, viewport_height=h))
+    mgr.register(HistoryScreen(viewport_width=w, viewport_height=h))
     return mgr
-
-
-def discover_locales_dir(script_path: Path | None) -> Path | None:
-    """Return the locales directory adjacent to script_path if it exists."""
-    if script_path is None:
-        return None
-    resolved = script_path.resolve()
-    base_dir = resolved if script_path.is_dir() else resolved.parent
-    candidate = base_dir / "locales"
-    return candidate if candidate.is_dir() else None
 
 
 def register_scene_backgrounds(director: Any, config: Any) -> None:

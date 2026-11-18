@@ -3,10 +3,7 @@
 The ``NullRenderer`` is pure-Python and dependency-free, so it is always
 available — even when no graphical backend (e.g. Pyglet) is installed.
 
-Optional backends (Pyglet, PIL) are **not** eagerly imported here
-because doing so can have global side effects (e.g. Pyglet initialises GTK/EGL
-on Wayland). Instead, they are resolved lazily via ``__getattr__`` when
-accessed.
+Optional backends (Pyglet) are resolved lazily via ``__getattr__``.
 """
 
 from __future__ import annotations
@@ -16,29 +13,18 @@ from typing import TYPE_CHECKING
 from eager.backends.renderers.null import NullRenderBackend, NullRenderer
 
 __all__ = [
-    "MiniaudioAudioBackend",
     "NullRenderBackend",
     "NullRenderer",
-    "PILAssetResolver",
-    "PILRenderer",
     "PygletAssetResolver",
-    "PygletAudioBackend",
     "PygletRenderer",
 ]
 
 if TYPE_CHECKING:
-    from eager.backends.audio.miniaudio import MiniaudioAudioBackend
-    from eager.backends.audio.pyglet import PygletAudioBackend
-    from eager.backends.renderers.pil import PILAssetResolver, PILRenderer
     from eager.backends.renderers.pyglet import PygletAssetResolver, PygletRenderer
 
 _LAZY: dict[str, tuple[str, str]] = {
-    "MiniaudioAudioBackend": ("eager.backends.audio.miniaudio", "MiniaudioAudioBackend"),
     "PygletAssetResolver": ("eager.backends.renderers.pyglet", "PygletAssetResolver"),
-    "PygletAudioBackend": ("eager.backends.audio.pyglet", "PygletAudioBackend"),
     "PygletRenderer": ("eager.backends.renderers.pyglet", "PygletRenderer"),
-    "PILAssetResolver": ("eager.backends.renderers.pil", "PILAssetResolver"),
-    "PILRenderer": ("eager.backends.renderers.pil", "PILRenderer"),
 }
 
 _CACHE: dict[str, object] = {}

@@ -55,9 +55,7 @@ def test_state_and_history() -> None:
     assert history.get_latest() == cp
     popped = history.pop()
     assert popped == cp
-    assert history.can_roll_forward
-    forward = history.roll_forward()
-    assert forward == cp
+    assert history.depth == 0
 
 
 def test_saves(tmp_path: Path) -> None:

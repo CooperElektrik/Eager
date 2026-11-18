@@ -4,15 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from eager.core.types import Color as EagerColor
 from lsprotocol.types import (
-    Color,
-    ColorInformation,
-    ColorPresentation,
     DocumentLink,
     FoldingRange,
     FoldingRangeKind,
-    Range,
     SemanticTokens,
     SemanticTokensLegend,
 )
@@ -26,8 +21,6 @@ __all__ = [
     "LEGEND",
     "SEMANTIC_TOKEN_MODIFIERS",
     "SEMANTIC_TOKEN_TYPES",
-    "compute_color_presentation",
-    "compute_document_colors",
     "compute_document_links",
     "compute_folding_ranges",
     "compute_semantic_tokens",
@@ -126,39 +119,6 @@ def compute_semantic_tokens(doc: ScriptDocument) -> SemanticTokens:
         prev_end_col = col_0 + length
 
     return SemanticTokens(data=data)
-
-
-def compute_document_colors(doc: ScriptDocument) -> list[ColorInformation]:
-    """Extract hexadecimal color codes for IDE color pickers."""
-    colors: list[ColorInformation] = []
-
-    for span in doc.spans:
-        if span.kind == "color_literal":
-            hex_str = span.value
-            try:
-                c = EagerColor.from_hex(hex_str)
-                colors.append(
-                    ColorInformation(
-                        range=span.range,
-                        color=Color(red=c.r, green=c.g, blue=c.b, alpha=c.a),
-                    )
-                )
-            except (ValueError, TypeError, KeyError):
-                pass
-
-    return colors
-
-
-def compute_color_presentation(
-    color: Color,
-    range_: Range,
-) -> list[ColorPresentation]:
-    """Format an updated color back into screenplay hex format."""
-    r_byte = round(color.red * 255)
-    g_byte = round(color.green * 255)
-    b_byte = round(color.blue * 255)
-    hex_str = f"#{r_byte:02x}{g_byte:02x}{b_byte:02x}"
-    return [ColorPresentation(label=hex_str)]
 
 
 def compute_folding_ranges(doc: ScriptDocument) -> list[FoldingRange]:
