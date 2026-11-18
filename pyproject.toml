@@ -1,17 +1,14 @@
 [project]
 name = "eager-engine"
 version = "0.9.0"
-description = "Unified visual novel engine ecosystem: parser (eager-script), runtime (eager-runtime), and graphics (eager-graphics)."
+description = "Unified visual novel engine ecosystem: parser, VM, stage/UI, backends, CLI (eager), and LSP (eager-script-lsp)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Cooper" }]
 urls = { Homepage = "https://github.com/CooperElektrik/Eager", Repository = "https://github.com/CooperElektrik/Eager" }
 dependencies = [
-    "eager-core",
-    "eager-graphics",
-    "eager-runtime",
-    "eager-script",
+    "eager",
     "eager-script-lsp",
 ]
 
@@ -29,18 +26,12 @@ dev = [
 ]
 
 [tool.uv.sources]
-eager-script = { workspace = true }
-eager-runtime = { workspace = true }
-eager-graphics = { workspace = true }
-eager-core = { workspace = true }
+eager = { workspace = true }
 eager-script-lsp = { workspace = true }
 
 [tool.uv.workspace]
 members = [
-    "packages/eager-script",
-    "packages/eager-runtime",
-    "packages/eager-graphics",
-    "packages/eager-core",
+    "packages/eager",
     "packages/eager-script-lsp",
 ]
 
@@ -57,202 +48,80 @@ testpaths = ["packages"]
 
 [tool.importlinter]
 root_packages = [
-    "eager_core",
-    "eager_graphics",
-    "eager_runtime",
-    "eager_script",
+    "eager",
     "eager_script_lsp",
 ]
 
 # ---------------------------------------------------------------------------
-# Cross-package architectural boundaries
+# Cross-layer architectural boundaries
 # ---------------------------------------------------------------------------
 
 [[tool.importlinter.contracts]]
-name = "eager-core is dependency-free"
-type = "forbidden"
-source_modules = ["eager_core"]
-forbidden_modules = [
-    "eager_script",
-    "eager_runtime",
-    "eager_graphics",
-    "eager_script_lsp",
+name = "Eager layered architecture"
+type = "layers"
+layers = [
+    "eager.cli",
+    "eager.session",
+    "eager.ui",
+    "eager.stage",
+    "eager.vm",
+    "eager.script",
+    "eager.core",
 ]
 
 [[tool.importlinter.contracts]]
-name = "eager-script is dependency-free"
+name = "eager.backends is independent of vm, stage, ui, session, cli"
 type = "forbidden"
-source_modules = ["eager_script"]
+source_modules = ["eager.backends"]
 forbidden_modules = [
-    "eager_core",
-    "eager_runtime",
-    "eager_graphics",
-    "eager_script_lsp",
+    "eager.vm",
+    "eager.stage",
+    "eager.ui",
+    "eager.session",
+    "eager.cli",
 ]
 
 [[tool.importlinter.contracts]]
-name = "eager-graphics does not import eager-runtime"
+name = "eager.core, eager.script, and eager.vm do not import eager.backends"
 type = "forbidden"
-source_modules = ["eager_graphics"]
-forbidden_modules = [
-    "eager_runtime",
-    "eager_script_lsp",
+source_modules = [
+    "eager.core",
+    "eager.script",
+    "eager.vm",
 ]
+forbidden_modules = ["eager.backends"]
 
 [[tool.importlinter.contracts]]
-name = "eager-runtime strictly forbids eager-graphics"
-type = "forbidden"
-source_modules = ["eager_runtime"]
-forbidden_modules = ["eager_graphics"]
-
-[[tool.importlinter.contracts]]
-name = "eager-script-lsp strictly forbids eager-graphics"
+name = "eager-script-lsp strictly forbids vm, stage, ui, session, backends, cli"
 type = "forbidden"
 source_modules = ["eager_script_lsp"]
-forbidden_modules = ["eager_graphics"]
+forbidden_modules = [
+    "eager.vm",
+    "eager.stage",
+    "eager.ui",
+    "eager.session",
+    "eager.backends",
+    "eager.cli",
+]
 
 # ---------------------------------------------------------------------------
-# eager-graphics internal boundaries
+# Internal module boundaries
 # ---------------------------------------------------------------------------
 
 [[tool.importlinter.contracts]]
-name = "eager-graphics renderer backends are mutually independent"
+name = "eager renderer backends are mutually independent"
 type = "independence"
 modules = [
-    "eager_graphics.renderers.pil",
-    "eager_graphics.renderers.pyglet",
+    "eager.backends.renderers.pil",
+    "eager.backends.renderers.pyglet",
 ]
 
 [[tool.importlinter.contracts]]
-name = "eager-graphics core presentation does not depend on renderer backends"
-type = "forbidden"
-source_modules = [
-    "eager_graphics.stage",
-    "eager_graphics.compositor",
-    "eager_graphics.director",
-    "eager_graphics.ui_components",
-    "eager_graphics.screens",
-]
-forbidden_modules = ["eager_graphics.renderers"]
-
-[[tool.importlinter.contracts]]
-name = "eager-graphics renderers do not depend on director or screens"
-type = "forbidden"
-source_modules = ["eager_graphics.renderers"]
-forbidden_modules = [
-    "eager_graphics.director",
-    "eager_graphics.screens",
-]
-
-[[tool.importlinter.contracts]]
-name = "eager-graphics screens do not depend on compositor or director"
-type = "forbidden"
-source_modules = ["eager_graphics.screens"]
-forbidden_modules = [
-    "eager_graphics.compositor",
-    "eager_graphics.director",
-]
-
-# ---------------------------------------------------------------------------
-# eager-runtime internal boundaries
-# ---------------------------------------------------------------------------
-
-[[tool.importlinter.contracts]]
-name = "eager-runtime StoryVM does not depend on outer session or cli"
-type = "forbidden"
-source_modules = [
-    "eager_runtime.runtime",
-]
-forbidden_modules = [
-    "eager_runtime.session",
-    "eager_runtime.cli",
-]
-
-[[tool.importlinter.contracts]]
-name = "eager-runtime core modules do not depend on cli"
-type = "forbidden"
-source_modules = [
-    "eager_runtime.runtime",
-    "eager_runtime.session",
-    "eager_runtime.i18n",
-    "eager_runtime.assets",
-    "eager_runtime.player",
-]
-forbidden_modules = [
-    "eager_runtime.cli",
-]
-
-# ---------------------------------------------------------------------------
-# eager-script internal boundaries
-# ---------------------------------------------------------------------------
-
-[[tool.importlinter.contracts]]
-name = "eager-script expr and hooks do not depend on graph, validator, or cli"
-type = "forbidden"
-source_modules = [
-    "eager_script.expr",
-    "eager_script.hooks",
-]
-forbidden_modules = [
-    "eager_script.graph",
-    "eager_script.validator",
-    "eager_script.cli",
-]
-
-[[tool.importlinter.contracts]]
-name = "eager-script expr and hooks are mutually independent"
+name = "eager.script expr and hooks are mutually independent"
 type = "independence"
 modules = [
-    "eager_script.expr",
-    "eager_script.hooks",
-]
-
-[[tool.importlinter.contracts]]
-name = "eager-script core modules do not depend on cli"
-type = "forbidden"
-source_modules = [
-    "eager_script.graph",
-    "eager_script.validator",
-    "eager_script.expr",
-    "eager_script.hooks",
-]
-forbidden_modules = [
-    "eager_script.cli",
-]
-
-# ---------------------------------------------------------------------------
-# eager-core internal boundaries
-# ---------------------------------------------------------------------------
-
-[[tool.importlinter.contracts]]
-name = "eager-core primitive modules are mutually independent"
-type = "independence"
-modules = [
-    "eager_core.audio",
-    "eager_core.easing",
-    "eager_core.events",
-    "eager_core.input",
-    "eager_core.storage",
-    "eager_core.timing",
-    "eager_core.types",
-]
-
-[[tool.importlinter.contracts]]
-name = "eager-core leaf modules do not depend on sibling subsystems"
-type = "forbidden"
-source_modules = [
-    "eager_core.types",
-    "eager_core.storage",
-]
-forbidden_modules = [
-    "eager_core.audio",
-    "eager_core.easing",
-    "eager_core.events",
-    "eager_core.i18n",
-    "eager_core.input",
-    "eager_core.protocols",
-    "eager_core.text",
-    "eager_core.timing",
+    "eager.script.expr",
+    "eager.script.hooks",
 ]
 
 [tool.basedpyright]
@@ -294,7 +163,7 @@ reportUnannotatedClassAttribute = "none"
 reportImplicitStringConcatenation = "none"
 
 [[tool.basedpyright.executionEnvironments]]
-root = "packages/eager-core/tests"
+root = "packages/eager/tests"
 reportUnknownVariableType = "none"
 reportUnknownMemberType = "none"
 reportUnknownParameterType = "none"
@@ -304,47 +173,7 @@ reportUnannotatedClassAttribute = "none"
 reportImplicitStringConcatenation = "none"
 
 [[tool.basedpyright.executionEnvironments]]
-root = "packages/eager-script/tests"
-reportUnknownVariableType = "none"
-reportUnknownMemberType = "none"
-reportUnknownParameterType = "none"
-reportMissingParameterType = "none"
-reportUnknownLambdaType = "none"
-reportUnannotatedClassAttribute = "none"
-reportImplicitStringConcatenation = "none"
-
-[[tool.basedpyright.executionEnvironments]]
-root = "packages/eager-script/benchmarks"
-reportUnknownVariableType = "none"
-reportUnknownMemberType = "none"
-reportUnknownParameterType = "none"
-reportMissingParameterType = "none"
-reportUnknownLambdaType = "none"
-reportUnannotatedClassAttribute = "none"
-reportImplicitStringConcatenation = "none"
-
-[[tool.basedpyright.executionEnvironments]]
-root = "packages/eager-runtime/tests"
-reportUnknownVariableType = "none"
-reportUnknownMemberType = "none"
-reportUnknownParameterType = "none"
-reportMissingParameterType = "none"
-reportUnknownLambdaType = "none"
-reportUnannotatedClassAttribute = "none"
-reportImplicitStringConcatenation = "none"
-
-[[tool.basedpyright.executionEnvironments]]
-root = "packages/eager-graphics/tests"
-reportUnknownVariableType = "none"
-reportUnknownMemberType = "none"
-reportUnknownParameterType = "none"
-reportMissingParameterType = "none"
-reportUnknownLambdaType = "none"
-reportUnannotatedClassAttribute = "none"
-reportImplicitStringConcatenation = "none"
-
-[[tool.basedpyright.executionEnvironments]]
-root = "packages/eager-graphics/benchmarks"
+root = "packages/eager/benchmarks"
 reportUnknownVariableType = "none"
 reportUnknownMemberType = "none"
 reportUnknownParameterType = "none"
@@ -362,5 +191,3 @@ reportMissingParameterType = "none"
 reportUnknownLambdaType = "none"
 reportUnannotatedClassAttribute = "none"
 reportImplicitStringConcatenation = "none"
-
-

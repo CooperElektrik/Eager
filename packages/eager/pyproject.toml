@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=68.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eager"
+version = "0.9.0"
+description = "Unified visual novel and interactive narrative engine."
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Cooper" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Games/Entertainment",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Text Processing :: Markup",
+]
+keywords = ["narrative-engine", "visual-novel", "screenplay", "dsl", "eager"]
+dependencies = []
+
+[project.optional-dependencies]
+pil = ["pillow>=10.0"]
+pyglet = ["pyglet>=2.0"]
+audio = ["miniaudio>=0.12.4"]
+gui = [
+    "pillow>=10.0",
+    "pyglet>=2.0",
+    "miniaudio>=0.12.4",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4.0",
+]
+
+[project.scripts]
+eager = "eager.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+eager = ["py.typed", "template/**", "template/**/*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.basedpyright]
+typeCheckingMode = "standard"
+include = ["src", "tests"]
+venvPath = "../.."
+venv = ".venv"

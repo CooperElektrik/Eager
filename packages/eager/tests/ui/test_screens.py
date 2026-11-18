@@ -1,0 +1,1158 @@
+"""Tests for Phase 6 screens, menus, theme, and project config."""
+
+import tempfile
+from pathlib import Path
+from typing import Any, cast
+from typing import Any as GameSessionProtocol
+
+from eager.core.types import WHITE, Color, Rect
+from eager.script import parse_graph
+from eager.script.project import ProjectConfig, merge_graphs
+from eager.ui.screens import Button, ScreenManager, TitleScreen
+
+
+def _as_session(session: Any) -> GameSessionProtocol:
+    return cast("GameSessionProtocol", session)
+
+
+class MockUIDrawBackend:
+    """Mock UIDrawBackend recording draw calls for testing."""
+
+    def __init__(self) -> None:
+        self.rects: list[Any] = []
+        self.texts: list[Any] = []
+        self.images: list[Any] = []
+
+    def draw_rect(
+        self,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        color: Color,
+        *,
+        border_color: Color | None = None,
+        border_width: float = 0.0,
+    ) -> None:
+        self.rects.append((x, y, width, height, color, border_color, border_width))
+
+    def draw_rect_outline(
+        self, x: float, y: float, width: float, height: float, color: Color, line_width: float = 1.0
+    ) -> None:
+        self.rects.append(("outline", x, y, width, height, color))
+
+    def draw_gradient_rect(
+        self,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        top_color: Color,
+        bottom_color: Color,
+    ) -> None:
+        self.rects.append(("gradient", x, y, width, height, top_color, bottom_color))
+
+    def draw_text(
+        self,
+        x: float,
+        y: float,
+        text: str,
+        *,
+        font_size: int = 14,
+        color: Color = WHITE,
+        bold: bool = False,
+        italic: bool = False,
+        anchor_x: str = "left",
+        anchor_y: str = "top",
+        cache: bool = True,
+        **kwargs: Any,
+    ) -> None:
+        kw = {
+            "font_size": font_size,
+            "color": color,
+            "bold": bold,
+            "italic": italic,
+            "anchor_x": anchor_x,
+            "anchor_y": anchor_y,
+            "cache": cache,
+        }
+        kw.update(kwargs)
+        self.texts.append((text, x, y, kw))
+
+    def draw_image(
+        self,
+        asset_id: str,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        *,
+        tint: Color = WHITE,
+        anchor_x: str = "left",
+        anchor_y: str = "top",
+    ) -> None:
+        self.images.append((asset_id, x, y, width, height, tint, anchor_x, anchor_y))
+
+    def measure_text(
+        self,
+        text: str,
+        *,
+        font_size: int = 14,
+        bold: bool = False,
+        italic: bool = False,
+        cache: bool = True,
+        font_family: str | None = None,
+    ) -> tuple[float, float]:
+        longest = max((len(line) for line in text.splitlines()), default=0)
+        return (longest * font_size * 0.5, float(font_size) * 1.2)
+
+
+class TestScreensAndProject:
+    def test_button_and_screen_interaction(self):
+        btn_clicked = False
+
+        def on_click():
+            nonlocal btn_clicked
+            btn_clicked = True
+
+        btn = Button(Rect(10, 10, 100, 40), "Click Me", action=on_click)
+        assert btn.hit_test(50, 20)
+        assert not (btn.hit_test(200, 200))
+
+        screen = TitleScreen("My Novel")
+        mgr = ScreenManager()
+        mgr.register(screen)
+
+        class DummySession:
+            def advance(self):
+                pass
+
+        mgr.show("title", _as_session(DummySession()))
+        assert mgr.active_screen is not None
+        assert mgr.active_screen.name == "title"
+
+        # Click first button (Start Game)
+        btn0 = mgr.active_screen.buttons[0]
+        click_x = btn0.rect.x + btn0.rect.width / 2.0
+        click_y = btn0.rect.y + btn0.rect.height / 2.0
+        mgr.active_screen.handle_mouse_move(click_x, click_y)
+        assert mgr.active_screen.handle_mouse_click(click_x, click_y)
+
+    def test_screen_draw(self):
+        screen = TitleScreen("Awesome Game")
+        backend = MockUIDrawBackend()
+
+        class DummySession:
+            def advance(self):
+                pass
+
+        screen.on_enter(_as_session(DummySession()))
+        screen.draw(backend, 1280, 720)
+
+        assert len(backend.rects) > 0
+        assert any("Awesome Game" in t[0] for t in backend.texts)
+
+    def test_project_config_and_graph_merge(self):
+        with tempfile.TemporaryDirectory() as td:
+            toml_path = Path(td) / "game.toml"
+            toml_path.write_text("""
+[game]
+title = "Merged Novel"
+version = "2.0.0"
+
+[window]
+width = 1280
+height = 720
+""")
+            cfg = ProjectConfig.load(toml_path)
+            assert cfg.title == "Merged Novel"
+            assert cfg.virtual_width == 1280
+
+        # Merge graphs
+        g1 = parse_graph("## Part 1 --- p1\nNarrator: Chapter 1")
+        g2 = parse_graph("## Part 2 --- p2\nNarrator: Chapter 2")
+        merged = merge_graphs([g1, g2])
+        assert len(merged.nodes) == 2
+        assert "p1" in merged.nodes
+        assert "p2" in merged.nodes
+
+    def test_widgets_grid(self):
+        from eager.core.types import Rect
+        from eager.ui.screens import Grid
+
+        grid = Grid(Rect(0, 0, 300, 200), rows=2, cols=3, padding=0.0, spacing_x=0.0, spacing_y=0.0)
+        c0 = grid.cell_rect(0, 0)
+        assert (c0.x, c0.y, c0.width, c0.height) == (0, 0, 100, 100)
+        c4 = grid.cell_rect_by_index(4)
+        assert (c4.x, c4.y, c4.width, c4.height) == (100, 100, 100, 100)
+
+    def test_preferences_screen(self):
+        from eager.ui.screens import PreferencesScreen
+
+        class DummyPreferences:
+            master_volume = 1.0
+            music_volume = 0.8
+            sfx_volume = 1.0
+            voice_volume = 1.0
+            text_speed = 50.0
+            auto_forward_time = 3.0
+
+        class DummySession:
+            def __init__(self):
+                self.preferences = DummyPreferences()
+                self.applied = False
+                self.screens = ScreenManager()
+
+            def apply_preferences(self):
+                self.applied = True
+
+        session = DummySession()
+        pref_screen = PreferencesScreen()
+        session.screens.register(pref_screen)
+        session.screens.show("preferences", _as_session(session))
+
+        # Hit test slider
+        slider = pref_screen.sliders[0]
+        pref_screen.handle_mouse_click(slider.rect.x + slider.rect.width * 0.5, slider.rect.y + 5)
+        assert session.applied
+
+        # Back button
+        back_btn = pref_screen.buttons[0]
+        assert pref_screen.handle_mouse_click(back_btn.rect.x + 5, back_btn.rect.y + 5)
+        assert not session.screens.is_active
+
+    def test_preferences_screen_language_selection(self):
+        from eager.ui.screens import PreferencesScreen
+
+        class DummyPreferences:
+            master_volume = 1.0
+            music_volume = 1.0
+            sfx_volume = 1.0
+            voice_volume = 1.0
+            text_speed = 50.0
+            auto_forward_time = 3.0
+            language = "default"
+            fullscreen = False
+            skip_unseen = False
+            autosave_enabled = False
+            resolution_scale = 1.0
+
+        class DummyTranslationManager:
+            def available_locales(self):
+                return ["default", "es", "ja"]
+
+        class DummySession:
+            def __init__(self):
+                self.preferences = DummyPreferences()
+                self.translation_manager = DummyTranslationManager()
+                self.screens = ScreenManager()
+                self.chosen_locale = "default"
+
+            def apply_preferences(self):
+                pass
+
+            def set_language(self, locale: str):
+                self.chosen_locale = locale
+                self.preferences.language = locale
+
+        session = DummySession()
+        pref_screen = PreferencesScreen()
+        session.screens.register(pref_screen)
+        session.screens.show("preferences", _as_session(session))
+
+        # Button 0 is Back, Buttons 1..3 are languages (default, es, ja), Buttons 4..6 are options, Buttons 7..10 are scale
+        assert len(pref_screen.buttons) == 11
+        assert "DEFAULT" in pref_screen.buttons[1].text
+        assert "ES" in pref_screen.buttons[2].text
+        assert "JA" in pref_screen.buttons[3].text
+        assert "Fullscreen" in pref_screen.buttons[4].text
+        assert "Skip Unseen" in pref_screen.buttons[5].text
+        assert "Autosave" in pref_screen.buttons[6].text
+        assert "0.75x" in pref_screen.buttons[7].text
+        assert "1.00x" in pref_screen.buttons[8].text
+
+        # Click Spanish (buttons[2])
+        es_btn = pref_screen.buttons[2]
+        assert pref_screen.handle_mouse_click(es_btn.rect.x + 5, es_btn.rect.y + 5)
+        assert session.chosen_locale == "es"
+        assert session.preferences.language == "es"
+
+        # After clicking, screen re-initializes on_enter, so active marker updates
+        assert "[ ES ]" in pref_screen.buttons[2].text
+
+        # Test options buttons (Fullscreen & Skip Unseen toggles)
+        fs_btn = pref_screen.buttons[4]
+        assert "[ OFF ]" in fs_btn.text
+        assert pref_screen.handle_mouse_click(fs_btn.rect.x + 5, fs_btn.rect.y + 5)
+        assert "[ ON ]" in pref_screen.buttons[4].text
+
+        skip_btn = pref_screen.buttons[5]
+        assert "[ OFF ]" in skip_btn.text
+        assert pref_screen.handle_mouse_click(skip_btn.rect.x + 5, skip_btn.rect.y + 5)
+        assert "[ ON ]" in pref_screen.buttons[5].text
+        assert session.preferences.skip_unseen is True
+
+        # Test on_exit auto-save
+        saved_prefs = {"value": False}
+        cast(Any, session).save_preferences = lambda: saved_prefs.__setitem__("value", True)
+        session.screens.hide(_as_session(session))
+        assert saved_prefs["value"] is True
+
+    def test_history_screen(self):
+        from eager.ui.screens import HistoryScreen
+
+        class DummyEntry:
+            speaker = "Alice"
+            text = "Hello world"
+
+        class DummyBacklog:
+            def __init__(self):
+                self.entries = [DummyEntry() for _ in range(10)]
+
+        class DummySession:
+            def __init__(self):
+                self.backlog = DummyBacklog()
+                self.screens = ScreenManager()
+
+        session = DummySession()
+        history_screen = HistoryScreen()
+        session.screens.register(history_screen)
+        session.screens.show("history", _as_session(session))
+
+        history_screen.scroll_up()
+        assert history_screen.scroll_offset > 0
+        history_screen.scroll_down()
+        assert history_screen.scroll_offset == 0
+
+        backend = MockUIDrawBackend()
+        history_screen.draw(backend, 1280, 720)
+        assert any("Dialogue History" in t[0] for t in backend.texts)
+
+    def test_history_screen_draw_before_on_enter(self):
+        from eager.ui.screens import HistoryScreen
+
+        history_screen = HistoryScreen()
+        backend = MockUIDrawBackend()
+        # Draw without session / before on_enter
+        history_screen.draw(backend, 1280, 720)
+        assert any("Dialogue History" in t[0] for t in backend.texts)
+        assert any("No dialogue recorded yet." in t[0] for t in backend.texts)
+        # Back button action should be safe to call even without session
+        for btn in history_screen.buttons:
+            if btn.text == "Back" and btn.action:
+                btn.action()
+
+    def test_screen_manager_navigation_and_input(self):
+        from eager.ui.screens import Screen
+
+        s1 = Screen("s1")
+        s2 = Screen("s2")
+        mgr = ScreenManager()
+        mgr.register(s1)
+        mgr.register(s2)
+
+        mgr.show("s1", _as_session(None))
+        assert mgr.is_active
+        assert mgr.active_screen is not None
+        assert mgr.active_screen.name == "s1"
+
+        mgr.show("s2", _as_session(None))
+        assert mgr.active_screen is not None
+        assert mgr.active_screen.name == "s2"
+
+        # Esc dismisses to previous
+        assert mgr.handle_key("escape", None)
+        assert mgr.active_screen is not None
+        assert mgr.active_screen.name == "s1"
+
+        # Esc dismisses final
+        assert mgr.handle_key("escape", None)
+        assert not mgr.is_active
+
+    def test_saveload_screen_renders_slot_metadata(self):
+        from eager.ui.screens import SaveLoadScreen
+
+        class DummyMeta:
+            slot_name = "slot_1"
+            timestamp = "2026-10-13T15:30:00Z"
+            scene_id = "throne_room"
+            scene_name = "The Throne Room"
+            dialogue_snippet = "Welcome traveler to the kingdom."
+
+        class DummySaveManager:
+            def get_slot_metadata(self, slot_name: str):
+                if slot_name == "slot_1":
+                    return DummyMeta()
+                return None
+
+        class DummySession:
+            def __init__(self):
+                self.save_manager = DummySaveManager()
+                self.screens = ScreenManager()
+
+        session = DummySession()
+        screen = SaveLoadScreen("save")
+        screen.on_enter(_as_session(session))
+
+        # Slot 1 button should contain title, timestamp, and snippet
+        slot1_btn = screen.buttons[0]
+        assert "Slot 1: The Throne Room" in slot1_btn.text
+        assert "2026-10-13 15:30" in slot1_btn.text
+        assert "Welcome traveler to the kingdom." in slot1_btn.text
+
+        # Slot 2 should show empty
+        slot2_btn = screen.buttons[1]
+        assert "[Empty Slot]" in slot2_btn.text
+
+        # Draw screen
+        backend = MockUIDrawBackend()
+        screen.draw(backend, 1280, 720)
+        assert any("Slot 1: The Throne Room" in t[0] for t in backend.texts)
+
+    def test_button_multiline_card_draw(self):
+        btn = Button(Rect(10, 10, 200, 100), "Title Line\nSubtitle Line\nSnippet Line")
+        backend = MockUIDrawBackend()
+        btn.draw(
+            backend, Color(0, 0, 0, 1), Color(1, 1, 1, 1), Color(1, 1, 1, 1), Color(1, 1, 1, 1)
+        )
+
+        drawn_texts = [t[0] for t in backend.texts]
+        assert "Title Line" in drawn_texts
+        assert "Subtitle Line" in drawn_texts
+        assert "Snippet Line" in drawn_texts
+
+    def test_save_slot_button_multiline_draw(self):
+        from eager.ui.screens import SaveSlotButton
+
+        btn = SaveSlotButton(Rect(10, 10, 200, 100), "Slot 1\n2026-11-05 12:00\nLast words")
+        backend = MockUIDrawBackend()
+        btn.draw(
+            backend, Color(0, 0, 0, 1), Color(1, 1, 1, 1), Color(1, 1, 1, 1), Color(1, 1, 1, 1)
+        )
+        drawn_texts = [t[0] for t in backend.texts]
+        assert "Slot 1" in drawn_texts
+        assert "2026-11-05 12:00" in drawn_texts
+        assert "Last words" in drawn_texts
+
+    def test_history_screen_voice_replay_speaker_buttons(self):
+        from eager.ui.screens import HistoryScreen
+
+        class DummyEntry:
+            def __init__(self, speaker, text, voice=None):
+                self.speaker = speaker
+                self.text = text
+                self.voice = voice
+
+        class DummyBacklog:
+            def __init__(self, entries):
+                self.entries = entries
+
+        class MockAudio:
+            def __init__(self):
+                self.played = []
+
+            def play(self, channel, asset_path, *, loop=False, **kwargs):
+                self.played.append((channel, str(asset_path), loop))
+
+        class DummySession:
+            def __init__(self, entries):
+                self.backlog = DummyBacklog(entries)
+                self.screens = ScreenManager()
+                self.audio = MockAudio()
+                self.play_voice_calls: list[str] = []
+                self.play_voice: Any = None
+
+        entries = [
+            DummyEntry("Alice", "Hello without voice", voice=None),
+            DummyEntry("Bob", "Voice clip 1", voice="bob_01.ogg"),
+            DummyEntry("Alice", "Voice clip 2", voice="alice_02.ogg"),
+            DummyEntry(None, "Narration voice", voice="narrator_01.ogg"),
+        ]
+        session = DummySession(entries)
+        history_screen = HistoryScreen()
+        session.screens.register(history_screen)
+        session.screens.show("history", _as_session(session))
+
+        # Check buttons: Up, Down, Back + 3 speaker buttons for the 3 entries with voice
+        speaker_buttons = [b for b in history_screen.buttons if b.text == "[>]"]
+        assert len(speaker_buttons) == 3
+        assert speaker_buttons[0].voice == "bob_01.ogg"
+        assert speaker_buttons[1].voice == "alice_02.ogg"
+        assert speaker_buttons[2].voice == "narrator_01.ogg"
+
+        # Test hover state
+        history_screen.handle_mouse_move(
+            speaker_buttons[0].rect.x + 2, speaker_buttons[0].rect.y + 2
+        )
+        assert speaker_buttons[0].hovered
+
+        # Click the first speaker button to replay voice
+        clicked = history_screen.handle_mouse_click(
+            speaker_buttons[0].rect.x + 2, speaker_buttons[0].rect.y + 2
+        )
+        assert clicked
+        assert session.audio.played == [("voice", "bob_01.ogg", False)]
+
+        # Click the second speaker button
+        clicked2 = history_screen.handle_mouse_click(
+            speaker_buttons[1].rect.x + 2, speaker_buttons[1].rect.y + 2
+        )
+        assert clicked2
+        assert session.audio.played[-1] == ("voice", "alice_02.ogg", False)
+
+        # Test draw with mock backend
+        backend = MockUIDrawBackend()
+        history_screen.draw(backend, 1280, 720)
+        speaker_draws = [t for t in backend.texts if t[0] == "[>]"]
+        assert len(speaker_draws) == 3
+
+        # Test session.play_voice delegation if play_voice is provided on session
+        session.play_voice_calls = []
+        session.play_voice = lambda v: session.play_voice_calls.append(v)
+        history_screen.replay_voice("custom_voice.ogg")
+        assert session.play_voice_calls == ["custom_voice.ogg"]
+
+        # Scrolling test with voice buttons
+        many_entries = [
+            DummyEntry("Char", f"Line {i}", voice=f"voice_{i}.ogg" if i % 2 == 0 else None)
+            for i in range(15)
+        ]
+        scroll_session = DummySession(many_entries)
+        history_screen2 = HistoryScreen()
+        scroll_session.screens.register(history_screen2)
+        scroll_session.screens.show("history", _as_session(scroll_session))
+
+        # Offset 0: displays slice 8..15 (7 entries: indices 8, 9, 10, 11, 12, 13, 14)
+        # Even indices in 8..14 are 8, 10, 12, 14 -> 4 speaker buttons
+        btn_voices = [b.voice for b in history_screen2.buttons if b.voice]
+        assert btn_voices == ["voice_8.ogg", "voice_10.ogg", "voice_12.ogg", "voice_14.ogg"]
+
+        history_screen2.scroll_up()
+        # After scroll_up (offset 1): displays slice 7..14 (indices 7, 8, 9, 10, 11, 12, 13)
+        # Even indices: 8, 10, 12 -> 3 speaker buttons
+        btn_voices2 = [b.voice for b in history_screen2.buttons if b.voice]
+        assert btn_voices2 == ["voice_8.ogg", "voice_10.ogg", "voice_12.ogg"]
+
+    def test_proportional_layout_800x600_no_clipping(self):
+        """Screens rendered at 800x600 must keep all widgets within bounds without clipping."""
+        from eager.ui.screens import (
+            HistoryScreen,
+            PreferencesScreen,
+            SaveLoadScreen,
+            TitleScreen,
+        )
+
+        # 1. HistoryScreen at 800x600: Up/Down buttons must not be at x=1100, Back button not at y=620
+        history = HistoryScreen(viewport_width=800, viewport_height=600)
+        up_btn = history.buttons[0]
+        down_btn = history.buttons[1]
+        back_btn = history.buttons[2]
+
+        # In 800x600, all buttons must fit completely inside [0, 800] x [0, 600]
+        assert up_btn.rect.x + up_btn.rect.width < 800.0
+        assert down_btn.rect.x + down_btn.rect.width < 800.0
+        assert back_btn.rect.y + back_btn.rect.height < 600.0
+        assert up_btn.rect.x > 0.0
+        assert back_btn.rect.y > 0.0
+
+        # 2. SaveLoadScreen at 800x600: Grid and Back button must be within bounds
+        save_screen = SaveLoadScreen("save", viewport_width=800, viewport_height=600)
+        save_back = save_screen.buttons[-1]
+        assert save_back.rect.y + save_back.rect.height < 600.0
+        for b in save_screen.buttons:
+            assert b.rect.x + b.rect.width < 800.0
+            assert b.rect.y + b.rect.height < 600.0
+
+        # 3. PreferencesScreen at 800x600: Sliders, labels, and buttons within bounds
+        pref_screen = PreferencesScreen(viewport_width=800, viewport_height=600)
+        pref_back = pref_screen.buttons[0]
+        assert pref_back.rect.y + pref_back.rect.height < 600.0
+        for s in pref_screen.sliders:
+            assert s.rect.x + s.rect.width < 800.0
+            assert s.rect.y + s.rect.height < 600.0
+
+        # 4. TitleScreen at 800x600: Buttons within bounds
+        title_screen = TitleScreen("Test Game", viewport_width=800, viewport_height=600)
+        for b in title_screen.buttons:
+            assert b.rect.x + b.rect.width < 800.0
+            assert b.rect.y + b.rect.height < 600.0
+
+    def test_proportional_layout_1920x1080_scales_beyond_1280x720(self):
+        """Screens rendered at 1920x1080 must expand beyond the 1280x720 bounding area."""
+        from eager.ui.screens import (
+            HistoryScreen,
+            PreferencesScreen,
+            SaveLoadScreen,
+            TitleScreen,
+        )
+
+        # HistoryScreen: Up/Down buttons should be placed proportionally near right margin (x > 1280)
+        history = HistoryScreen(viewport_width=1920, viewport_height=1080)
+        up_btn = history.buttons[0]
+        back_btn = history.buttons[2]
+        assert up_btn.rect.x > 1280.0
+        assert back_btn.rect.y > 720.0
+
+        # SaveLoadScreen: Grid slot buttons and back button should scale into 1080p space
+        save_screen = SaveLoadScreen("save", viewport_width=1920, viewport_height=1080)
+        save_back = save_screen.buttons[-1]
+        assert save_back.rect.y > 720.0
+
+        # PreferencesScreen: language buttons should extend past 1280 or sliders scale
+        pref_screen = PreferencesScreen(viewport_width=1920, viewport_height=1080)
+        assert pref_screen.sliders[0].rect.width > 300.0
+
+        # TitleScreen: Buttons are wider and positioned lower than in 720p
+        title_screen = TitleScreen("Test Game", viewport_width=1920, viewport_height=1080)
+        assert title_screen.buttons[0].rect.y > 300.0
+        assert title_screen.buttons[0].rect.width > 240.0
+
+    def test_dynamic_viewport_resize(self):
+        """ScreenManager and Screens should recompute layouts dynamically on resize."""
+        screen = TitleScreen("Dynamic Game", viewport_width=1280, viewport_height=720)
+        orig_btn_rect = screen.buttons[0].rect
+
+        # Resize to 800x600 via set_viewport
+        screen.set_viewport(800, 600)
+        resized_rect = screen.buttons[0].rect
+        assert orig_btn_rect != resized_rect
+        assert resized_rect.width < orig_btn_rect.width
+        assert resized_rect.y < orig_btn_rect.y
+
+        # Resize to 1920x1080 via draw
+        backend = MockUIDrawBackend()
+        screen.draw(backend, 1920, 1080)
+        fhd_rect = screen.buttons[0].rect
+        assert fhd_rect.width > orig_btn_rect.width
+        assert fhd_rect.y > orig_btn_rect.y
+
+    def test_font_size_scaling_with_viewport_height(self):
+        """Screen font_size values must scale proportionally with viewport height relative to 720p."""
+        from eager.ui.screens import (
+            HistoryScreen,
+            PreferencesScreen,
+            SaveLoadScreen,
+            TitleScreen,
+        )
+
+        backend_720 = MockUIDrawBackend()
+        backend_1080 = MockUIDrawBackend()
+
+        # 1. TitleScreen: title (32) and button (16)
+        title_720 = TitleScreen("Title Test", viewport_width=1280, viewport_height=720)
+        title_720.draw(backend_720, 1280, 720)
+        texts_720 = {t[0]: t[3].get("font_size") for t in backend_720.texts}
+        assert texts_720["Title Test"] == 32
+        assert texts_720["Start Game"] == 16
+
+        title_1080 = TitleScreen("Title Test", viewport_width=1920, viewport_height=1080)
+        title_1080.draw(backend_1080, 1920, 1080)
+        texts_1080 = {t[0]: t[3].get("font_size") for t in backend_1080.texts}
+        assert texts_1080["Title Test"] == 48  # 32 * 1.5
+        assert texts_1080["Start Game"] == 24  # 16 * 1.5
+
+        # 2. SaveLoadScreen: header (28) and back button (16)
+        backend_720.texts.clear()
+        backend_1080.texts.clear()
+        save_720 = SaveLoadScreen("save", viewport_width=1280, viewport_height=720)
+        save_720.draw(backend_720, 1280, 720)
+        texts_720 = {t[0]: t[3].get("font_size") for t in backend_720.texts}
+        assert texts_720["Save Game"] == 28
+        assert texts_720["Back"] == 16
+
+        save_1080 = SaveLoadScreen("save", viewport_width=1920, viewport_height=1080)
+        save_1080.draw(backend_1080, 1920, 1080)
+        texts_1080 = {t[0]: t[3].get("font_size") for t in backend_1080.texts}
+        assert texts_1080["Save Game"] == 42  # 28 * 1.5
+        assert texts_1080["Back"] == 24  # 16 * 1.5
+
+        # 3. PreferencesScreen: header (28), labels (16, 18), back button (16)
+        backend_720.texts.clear()
+        backend_1080.texts.clear()
+        pref_720 = PreferencesScreen(viewport_width=1280, viewport_height=720)
+        pref_720.draw(backend_720, 1280, 720)
+        texts_720 = {t[0]: t[3].get("font_size") for t in backend_720.texts}
+        assert texts_720["Preferences"] == 28
+        assert texts_720["Master Volume"] == 16
+        assert texts_720["Language"] == 18
+        assert texts_720["Back"] == 16
+
+        pref_1080 = PreferencesScreen(viewport_width=1920, viewport_height=1080)
+        pref_1080.draw(backend_1080, 1920, 1080)
+        texts_1080 = {t[0]: t[3].get("font_size") for t in backend_1080.texts}
+        assert texts_1080["Preferences"] == 42  # 28 * 1.5
+        assert texts_1080["Master Volume"] == 24  # 16 * 1.5
+        assert texts_1080["Language"] == 27  # 18 * 1.5
+        assert texts_1080["Back"] == 24  # 16 * 1.5
+
+        # 4. HistoryScreen: header (28), empty (16), entry (14)
+        backend_720.texts.clear()
+        backend_1080.texts.clear()
+        hist_720 = HistoryScreen(viewport_width=1280, viewport_height=720)
+        hist_720.draw(backend_720, 1280, 720)
+        texts_720 = {t[0]: t[3].get("font_size") for t in backend_720.texts}
+        assert texts_720["Dialogue History"] == 28
+        assert texts_720["No dialogue recorded yet."] == 16
+
+        hist_1080 = HistoryScreen(viewport_width=1920, viewport_height=1080)
+        hist_1080.draw(backend_1080, 1920, 1080)
+        texts_1080 = {t[0]: t[3].get("font_size") for t in backend_1080.texts}
+        assert texts_1080["Dialogue History"] == 42  # 28 * 1.5
+        assert texts_1080["No dialogue recorded yet."] == 24  # 16 * 1.5
+
+    def test_screen_manager_and_screen_theme_propagation(self):
+        """ScreenManager theme updates must propagate to registered screens."""
+        from eager.core.theme import Theme
+        from eager.ui.screens import ScreenManager, TitleScreen
+
+        custom_theme = Theme(name="custom_dark", font_size=20, title_font_size=40)
+        mgr = ScreenManager(theme=custom_theme)
+        title = TitleScreen("Themed Title")
+        mgr.register(title)
+        assert title.theme.name == "custom_dark"
+
+        new_theme = Theme(name="new_theme", font_size=18, title_font_size=36)
+        mgr.set_theme(new_theme)
+        assert title.theme.name == "new_theme"
+
+    def test_game_menu_screen_layout_and_actions(self):
+        """GameMenuScreen must provide Resume, Save, Load, History, Preferences, Title, and Quit buttons."""
+        from eager.ui.screens import GameMenuScreen, ScreenManager
+
+        class DummySession:
+            def __init__(self):
+                self.screens = ScreenManager()
+                self.title_returned = False
+                self.closed = False
+                self.handled_inputs = []
+
+            def return_to_title(self):
+                self.title_returned = True
+
+            def handle_input(self, action):
+                self.handled_inputs.append(action)
+
+            def close(self):
+                self.closed = True
+
+        session = DummySession()
+        menu = GameMenuScreen(viewport_width=1280, viewport_height=720)
+        session.screens.register(menu)
+        session.screens.show("game_menu", _as_session(session))
+
+        btn_labels = [b.text for b in menu.buttons]
+        assert btn_labels == [
+            "Resume",
+            "Save Game",
+            "Load Game",
+            "Dialogue History",
+            "Preferences",
+            "Main Menu",
+            "Quit Game",
+        ]
+
+        # Draw call records scrim rect and title text
+        backend = MockUIDrawBackend()
+        menu.draw(backend, 1280, 720)
+        assert any(t[0] == "Game Menu" for t in backend.texts)
+
+        # Test Resume button action hides the menu
+        resume_btn = menu.buttons[0]
+        assert resume_btn.action is not None
+        resume_btn.action()
+        assert not session.screens.is_active
+
+        # Test Main Menu action calls session.return_to_title
+        title_btn = next(b for b in menu.buttons if b.text == "Main Menu")
+        assert title_btn.action is not None
+        title_btn.action()
+        assert session.title_returned is True
+
+        # Test Quit Game action calls session.handle_input(QUIT)
+        from eager.core.input import InputAction
+        quit_btn = next(b for b in menu.buttons if b.text == "Quit Game")
+        assert quit_btn.action is not None
+        quit_btn.action()
+        assert InputAction.QUIT in session.handled_inputs
+
+    def test_title_screen_escape_cannot_dismiss(self):
+        """TitleScreen must not be dismissed by pressing Escape into a blank void."""
+        from eager.ui.screens import ScreenManager, TitleScreen
+
+        mgr = ScreenManager()
+        title = TitleScreen()
+        mgr.register(title)
+        mgr.show("title", _as_session(None))
+
+        assert mgr.is_active
+        assert mgr.active_screen is not None
+        assert mgr.active_screen.name == "title"
+
+        # Pressing escape while title is active must consume the key and retain title screen
+        assert mgr.handle_key("escape", None) is True
+        assert mgr.is_active
+        assert mgr.active_screen is not None
+        assert mgr.active_screen.name == "title"
+
+    def test_centered_layout_title_and_game_menu(self):
+        """Buttons on TitleScreen and GameMenuScreen must be centered horizontally."""
+        from eager.ui.screens import GameMenuScreen, TitleScreen
+
+        class DummySession:
+            def __init__(self):
+                self.screens = ScreenManager()
+
+        session = DummySession()
+        vw = 1280
+
+        # Title screen
+        title = TitleScreen()
+        session.screens.register(title)
+        session.screens.show("title", _as_session(session))
+        for btn in title.buttons:
+            btn_center_x = btn.rect.x + (btn.rect.width / 2.0)
+            assert abs(btn_center_x - (vw / 2.0)) < 1.0
+
+        # Game menu screen
+        menu = GameMenuScreen()
+        session.screens.register(menu)
+        session.screens.show("game_menu", _as_session(session))
+        for btn in menu.buttons:
+            btn_center_x = btn.rect.x + (btn.rect.width / 2.0)
+            assert abs(btn_center_x - (vw / 2.0)) < 1.0
+
+    def test_quit_game_calls_player_close(self):
+        """Quit buttons on TitleScreen and GameMenuScreen should close the player window."""
+        from eager.core.input import InputAction
+        from eager.ui.screens import GameMenuScreen, ScreenManager, TitleScreen
+
+        class DummyPlayer:
+            def __init__(self):
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        class DummySession:
+            def __init__(self):
+                self.screens = ScreenManager()
+                self._player = DummyPlayer()
+                self.handled_inputs = []
+
+            def handle_input(self, action):
+                self.handled_inputs.append(action)
+                if action == InputAction.QUIT:
+                    self._player.close()
+                    return True
+                return False
+
+        session = DummySession()
+
+        # TitleScreen Quit button
+        title = TitleScreen()
+        session.screens.register(title)
+        session.screens.show("title", _as_session(session))
+        quit_btn = next(b for b in title.buttons if b.text == "Quit")
+        assert quit_btn.action is not None
+        quit_btn.action()
+        assert session._player.closed is True
+
+        # GameMenuScreen Quit Game button
+        session._player.closed = False
+        menu = GameMenuScreen()
+        session.screens.register(menu)
+        session.screens.show("game_menu", _as_session(session))
+        quit_menu_btn = next(b for b in menu.buttons if b.text == "Quit Game")
+        assert quit_menu_btn.action is not None
+        quit_menu_btn.action()
+        assert session._player.closed is True
+
+    def test_saveload_screen_load_action_clears_stack_and_resumes(self):
+        """SaveLoadScreen load action must hide all screens, switch to game mode, and sync UI."""
+        from eager.ui.screens import SaveLoadScreen, ScreenManager
+
+        class DummyPlayer:
+            def __init__(self):
+                self.restored = False
+
+            def on_state_restored(self):
+                self.restored = True
+
+        class DummySaveManager:
+            def load_slot(self, slot_name: str):
+                return True
+
+            def get_slot_metadata(self, slot_name: str):
+                return None
+
+        class DummySession:
+            def __init__(self):
+                self.screens = ScreenManager()
+                self.save_manager = DummySaveManager()
+                self.mode = "screen"
+                self.ui_dirty = False
+                self.player = DummyPlayer()
+
+            def mark_ui_dirty(self) -> None:
+                self.ui_dirty = True
+
+            def notify_state_restored(self) -> None:
+                self.player.on_state_restored()
+
+            def load_game(self, slot_name: str) -> bool:
+                return self.save_manager.load_slot(slot_name)
+
+        session = DummySession()
+        saveload = SaveLoadScreen(mode="load")
+        session.screens.register(saveload)
+        session.screens.show("load", _as_session(session))
+        assert session.screens.is_active
+
+        # Slot 1 is button index 1 (button 0 is Back)
+        slot_btn = saveload.buttons[1]
+        assert slot_btn.action is not None
+        slot_btn.action()
+        assert not session.screens.is_active
+        assert session.mode == "game"
+        assert session.ui_dirty is True
+        assert session.player.restored is True
+
+    def test_history_screen_multiline_text_wrapping(self):
+        """HistoryScreen must wrap long dialogue lines into multiple lines."""
+        from eager.ui.screens import HistoryScreen, ScreenManager
+
+        class DummyEntry:
+            def __init__(self, speaker, text):
+                self.speaker = speaker
+                self.text = text
+                self.voice = None
+
+        class DummyBacklog:
+            def __init__(self, entries):
+                self.entries = entries
+
+        class DummySession:
+            def __init__(self, entries):
+                self.backlog = DummyBacklog(entries)
+                self.screens = ScreenManager()
+
+        long_speech = (
+            "This is an exceptionally long paragraph of dialogue meant to simulate an "
+            "extended exposition beat in a visual novel scene where a character explains "
+            "the intricate backstory of their world across several wrapped lines."
+        )
+        entries = [
+            DummyEntry("Narrator", long_speech),
+            DummyEntry(None, "A short narration sentence."),
+        ]
+        session = DummySession(entries)
+        screen = HistoryScreen(viewport_width=1280, viewport_height=720)
+        session.screens.register(screen)
+        session.screens.show("history", _as_session(session))
+
+        backend = MockUIDrawBackend()
+        screen.draw(backend, 1280, 720)
+
+        # Ensure speaker label was drawn
+        assert any(t[0] == "Narrator" for t in backend.texts)
+        # Ensure multiple text lines were drawn for the wrapped long speech
+        # (plain text was split into pieces, each shorter than full length)
+        narrator_pieces = [t for t in backend.texts if len(t[0]) > 10 and t[0] in long_speech]
+        assert len(narrator_pieces) >= 2
+
+    def test_save_slot_button_renders_thumbnail(self, tmp_path):
+        """SaveSlotButton must call backend.draw_image when thumbnail file exists."""
+        from eager.core.types import Rect
+        from eager.ui.screens.widgets import SaveSlotButton
+
+        thumb_file = tmp_path / "thumb_slot_1.png"
+        thumb_file.write_bytes(b"mock_png_bytes")
+
+        btn = SaveSlotButton(
+            Rect(10, 10, 300, 150),
+            "Slot 1\n2026-10-13 15:30\n\"Some dialogue\"",
+            thumbnail_path=thumb_file,
+        )
+        backend = MockUIDrawBackend()
+        btn.draw(backend, Color.from_hex("#333333"), Color.from_hex("#555555"), Color.from_hex("#777777"), Color.from_hex("#ffffff"))
+
+        # Verify draw_image was called with the thumbnail file path
+        assert len(backend.images) == 1
+        assert backend.images[0][0] == str(thumb_file)
+
+    def test_screen_keyboard_navigation(self):
+        """Screen.handle_key allows navigating and activating buttons via keyboard."""
+        from eager.core.types import Rect
+        from eager.ui.screens import Screen
+        from eager.ui.screens.widgets import Button
+
+        screen = Screen("test_screen")
+        clicked = []
+        screen.buttons = [
+            Button(Rect(0, 0, 100, 40), "Btn 0", action=lambda: clicked.append(0)),
+            Button(Rect(0, 50, 100, 40), "Btn 1", action=lambda: clicked.append(1)),
+        ]
+
+        # Down arrow moves focus to Btn 0
+        assert screen.handle_key("down") is True
+        assert screen._focused_button_index == 0
+        assert screen.buttons[0].hovered is True
+        assert screen.buttons[1].hovered is False
+
+        # Down arrow moves focus to Btn 1
+        assert screen.handle_key("down") is True
+        assert screen._focused_button_index == 1
+        assert screen.buttons[0].hovered is False
+        assert screen.buttons[1].hovered is True
+
+        # Enter activates focused button
+        assert screen.handle_key("enter") is True
+        assert clicked == [1]
+
+        # Up arrow moves focus back to Btn 0
+        assert screen.handle_key("up") is True
+        assert screen._focused_button_index == 0
+
+        # Space activates focused button
+        assert screen.handle_key("space") is True
+        assert clicked == [1, 0]
+
+    def test_lazy_backend_imports(self):
+        """Renderers are exposed directly from eager.backends.renderers."""
+        from eager.backends.renderers import NullRenderer, PILRenderer, PygletRenderer
+
+        null_r = NullRenderer()
+        assert null_r is not None
+        pil_r = PILRenderer(width=800, height=600)
+        assert pil_r.width == 800
+        assert pil_r.height == 600
+        pyglet_r = PygletRenderer(width=800, height=600)
+        assert pyglet_r.width == 800
+        assert pyglet_r.height == 600
+
+
+def test_history_screen_scroll_bounds_and_voice_button_alignment() -> None:
+    from eager.core.backlog import Backlog
+    from eager.ui.screens.builtin import HistoryScreen
+
+    backlog = Backlog()
+    for i in range(10):
+        backlog.add(
+            speaker="Hero",
+            text="This is a very long line of dialogue that will definitely wrap across multiple lines in the history view! " * 3,
+            voice=f"voice_{i}.ogg",
+        )
+
+    class DummySession:
+        def __init__(self, bl: Backlog) -> None:
+            self.backlog = bl
+            self.overlay = None
+
+    class DummyBackend(MockUIDrawBackend):
+        def measure_text(
+            self,
+            text: str,
+            *,
+            font_size: int = 14,
+            bold: bool = False,
+            italic: bool = False,
+            cache: bool = True,
+            font_family: str | None = None,
+        ) -> tuple[float, float]:
+            return (len(text) * 10.0, float(font_size))
+
+    screen = HistoryScreen(viewport_width=1280, viewport_height=720)
+    screen.on_enter(_as_session(DummySession(backlog)))
+
+    # Max scroll_offset with 10 entries and visible_count=7 is 3 (7 + 3 = 10)
+    for _ in range(10):
+        screen.scroll_up()
+    assert screen.scroll_offset == 3
+
+    # Draw should align voice buttons with wrapped entry heights (non-uniform y steps)
+    screen.draw(DummyBackend(), 1280, 720)
+    voice_buttons = [b for b in screen.buttons if getattr(b, "voice", None)]
+    assert len(voice_buttons) == 7
+    ys = [b.rect.y for b in voice_buttons]
+    # Because entries wrap to 3 lines, step > 65.0
+    assert ys[1] - ys[0] > 65.0
+
+
+
+def test_slider_drag_clamps_outside_bounds_and_width_zero_guard() -> None:
+    from eager.core.types import Rect
+    from eager.ui.screens.widgets import Slider
+
+    values: list[float] = []
+    s = Slider(Rect(100.0, 100.0, 200.0, 22.0), value=0.5, on_change=values.append)
+
+    # Dragging above and left of track still clamps to 0.0
+    s.handle_click(50.0, 80.0)
+    assert s.value == 0.0
+    assert values[-1] == 0.0
+
+    # Dragging below and right of track still clamps to 1.0
+    s.handle_click(400.0, 160.0)
+    assert s.value == 1.0
+    assert values[-1] == 1.0
+
+    # Zero-width slider does not raise ZeroDivisionError
+    s_zero = Slider(Rect(0.0, 0.0, 0.0, 22.0), value=0.5)
+    s_zero.handle_click(10.0, 10.0)
+    assert s_zero.value == 0.5
+
+
+def test_screen_handle_key_slider_and_resize_focus_preservation() -> None:
+    from unittest.mock import MagicMock
+
+    import pytest
+
+    from eager.ui.screens.builtin import PreferencesScreen, TitleScreen
+
+    session = MagicMock()
+    session.overlay = None
+    session.preferences.master_volume = 0.5
+    session.preferences.music_volume = 0.8
+    session.preferences.ambient_volume = 0.8
+    session.preferences.sfx_volume = 1.0
+    session.preferences.voice_volume = 1.0
+    session.preferences.text_speed = 0.0  # Instant
+    session.preferences.auto_forward_time = 3.0
+    session.preferences.language = "default"
+    session.preferences.fullscreen = False
+    session.preferences.skip_unseen = False
+    session.preferences.autosave_enabled = True
+    session.preferences.resolution_scale = 1.0
+    session.translation_manager = None
+
+    pref = PreferencesScreen()
+    pref.on_enter(session)
+
+    # Text speed slider: 0.0 (Instant) maps to 1.0 on the slider
+    text_speed_slider = pref.sliders[5]
+    assert text_speed_slider.value == 1.0
+
+    # Moving slider to 0.0 sets slowest speed (20.0) and saves immediately
+    pref.handle_mouse_click(text_speed_slider.rect.x, text_speed_slider.rect.y + 5)
+    assert session.preferences.text_speed == pytest.approx(20.0)
+    session.save_preferences.assert_called()
+
+    # Keyboard left/right adjusts focused slider
+    assert pref.handle_key("right") is True
+    assert text_speed_slider.value == pytest.approx(0.05)
+
+    # Focus highlight survives rebuild_layout and set_viewport
+    pref.handle_key("down")
+    focused_idx = pref._focused_button_index
+    assert focused_idx >= 0
+    pref.set_viewport(1920, 1080)
+    assert pref.buttons[focused_idx].hovered is True
+
+    # TitleScreen.start_game restarts if story already started
+    title = TitleScreen()
+    session._last_event = object()
+    session.is_finished = False
+    title.on_enter(session)
+    assert title.buttons[0].action is not None
+    title.buttons[0].action()
+    session.restart_story.assert_called_once()

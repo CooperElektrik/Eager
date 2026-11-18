@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from eager_runtime.i18n import compute_beat_id
+from eager.core.i18n import compute_beat_id
 from lsprotocol.types import (
     CodeLens,
     Command,

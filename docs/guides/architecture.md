@@ -1,29 +1,27 @@
 # Architecture
 
-Eager is organized as a monorepo with strict architectural boundaries enforced by 16 `import-linter` contracts:
+Eager is organized as a monorepo with strict architectural boundaries enforced by `import-linter` contracts:
 
 ```text
-eager-script ──┐
-               ├── eager-graphics (presentation, renderer backends)
- eager-core ───┤
-      │        ├── eager-script-lsp (LSP server, language tooling)
-      │        │
-      └──────── eager-runtime (headless story VM, sessions)
-                       │ (optional extras)
-                       ├── eager-graphics
-                       └── eager-script-lsp
+eager.core ──▶ eager.script ──▶ eager.vm ──▶ eager.stage ──▶ eager.ui ──▶ eager.session ──▶ eager.cli
+     │               │                                           ▲              ▲
+     │               └───────────────────────────────────────────┴──────────────┘
+     │
+     ├──▶ eager.backends (independent of vm, stage, ui, session, cli)
+     │
+     └──▶ eager-script-lsp (depends only on eager.core and eager.script)
 ```
 
 ## Invariants & boundaries
 
 ### Leaf independence
-`eager-core` and `eager-script` are 100% dependency-free and headless.
+`eager.core` and `eager.script` are 100% dependency-free and headless.
 
-### Headless runtime
-`eager-runtime` contains zero GUI, graphics, or windowing dependencies.
+### Headless VM & session
+`eager.vm` and `eager.session` run headlessly with `NullRenderer` / `NullAudioBackend`.
 
 ### Direct submodule imports
-All primitives are imported directly from submodules (`from eager_core.<module> import ...`); root re-export shims are strictly forbidden.
+All primitives are imported directly from submodules (`from eager.core.<module> import ...`); root re-export shims are forbidden.
 
 ### Safe expressions
 Expression compilation (`compile_expr`) uses whitelisted AST evaluation with zero calls to Python's `eval()` or `exec()`.
@@ -36,12 +34,10 @@ Expression compilation (`compile_expr`) uses whitelisted AST evaluation with zer
 
 Rollback must restore story and UI/choice states together. `PersistentData` tracks global unlock/read states across runs and is never rolled back with normal checkpoints. Checkpoint serialization is standardized across `Checkpoint.to_dict()` and `Checkpoint.from_dict()`.
 
-## Provider registry & decoupled contracts
+## Direct layer wiring & lifecycle notifications
 
-External presentation providers (stage, UI, screen manager, player, audio, and renderer) are decoupled from the headless narrative core via `ProviderRegistry`.
-- `GameSession` accepts an optional `registry: ProviderRegistry | None = None` parameter for dependency injection.
-- Presentation hosts and players implement `GameSessionProtocol`, `ScreenProtocol`, and `HostLifecycleListener`.
-- When session state is restored (e.g. on save load or rollback), `HostLifecycleListener.on_state_restored()` automatically synchronizes visual presentation without monkeypatching or state-probing.
+`GameSession` wires `StageDirector`, `UIOverlay`, `ScreenManager`, and `AudioMixer` directly (using `NullRenderer` / `NullAudioBackend` when `headless=True` or `backend="null"`).
+- When session state is restored (e.g. on save load or rollback), `GameSession.notify_state_restored()` invokes `on_state_restored()` on registered lifecycle listeners (such as `BasePlayer`) to synchronize visual presentation cleanly.
 
 ## Bidirectional AST serialization
 
@@ -49,12 +45,11 @@ All 22 AST nodes implement the runtime-checkable `AstNode` protocol and support 
 
 ## Exception hierarchies
 
-Each package maintains a clean, single-inheritance domain exception hierarchy:
-- `EagerCoreError` (`eager-core`)
-- `EagerScriptError` (`eager-script`)
-- `EagerRuntimeError` (`eager-runtime`)
-- `EagerGraphicsError` (`eager-graphics`)
+Eager maintains clean domain exception hierarchies:
+- `EagerCoreError` (`eager.core.exceptions`)
+- `EagerScriptError` (`eager.script`)
+- `EagerBackendError` (`eager.backends.exceptions`)
 
 ## Graphics layers
 
-Stage elements render in virtual coordinates; UI elements draw in window pixels. Backends are optional lazy imports. Pillow-SIMD and regular Pillow are mutually exclusive; install the former via `scripts/install_pillow_simd.py`.
+Stage elements render in virtual coordinates; UI elements draw in window pixels. Backends (`pil`, `pyglet`, `miniaudio`) are optional lazy imports. Pillow-SIMD and regular Pillow are mutually exclusive; install the former via `scripts/install_pillow_simd.py`.

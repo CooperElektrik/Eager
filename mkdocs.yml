@@ -67,10 +67,7 @@ plugins:
       handlers:
         python:
           paths:
-            - packages/eager-core/src
-            - packages/eager-script/src
-            - packages/eager-runtime/src
-            - packages/eager-graphics/src
+            - packages/eager/src
             - packages/eager-script-lsp/src
           options:
             show_source: true
@@ -102,70 +99,80 @@ nav:
       - Hook Parsing: guides/hook-parsing.md
   - API Reference:
     - Overview: api/index.md
-    - eager-core:
-      - Overview: api/eager-core/index.md
-      - Types: api/eager-core/types.md
-      - Events: api/eager-core/events.md
-      - Audio: api/eager-core/audio.md
-      - Text: api/eager-core/text.md
-      - Timing: api/eager-core/timing.md
-      - Easing: api/eager-core/easing.md
-      - Input: api/eager-core/input.md
-      - Storage: api/eager-core/storage.md
-      - i18n: api/eager-core/i18n.md
-      - Protocols: api/eager-core/protocols.md
-      - Exceptions: api/eager-core/exceptions.md
-      - Dispatcher: api/eager-core/dispatcher.md
-      - Saves: api/eager-core/saves.md
-      - State: api/eager-core/state.md
-      - Persistent Data: api/eager-core/persistent.md
-      - Preferences: api/eager-core/preferences.md
-      - Headless: api/eager-core/headless.md
-      - Backlog: api/eager-core/backlog.md
-      - Layout: api/eager-core/layout.md
-      - Timeline: api/eager-core/timeline.md
-      - Theme: api/eager-core/theme.md
-      - Watcher: api/eager-core/watcher.md
-    - eager-script:
-      - Overview: api/eager-script/index.md
-      - AST: api/eager-script/ast.md
-      - Parser: api/eager-script/parser.md
-      - Expressions: api/eager-script/expr.md
-      - Scene Graph: api/eager-script/graph.md
-      - Hooks: api/eager-script/hooks.md
-      - Validator: api/eager-script/validator.md
-      - CLI: api/eager-script/cli.md
-    - eager-runtime:
-      - Overview: api/eager-runtime/index.md
-      - Story VM: api/eager-runtime/runtime.md
-      - Session: api/eager-runtime/session.md
-      - Assets: api/eager-runtime/assets.md
-      - Terminal Player: api/eager-runtime/player.md
-      - Project: api/eager-runtime/project.md
-      - i18n: api/eager-runtime/i18n.md
-      - CLI: api/eager-runtime/cli.md
-    - eager-graphics:
-      - Overview: api/eager-graphics/index.md
-      - Compositor: api/eager-graphics/compositor.md
-      - Director: api/eager-graphics/director.md
-      - Stage: api/eager-graphics/stage.md
-      - UI Components: api/eager-graphics/ui.md
-      - Fonts: api/eager-graphics/fonts.md
-      - Player: api/eager-graphics/player.md
-      - Screens:
-        - Overview: api/eager-graphics/screens/index.md
-        - Screen Base: api/eager-graphics/screens/screen.md
-        - Builtin Screens: api/eager-graphics/screens/builtin.md
-        - Widgets: api/eager-graphics/screens/widgets.md
-      - Audio:
-        - Overview: api/eager-graphics/audio/index.md
-        - Miniaudio Backend: api/eager-graphics/audio/miniaudio.md
-        - Pyglet Backend: api/eager-graphics/audio/pyglet.md
-      - Renderers:
-        - Overview: api/eager-graphics/renderers/index.md
-        - Null Renderer: api/eager-graphics/renderers/null.md
-        - PIL Renderer: api/eager-graphics/renderers/pil.md
-        - Pyglet Renderer: api/eager-graphics/renderers/pyglet.md
+    - eager:
+      - Overview: api/eager/index.md
+      - Core:
+        - Assets: api/eager/core/assets.md
+        - Audio: api/eager/core/audio.md
+        - Backlog: api/eager/core/backlog.md
+        - Characters: api/eager/core/characters.md
+        - Dispatcher: api/eager/core/dispatcher.md
+        - Easing: api/eager/core/easing.md
+        - Events: api/eager/core/events.md
+        - Exceptions: api/eager/core/exceptions.md
+        - i18n: api/eager/core/i18n.md
+        - Input: api/eager/core/input.md
+        - Layout: api/eager/core/layout.md
+        - Lighting: api/eager/core/lighting.md
+        - Persistent Data: api/eager/core/persistent.md
+        - Preferences: api/eager/core/preferences.md
+        - Saves: api/eager/core/saves.md
+        - State: api/eager/core/state.md
+        - Storage: api/eager/core/storage.md
+        - Text: api/eager/core/text.md
+        - Theme: api/eager/core/theme.md
+        - Timeline: api/eager/core/timeline.md
+        - Timing: api/eager/core/timing.md
+        - Types: api/eager/core/types.md
+        - UI State: api/eager/core/ui_state.md
+        - Watcher: api/eager/core/watcher.md
+      - Script:
+        - AST: api/eager/script/ast.md
+        - Expressions: api/eager/script/expr.md
+        - Scene Graph: api/eager/script/graph.md
+        - Hooks: api/eager/script/hooks.md
+        - Includes: api/eager/script/includes.md
+        - Parser: api/eager/script/parser.md
+        - Project: api/eager/script/project.md
+        - Tokens: api/eager/script/tokens.md
+        - Validator: api/eager/script/validator.md
+      - VM:
+        - Story VM: api/eager/vm/runtime.md
+        - i18n Catalogs: api/eager/vm/i18n.md
+      - Stage:
+        - Stage: api/eager/stage/stage.md
+        - Compositor: api/eager/stage/compositor.md
+        - Director: api/eager/stage/director.md
+        - Particles: api/eager/stage/particles.md
+        - Fonts: api/eager/stage/fonts.md
+      - UI:
+        - Components: api/eager/ui/components.md
+        - Base Player: api/eager/ui/player.md
+        - PIL Player: api/eager/ui/pil_player.md
+        - Pyglet Player: api/eager/ui/pyglet_player.md
+        - Terminal Player: api/eager/ui/terminal_player.md
+        - Screens:
+          - Overview: api/eager/ui/screens/index.md
+          - Screen Base: api/eager/ui/screens/screen.md
+          - Builtin Screens: api/eager/ui/screens/builtin.md
+          - Widgets: api/eager/ui/screens/widgets.md
+      - Session:
+        - GameSession: api/eager/session/session.md
+      - Backends:
+        - Types & Protocols: api/eager/backends/types.md
+        - Exceptions: api/eager/backends/exceptions.md
+        - Fonts: api/eager/backends/fonts.md
+        - Renderers:
+          - Overview: api/eager/backends/renderers/index.md
+          - Null Renderer: api/eager/backends/renderers/null.md
+          - PIL Renderer: api/eager/backends/renderers/pil.md
+          - Pyglet Renderer: api/eager/backends/renderers/pyglet.md
+        - Audio:
+          - Overview: api/eager/backends/audio/index.md
+          - Null Audio: api/eager/backends/audio/null.md
+          - Miniaudio Backend: api/eager/backends/audio/miniaudio.md
+          - Pyglet Backend: api/eager/backends/audio/pyglet.md
+      - CLI: api/eager/cli/cli.md
     - eager-script-lsp:
       - Overview: api/eager-script-lsp/index.md
       - Server: api/eager-script-lsp/server.md
@@ -186,8 +193,5 @@ nav:
     - License: about/license.md
 
 watch:
-  - packages/eager-core/src
-  - packages/eager-script/src
-  - packages/eager-runtime/src
-  - packages/eager-graphics/src
+  - packages/eager/src
   - packages/eager-script-lsp/src

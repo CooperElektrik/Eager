@@ -45,7 +45,7 @@ Inspect scene entry points and export a Mermaid flowchart of your story:
 
 ```bash
 uv run eager inspect my_story/main.es
-uv run eager-script graph my_story/main.es --format mermaid
+uv run eager graph my_story/main.es --format mermaid
 ```
 
 ### Headless Verification

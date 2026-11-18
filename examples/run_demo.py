@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from eager_core.events import (
+from eager.core.events import (
     AppendEvent,
     ChoicePromptEvent,
     DialogueEvent,
@@ -38,13 +38,13 @@ from eager_core.events import (
     StoryEndEvent,
     StoryEvent,
 )
-from eager_graphics.compositor import StageCompositor
-from eager_graphics.director import StageDirector
-from eager_core.headless import NullRenderer
-from eager_core.dispatcher import EventDispatcher
-from eager_runtime.runtime import StoryVM
-from eager_core.state import StorySnapshot
-from eager_script.graph import parse_graph
+from eager.stage.compositor import StageCompositor
+from eager.stage.director import StageDirector
+from eager.backends.renderers.null import NullRenderer
+from eager.core.dispatcher import EventDispatcher
+from eager.vm.runtime import StoryVM
+from eager.core.state import StorySnapshot
+from eager.script.graph import parse_graph
 
 DEFAULT_SCRIPT = Path(__file__).resolve().parent / "demo_story.es"
 DT = 1.0 / 60.0
@@ -84,7 +84,7 @@ def make_engine(
     locale: str | None = None,
 ) -> tuple[StoryVM, EventDispatcher, StageCompositor, StageDirector, NullRenderer]:
     """Wire up the full Eager engine stack from a screenplay string."""
-    from eager_core.i18n import TranslationManager
+    from eager.core.i18n import TranslationManager
 
     graph = parse_graph(script_text)
     tm = TranslationManager()
@@ -487,7 +487,7 @@ def demo_rollback(script_text: str, *, locale: str | None = None) -> None:
     (dialogue, choices, narration). Rolling back restores story variables, visual
     stage elements, audio mixer states, and UI text simultaneously.
     """
-    from eager_runtime.session import GameSession
+    from eager.session.session import GameSession
 
     print(colorize("═══ Rollback Demo — Rewinding Story & Visuals ═══", Color.BOLD, Color.CYAN))
     print()
@@ -647,7 +647,7 @@ def launch_interactive(
 ) -> None:
     """Launch an interactive PIL visual novel window (tkinter)."""
     try:
-        from eager_graphics.renderers.pil import TKINTER_AVAILABLE
+        from eager.backends.renderers.pil import TKINTER_AVAILABLE
     except ImportError as exc:
         print(f"Error: PIL renderer unavailable: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -660,23 +660,21 @@ def launch_interactive(
         sys.exit(1)
 
     try:
-        from eager_graphics.renderers.pil import PILPlayer
+        from eager.ui.pil_player import PILPlayer
     except ImportError as exc:
         print(f"Error: PIL renderer unavailable: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    from eager_core.audio import NullAudioBackend
-    from eager_core.protocols import get_audio_backend, load_providers
-    from eager_runtime.session import GameSession
+    from eager.core.audio import NullAudioBackend
+    from eager.session.session import GameSession
 
-    load_providers()
     audio_backend: Any = NullAudioBackend()
-    audio_factory = get_audio_backend("pil")
-    if audio_factory is not None:
-        try:
-            audio_backend = audio_factory()
-        except Exception:  # noqa: BLE001
-            audio_backend = NullAudioBackend()
+    try:
+        from eager.backends.audio.miniaudio import MiniaudioAudioBackend
+
+        audio_backend = MiniaudioAudioBackend()
+    except Exception:  # noqa: BLE001
+        audio_backend = NullAudioBackend()
 
     graph = parse_graph(script_text)
     session = GameSession(

@@ -1,0 +1,57 @@
+"""Pillow (PIL) software rendering backend for Eager."""
+
+# ruff: noqa: F401
+
+from __future__ import annotations
+
+from ._cache import _CachedSprite, _GeomEntry, _ImageLRU
+from ._compat import (
+    PIL_AVAILABLE,
+    TKINTER_AVAILABLE,
+    _check_pil_available,
+    _detect_pillow_simd,
+    _pil_import_error,
+    _TclError,
+    tk,
+)
+from ._constants import (
+    _ALPHA_LUTS,
+    _EXTENSIONS,
+    _MAX_GRADIENT_CACHE,
+    _MAX_MIP_CACHE,
+    _MAX_RGBA_LUTS,
+    _MAX_TEXT_CACHE,
+    _OPAQUE_LUT,
+    _PIL_ANCHOR_X,
+    _PIL_ANCHOR_Y,
+    _PLACEHOLDER_GRAD_LUT,
+    _QUANT_ALPHA_LUT,
+    _WHITE_RGBA,
+)
+from ._imaging import (
+    _alpha_bbox,
+    _bboxes_intersect,
+    _image_nbytes,
+    _resize_opaque,
+    _split_rgba,
+    _union_bboxes,
+)
+from .assets import PILAssetResolver
+from .renderer import PILRenderer
+
+if PIL_AVAILABLE:
+    import PIL
+    from PIL import Image, ImageChops, ImageDraw, ImageFont
+else:
+    PIL = None  # pyright: ignore[reportConstantRedefinition]
+    Image = None
+    ImageChops = None
+    ImageDraw = None
+    ImageFont = None
+
+__all__ = [
+    "PIL_AVAILABLE",
+    "TKINTER_AVAILABLE",
+    "PILAssetResolver",
+    "PILRenderer",
+]

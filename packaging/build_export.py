@@ -108,10 +108,10 @@ def build_pyinstaller(
 
     # Copy data files alongside the executable so the runtime can access them.
     template_src = (
-        REPO_ROOT / "packages" / "eager-runtime" / "src" / "eager_runtime" / "template"
+        REPO_ROOT / "packages" / "eager" / "src" / "eager" / "template"
     )
     if template_src.exists():
-        shutil.copytree(template_src, output / "eager_runtime" / "template")
+        shutil.copytree(template_src, output / "eager" / "template")
 
     if project_dir is not None:
         proj = project_dir.resolve()

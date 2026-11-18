@@ -1,0 +1,920 @@
+"""Core virtual machine for executing Eager-Script narrative scene graphs."""
+
+from __future__ import annotations
+
+import copy
+import logging
+import random
+import re
+from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
+
+
+def _to_nested_tuple(obj: Any) -> Any:
+    """Recursively convert lists and tuples to tuples for random.setstate compatibility."""
+    if isinstance(obj, (list, tuple)):
+        return tuple(_to_nested_tuple(x) for x in obj)
+    return obj
+
+from eager.core.events import (
+    AppendEvent,
+    ChoiceOption,
+    ChoicePromptEvent,
+    DialogueEvent,
+    FreshBoxEvent,
+    HookEvent,
+    InputPromptEvent,
+    NarrationEvent,
+    SceneEnterEvent,
+    SceneExitEvent,
+    StoryEndEvent,
+    StoryEvent,
+)
+from eager.core.i18n import (
+    TranslationManager,
+    compute_beat_id,
+    get_beat_occurrence,
+    strip_explicit_id,
+)
+from eager.core.state import CallFrame, StorySnapshot
+from eager.script import (
+    ParsedAppend,
+    ParsedCall,
+    ParsedChoiceSet,
+    ParsedCondJump,
+    ParsedDefault,
+    ParsedDialogue,
+    ParsedFreshBox,
+    ParsedHook,
+    ParsedJump,
+    ParsedLocalJump,
+    ParsedNarration,
+    ParsedReturn,
+    ParsedSet,
+)
+from eager.script.expr import ExprError, compile_expr
+from eager.script.hooks import parse_input_hook
+
+if TYPE_CHECKING:
+    from eager.script.graph import SceneGraph
+
+__all__ = [
+    "EagerRuntimeError",
+    "StoryRuntimeError",
+    "StoryVM",
+]
+
+
+class EagerRuntimeError(Exception):
+    """Base exception for all errors raised within eager-runtime."""
+
+
+class StoryRuntimeError(EagerRuntimeError):
+    """Raised when an illegal operation or invalid state occurs during story execution."""
+
+
+_INTERPOLATION_PATTERN = re.compile(r"\[\[|\]\]|\[([a-zA-Z_][a-zA-Z0-9_\.]*)\]")
+
+
+class StoryVM:
+    """Headless story virtual machine executing an Eager-Script SceneGraph."""
+
+    def __init__(
+        self,
+        graph: SceneGraph,
+        *,
+        initial_state: StorySnapshot | None = None,
+        rng_seed: int | None = None,
+        translation_manager: TranslationManager | None = None,
+        persistent: Any | None = None,
+        initial_variables: dict[str, Any] | None = None,
+    ) -> None:
+        self._graph = graph
+        self._translation_manager: TranslationManager = translation_manager or TranslationManager()
+
+        self._current_scene_id: str | None = None
+        self._beat_index: int = 0
+        self._call_stack: list[CallFrame] = []
+        self._variables: dict[str, Any] = {}
+        if persistent is not None:
+            self._persistent: Any = persistent
+        else:
+            from eager.core.persistent import PersistentData
+
+            self._persistent = PersistentData()
+        if initial_variables:
+            self._variables.update(initial_variables)
+        self._visited_scenes: set[str] = set()
+
+        self._rng = random.Random(rng_seed)
+
+        self._pending_choice: ChoicePromptEvent | None = None
+        self._pending_input: InputPromptEvent | None = None
+        self._is_ended: bool = False
+        self._just_entered_scene: bool = False
+        self._next_transition_target: str | None = None
+        self._preamble_index: int = 0
+        self._preamble_done: bool = False
+
+        # Initialize defaults from graph
+        self.apply_graph_defaults()
+
+        if initial_state is not None:
+            self.load(initial_state)
+        elif self._graph.entry:
+            self._enter_scene(self._graph.entry)
+
+    @property
+    def persistent(self) -> Any:
+        """Persistent story data object across playthroughs."""
+        return self._persistent
+
+    @persistent.setter
+    def persistent(self, val: Any) -> None:
+        """Set the persistent data object."""
+        self._persistent = val
+
+    @property
+    def translation_manager(self) -> TranslationManager:
+        """The active translation manager."""
+        return self._translation_manager
+
+    @translation_manager.setter
+    def translation_manager(self, mgr: TranslationManager) -> None:
+        """Set the active translation manager instance.
+
+        Args:
+            mgr: New TranslationManager instance.
+        """
+        self._translation_manager = mgr
+
+    def set_locale(self, locale: str) -> None:
+        """Set the active translation locale."""
+        self._translation_manager.set_locale(locale)
+
+    def _translate_beat(
+        self, key: str | None, default: str
+    ) -> tuple[str, str | None]:
+        """Translate by content-addressed ID."""
+        clean_default = strip_explicit_id(default)
+        if self._translation_manager is not None and key is not None:
+            val = self._translation_manager.translate(key, clean_default)
+            if val != clean_default:
+                return val, key
+        return clean_default, key
+
+    def _translate_speaker(self, speaker: str) -> str:
+        """Translate speaker name if catalog present, else default."""
+        if self._translation_manager is not None:
+            return self._translation_manager.translate_speaker(speaker)
+        return speaker
+
+    def apply_graph_defaults(self) -> None:
+        """Evaluate graph defaults if not already set."""
+        if self._graph.defaults:
+            for d in self._graph.defaults:
+                if isinstance(d, ParsedDefault) and d.name not in self._variables:
+                    val = self._evaluate_expr(d.expr_src)
+                    self.set_variable(d.name, val)
+
+    def _get_eval_env(self) -> dict[str, Any]:
+        """Build evaluation environment for expression evaluation."""
+        env = dict(self._variables)
+        env["persistent"] = self._persistent
+        env["visited"] = lambda scene_id: scene_id in self._visited_scenes
+        env["seen"] = lambda scene_id: scene_id in self._visited_scenes
+        env["random"] = lambda a=0, b=1: self._rng.randint(a, b) if isinstance(a, int) and isinstance(b, int) else self._rng.uniform(a, b)
+        env["chance"] = lambda p: self._rng.random() < (p / 100.0 if p > 1 else p)
+        return env
+
+    def _evaluate_expr(self, expr_src: str) -> Any:
+        """Safely evaluate an expression string in current VM environment."""
+        compiled = compile_expr(expr_src)
+        return compiled.evaluate(self._get_eval_env())
+
+    def _interpolate(self, text: str) -> str:
+        """Perform [var_name] text interpolation with [[ literal escape."""
+        if not text or "[" not in text:
+            return text
+
+        def repl(match: re.Match[str]) -> str:
+            full = match.group(0)
+            if full == "[[":
+                return "["
+            if full == "]]":
+                return "]"
+            var_name = match.group(1)
+            if var_name.startswith("_"):
+                return f"[{var_name}]"
+            # Evaluate var_name or attribute path in variables
+            if "." in var_name:
+                parts = var_name.split(".")
+                if any(p.startswith("_") for p in parts):
+                    return f"[{var_name}]"
+                if parts[0] == "persistent":
+                    curr: Any = self._persistent
+                elif parts[0] in self._variables:
+                    curr = self._variables.get(parts[0])
+                else:
+                    return f"[{var_name}]"
+                for p in parts[1:]:
+                    if isinstance(curr, dict) or hasattr(curr, "get"):
+                        curr = curr.get(p)
+                    elif hasattr(curr, p):
+                        curr = getattr(curr, p)
+                    else:
+                        return f"[{var_name}]"
+                return str(curr) if curr is not None else ""
+            if var_name in self._variables:
+                return str(self._variables[var_name])
+            return f"[{var_name}]"
+
+        return _INTERPOLATION_PATTERN.sub(repl, text)
+
+    def interpolate(self, text: str) -> str:
+        """Perform [var_name] text interpolation with [[ literal escape."""
+        return self._interpolate(text)
+
+    def translate_beat(
+        self, key: str | None, default: str
+    ) -> tuple[str, str | None]:
+        """Translate a beat by content-addressed ID, falling back to stripped default."""
+        return self._translate_beat(key, default)
+
+    def translate_speaker(self, speaker: str) -> str:
+        """Translate speaker name if a translation catalog is active."""
+        return self._translate_speaker(speaker)
+
+    def refresh_choice_prompt(self, item: ParsedChoiceSet) -> ChoicePromptEvent:
+        """Rebuild and store the active pending choice prompt from a reloaded choice node."""
+        prompt = self._build_choice_prompt(item)
+        self._pending_choice = prompt
+        return prompt
+
+    def clear_pending_input(self) -> None:
+        """Clear any pending input prompt."""
+        self._pending_input = None
+
+    @property
+    def graph(self) -> SceneGraph:
+        """The underlying scene graph being executed."""
+        return self._graph
+
+    @graph.setter
+    def graph(self, new_graph: SceneGraph) -> None:
+        """Update the underlying scene graph instance.
+
+        Args:
+            new_graph: Replacement SceneGraph.
+        """
+        self._graph = new_graph
+
+    @property
+    def current_scene_id(self) -> str | None:
+        """ID of the current active scene, or None if story hasn't started or ended."""
+        return self._current_scene_id
+
+    @current_scene_id.setter
+    def current_scene_id(self, scene_id: str | None) -> None:
+        """Set the current scene identifier.
+
+        Args:
+            scene_id: Target scene ID string, or None.
+        """
+        self._current_scene_id = scene_id
+
+    @property
+    def beat_index(self) -> int:
+        """Index of the next beat to execute in the current scene."""
+        return self._beat_index
+
+    @beat_index.setter
+    def beat_index(self, index: int) -> None:
+        """Set the next beat index in the current scene.
+
+        Args:
+            index: Non-negative integer index.
+        """
+        self._beat_index = max(0, index)
+
+    def hot_reload(self, new_graph: SceneGraph) -> bool:
+        """Hot-swap the underlying scene graph and reconcile execution state.
+
+        1. Capture current state: current_scene_id, beat_index, variables.
+        2. Swap self._graph reference.
+        3. Reconcile state:
+           - If current_scene_id exists, cap beat_index to len(new_scene.body) - 1.
+           - If scene was deleted, gracefully jump to entry node if available,
+             or clear current scene.
+        """
+        cur_scene = self._current_scene_id
+        b_idx = self._beat_index
+        self._graph = new_graph
+        self._preamble_done = True
+
+        if cur_scene is not None and cur_scene in new_graph.nodes:
+            new_scene = new_graph.nodes[cur_scene]
+            if new_scene.body:
+                self._beat_index = max(0, min(b_idx, len(new_scene.body) - 1))
+            else:
+                self._beat_index = 0
+            return True
+        else:
+            if new_graph.entry and new_graph.entry in new_graph.nodes:
+                self._enter_scene(new_graph.entry)
+                return True
+            else:
+                self._current_scene_id = None
+                self._beat_index = 0
+                return False
+
+    @property
+    def is_ended(self) -> bool:
+        """True if the story has concluded (reached a terminal node or completed)."""
+        return self._is_ended
+
+    @property
+    def pending_choice(self) -> ChoicePromptEvent | None:
+        """Active choice prompt waiting for player selection, if any."""
+        return self._pending_choice
+
+    @property
+    def pending_input(self) -> InputPromptEvent | None:
+        """Active input prompt waiting for player input, if any."""
+        return self._pending_input
+
+    @property
+    def variables(self) -> dict[str, Any]:
+        """Mutable narrative state variables."""
+        return self._variables
+
+    @property
+    def visited_scenes(self) -> set[str]:
+        """Set of all scene IDs visited during this playthrough."""
+        return set(self._visited_scenes)
+
+    def _set_persistent_var(self, key: str, value: Any) -> None:
+        p = self._persistent
+        if p is None:
+            from eager.core.persistent import PersistentData
+
+            p = PersistentData()
+            self._persistent = p
+        if hasattr(p, "__setitem__"):
+            p[key] = value
+        else:
+            setattr(p, key, value)
+        if hasattr(p, "save") and callable(p.save):
+            try:
+                p.save()
+            except OSError:
+                pass
+
+    def _get_persistent_var(self, key: str, default: Any = None) -> Any:
+        p = self._persistent
+        if p is None:
+            return default
+        if hasattr(p, "get") and callable(p.get):
+            return p.get(key, default)
+        return getattr(p, key, default)
+
+    def set_variable(self, name: str, value: Any) -> None:
+        """Set a story variable value."""
+        if name == "persistent":
+            self._persistent = value
+            return
+        if name.startswith("persistent."):
+            key = name[len("persistent."):]
+            self._set_persistent_var(key, value)
+            if self._pending_input is not None and self._pending_input.var_name == name:
+                self._pending_input = None
+            return
+
+        self._variables[name] = value
+        if self._pending_input is not None and self._pending_input.var_name == name:
+            self._pending_input = None
+
+    def submit_input(self, value: str) -> None:
+        """Submit user input for the active input prompt."""
+        if self._pending_input is None:
+            msg = "No input prompt currently active."
+            raise StoryRuntimeError(msg)
+        self.set_variable(self._pending_input.var_name, value)
+
+    def get_variable(self, name: str, default: Any = None) -> Any:
+        """Retrieve a story variable value."""
+        if name == "persistent":
+            return self._persistent
+        if name.startswith("persistent."):
+            key = name[len("persistent."):]
+            return self._get_persistent_var(key, default)
+        return self._variables.get(name, default)
+
+    def _build_choice_prompt(
+        self,
+        item: ParsedChoiceSet,
+        beat_index: int | None = None,
+    ) -> ChoicePromptEvent:
+        """Construct ChoicePromptEvent from ParsedChoiceSet node, evaluating conditions."""
+        options: list[ChoiceOption] = []
+        b_idx = beat_index if beat_index is not None else self._beat_index
+        cid = None
+        if self._current_scene_id is not None and self._graph is not None:
+            node = self._graph.nodes.get(self._current_scene_id)
+            occ = get_beat_occurrence(node.body, b_idx) if node else 1
+            cid = compute_beat_id(self._current_scene_id, item, occurrence=occ)
+
+        for i, opt in enumerate(item.options):
+            enabled = True
+            if opt.condition:
+                try:
+                    enabled = bool(self._evaluate_expr(opt.condition))
+                except ExprError as exc:
+                    logger.warning(
+                        "ExprError evaluating choice condition '%s' at line %d: %s",
+                        opt.condition,
+                        opt.line_number,
+                        exc,
+                    )
+                    enabled = False
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "Error evaluating choice condition '%s' at line %d: %s",
+                        opt.condition,
+                        opt.line_number,
+                        exc,
+                    )
+                    enabled = False
+            opt_cid = f"{cid}.choice_{i}" if cid else None
+            raw_text, used_opt_id = self._translate_beat(opt_cid, opt.text)
+            options.append(
+                ChoiceOption(
+                    index=i,
+                    text=self._interpolate(raw_text),
+                    target=opt.target,
+                    line_number=opt.line_number,
+                    condition=opt.condition,
+                    enabled=enabled,
+                    beat_id=used_opt_id,
+                )
+            )
+        return ChoicePromptEvent(
+            options=tuple(options),
+            line_number=item.line_number,
+            beat_id=cid,
+        )
+
+    def _build_input_prompt(
+        self,
+        item: ParsedHook,
+        beat_index: int | None = None,
+    ) -> InputPromptEvent | None:
+        """Construct InputPromptEvent if item is an input hook, handling interpolation and translation."""
+        interp_hook = self._interpolate(item.hook_name)
+        input_args = parse_input_hook(interp_hook)
+        if input_args is None:
+            return None
+
+        b_idx = beat_index if beat_index is not None else self._beat_index
+        cid = None
+        if self._current_scene_id is not None and self._graph is not None:
+            node = self._graph.nodes.get(self._current_scene_id)
+            if node and 0 <= b_idx < len(node.body):
+                occ = get_beat_occurrence(node.body, b_idx)
+                cid = compute_beat_id(self._current_scene_id, item, occurrence=occ)
+
+        input_cid = f"{cid}.input" if cid else None
+        raw_prompt, _ = self._translate_beat(input_cid, input_args.prompt)
+        return InputPromptEvent(
+            var_name=input_args.var_name,
+            prompt=self._interpolate(raw_prompt),
+            default=self._interpolate(input_args.default),
+            line_number=item.line_number,
+            beat_id=input_cid,
+        )
+
+    def save(self) -> StorySnapshot:
+        """Create an immutable, serializable snapshot of the current VM state."""
+        pending_beat: int | None = None
+        if self._pending_choice is not None and self._beat_index > 0:
+            pending_beat = self._beat_index - 1
+
+        pending_input_b: int | None = None
+        if self._pending_input is not None and self._beat_index > 0:
+            pending_input_b = self._beat_index - 1
+
+        # Filter out persistent object from per-save variables (persistent state is saved independently)
+        vars_to_save = {
+            k: copy.deepcopy(v)
+            for k, v in self._variables.items()
+            if k != "persistent" and not k.startswith("persistent.")
+        }
+
+        return StorySnapshot(
+            current_scene=self._current_scene_id,
+            beat_index=self._beat_index,
+            call_stack=tuple(self._call_stack),
+            variables=vars_to_save,
+            visited_scenes=tuple(self._visited_scenes),
+            pending_choice_beat=pending_beat,
+            pending_input_beat=pending_input_b,
+            next_transition_target=self._next_transition_target,
+            just_entered_scene=self._just_entered_scene,
+            is_ended=self._is_ended,
+            rng_state=list(self._rng.getstate()),
+            preamble_index=self._preamble_index,
+            preamble_done=self._preamble_done,
+        )
+
+    def load(self, snapshot: StorySnapshot) -> None:
+        """Restore VM state exactly from a StorySnapshot."""
+        if snapshot.current_scene and snapshot.current_scene not in self._graph.nodes:
+            msg = f"Cannot restore snapshot: scene '{snapshot.current_scene}' not in SceneGraph."
+            raise StoryRuntimeError(msg)
+
+        self._current_scene_id = snapshot.current_scene
+        self._beat_index = snapshot.beat_index
+        self._call_stack = list(snapshot.call_stack)
+        self._variables = {
+            k: copy.deepcopy(v)
+            for k, v in snapshot.variables.items()
+            if k != "persistent" and not k.startswith("persistent.")
+        }
+        self._visited_scenes = set(snapshot.visited_scenes)
+
+        if snapshot.rng_state is not None:
+            try:
+                self._rng.setstate(_to_nested_tuple(snapshot.rng_state))
+            except (TypeError, ValueError) as exc:
+                logger.warning("Failed to restore PRNG state: %s", exc)
+
+        self._pending_choice = None
+        self._pending_input = None
+        self._next_transition_target = snapshot.next_transition_target
+        self._just_entered_scene = snapshot.just_entered_scene
+        self._preamble_index = snapshot.preamble_index
+        self._preamble_done = snapshot.preamble_done
+        self._is_ended = False
+
+        # If saved while waiting on a choice prompt, re-materialize the ChoicePromptEvent
+        if snapshot.pending_choice_beat is not None and self._current_scene_id is not None:
+            scene = self._graph.nodes.get(self._current_scene_id)
+            if scene and 0 <= snapshot.pending_choice_beat < len(scene.body):
+                item = scene.body[snapshot.pending_choice_beat]
+                if isinstance(item, ParsedChoiceSet):
+                    self._pending_choice = self._build_choice_prompt(item, snapshot.pending_choice_beat)
+
+        # If saved while waiting on an input prompt, re-materialize the InputPromptEvent
+        if snapshot.pending_input_beat is not None and self._current_scene_id is not None:
+            scene = self._graph.nodes.get(self._current_scene_id)
+            if scene and 0 <= snapshot.pending_input_beat < len(scene.body):
+                item = scene.body[snapshot.pending_input_beat]
+                if isinstance(item, ParsedHook):
+                    self._pending_input = self._build_input_prompt(
+                        item, snapshot.pending_input_beat
+                    )
+
+    def jump(self, scene_id: str) -> None:
+        """Jump execution immediately to a target scene."""
+        if scene_id not in self._graph.nodes:
+            msg = f"Cannot jump to unknown scene '{scene_id}'"
+            raise StoryRuntimeError(msg)
+
+        target_node = self._graph.nodes.get(scene_id)
+        if target_node is not None and not target_node.is_anonymous:
+            while self._call_stack and self._call_stack[-1].kind == "inline":
+                self._call_stack.pop()
+
+        self._pending_choice = None
+        self._pending_input = None
+        self._enter_scene(scene_id)
+
+    def call(self, scene_id: str) -> None:
+        """Call a subroutine scene, pushing current position onto the call stack."""
+        if scene_id not in self._graph.nodes:
+            msg = f"Cannot call unknown subroutine scene '{scene_id}'"
+            raise StoryRuntimeError(msg)
+
+        if self._current_scene_id is not None:
+            self._call_stack.append(CallFrame(self._current_scene_id, self._beat_index))
+
+        self._pending_choice = None
+        self._pending_input = None
+        self._enter_scene(scene_id)
+
+    def choose(self, choice: int | str) -> None:
+        """Select an option from the active choice prompt and branch to target scene."""
+        if self._pending_choice is None:
+            msg = "No choice prompt currently active to choose from."
+            raise StoryRuntimeError(msg)
+
+        target: str | None = None
+        if isinstance(choice, int):
+            if 0 <= choice < len(self._pending_choice.options):
+                opt = self._pending_choice.options[choice]
+                if not opt.enabled:
+                    msg = f"Cannot select disabled choice index {choice} ('{opt.text}')"
+                    raise StoryRuntimeError(msg)
+                target = opt.target
+            else:
+                msg = f"Choice index {choice} out of range (0..{len(self._pending_choice.options) - 1})"
+                raise StoryRuntimeError(msg)
+        else:
+            # Match by target ID or text
+            for opt in self._pending_choice.options:
+                if opt.target == choice or opt.text == choice:
+                    if not opt.enabled:
+                        msg = f"Cannot select disabled choice '{choice}'"
+                        raise StoryRuntimeError(msg)
+                    target = opt.target
+                    break
+            if target is None:
+                msg = f"Choice target '{choice}' not found among active choices."
+                raise StoryRuntimeError(msg)
+
+        if target is None:
+            msg = f"Choice '{choice}' has no valid target scene."
+            raise StoryRuntimeError(msg)
+
+        self._pending_choice = None
+        self._pending_input = None
+
+        # Inline choice blocks are lowered into anonymous scenes.  Branching into one
+        # should resume the enclosing scene once the block finishes, so push a return
+        # frame pointing at the beat right after the choice prompt.
+        target_node = self._graph.nodes.get(target)
+        if (
+            target is not None
+            and target_node is not None
+            and target_node.is_anonymous
+            and self._current_scene_id is not None
+        ):
+            self._call_stack.append(CallFrame(self._current_scene_id, self._beat_index, "inline"))
+        else:
+            while self._call_stack and self._call_stack[-1].kind == "inline":
+                self._call_stack.pop()
+
+        self.jump(target)
+
+    def _enter_scene(self, scene_id: str) -> None:
+        """Prepare internal state for entering a new scene node."""
+        self._current_scene_id = scene_id
+        self._beat_index = 0
+        self._visited_scenes.add(scene_id)
+        self._just_entered_scene = True
+        self._is_ended = False
+        self._next_transition_target = None
+
+    def step(self) -> StoryEvent | None:
+        """Advance story execution by one discrete beat.
+
+        Returns a StoryEvent, or None if the story has concluded.
+        """
+        if self._is_ended:
+            return None
+
+        # 1. Handle pending choice or input pause
+        if self._pending_choice is not None:
+            return self._pending_choice
+        if self._pending_input is not None:
+            return self._pending_input
+
+        # 2. Handle delayed scene transition from previous exit beat
+        if self._next_transition_target is not None:
+            target = self._next_transition_target
+            self._next_transition_target = None
+            self._enter_scene(target)
+
+        # 2b. Execute preamble hooks once before entering the first scene
+        if not self._preamble_done:
+            while self._preamble_index < len(self._graph.preamble):
+                p_item = self._graph.preamble[self._preamble_index]
+                self._preamble_index += 1
+                if isinstance(p_item, ParsedHook):
+                    interp_hook = self._interpolate(p_item.hook_name)
+                    parts = interp_hook.split(None, 1)
+                    hook_name = parts[0] if parts else ""
+                    args = parts[1] if len(parts) > 1 else ""
+                    return HookEvent(
+                        hook_name=hook_name,
+                        args=args,
+                        line_number=p_item.line_number,
+                    )
+            self._preamble_done = True
+
+        # 3. Handle initial or empty graph
+        if self._current_scene_id is None:
+            self._is_ended = True
+            return StoryEndEvent(scene_id=None, reason="no_entry")
+
+        scene = self._graph.nodes.get(self._current_scene_id)
+        if scene is None:
+            self._is_ended = True
+            return StoryEndEvent(scene_id=self._current_scene_id, reason="dead_end")
+
+        # 4. Handle scene entry event
+        if self._just_entered_scene:
+            self._just_entered_scene = False
+            return SceneEnterEvent(
+                scene_id=scene.id,
+                display_name=scene.display_name,
+                line_number=scene.line_number,
+            )
+
+        # 5. Process next beat inside scene body
+        while self._beat_index < len(scene.body):
+            item = scene.body[self._beat_index]
+
+            # Handle internal flow control statements silently without pushing history or pausing
+            if isinstance(item, ParsedSet):
+                val = self._evaluate_expr(item.expr_src)
+                target = item.target
+                if target.startswith("persistent."):
+                    key = target[len("persistent."):]
+                    cur = self._get_persistent_var(key, 0 if item.op in ("+=", "-=") else 1)
+                    if cur is None and item.op != "=":
+                        cur = 0 if item.op in ("+=", "-=") else 1
+                    if item.op == "=":
+                        new_val = val
+                    elif item.op == "+=":
+                        new_val = cur + val
+                    elif item.op == "-=":
+                        new_val = cur - val
+                    elif item.op == "*=":
+                        new_val = cur * val
+                    elif item.op == "/=":
+                        new_val = cur / val
+                    elif item.op == "%=":
+                        new_val = cur % val
+                    else:
+                        new_val = val
+                    self._set_persistent_var(key, new_val)
+                else:
+                    if item.op == "=":
+                        self._variables[target] = val
+                    elif item.op == "+=":
+                        self._variables[target] = self._variables.get(target, 0) + val
+                    elif item.op == "-=":
+                        self._variables[target] = self._variables.get(target, 0) - val
+                    elif item.op == "*=":
+                        self._variables[target] = self._variables.get(target, 1) * val
+                    elif item.op == "/=":
+                        self._variables[target] = self._variables.get(target, 1) / val
+                    elif item.op == "%=":
+                        self._variables[target] = self._variables.get(target, 1) % val
+                self._beat_index += 1
+                continue
+
+            if isinstance(item, ParsedCondJump):
+                cond_val = bool(self._evaluate_expr(item.condition))
+                if not cond_val:
+                    # Condition false -> jump to target_index
+                    self._beat_index = item.target_index
+                else:
+                    self._beat_index += 1
+                continue
+
+            if isinstance(item, ParsedLocalJump):
+                self._beat_index = item.target_index
+                continue
+
+            current_beat_idx = self._beat_index
+            self._beat_index += 1
+            occ = get_beat_occurrence(scene.body, current_beat_idx)
+            cid = compute_beat_id(self._current_scene_id, item, occurrence=occ)
+            beat_id = cid
+
+            if isinstance(item, ParsedDialogue):
+                raw_speaker = self._interpolate(item.speaker)
+                display_speaker = raw_speaker
+                resolved_cid: str | None = None
+                if self._graph.characters:
+                    cid_match = raw_speaker if raw_speaker in self._graph.characters else raw_speaker.lower()
+                    if cid_match in self._graph.characters:
+                        resolved_cid = cid_match
+                        display_speaker = self._graph.characters[cid_match].get("name", raw_speaker)
+                    else:
+                        for c_id, c_data in self._graph.characters.items():
+                            if isinstance(c_data, dict) and c_data.get("name") and c_data["name"].strip().lower() == raw_speaker.lower():
+                                resolved_cid = c_id
+                                break
+                if resolved_cid is None:
+                    resolved_cid = raw_speaker.strip().lower()
+
+                interp_speaker = self._translate_speaker(display_speaker)
+                if interp_speaker == display_speaker and raw_speaker != display_speaker:
+                    translated_raw = self._translate_speaker(raw_speaker)
+                    if translated_raw != raw_speaker:
+                        interp_speaker = translated_raw
+                raw_text, _ = self._translate_beat(cid, item.text)
+                return DialogueEvent(
+                    speaker=interp_speaker,
+                    text=self._interpolate(raw_text),
+                    voice=item.voice,
+                    emotion=item.emotion,
+                    line_number=item.line_number,
+                    beat_id=beat_id,
+                    character_id=resolved_cid,
+                )
+
+            if isinstance(item, ParsedNarration):
+                raw_text, _ = self._translate_beat(cid, item.text)
+                return NarrationEvent(
+                    text=self._interpolate(raw_text),
+                    line_number=item.line_number,
+                    beat_id=beat_id,
+                )
+
+            if isinstance(item, ParsedAppend):
+                raw_text, _ = self._translate_beat(cid, item.text)
+                return AppendEvent(
+                    text=self._interpolate(raw_text),
+                    line_number=item.line_number,
+                    beat_id=beat_id,
+                )
+
+            if isinstance(item, ParsedFreshBox):
+                raw_text, _ = self._translate_beat(cid, item.text)
+                return FreshBoxEvent(
+                    text=self._interpolate(raw_text),
+                    line_number=item.line_number,
+                    beat_id=beat_id,
+                )
+
+            if isinstance(item, ParsedHook):
+                input_prompt = self._build_input_prompt(item, current_beat_idx)
+                if input_prompt is not None:
+                    self._pending_input = input_prompt
+                    return input_prompt
+
+                interp_hook = self._interpolate(item.hook_name)
+                parts = interp_hook.split(None, 1)
+                hook_name = parts[0] if parts else ""
+                args = parts[1] if len(parts) > 1 else ""
+                return HookEvent(
+                    hook_name=hook_name,
+                    args=args,
+                    line_number=item.line_number,
+                )
+
+
+            if isinstance(item, ParsedChoiceSet):
+                prompt = self._build_choice_prompt(item, current_beat_idx)
+                self._pending_choice = prompt
+                return prompt
+
+            if isinstance(item, ParsedJump):
+                # An unconditional jump out of an anonymous inline block abandons the
+                # block's pending return to the enclosing scene.
+                if scene.is_anonymous:
+                    while self._call_stack and self._call_stack[-1].kind == "inline":
+                        self._call_stack.pop()
+                self._next_transition_target = item.target
+                return SceneExitEvent(
+                    scene_id=scene.id,
+                    transition_kind="jump",
+                    target=item.target,
+                    line_number=item.line_number,
+                )
+
+            if isinstance(item, ParsedCall):
+                # Push return frame
+                self._call_stack.append(CallFrame(scene.id, self._beat_index))
+                self._next_transition_target = item.target
+                return SceneExitEvent(
+                    scene_id=scene.id,
+                    transition_kind="call",
+                    target=item.target,
+                    line_number=item.line_number,
+                )
+
+            if isinstance(item, ParsedReturn):
+                if self._call_stack:
+                    frame = self._call_stack.pop()
+                    self._current_scene_id = frame.scene_id
+                    self._beat_index = frame.beat_index
+                    return SceneExitEvent(
+                        scene_id=scene.id,
+                        transition_kind="return",
+                        target=frame.scene_id,
+                        line_number=item.line_number,
+                    )
+                # Return from main level
+                self._is_ended = True
+                return StoryEndEvent(scene_id=scene.id, reason="completed")
+
+        # 6. Scene body exhausted
+        if self._call_stack:
+            frame = self._call_stack.pop()
+            self._current_scene_id = frame.scene_id
+            self._beat_index = frame.beat_index
+            return SceneExitEvent(
+                scene_id=scene.id,
+                transition_kind="return",
+                target=frame.scene_id,
+                line_number=scene.line_number,
+            )
+
+        self._is_ended = True
+        return StoryEndEvent(scene_id=scene.id, reason="terminal")

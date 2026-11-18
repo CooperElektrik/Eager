@@ -25,10 +25,7 @@ from PyInstaller.building.api import PYZ, EXE  # type: ignore[import]
 REPO_ROOT = os.path.abspath(os.getcwd())
 
 SRC_DIRS = [
-    os.path.join(REPO_ROOT, "packages", "eager-core", "src"),
-    os.path.join(REPO_ROOT, "packages", "eager-script", "src"),
-    os.path.join(REPO_ROOT, "packages", "eager-runtime", "src"),
-    os.path.join(REPO_ROOT, "packages", "eager-graphics", "src"),
+    os.path.join(REPO_ROOT, "packages", "eager", "src"),
     os.path.join(REPO_ROOT, "packages", "eager-script-lsp", "src"),
 ]
 
@@ -38,77 +35,82 @@ LOCALES_DIR = os.path.join(EXAMPLES_DIR, "locales")
 DEMO_STORY = os.path.join(EXAMPLES_DIR, "demo_story.es")
 
 TEMPLATE_DIR = os.path.join(
-    REPO_ROOT, "packages", "eager-runtime", "src", "eager_runtime", "template"
+    REPO_ROOT, "packages", "eager", "src", "eager", "template"
 )
 
 # ---------------------------------------------------------------------------
 # Hidden imports
 #
-# Several backends are resolved lazily via ``__getattr__`` in
-# ``eager_graphics.renderers`` and via entry points in
-# ``eager_core.protocols``.  PyInstaller's dependency scanner cannot see
-# those, so we declare them explicitly.
+# Several backends and players are resolved lazily via ``__getattr__`` in
+# ``eager.ui``, ``eager.backends.renderers``, and ``eager.backends.audio``.
+# PyInstaller's dependency scanner cannot see those, so we declare them explicitly.
 # ---------------------------------------------------------------------------
 
 hiddenimports: list[str] = [
     # Core
-    "eager_core.audio",
-    "eager_core.backlog",
-    "eager_core.characters",
-    "eager_core.dispatcher",
-    "eager_core.easing",
-    "eager_core.events",
-    "eager_core.exceptions",
-    "eager_core.headless",
-    "eager_core.i18n",
-    "eager_core.input",
-    "eager_core.layout",
-    "eager_core.lighting",
-    "eager_core.persistent",
-    "eager_core.preferences",
-    "eager_core.protocols",
-    "eager_core.saves",
-    "eager_core.state",
-    "eager_core.storage",
-    "eager_core.text",
-    "eager_core.theme",
-    "eager_core.timeline",
-    "eager_core.timing",
-    "eager_core.types",
-    "eager_core.ui_state",
-    "eager_core.watcher",
+    "eager.core.assets",
+    "eager.core.audio",
+    "eager.core.backlog",
+    "eager.core.characters",
+    "eager.core.dispatcher",
+    "eager.core.easing",
+    "eager.core.events",
+    "eager.core.exceptions",
+    "eager.core.i18n",
+    "eager.core.input",
+    "eager.core.layout",
+    "eager.core.lighting",
+    "eager.core.persistent",
+    "eager.core.preferences",
+    "eager.core.saves",
+    "eager.core.state",
+    "eager.core.storage",
+    "eager.core.text",
+    "eager.core.theme",
+    "eager.core.timeline",
+    "eager.core.timing",
+    "eager.core.types",
+    "eager.core.ui_state",
+    "eager.core.watcher",
     # Script
-    "eager_script.ast",
-    "eager_script.cli",
-    "eager_script.expr",
-    "eager_script.graph",
-    "eager_script.hooks",
-    "eager_script.parser",
-    "eager_script.validator",
-    # Runtime
-    "eager_runtime.assets",
-    "eager_runtime.cli",
-    "eager_runtime.i18n",
-    "eager_runtime.project",
-    "eager_runtime.player",
-    "eager_runtime.runtime",
-    "eager_runtime.session",
-    # Graphics core
-    "eager_graphics.audio",
-    "eager_graphics.compositor",
-    "eager_graphics.director",
-    "eager_graphics.fonts",
-    "eager_graphics.particles",
-    "eager_graphics.player",
-    "eager_graphics.screens",
-    "eager_graphics.stage",
-    "eager_graphics.ui_components",
-    # Renderer backends (lazy-loaded via __getattr__ / entry points)
-    "eager_graphics.renderers.pil",
-    "eager_graphics.renderers.pyglet",
-    # Audio backends
-    "eager_graphics.audio.miniaudio",
-    "eager_graphics.audio.pyglet",
+    "eager.script.ast",
+    "eager.script.expr",
+    "eager.script.graph",
+    "eager.script.hooks",
+    "eager.script.includes",
+    "eager.script.parser",
+    "eager.script.project",
+    "eager.script.tokens",
+    "eager.script.validator",
+    # VM
+    "eager.vm.i18n",
+    "eager.vm.runtime",
+    # Stage
+    "eager.stage.compositor",
+    "eager.stage.director",
+    "eager.stage.fonts",
+    "eager.stage.particles",
+    "eager.stage.stage",
+    # UI & Players (pil_player / pyglet_player are lazy-loaded via __getattr__)
+    "eager.ui.components",
+    "eager.ui.pil_player",
+    "eager.ui.player",
+    "eager.ui.pyglet_player",
+    "eager.ui.screens",
+    "eager.ui.terminal_player",
+    # Session & CLI
+    "eager.session.session",
+    "eager.cli",
+    # Backends (lazy-loaded via __getattr__)
+    "eager.backends.exceptions",
+    "eager.backends.fonts",
+    "eager.backends.types",
+    "eager.backends.renderers.null",
+    "eager.backends.renderers.pil",
+    "eager.backends.renderers.pyglet",
+    "eager.backends.audio.null",
+    "eager.backends.audio.miniaudio",
+    "eager.backends.audio.pyglet",
     # Optional third-party backends
     "miniaudio",
     "PIL",
@@ -132,14 +134,14 @@ if os.path.isfile(DEMO_STORY):
     datas.append((DEMO_STORY, "examples"))
 
 if os.path.isdir(TEMPLATE_DIR):
-    datas.append((TEMPLATE_DIR, "eager_runtime/template"))
+    datas.append((TEMPLATE_DIR, "eager/template"))
 
 # ---------------------------------------------------------------------------
 # Analysis
 # ---------------------------------------------------------------------------
 
 a = Analysis(
-    [os.path.join(REPO_ROOT, "packages", "eager-runtime", "src", "eager_runtime", "__main__.py")],
+    [os.path.join(REPO_ROOT, "packages", "eager", "src", "eager", "cli", "__main__.py")],
     pathex=SRC_DIRS,
     binaries=[],
     datas=datas,

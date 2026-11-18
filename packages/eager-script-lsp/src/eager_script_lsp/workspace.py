@@ -6,10 +6,14 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from eager_core.i18n import TranslationCatalog
-from eager_runtime.assets import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS
-from eager_runtime.project import ProjectConfig, merge_graphs
-from eager_script import (
+from eager.core.assets import (
+    AUDIO_EXTENSIONS,
+    IMAGE_EXTENSIONS,
+    AssetReference,
+    resolve_candidate_paths,
+)
+from eager.core.i18n import TranslationCatalog
+from eager.script import (
     IncludeError,
     ParseError,
     SceneGraph,
@@ -17,6 +21,7 @@ from eager_script import (
     resolve_includes,
     to_graph,
 )
+from eager.script.project import ProjectConfig, merge_graphs
 from lsprotocol.types import Range
 from pygls.uris import from_fs_path, to_fs_path
 
@@ -108,23 +113,43 @@ class AssetIndex:
     audio: set[str] = field(default_factory=set)
     voice: set[str] = field(default_factory=set)
     file_paths: dict[str, Path] = field(default_factory=dict)
+    asset_dir: Path | None = None
 
     def resolve_asset_path(self, asset_kind: str | None, value: str, *, character: str = "") -> Path | None:
         """Resolve an indexed asset reference to its disk Path, if known."""
         if asset_kind == "background":
-            return self.file_paths.get(f"bg:{value}")
-        if asset_kind == "image":
-            return self.file_paths.get(f"image:{value}") or self.file_paths.get(f"bg:{value}")
-        if asset_kind == "voice":
-            return self.file_paths.get(f"voice:{value}")
-        if asset_kind == "character":
-            return self.file_paths.get(f"char:{character}/{value.lower()}")
-        if asset_kind == "audio":
-            return self.file_paths.get(f"audio:{value}")
+            hit = self.file_paths.get(f"bg:{value}")
+        elif asset_kind == "image":
+            hit = self.file_paths.get(f"image:{value}") or self.file_paths.get(f"bg:{value}")
+        elif asset_kind == "voice":
+            hit = self.file_paths.get(f"voice:{value}")
+        elif asset_kind == "character":
+            hit = self.file_paths.get(f"char:{character}/{value.lower()}")
+        elif asset_kind == "audio":
+            hit = self.file_paths.get(f"audio:{value}")
+        else:
+            return None
+
+        if hit is not None:
+            return hit
+
+        if self.asset_dir is not None:
+            ref = AssetReference(
+                kind=asset_kind,
+                identifier=value,
+                line_number=0,
+                character_id=character or None,
+                expression=value if asset_kind == "character" else None,
+            )
+            for rel_candidate in resolve_candidate_paths(ref):
+                candidate = self.asset_dir / rel_candidate
+                if candidate.is_file():
+                    return candidate
         return None
 
     def scan_assets(self, asset_dir: Path) -> None:
         """Scan directory and index all background, character, image, audio, and voice assets."""
+        self.asset_dir = asset_dir
         self.backgrounds.clear()
         self.images.clear()
         self.characters.clear()

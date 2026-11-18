@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from eager_core.types import Color as EagerColor
+from eager.core.types import Color as EagerColor
 from lsprotocol.types import (
     Color,
     ColorInformation,

@@ -43,8 +43,8 @@ Full-featured Language Server Protocol (LSP 3.17+) server for Eager-Script (`.es
 # Standalone installation
 pip install eager-script-lsp
 
-# As an extra from eager-runtime
-pip install 'eager-runtime[lsp]'
+# As an extra from eager
+pip install 'eager[lsp]'
 ```
 
 ---

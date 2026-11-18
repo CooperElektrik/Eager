@@ -17,34 +17,29 @@ New to Eager? Start here to write, stage, and package your visual novel:
 Eager is organized as a monorepo with strict architectural boundaries:
 
 ```text
-eager-script ──┐
-               ├── eager-graphics (presentation, renderer backends)
- eager-core ───┤
-      │        ├── eager-script-lsp (LSP server, language tooling)
-      │        │
-      └──────── eager-runtime (headless story VM, sessions)
-                       │ (optional extras)
-                       ├── eager-graphics
-                       └── eager-script-lsp
+eager.core ──▶ eager.script ──▶ eager.vm ──▶ eager.stage ──▶ eager.ui ──▶ eager.session ──▶ eager.cli
+     │               │                                           ▲              ▲
+     │               └───────────────────────────────────────────┴──────────────┘
+     │
+     ├──▶ eager.backends (independent of vm, stage, ui, session, cli)
+     │
+     └──▶ eager-script-lsp (depends only on eager.core and eager.script)
 ```
 
 ### Key invariants
 
 | Boundary | Rule |
 |----------|------|
-| **Leaf independence** | `eager-core` and `eager-script` are 100% dependency-free and headless. |
-| **Headless runtime** | `eager-runtime` contains zero GUI, graphics, or windowing dependencies. |
-| **Direct submodule imports** | All primitives are imported directly from submodules (`from eager_core.<module> import ...`); root re-export shims are forbidden. |
+| **Leaf independence** | `eager.core` and `eager.script` are 100% dependency-free and headless. |
+| **Headless VM & session** | `eager.vm` and `eager.session` run headlessly with `NullRenderer` / `NullAudioBackend`. |
+| **Direct submodule imports** | All primitives are imported directly from submodules (`from eager.core.<module> import ...`); root re-export shims are forbidden. |
 | **Safe expressions** | Expression compilation (`compile_expr`) uses whitelisted AST evaluation with zero calls to `eval()` or `exec()`. |
 
 ## Packages
 
 | Package | Import path | Role |
 |---------|-------------|------|
-| [`eager-core`](api/eager-core/index.md) | `eager_core` | Shared leaf foundation: audio mixing, geometry (`Vec2`, `Rect`), `Color`, easing, timing, input semantics, storage, text pacing (`{fast}`). |
-| [`eager-script`](api/eager-script/index.md) | `eager_script` | Zero-dependency screenplay DSL parser: AST generation, stream parsing, directed scene graph, validator, and expression compiler (`compile_expr`). |
-| [`eager-runtime`](api/eager-runtime/index.md) | `eager_runtime` | Headless story virtual machine (`StoryVM`), event dispatcher (`run_until_pause`), session controller (`GameSession`), save manager, and terminal player. |
-| [`eager-graphics`](api/eager-graphics/index.md) | `eager_graphics` | Resolution-independent presentation layer: stage compositor, dialogue/choice UI, built-in screens, and pluggable backends (Null, PIL, Pyglet). |
+| [`eager`](api/eager/index.md) | `eager` | Unified visual novel engine: `eager.core`, `eager.script`, `eager.vm`, `eager.stage`, `eager.ui`, `eager.session`, `eager.backends`, and `eager.cli`. |
 | [`eager-script-lsp`](api/eager-script-lsp/index.md) | `eager_script_lsp` | Language Server Protocol (LSP 3.17+) server: real-time diagnostics, autocompletion, hover previews, navigation, and `--check` CLI. |
 
 ## Installation
@@ -83,8 +78,5 @@ uv run mkdocs serve
 
 Browse the auto-generated API reference for each package:
 
-- [eager-core](api/eager-core/index.md)
-- [eager-script](api/eager-script/index.md)
-- [eager-runtime](api/eager-runtime/index.md)
-- [eager-graphics](api/eager-graphics/index.md)
+- [eager](api/eager/index.md)
 - [eager-script-lsp](api/eager-script-lsp/index.md)

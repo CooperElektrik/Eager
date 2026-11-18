@@ -5,7 +5,7 @@ Eager uses a whitelisted AST parsing and compilation pipeline for screenplay exp
 ## Compilation
 
 ```python
-from eager_script.expr import compile_expr
+from eager.script.expr import compile_expr
 
 expr = compile_expr(expr_string)
 result = expr.evaluate(context_variables)

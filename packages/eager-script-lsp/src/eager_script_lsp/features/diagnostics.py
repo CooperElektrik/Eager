@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-import eager_script
-from eager_runtime.assets import check_assets
+import eager.script
+from eager.core.assets import check_assets
 from lsprotocol.types import (
     Diagnostic,
     DiagnosticSeverity,
@@ -49,7 +49,7 @@ def compute_diagnostics(doc: ScriptDocument, workspace: WorkspaceIndex) -> list[
 
     # 2. Structural & AST validation
     if doc.ast_items:
-        val_result = eager_script.validate(doc.ast_items)
+        val_result = eager.script.validate(doc.ast_items)
 
         for err in val_result.errors:
             # Check if this error is an undefined target that actually exists in another workspace file

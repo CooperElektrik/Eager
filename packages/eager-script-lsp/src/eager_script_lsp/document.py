@@ -1,20 +1,20 @@
-"""Fault-tolerant screenplay document scanner backed by eager_script's parser."""
+"""Fault-tolerant screenplay document scanner backed by eager.script's parser."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
 
-import eager_script
-from eager_runtime.i18n import get_beat_occurrence
-from eager_script import (
+from eager.core.i18n import get_beat_occurrence
+from eager.script import (
+    ParsedChoiceSet,
     ParsedItem,
     ParsedLabel,
     SceneGraph,
     parse_with_tokens,
     to_graph,
 )
-from eager_script.tokens import TokenSpan as CoreTokenSpan
+from eager.script.tokens import TokenSpan as CoreTokenSpan
 from lsprotocol.types import (
     DiagnosticSeverity,
     Position,
@@ -114,7 +114,7 @@ class ScriptDocument:
             for item in items:
                 if getattr(item, "line_number", None) == target_line_1:
                     return item
-                if isinstance(item, eager_script.ParsedChoiceSet):
+                if isinstance(item, ParsedChoiceSet):
                     for opt in item.options:
                         if opt.body:
                             found = search_items(opt.body)
@@ -135,7 +135,7 @@ class ScriptDocument:
                     end = getattr(item, "end_col", 0)
                     if start <= col_0 <= end or end == 0:
                         return item
-                if isinstance(item, eager_script.ParsedChoiceSet):
+                if isinstance(item, ParsedChoiceSet):
                     for opt in item.options:
                         if opt.body:
                             found = search_items(opt.body)
@@ -167,7 +167,7 @@ class ScriptDocument:
 
             def find_anon_scene(items: Any, parent_scene: str) -> str | None:
                 for it in items:
-                    if isinstance(it, eager_script.ParsedChoiceSet):
+                    if isinstance(it, ParsedChoiceSet):
                         for opt in it.options:
                             if opt.body:
                                 anon_id = f"{parent_scene}__anon_{opt.line_number}"
@@ -215,7 +215,7 @@ class ScriptDocument:
         return 1
 
     def parse(self) -> None:
-        """Parse the document with eager_script and index token spans and symbols."""
+        """Parse the document with eager.script and index token spans and symbols."""
         self.spans.clear()
         self.occurrences.clear()
         self.syntax_errors.clear()

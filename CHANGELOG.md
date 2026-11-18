@@ -16,7 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **User-Friendly CLI Defaults & Messaging (`eager-runtime`)**:
+- **Monorepo Package Consolidation (`eager` + `eager-script-lsp`)**:
+  - Consolidated `eager-core`, `eager-script`, `eager-runtime`, and `eager-graphics` into a single layered package `packages/eager` (`import eager`) with pure-stdlib core dependencies and lazy optional extras (`[pil]`, `[pyglet]`, `[audio]`, `[gui]`).
+  - Organized `eager` into layered subpackages (`eager.core`, `eager.script`, `eager.vm`, `eager.stage`, `eager.ui`, `eager.session`, `eager.backends`, `eager.cli`) enforced by `import-linter` DAG contracts, keeping `eager-script-lsp` as a separate package depending only on `eager.core` and `eager.script` (and removing `eager lsp` / `[lsp]` from `eager`).
+  - Wired `GameSession` directly to concrete `StageDirector`, `UIOverlay`, `ScreenManager`, and `AudioMixer` (using `NullRenderBackend` / `NullAudioBackend` in headless mode), and replaced cross-layer private attribute pokes (`_last_event`, `_ui_dirty`, `_player`, `vm._*`, `active_screen = None`, `Theme.to_*_style()`) with explicit public APIs.
+  - Unified asset path resolution in `eager.core.assets` (shared across `PILAssetResolver`, `PygletAssetResolver`, and `eager-script-lsp`'s `AssetIndex`), consolidated Pillow placeholder gradient generation in `eager.backends._placeholder`, and moved `compute_beat_id` / `get_beat_occurrence` to `eager.core.i18n` and `project.py` to `eager.script.project`.
+  - Updated `packages/eager-script-lsp`, `examples/run_demo.py`, `packaging/` (`eager.spec`, `build_export.py`, `README.md`), `docs/`, `mkdocs.yml`, and `AGENTS.md` to use `eager.*` imports.
+- **User-Friendly CLI Defaults & Messaging (`eager`)**:
   - Changed `eager play` default `--backend` from `terminal` to `pil` (matching `eager run`).
   - Clarified `eager build` help/output to distinguish `.zip` project archives from standalone builds (`packaging/build_export.py`), and updated `eager new` next steps to highlight `--watch` and `eager check --assets`.
 - **Cross-Package Wiring & Cleanup**:
@@ -37,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Wired backlog, character lookup, audio, lighting, NVL mode, LSP, and CLI subsystems.
 - Mocked `miniaudio.PlaybackDevice` in `test_miniaudio_audio_backend_error_handling` so error-handling coverage executes reliably on headless CI runners without audio hardware.
 - Resolved `basedpyright` type errors across `packages/eager-graphics/tests`.
+
+### Removed
+
+- Removed legacy `packages/eager-core`, `packages/eager-script`, `packages/eager-runtime`, and `packages/eager-graphics` workspace packages (merged into `packages/eager`).
+- Removed `protocols.py` (`ProviderRegistry`, `entry_points("eager.providers")`, and session/UI/screen/compositor bridging protocols) and `headless.py` (`NullStage`, `NullUI`, `NullScreenManager`).
 
 ## [0.9.0] - 2026-11-09
 

@@ -52,7 +52,7 @@ python packaging/build_export.py --platform debian --output dist/debian
 ### Output
 
 - **`dist/<platform>/`** — standalone application directory containing the
-  `eager` executable plus `examples/` and `eager_runtime/` data folders.
+  `eager` executable plus `examples/` and `eager/` data folders.
 - **`dist/windows-installer/`** — Inno Setup `.exe` installer (Windows only).
 - **`dist/debian.deb`** — Debian package (Debian/Ubuntu only).
 

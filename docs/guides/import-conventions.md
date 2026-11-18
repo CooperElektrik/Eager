@@ -5,27 +5,28 @@ All primitives must be imported directly from their defining submodule. Root re-
 ## Correct: direct submodule imports
 
 ```python
-# eager-core
-from eager_core.events import DialogueEvent, ChoicePromptEvent, ChoiceOption
-from eager_core.types import Color, Vec2
-from eager_core.audio import AudioMixer, NullAudioBackend
-from eager_core.text import parse_text_tags, TextReveal
+# eager.core
+from eager.core.events import DialogueEvent, ChoicePromptEvent, ChoiceOption
+from eager.core.types import Color, Vec2
+from eager.core.audio import AudioMixer, NullAudioBackend
+from eager.core.text import parse_text_tags, TextReveal
+from eager.core.dispatcher import EventDispatcher
+from eager.core.saves import SaveManager
 
-# eager-script
-from eager_script.expr import compile_expr
-from eager_script import parse_hook_args
+# eager.script
+from eager.script.expr import compile_expr
+from eager.script import parse_hook_args
 
-# eager-runtime
-from eager_runtime.runtime import StoryVM
-from eager_runtime.session import GameSession
-from eager_core.dispatcher import EventDispatcher
-from eager_core.saves import SaveManager
+# eager.vm & eager.session
+from eager.vm.runtime import StoryVM
+from eager.session import GameSession
 
-# eager-graphics
-from eager_graphics.compositor import StageCompositor
-from eager_graphics.director import StageDirector
+# eager.stage & eager.ui
+from eager.stage.compositor import StageCompositor
+from eager.stage.director import StageDirector
+from eager.ui.player import BasePlayer
 
-# Avoid: non-existent shims or missing root exports
-from eager_runtime.events import DialogueEvent       # Fails: no shim in runtime
-from eager_script import evaluate_expression         # Fails: no such function
+# Avoid: legacy package names
+from eager_core.events import DialogueEvent       # Fails: removed in 0.9+
+from eager_runtime.session import GameSession     # Fails: removed in 0.9+
 ```
