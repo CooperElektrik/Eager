@@ -13,7 +13,7 @@ import argparse
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import eager_script
 from eager_core.protocols import (
@@ -75,7 +75,11 @@ def _version_string() -> str:
 # ── eager CLI (text-only, no graphics) ────────────────────────────────
 
 
-def _add_i18n_subparser(subparsers: Any) -> None:
+class _SubParsersLike(Protocol):
+    def add_parser(self, name: str, *, help: str = ...) -> argparse.ArgumentParser: ...
+
+
+def _add_i18n_subparser(subparsers: _SubParsersLike) -> None:
     i18n_p = subparsers.add_parser(
         "i18n",
         help="Translation catalog extraction, validation, and management.",

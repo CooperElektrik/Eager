@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 try:
     import miniaudio
 
-    MINIAUDIO_AVAILABLE = True
+    _miniaudio_available = True
 except ImportError:
     miniaudio = None  # type: ignore[assignment]
-    MINIAUDIO_AVAILABLE = False
+    _miniaudio_available = False
 
-
+MINIAUDIO_AVAILABLE: bool = _miniaudio_available
 _WARNED_MISSING = False
 
 __all__ = [
@@ -43,7 +43,7 @@ def _check_miniaudio() -> bool:
                 "Notice: 'miniaudio' is not installed; falling back to NullAudioBackend. "
                 "Install with 'pip install eager-graphics[audio]'.\n"
             )
-            _WARNED_MISSING = True
+            _WARNED_MISSING = True  # pyright: ignore[reportConstantRedefinition]
         return False
     return True
 
@@ -51,7 +51,7 @@ def _check_miniaudio() -> bool:
 class _ChannelTrack:
     def __init__(
         self,
-        samples: array.array | None,
+        samples: array.array[int] | None,
         sample_rate: int,
         nchannels: int,
         volume: float = 1.0,
@@ -70,7 +70,7 @@ class _ChannelTrack:
         self.loop_end_frame = loop_end_frame
         self.path_str = path_str
         self.stream = stream
-        self.buffer: array.array = array.array("h")
+        self.buffer: array.array[int] = array.array("h")
         self.frame_pos: int = 0
         self.total_frames: int = (
             len(samples) // nchannels if (samples is not None and nchannels > 0) else -1

@@ -322,7 +322,8 @@ class GameSessionProtocol(Protocol):
     preferences: Any
     save_manager: Any
     translation_manager: Any
-    screens: ScreenManagerProtocol | None
+    @property
+    def screens(self) -> ScreenManagerProtocol | None: ...
     mode: str
     is_finished: bool
     input_text: str
@@ -335,15 +336,15 @@ class GameSessionProtocol(Protocol):
         """Advance story execution by one beat."""
         ...
 
-    def choose(self, choice_index: int) -> None:
+    def choose(self, choice_index: int | str, /) -> Any:
         """Make branching story choice by index."""
         ...
 
-    def restart_story(self) -> None:
+    def restart_story(self) -> Any:
         """Restart story from beginning."""
         ...
 
-    def save_game(self, slot_name: str) -> bool:
+    def save_game(self, slot_name: str) -> Any:
         """Save game to named slot."""
         ...
 
@@ -395,7 +396,7 @@ class GameSessionProtocol(Protocol):
         """Hot-reload script from disk."""
         ...
 
-    def return_to_title(self) -> None:
+    def return_to_title(self) -> bool:
         """Return to title screen."""
         ...
 

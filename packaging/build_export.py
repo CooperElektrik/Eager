@@ -40,9 +40,9 @@ def _run(cmd: list[str], *, cwd: Path | None = None) -> int:
 
 def _ensure_pyinstaller() -> None:
     """Verify PyInstaller is available; give a helpful error if not."""
-    try:
-        import PyInstaller  # noqa: F401
-    except ImportError as exc:
+    import importlib.util
+
+    if importlib.util.find_spec("PyInstaller") is None:
         print(
             "error: PyInstaller is not installed in this environment.\n"
             "Install it first:\n"
@@ -51,7 +51,7 @@ def _ensure_pyinstaller() -> None:
             "  pip install pyinstaller",
             file=sys.stderr,
         )
-        raise SystemExit(1) from exc
+        raise SystemExit(1)
 
 
 def build_pyinstaller(

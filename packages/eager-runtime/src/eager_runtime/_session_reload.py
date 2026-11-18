@@ -1,15 +1,19 @@
+# pyright: reportImportCycles=false
 """Hot-reload, error overlay, and presentation reconciliation helpers for GameSession."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from eager_runtime._session_bootstrap import discover_locales_dir, register_graph_characters
 from eager_runtime.project import load_project_graph, resolve_project_scripts
 
+if TYPE_CHECKING:
+    from eager_runtime.session import GameSession
 
-def set_error_overlay(session: Any, msg: str) -> None:
+
+def set_error_overlay(session: GameSession, msg: str) -> None:
     """Set error overlay and clear active choices/prompts."""
     session.overlay.error_overlay = msg
     session.director.ui_state.speaker = "Error"
@@ -18,12 +22,12 @@ def set_error_overlay(session: Any, msg: str) -> None:
     session.active_choice_prompt = None
 
 
-def clear_error_overlay(session: Any) -> None:
+def clear_error_overlay(session: GameSession) -> None:
     """Clear the error overlay from the UI."""
     session.overlay.error_overlay = None
 
 
-def refresh_presentation_after_reload(session: Any, new_scene: Any, display_idx: int) -> None:
+def refresh_presentation_after_reload(session: GameSession, new_scene: Any, display_idx: int) -> None:
     """Update active dialogue/choice display to reflect the reloaded scene body."""
     if not new_scene.body or not (0 <= display_idx < len(new_scene.body)):
         return
@@ -102,7 +106,7 @@ def refresh_presentation_after_reload(session: Any, new_scene: Any, display_idx:
             session.vm._pending_choice = prompt
 
 
-def hot_reload(session: Any, script_path: str | Path | None = None) -> bool:
+def hot_reload(session: GameSession, script_path: str | Path | None = None) -> bool:
     """Hot-reload the screenplay from disk, hot-swapping the VM and reconciling state."""
     target_path = Path(script_path) if script_path else session.script_path
     if target_path is None or not target_path.exists():

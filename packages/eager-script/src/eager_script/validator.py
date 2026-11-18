@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from eager_script import ParsedItem
+    from eager_script.ast import ParsedItem
 
 __all__ = [
     "ValidationError",
@@ -40,7 +40,7 @@ class ValidationResult:
 
 def _iter_choice_bodies(items: Sequence[Any]) -> Iterator[Any]:
     """Yield every item nested inside inline choice option bodies (depth-first)."""
-    from eager_script import ParsedChoiceSet
+    from eager_script.ast import ParsedChoiceSet
 
     for item in items:
         if isinstance(item, ParsedChoiceSet):
@@ -51,7 +51,7 @@ def _iter_choice_bodies(items: Sequence[Any]) -> Iterator[Any]:
 
 def validate(items: Sequence[ParsedItem]) -> ValidationResult:
     """Validate a parsed screenplay AST for broken links, duplicate labels, and issues."""
-    from eager_script import (
+    from eager_script.ast import (
         ParsedCall,
         ParsedChoiceSet,
         ParsedDefault,

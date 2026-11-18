@@ -434,10 +434,14 @@ def test_parse_iter_matches_parse_for_inline_blocks() -> None:
 def test_to_dict_serializes_inline_body() -> None:
     dicts = to_dict(parse(INLINE_CHOICE_SCRIPT))
     choice_set = next(d for d in dicts if d["type"] == "choice_set")
-    first = choice_set["options"][0]
+    options = choice_set["options"]
+    assert isinstance(options, list)
+    first = options[0]
+    second = options[1]
+    assert isinstance(first, dict) and isinstance(second, dict)
     assert first["target"] is None
     assert first["body"][0]["type"] == "set"
-    assert choice_set["options"][1]["body"][0]["type"] == "dialogue"
+    assert second["body"][0]["type"] == "dialogue"
     # Round-trips through JSON
     assert json.loads(to_json(parse(INLINE_CHOICE_SCRIPT))) == dicts
 

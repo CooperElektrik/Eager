@@ -71,4 +71,4 @@ def test_i18n_error_on_empty_locale():
         mgr.set_locale("")
 
     with pytest.raises(I18nError, match="Expected mapping"):
-        TranslationCatalog.from_dict("not_a_mapping")  # type: ignore[arg-type]
+        TranslationCatalog.from_dict("not_a_mapping")  # pyright: ignore[reportArgumentType]

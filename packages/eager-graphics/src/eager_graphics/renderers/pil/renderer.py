@@ -179,11 +179,11 @@ class PILRenderer(RenderBackend):
         self.clock: FrameClock = FrameClock()
 
         # Consolidated stage sprite/geometry caches
-        self._sprite_cache: _ImageLRU = _ImageLRU(
+        self._sprite_cache: _ImageLRU[tuple[object, ...], _CachedSprite] = _ImageLRU(
             max_items=self.max_cached_sprites,
             max_bytes=self.cache_budget_bytes,
         )
-        self._geom_cache: _ImageLRU = _ImageLRU(
+        self._geom_cache: _ImageLRU[tuple[object, ...], _GeomEntry] = _ImageLRU(
             max_items=self.max_cached_sprites,
             max_bytes=self.cache_budget_bytes,
         )
@@ -233,11 +233,13 @@ class PILRenderer(RenderBackend):
         return self._stage_cache_mgr.ui_dirty_bbox
 
     @property
-    def _ui_image_cache(self) -> _ImageLRU:
+    def _ui_image_cache(self) -> _ImageLRU[tuple[object, ...], _CachedSprite]:
         return self._ui.ui_image_cache
 
     @property
-    def _text_mask_cache(self) -> _ImageLRU:
+    def _text_mask_cache(
+        self,
+    ) -> _ImageLRU[tuple[str, int, str, bool, bool, str | None], tuple[Image.Image | None, int, int]]:
         return self._ui.text_mask_cache
 
     @property

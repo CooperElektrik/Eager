@@ -16,13 +16,13 @@ class EagerGraphicsError(EagerCoreError):
     """Base exception for all errors raised within eager-graphics."""
 
 
-class RenderError(EagerGraphicsError, RuntimeError):
+class RenderError(EagerGraphicsError, RuntimeError):  # pyright: ignore[reportUnsafeMultipleInheritance]
     """Raised when a rendering or compositor operation fails."""
 
 
-class ScreenError(EagerGraphicsError, RuntimeError):
+class ScreenError(EagerGraphicsError, RuntimeError):  # pyright: ignore[reportUnsafeMultipleInheritance]
     """Raised when an error occurs during screen navigation or lifecycle."""
 
 
-class AssetSecurityError(EagerGraphicsError, ValueError):
+class AssetSecurityError(EagerGraphicsError, ValueError):  # pyright: ignore[reportUnsafeMultipleInheritance]
     """Raised when an asset path traversal or security violation is detected."""

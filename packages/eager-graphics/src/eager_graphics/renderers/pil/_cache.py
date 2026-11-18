@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import threading
 from collections import OrderedDict
-from typing import Any
+from typing import TypeVar
 
 from ._compat import Image
 from ._imaging import _image_nbytes
 
+_K = TypeVar("_K")
+_V = TypeVar("_V")
 
-class _ImageLRU(OrderedDict):  # type: ignore[type-arg]
+
+class _ImageLRU(OrderedDict[_K, _V]):
     """``OrderedDict`` LRU bounded by both entry count and approximate byte size."""
 
     def __init__(self, max_items: int, max_bytes: int) -> None:
@@ -18,7 +21,7 @@ class _ImageLRU(OrderedDict):  # type: ignore[type-arg]
         self.max_items = max_items
         self.max_bytes = max_bytes
         self.nbytes = 0
-        self._sizes: dict[Any, int] = {}
+        self._sizes: dict[_K, int] = {}
         self._lock: threading.Lock = threading.Lock()
 
     @property
@@ -26,7 +29,7 @@ class _ImageLRU(OrderedDict):  # type: ignore[type-arg]
         """Whether caching is active (budget and entry limits are positive)."""
         return self.max_items > 0 and self.max_bytes > 0
 
-    def lookup(self, key: Any) -> Any:
+    def lookup(self, key: _K) -> _V | None:
         """Return the cached value (marking it most-recently used) or ``None``."""
         if not self.enabled:
             return None
@@ -36,7 +39,7 @@ class _ImageLRU(OrderedDict):  # type: ignore[type-arg]
                 self.move_to_end(key)
             return value
 
-    def put(self, key: Any, value: Any, nbytes: int) -> None:
+    def put(self, key: _K, value: _V, nbytes: int) -> None:
         """Insert *value*, evicting least-recently-used entries over budget."""
         if not self.enabled:
             return

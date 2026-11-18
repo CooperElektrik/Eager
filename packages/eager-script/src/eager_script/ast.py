@@ -39,7 +39,7 @@ class AstNode(Protocol):
         """Node type discriminator string."""
         ...
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize AST node to a dictionary."""
         ...
 
@@ -58,7 +58,7 @@ class ParsedInclude(AstNode):
         """Node type discriminator string ('include')."""
         return "include"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize include node to a dictionary."""
         return {
             "type": self.type,
@@ -84,7 +84,7 @@ class ParsedError(AstNode):
         """Node type discriminator string ('error')."""
         return "error"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize error node to a dictionary."""
         return {
             "type": self.type,
@@ -111,7 +111,7 @@ class ParsedLabel(AstNode):
         """Node type discriminator string ('label')."""
         return "label"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize section label node to a dictionary.
 
         Returns:
@@ -144,7 +144,7 @@ class ParsedDialogue(AstNode):
         """Node type discriminator string ('dialogue')."""
         return "dialogue"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize dialogue node to a dictionary.
 
         Returns:
@@ -176,7 +176,7 @@ class ParsedAppend(AstNode):
         """Node type discriminator string ('append')."""
         return "append"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize append beat node to a dictionary.
 
         Returns:
@@ -205,7 +205,7 @@ class ParsedFreshBox(AstNode):
         """Node type discriminator string ('fresh_box')."""
         return "fresh_box"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize fresh box beat node to a dictionary.
 
         Returns:
@@ -234,7 +234,7 @@ class ParsedNarration(AstNode):
         """Node type discriminator string ('narration')."""
         return "narration"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize narration beat node to a dictionary.
 
         Returns:
@@ -276,7 +276,7 @@ class ParsedChoiceOption(AstNode):
         """True when the option carries an anonymous inline block instead of a target."""
         return bool(self.body)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize choice option node to a dictionary.
 
         Returns:
@@ -308,7 +308,7 @@ class ParsedChoiceSet(AstNode):
         """Node type discriminator string ('choice_set')."""
         return "choice_set"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize choice set node to a dictionary.
 
         Returns:
@@ -337,7 +337,7 @@ class ParsedJump(AstNode):
         """Node type discriminator string ('jump')."""
         return "jump"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize jump node to a dictionary.
 
         Returns:
@@ -366,7 +366,7 @@ class ParsedCall(AstNode):
         """Node type discriminator string ('call')."""
         return "call"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize call node to a dictionary.
 
         Returns:
@@ -394,7 +394,7 @@ class ParsedReturn(AstNode):
         """Node type discriminator string ('return')."""
         return "return"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize return node to a dictionary.
 
         Returns:
@@ -422,7 +422,7 @@ class ParsedHook(AstNode):
         """Node type discriminator string ('hook')."""
         return "hook"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize hook node to a dictionary.
 
         Returns:
@@ -453,7 +453,7 @@ class ParsedSet(AstNode):
         """Node type discriminator string ('set')."""
         return "set"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize set node to a dictionary.
 
         Returns:
@@ -485,7 +485,7 @@ class ParsedDefault(AstNode):
         """Node type discriminator string ('default')."""
         return "default"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize default variable definition node to a dictionary.
 
         Returns:
@@ -517,7 +517,7 @@ class ParsedCharacter(AstNode):
         """Node type discriminator string ('character')."""
         return "character"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize character definition node to a dictionary.
 
         Returns:
@@ -548,7 +548,7 @@ class ParsedIf(AstNode):
         """Node type discriminator string ('if')."""
         return "if"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize if node to a dictionary.
 
         Returns:
@@ -577,7 +577,7 @@ class ParsedElif(AstNode):
         """Node type discriminator string ('elif')."""
         return "elif"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize elif node to a dictionary.
 
         Returns:
@@ -605,7 +605,7 @@ class ParsedElse(AstNode):
         """Node type discriminator string ('else')."""
         return "else"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize else node to a dictionary.
 
         Returns:
@@ -632,7 +632,7 @@ class ParsedEnd(AstNode):
         """Node type discriminator string ('end')."""
         return "end"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize end node to a dictionary.
 
         Returns:
@@ -661,7 +661,7 @@ class ParsedCondJump(AstNode):
         """Node type discriminator string ('cond_jump')."""
         return "cond_jump"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize conditional jump node to a dictionary.
 
         Returns:
@@ -691,7 +691,7 @@ class ParsedLocalJump(AstNode):
         """Node type discriminator string ('local_jump')."""
         return "local_jump"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize local jump node to a dictionary.
 
         Returns:
@@ -732,7 +732,7 @@ ParsedItem: TypeAlias = (
 )
 
 
-def to_dict(items: Sequence[ParsedItem]) -> list[dict[str, Any]]:
+def to_dict(items: Sequence[ParsedItem]) -> list[dict[str, object]]:
     """Convert a sequence of parsed AST items into dictionaries."""
     return [item.to_dict() for item in items]
 

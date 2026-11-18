@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from eager_core.protocols import GameSessionProtocol
 from eager_core.types import DebugOverlayMode, RenderPreset, ScaleMode
 
 from eager_graphics.player import BasePlayer
@@ -30,7 +31,7 @@ if TYPE_CHECKING or PIL_AVAILABLE:
         def __init__(
             self,
             *,
-            session: Any,
+            session: GameSessionProtocol,
             width: int = 1280,
             height: int = 720,
             title: str = "Eager-Graphics Visual Novel (PIL)",
@@ -67,18 +68,18 @@ if TYPE_CHECKING or PIL_AVAILABLE:
                 **renderer_kwargs,
             )
 
-            self._fps_widget: Any = None
+            self._fps_widget: tk.Label | None = None
             self._last_debug_update: float = 0.0
             self._last_render_path: str = "None"
 
-            self._photo: Any = None
+            self._photo: object = None
             self._last_visible_chars: int | None = None
             self._last_input_cursor: bool | None = None
 
             # tkinter window objects — created lazily by run() so that
             # construction and story logic stay headless-safe.
-            self._root: Any = None
-            self._label: Any = None
+            self._root: tk.Tk | None = None
+            self._label: tk.Label | None = None
             self._closed: bool = False
             self._last_tick: float = 0.0
 
@@ -209,21 +210,22 @@ if TYPE_CHECKING or PIL_AVAILABLE:
             from PIL import ImageTk
 
             img = self.renderer.get_image()
-            if self._photo is not None and hasattr(self._photo, "paste"):
+            paste_fn = getattr(self._photo, "paste", None)
+            if callable(paste_fn):
                 try:
-                    self._photo.paste(img)
+                    paste_fn(img)
                     return
                 except Exception:  # noqa: BLE001, S110
                     pass
 
             self._photo = ImageTk.PhotoImage(img)
-            self._label.configure(image=self._photo)
+            self._label.configure(image=self._photo)  # pyright: ignore[reportArgumentType]
 
         def _present_cached(self) -> None:
             """Re-display the cached frame without re-rendering (no-op headless)."""
             if self._root is None or self._label is None or self._photo is None:
                 return
-            self._label.configure(image=self._photo)
+            self._label.configure(image=self._photo)  # pyright: ignore[reportArgumentType]
 
         def _draw_debug_overlay(self, force: bool = False) -> None:
             """Update the on-screen developer debug overlay (no-op headless)."""
@@ -411,6 +413,8 @@ if TYPE_CHECKING or PIL_AVAILABLE:
             target cadence, and lets ``uncapped`` actually run unthrottled.
             """
             root = self._root
+            if root is None:
+                return
             period = (1.0 / 60.0) if (self.vsync and not self.uncapped) else 0.0
             while not self._closed and self._root is root:
                 started = time.perf_counter()

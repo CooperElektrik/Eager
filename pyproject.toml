@@ -255,4 +255,112 @@ forbidden_modules = [
     "eager_core.timing",
 ]
 
+[tool.basedpyright]
+venvPath = "."
+venv = ".venv"
+reportUnusedCallResult = "none"
+reportPrivateUsage = "none"
+reportMissingTypeStubs = "none"
+reportImplicitOverride = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "examples"
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"
+reportUnknownParameterType = "none"
+reportMissingParameterType = "none"
+reportUnknownLambdaType = "none"
+reportUnannotatedClassAttribute = "none"
+reportImplicitStringConcatenation = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "scripts"
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"
+reportUnknownParameterType = "none"
+reportMissingParameterType = "none"
+reportUnknownLambdaType = "none"
+reportUnannotatedClassAttribute = "none"
+reportImplicitStringConcatenation = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "packaging"
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"
+reportUnknownParameterType = "none"
+reportMissingParameterType = "none"
+reportUnknownLambdaType = "none"
+reportUnannotatedClassAttribute = "none"
+reportImplicitStringConcatenation = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "packages/eager-core/tests"
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"
+reportUnknownParameterType = "none"
+reportMissingParameterType = "none"
+reportUnknownLambdaType = "none"
+reportUnannotatedClassAttribute = "none"
+reportImplicitStringConcatenation = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "packages/eager-script/tests"
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"
+reportUnknownParameterType = "none"
+reportMissingParameterType = "none"
+reportUnknownLambdaType = "none"
+reportUnannotatedClassAttribute = "none"
+reportImplicitStringConcatenation = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "packages/eager-script/benchmarks"
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"
+reportUnknownParameterType = "none"
+reportMissingParameterType = "none"
+reportUnknownLambdaType = "none"
+reportUnannotatedClassAttribute = "none"
+reportImplicitStringConcatenation = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "packages/eager-runtime/tests"
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"
+reportUnknownParameterType = "none"
+reportMissingParameterType = "none"
+reportUnknownLambdaType = "none"
+reportUnannotatedClassAttribute = "none"
+reportImplicitStringConcatenation = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "packages/eager-graphics/tests"
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"
+reportUnknownParameterType = "none"
+reportMissingParameterType = "none"
+reportUnknownLambdaType = "none"
+reportUnannotatedClassAttribute = "none"
+reportImplicitStringConcatenation = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "packages/eager-graphics/benchmarks"
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"
+reportUnknownParameterType = "none"
+reportMissingParameterType = "none"
+reportUnknownLambdaType = "none"
+reportUnannotatedClassAttribute = "none"
+reportImplicitStringConcatenation = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "packages/eager-script-lsp/tests"
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"
+reportUnknownParameterType = "none"
+reportMissingParameterType = "none"
+reportUnknownLambdaType = "none"
+reportUnannotatedClassAttribute = "none"
+reportImplicitStringConcatenation = "none"
+
 

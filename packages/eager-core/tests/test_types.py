@@ -115,7 +115,7 @@ def test_vec2_arithmetic_safety():
 
 def test_vec2_from_dict_validation():
     with pytest.raises(TypeError, match="expects a Mapping"):
-        Vec2.from_dict(None)  # type: ignore[arg-type]
+        Vec2.from_dict(None)  # pyright: ignore[reportArgumentType]
 
     with pytest.raises(KeyError, match="requires 'x' and 'y' keys"):
         Vec2.from_dict({"x": 1.0})
@@ -136,7 +136,7 @@ def test_vec2_from_dict_validation():
 
 def test_color_from_dict_validation():
     with pytest.raises(TypeError, match="expects a Mapping"):
-        Color.from_dict(None)  # type: ignore[arg-type]
+        Color.from_dict(None)  # pyright: ignore[reportArgumentType]
 
     with pytest.raises(KeyError, match="missing required keys"):
         Color.from_dict({"r": 1.0, "g": 1.0})

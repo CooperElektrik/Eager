@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
+from eager_core.characters import CharacterConfig
 from eager_core.dispatcher import EventDispatcher
 from eager_core.events import (
     AppendEvent,
@@ -21,8 +22,10 @@ from eager_core.input import InputAction, Keymap
 from eager_core.persistent import PersistentData
 from eager_core.preferences import Preferences
 from eager_core.protocols import (
+    CharacterRegistryProtocol,
     HostLifecycleListener,
     ProviderRegistry,
+    RenderItem,
     ScreenManagerProtocol,
     StageProtocol,
     UIProtocol,
@@ -32,6 +35,10 @@ from eager_core.protocols import (
 from eager_core.saves import SaveManager
 from eager_core.state import Checkpoint, CheckpointHistory
 from eager_core.storage import get_default_save_dir
+from eager_core.ui_state import UIState
+
+if TYPE_CHECKING:
+    from eager_script.graph import SceneGraph
 
 from eager_runtime._session_bootstrap import (
     create_default_screens,
@@ -85,6 +92,49 @@ from eager_runtime.runtime import StoryVM
 __all__ = [
     "GameSession",
 ]
+
+
+class _SessionCompositor(Protocol):
+    timeline: Any
+    clock: Any
+
+    def render_list(self) -> list[RenderItem]: ...
+    def update(self, dt: float) -> None: ...
+
+
+class _SessionStage(StageProtocol, CharacterRegistryProtocol, Protocol):
+    ui_state: UIState  # type: ignore[assignment]
+    characters: dict[str, CharacterConfig]
+
+    def clear_stage(self) -> None: ...
+    def save_ui_state(self) -> dict[str, Any]: ...
+    def restore_ui_state(self, state: dict[str, Any]) -> None: ...
+
+
+class _SessionUI(Protocol):
+    error_overlay: str | None
+    input_box: Any
+    choice_menu: Any
+
+    def set_viewport(self, width: int, height: int) -> None: ...
+    def draw(self, *args: object, **kwargs: object) -> None: ...
+    def sync(self, *args: object, **kwargs: object) -> None: ...
+    def hit_test_choice(self, x: float, y: float) -> int | None: ...
+    def hit_test_quick_action(self, x: float, y: float) -> str | None: ...
+    def show_toast(self, message: str, duration: float = 2.0) -> None: ...
+    def update_toast(self, dt: float) -> None: ...
+    def set_choice_options(self, options: Any) -> None: ...
+    def get_selected_choice(self) -> int | None: ...
+    def set_selected_choice(self, index: int | None) -> None: ...
+    def complete_dialogue_reveal(self, show_arrow: bool = True) -> None: ...
+    def set_input_text(self, text: str) -> None: ...
+    def get_hovered_quick_action(self) -> str | None: ...
+    def set_hovered_quick_action(self, action: str | None) -> None: ...
+    def update_input(self, dt: float) -> None: ...
+
+
+class _SessionScreens(ScreenManagerProtocol, Protocol):
+    def set_viewport(self, width: int, height: int) -> None: ...
 
 
 class GameSession:
@@ -145,12 +195,12 @@ class GameSession:
         # Parse scene graph
         if isinstance(project_or_script, (str, Path)):
             self.script_path = Path(project_or_script)
-            self.graph: Any = load_project_graph(self.script_path)
+            self.graph: SceneGraph = load_project_graph(self.script_path)
             self._project_scripts = resolve_project_scripts(self.script_path)
         elif hasattr(project_or_script, "graph"):
-            self.graph = project_or_script.graph
+            self.graph = cast("SceneGraph", project_or_script.graph)
         else:
-            self.graph = project_or_script
+            self.graph = cast("SceneGraph", project_or_script)
 
         from eager_core.audio import AudioMixer
         from eager_core.i18n import TranslationManager
@@ -190,22 +240,27 @@ class GameSession:
                     stage_kwargs[k] = getattr(config, k)
 
         if stage is not None:
-            self.stage: Any = stage
+            self.stage: _SessionStage = cast("_SessionStage", stage)
         elif headless:
-            self.stage = NullStage(virtual_width=virtual_width, virtual_height=virtual_height)
+            self.stage = cast("_SessionStage", NullStage(virtual_width=virtual_width, virtual_height=virtual_height))
         else:
-            self.stage = create_default_stage(
-                virtual_width=virtual_width,
-                virtual_height=virtual_height,
-                audio=self.audio,
-                skip_mode_cb=lambda: self.skip_mode,
-                registry=self.registry,
-                **stage_kwargs,
+            self.stage = cast(
+                "_SessionStage",
+                create_default_stage(
+                    virtual_width=virtual_width,
+                    virtual_height=virtual_height,
+                    audio=self.audio,
+                    skip_mode_cb=lambda: self.skip_mode,
+                    registry=self.registry,
+                    **stage_kwargs,
+                ),
             )
-        self.director: Any = self.stage
-        self.compositor: Any = getattr(self.stage, "compositor", None)
-        if self.compositor is None:
-            self.compositor = NullCompositor(virtual_width=virtual_width, virtual_height=virtual_height)
+        self.director: _SessionStage = self.stage
+        self.compositor: _SessionCompositor = cast(
+            "_SessionCompositor",
+            getattr(self.stage, "compositor", None)
+            or NullCompositor(virtual_width=virtual_width, virtual_height=virtual_height),
+        )
         self.stage.bind(self.dispatcher)
 
         register_scene_backgrounds(self.director, config)
@@ -215,20 +270,23 @@ class GameSession:
         self.keymap = Keymap()
         resolved_theme = resolve_theme(config, registry=self.registry) if config is not None else None
         if ui is not None:
-            self.ui: Any = ui
+            self.ui: _SessionUI = cast("_SessionUI", cast("object", ui))
         elif headless:
-            self.ui = NullUI(width=1280, height=720)
+            self.ui = cast("_SessionUI", cast("object", NullUI(width=1280, height=720)))
         else:
-            self.ui = create_default_ui(width=1280, height=720, theme=resolved_theme, registry=self.registry)
-        self.overlay: Any = self.ui
+            self.ui = cast(
+                "_SessionUI",
+                cast("object", create_default_ui(width=1280, height=720, theme=resolved_theme, registry=self.registry)),
+            )
+        self.overlay: _SessionUI = self.ui
 
         # Screens and Theme
         if screens is not None:
-            self.screens: Any = screens
+            self.screens: _SessionScreens = cast("_SessionScreens", screens)
         elif headless:
-            self.screens = NullScreenManager()
+            self.screens = cast("_SessionScreens", NullScreenManager())
         else:
-            self.screens = create_default_screens(config, self, registry=self.registry)
+            self.screens = cast("_SessionScreens", create_default_screens(config, self, registry=self.registry))
 
         from eager_core.backlog import Backlog
 

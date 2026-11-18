@@ -241,7 +241,7 @@ def _verify(python: str, *, dry_run: bool) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description=__doc__.splitlines()[0],
+        description=(__doc__ or "").splitlines()[0],
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(

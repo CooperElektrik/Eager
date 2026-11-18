@@ -22,7 +22,7 @@ except ImportError as err:
 
 from eager_core.input import InputAction
 from eager_core.layout import LayoutResolver, ViewportTransform
-from eager_core.protocols import RenderBackend, RenderItem
+from eager_core.protocols import GameSessionProtocol, RenderBackend, RenderItem
 from eager_core.timing import FrameClock
 from eager_core.types import BLACK, WHITE, Anchor, Color, DebugOverlayMode, ScaleMode
 
@@ -1535,7 +1535,7 @@ class PygletRenderer(RenderBackend):
             )
 
 
-class PygletPlayer(BasePlayer, pyglet.window.Window):
+class PygletPlayer(BasePlayer, pyglet.window.Window):  # pyright: ignore[reportUnsafeMultipleInheritance]
     """Thin Pyglet window shell driving a :class:`GameSession`.
 
     The player owns no narrative state: story advancement, branching,
@@ -1552,7 +1552,7 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):
     def __init__(
         self,
         *,
-        session: Any,
+        session: GameSessionProtocol,
         width: int = 1280,
         height: int = 720,
         title: str = "Eager-Graphics Visual Novel (Pyglet)",
@@ -1612,6 +1612,8 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):
             anchor_y="bottom",
             color=(230, 230, 230, 200),
         )
+
+        self._resizing_scale: bool = False
 
         # Step first beat if not starting in active menu
         self.step_initial_beat()

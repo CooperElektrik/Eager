@@ -1,10 +1,14 @@
+# pyright: reportImportCycles=false
 """Semantic InputAction routing and quick-menu dispatch for GameSession."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from eager_core.input import InputAction
+
+if TYPE_CHECKING:
+    from eager_runtime.session import GameSession
 
 _SCREEN_NAV_KEYS = {
     InputAction.NAV_LEFT: "left",
@@ -13,7 +17,7 @@ _SCREEN_NAV_KEYS = {
 }
 
 
-def handle_quick_action(session: Any, action_name: str) -> Any:
+def handle_quick_action(session: GameSession, action_name: str) -> Any:
     """Handle clicks on the in-game quick menu buttons."""
     if action_name == "log":
         return session.screens.show("history", session)
@@ -36,7 +40,7 @@ def handle_quick_action(session: Any, action_name: str) -> Any:
     return None
 
 
-def _complete_text_reveal(session: Any) -> bool:
+def _complete_text_reveal(session: GameSession) -> bool:
     """Finish an active typewriter reveal immediately if still in progress."""
     if session.text_reveal is None or session.text_reveal.is_complete:
         return False
@@ -47,7 +51,7 @@ def _complete_text_reveal(session: Any) -> bool:
     return True
 
 
-def _handle_screen_input(session: Any, action: InputAction, payload: dict[str, Any]) -> Any:
+def _handle_screen_input(session: GameSession, action: InputAction, payload: dict[str, Any]) -> Any:
     """Route input while a modal screen (title, save, load, history, prefs) is active."""
     if action in (InputAction.GAME_MENU, InputAction.CANCEL):
         if getattr(session.screens.active_screen, "name", "") == "title":
@@ -91,11 +95,13 @@ def _handle_screen_input(session: Any, action: InputAction, payload: dict[str, A
     return None
 
 
-def _handle_choice_nav_input(session: Any, action: InputAction) -> tuple[bool, Any]:
+def _handle_choice_nav_input(session: GameSession, action: InputAction) -> tuple[bool, Any]:
     """Handle keyboard navigation for an active choice prompt.
 
     Returns (handled, result).
     """
+    if session.active_choice_prompt is None:
+        return False, None
     opts = session.active_choice_prompt.options
     enabled_indices = [i for i, opt in enumerate(opts) if opt.enabled]
     cur_choice = (
@@ -129,7 +135,7 @@ def _handle_choice_nav_input(session: Any, action: InputAction) -> tuple[bool, A
 
 
 def _handle_text_prompt_input(
-    session: Any,
+    session: GameSession,
     action: InputAction,
     payload: dict[str, Any],
 ) -> tuple[bool, Any]:
@@ -156,7 +162,7 @@ def _handle_text_prompt_input(
     return False, None
 
 
-def _handle_pointer_click(session: Any, x: float, y: float) -> Any:
+def _handle_pointer_click(session: GameSession, x: float, y: float) -> Any:
     """Handle in-game pointer click (unhide UI, quick actions, choices, reveal, advance)."""
     if session.ui_hidden:
         session.ui_hidden = False
@@ -179,7 +185,7 @@ def _handle_pointer_click(session: Any, x: float, y: float) -> Any:
     return None
 
 
-def _handle_pointer_move(session: Any, x: float, y: float) -> bool:
+def _handle_pointer_move(session: GameSession, x: float, y: float) -> bool:
     """Update hover highlights for choices and quick-menu buttons."""
     if session.ui_hidden:
         return False
@@ -204,7 +210,7 @@ def _handle_pointer_move(session: Any, x: float, y: float) -> bool:
     return hover_changed
 
 
-def handle_input(session: Any, action: InputAction, **payload: Any) -> Any:
+def handle_input(session: GameSession, action: InputAction, **payload: Any) -> Any:
     """Process semantic InputAction events."""
     if session.screens.is_active:
         return _handle_screen_input(session, action, payload)

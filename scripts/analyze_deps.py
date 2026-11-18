@@ -141,14 +141,18 @@ class _Analyzer(ast.NodeVisitor):
         self.generic_visit(node)
         self._class_depth -= 1
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+    def _visit_func(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         if self._func_depth == 0 and self._class_depth == 0:
             self.contains.add(node.name)
         self._func_depth += 1
         self.generic_visit(node)
         self._func_depth -= 1
 
-    visit_AsyncFunctionDef = visit_FunctionDef
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_func(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_func(node)
 
 
 def module_name_for(path: Path, root: Path) -> tuple[str, bool]:

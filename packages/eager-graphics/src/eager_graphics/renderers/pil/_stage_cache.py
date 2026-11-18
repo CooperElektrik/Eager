@@ -1,3 +1,4 @@
+# pyright: reportImportCycles=false
 """Stage-layer caching, motion tracking, and dirty-rect compositing for PILRenderer."""
 
 from __future__ import annotations
@@ -21,12 +22,13 @@ if TYPE_CHECKING:
     from eager_core.protocols import RenderItem
 
     from ...compositor import StageCompositor
+    from .renderer import PILRenderer
 
 
 class StageCacheManager:
     """Manages 3-tier stage-layer caching and dirty-rect repainting for PILRenderer."""
 
-    def __init__(self, renderer: Any) -> None:
+    def __init__(self, renderer: PILRenderer) -> None:
         self._r = renderer
         self.bg_cache: Image.Image | None = None
         self.last_bg_items: list[RenderItem] | None = None

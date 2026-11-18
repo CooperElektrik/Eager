@@ -230,7 +230,9 @@ def test_quantized_subpixel_idle_breathing() -> None:
     comp.show_character("alice", "smiling", position="center", duration=0.0)
 
     renderer = PILRenderer(1280, 720, adaptive_resampling=True)
-    elem = comp.stage.get_layer("characters").elements["alice"]  # type: ignore[union-attr]
+    char_layer = comp.stage.get_layer("characters")
+    assert char_layer is not None
+    elem = char_layer.elements["alice"]
 
     # Warm frame
     renderer.render_compositor(comp, 1280, 720)

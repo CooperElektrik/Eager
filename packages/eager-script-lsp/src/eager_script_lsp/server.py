@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import logging
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,12 @@ from typing import Any
 from lsprotocol import types
 from pygls.lsp.server import LanguageServer
 
-from eager_script_lsp import __version__
+try:
+    _server_version = importlib.metadata.version("eager-script-lsp")
+except (importlib.metadata.PackageNotFoundError, ImportError):
+    _server_version = "0.9.0"
+
+_SERVER_VERSION: str = _server_version
 from eager_script_lsp.document import ScriptDocument
 from eager_script_lsp.features.completion import compute_completions
 from eager_script_lsp.features.diagnostics import compute_diagnostics
@@ -51,7 +57,7 @@ class EagerLanguageServer(LanguageServer):
     """Eager-Script Language Server."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__("eager-script-lsp", __version__, *args, **kwargs)
+        super().__init__("eager-script-lsp", _SERVER_VERSION, *args, **kwargs)
         self.workspace_index: WorkspaceIndex = WorkspaceIndex(Path.cwd())
 
 

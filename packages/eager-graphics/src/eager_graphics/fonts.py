@@ -35,7 +35,7 @@ def register_pyglet_default_font() -> str:
         data = get_default_font_data()
         if data is not None:
             pyglet.font.add_file(io.BytesIO(data))
-            _PYGLET_FONT_REGISTERED = True
+            _PYGLET_FONT_REGISTERED = True  # pyright: ignore[reportConstantRedefinition]
             return _CANONICAL_FONT_NAME
     except Exception:  # noqa: BLE001, S110
         pass

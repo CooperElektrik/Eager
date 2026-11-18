@@ -1,5 +1,8 @@
 """Tests for StageDirector event and hook dispatching."""
 
+from collections.abc import Callable
+from typing import Any, TypeVar
+
 import pytest
 from eager_core.audio import AudioMixer, NullAudioBackend
 from eager_core.dispatcher import EventDispatcher
@@ -23,24 +26,26 @@ from eager_graphics.compositor import StageCompositor
 from eager_graphics.director import StageDirector
 from eager_graphics.ui_components import UIOverlay
 
+_E = TypeVar("_E")
+
 
 class MockEventDispatcher:
     """Mock dispatcher matching Eager's EventDispatcher interface."""
 
     def __init__(self) -> None:
-        self.hooks: dict[str, list] = {}
-        self.events: dict[type, list] = {}
-        self.any_listeners: list = []
+        self.hooks: dict[str, list[Callable[[str], object]]] = {}
+        self.events: dict[type, list[Callable[[Any], object]]] = {}
+        self.any_listeners: list[Callable[[object], object]] = []
 
-    def on_hook(self, name: str):
-        def decorator(fn):
+    def on_hook(self, name: str) -> Callable[[Callable[[str], object]], Callable[[str], object]]:
+        def decorator(fn: Callable[[str], object]) -> Callable[[str], object]:
             self.hooks.setdefault(name, []).append(fn)
             return fn
 
         return decorator
 
-    def on_event(self, event_cls: type):
-        def decorator(fn):
+    def on_event(self, event_cls: type[_E]) -> Callable[[Callable[[_E], object]], Callable[[_E], object]]:
+        def decorator(fn: Callable[[_E], object]) -> Callable[[_E], object]:
             self.events.setdefault(event_cls, []).append(fn)
             return fn
 

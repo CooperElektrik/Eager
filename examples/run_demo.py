@@ -49,7 +49,7 @@ from eager_script.graph import parse_graph
 DEFAULT_SCRIPT = Path(__file__).resolve().parent / "demo_story.es"
 DT = 1.0 / 60.0
 
-_USE_COLOR = sys.stdout.isatty()
+_use_color = sys.stdout.isatty()
 
 
 class Color:
@@ -66,14 +66,14 @@ class Color:
 
 
 def colorize(text: str, *codes: str) -> str:
-    if not _USE_COLOR:
+    if not _use_color:
         return text
     return f"{''.join(codes)}{text}{Color.RESET}"
 
 
 def _disable_colors() -> None:
-    global _USE_COLOR
-    _USE_COLOR = False
+    global _use_color
+    _use_color = False
 
 
 # ── Engine helpers ─────────────────────────────────────────────────────────
@@ -508,7 +508,7 @@ def demo_rollback(script_text: str, *, locale: str | None = None) -> None:
         if event is None:
             break
         print_event(event)
-        print_visual_state(session.compositor, session.director)
+        print_visual_state(compositor, director)
         print()
 
     post_beat = session.vm.beat_index
@@ -521,7 +521,7 @@ def demo_rollback(script_text: str, *, locale: str | None = None) -> None:
     # ── Rollback ──
     print(colorize("[Rollback]", Color.YELLOW), end=" ")
     session_ok = session.rollback()
-    session.compositor.update(DT)
+    compositor.update(DT)
 
     rb_items_count = len(session.compositor.render_list())
     rb_speaker = session.director.ui_state.speaker
@@ -534,7 +534,7 @@ def demo_rollback(script_text: str, *, locale: str | None = None) -> None:
     # ── Roll forward (Redo) ──
     print(colorize("[Roll Forward / Redo]", Color.YELLOW), end=" ")
     redo_ok = session.roll_forward()
-    session.compositor.update(DT)
+    compositor.update(DT)
 
     re_items_count = len(session.compositor.render_list())
     re_speaker = session.director.ui_state.speaker

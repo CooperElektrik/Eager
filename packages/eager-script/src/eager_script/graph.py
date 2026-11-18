@@ -9,7 +9,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from eager_script import ParsedItem
+    from eager_script.ast import ParsedItem
 
 __all__ = [
     "EdgeKind",
@@ -156,7 +156,7 @@ class SceneGraph:
 
     def terminal_scenes(self) -> list[str]:
         """Return reachable scenes that end the story (no outgoing transitions and no return)."""
-        from eager_script import ParsedReturn
+        from eager_script.ast import ParsedReturn
 
         terminals: list[str] = []
         for nid in self.nodes:
@@ -312,7 +312,7 @@ class SceneGraph:
 
 def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:
     """Lower nested @if/@elif/@else/@end blocks into flat ParsedCondJump and ParsedLocalJump."""
-    from eager_script import (
+    from eager_script.ast import (
         ParsedCondJump,
         ParsedElif,
         ParsedElse,
@@ -475,7 +475,7 @@ def _process_scene_body(
 
     Returns the flattened body along with its ordered unique speakers and hooks.
     """
-    from eager_script import (
+    from eager_script.ast import (
         ParsedCall,
         ParsedChoiceSet,
         ParsedDialogue,
@@ -607,7 +607,7 @@ def to_graph(items: Sequence[ParsedItem] | Iterable[ParsedItem]) -> SceneGraph:
     Inline choice blocks (indented reactions beneath a ``?`` option) are lowered into
     anonymous scenes by :func:`_process_scene_body`.
     """
-    from eager_script import (
+    from eager_script.ast import (
         ParsedCharacter,
         ParsedDefault,
         ParsedInclude,
@@ -695,7 +695,7 @@ def to_graph(items: Sequence[ParsedItem] | Iterable[ParsedItem]) -> SceneGraph:
 
 def parse_graph(text: str) -> SceneGraph:
     """Parse screenplay text directly into a SceneGraph."""
-    from eager_script import parse
+    from eager_script.parser import parse
 
     return to_graph(parse(text))
 

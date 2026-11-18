@@ -44,7 +44,7 @@ if PIL_AVAILABLE:
     import PIL
     from PIL import Image, ImageChops, ImageDraw, ImageFont
 else:
-    PIL = None
+    PIL = None  # pyright: ignore[reportConstantRedefinition]
     Image = None
     ImageChops = None
     ImageDraw = None

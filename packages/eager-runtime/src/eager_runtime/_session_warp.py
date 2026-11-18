@@ -1,8 +1,9 @@
+# pyright: reportImportCycles=false
 """Scene warp / fast-forward simulation helpers for GameSession."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 from eager_core.events import (
     ChoicePromptEvent,
@@ -10,8 +11,11 @@ from eager_core.events import (
     SceneEnterEvent,
 )
 
+if TYPE_CHECKING:
+    from eager_runtime.session import GameSession
 
-def _pick_warp_choice(session: Any, event: ChoicePromptEvent, path: list[str], target_scene: str) -> int:
+
+def _pick_warp_choice(session: GameSession, event: ChoicePromptEvent, path: list[str], target_scene: str) -> int:
     """Select the choice option index that leads toward target_scene."""
     curr_scene = session.vm.current_scene_id
     if curr_scene in path:
@@ -26,7 +30,7 @@ def _pick_warp_choice(session: Any, event: ChoicePromptEvent, path: list[str], t
     return 0
 
 
-def finalize_warp(session: Any, prev_skip: bool = False) -> bool:
+def finalize_warp(session: GameSession, prev_skip: bool = False) -> bool:
     """Reset transient UI/prompt state and push a fresh checkpoint after warping."""
     if hasattr(session.stage, "finish_animations"):
         session.stage.finish_animations()
@@ -49,7 +53,7 @@ def finalize_warp(session: Any, prev_skip: bool = False) -> bool:
 
 
 def warp(
-    session: Any,
+    session: GameSession,
     target_scene: str,
     *,
     simulate: bool = True,

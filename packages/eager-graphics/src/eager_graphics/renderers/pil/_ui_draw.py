@@ -1,8 +1,9 @@
+# pyright: reportImportCycles=false
 """Immediate-mode UI drawing and UI asset caching for the Pillow renderer."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from eager_core.types import WHITE, Color
 
@@ -18,28 +19,34 @@ from ._constants import (
 )
 from ._imaging import _image_nbytes, _split_rgba, get_rgba_lut
 
+if TYPE_CHECKING:
+    from .renderer import PILRenderer
+
 
 class PILUIDrawer:
     """Handles immediate-mode UI primitives, text rendering, and UI-specific caches."""
 
     def __init__(
         self,
-        renderer: Any,
+        renderer: PILRenderer,
         *,
         max_cached_sprites: int,
         cache_budget_bytes: int,
         disable_gradients: bool = False,
     ) -> None:
         self._r = renderer
-        self.ui_image_cache: _ImageLRU = _ImageLRU(
+        self.ui_image_cache: _ImageLRU[tuple[object, ...], _CachedSprite] = _ImageLRU(
             max_items=max_cached_sprites,
             max_bytes=cache_budget_bytes,
         )
-        self.text_mask_cache: _ImageLRU = _ImageLRU(
+        self.text_mask_cache: _ImageLRU[
+            tuple[str, int, str, bool, bool, str | None],
+            tuple[Image.Image | None, int, int],
+        ] = _ImageLRU(
             max_items=_MAX_TEXT_CACHE,
             max_bytes=32 * 1024 * 1024,
         )
-        self.gradient_cache: _ImageLRU = _ImageLRU(
+        self.gradient_cache: _ImageLRU[tuple[object, ...], tuple[Image.Image, Image.Image | None]] = _ImageLRU(
             max_items=0 if disable_gradients else _MAX_GRADIENT_CACHE,
             max_bytes=0 if disable_gradients else 64 * 1024 * 1024,
         )

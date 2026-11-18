@@ -1012,7 +1012,8 @@ def test_putalpha_fastpath_produces_correct_alpha():
     for sp in cache.values():
         # 0.5 * 255 = 127.5 → 128
         # With putalpha on an opaque asset, all pixels should have alpha=128
-        assert sp.image.getpixel((0, 0))[3] == 128
+        px = sp.image.getpixel((0, 0))
+        assert isinstance(px, tuple) and px[3] == 128
         assert not sp.is_opaque, "Sprite with opacity 0.5 should not be opaque"
 
 
@@ -1041,7 +1042,8 @@ def test_putalpha_fastpath_full_opacity_unchanged():
 
     cache = renderer._sprite_cache
     for sp in cache.values():
-        assert sp.image.getpixel((0, 0))[3] == 255
+        px = sp.image.getpixel((0, 0))
+        assert isinstance(px, tuple) and px[3] == 255
         assert sp.is_opaque, "Full-opacity opaque sprite should be opaque"
 
 

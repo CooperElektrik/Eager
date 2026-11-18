@@ -1,16 +1,20 @@
+# pyright: reportImportCycles=false
 """Checkpoint capture/restore, save/load, rollback, and screenshot helpers for GameSession."""
 
 from __future__ import annotations
 
 import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from eager_core.events import InputPromptEvent
 from eager_core.state import Checkpoint, StorySnapshot
 
+if TYPE_CHECKING:
+    from eager_runtime.session import GameSession
 
-def capture_checkpoint(session: Any) -> Checkpoint:
+
+def capture_checkpoint(session: GameSession) -> Checkpoint:
     """Generate a unified checkpoint of the current session state."""
     input_data = (
         session.active_input_prompt.to_dict()
@@ -31,7 +35,7 @@ def capture_checkpoint(session: Any) -> Checkpoint:
     )
 
 
-def restore_checkpoint(session: Any, checkpoint: Checkpoint) -> None:
+def restore_checkpoint(session: GameSession, checkpoint: Checkpoint) -> None:
     """Restore full session state from a checkpoint."""
     snap = StorySnapshot.from_dict(checkpoint.story)
     session.vm.load(snap)
@@ -78,7 +82,7 @@ def restore_checkpoint(session: Any, checkpoint: Checkpoint) -> None:
 
 
 def take_screenshot(
-    session: Any,
+    session: GameSession,
     target_path: str | Path | None = None,
     renderer: Any = None,
     **kwargs: Any,
@@ -109,7 +113,7 @@ def take_screenshot(
     return resolved_path
 
 
-def save_game(session: Any, slot_name: str) -> Any:
+def save_game(session: GameSession, slot_name: str) -> Any:
     """Save current checkpoint to named slot, capturing a thumbnail screenshot."""
     cp = session.checkpoints.get_latest() or capture_checkpoint(session)
     thumb_path: Path | None = None
@@ -149,7 +153,7 @@ def save_game(session: Any, slot_name: str) -> Any:
     )
 
 
-def load_game(session: Any, slot_name: str) -> bool:
+def load_game(session: GameSession, slot_name: str) -> bool:
     """Load game from named slot."""
     meta = session.save_manager.get_slot_metadata(slot_name)
     cp = session.save_manager.load_slot(slot_name)
@@ -163,7 +167,7 @@ def load_game(session: Any, slot_name: str) -> bool:
     return True
 
 
-def quicksave(session: Any) -> Any:
+def quicksave(session: GameSession) -> Any:
     """Quicksave current checkpoint."""
     cp = session.checkpoints.get_latest() or capture_checkpoint(session)
     result = session.save_manager.quicksave(cp, playtime_seconds=session._playtime)
@@ -172,7 +176,7 @@ def quicksave(session: Any) -> Any:
     return result
 
 
-def quickload(session: Any) -> bool:
+def quickload(session: GameSession) -> bool:
     """Quickload from quicksave slot."""
     slot = session.save_manager._latest_rotated_slot("quick", session.save_manager.max_quicksaves)
     if slot is not None:
@@ -190,7 +194,7 @@ def quickload(session: Any) -> bool:
     return True
 
 
-def rollback(session: Any) -> bool:
+def rollback(session: GameSession) -> bool:
     """Roll back to the previous interactive checkpoint."""
     if not session.checkpoints.can_rollback:
         return False
@@ -206,7 +210,7 @@ def rollback(session: Any) -> bool:
     return True
 
 
-def roll_forward(session: Any) -> bool:
+def roll_forward(session: GameSession) -> bool:
     """Step forward through the redo stack to restore previously rolled-back checkpoints."""
     if not session.checkpoints.can_roll_forward:
         return False

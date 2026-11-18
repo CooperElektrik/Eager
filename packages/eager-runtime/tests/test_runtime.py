@@ -307,10 +307,10 @@ def test_choose_without_pending_choice_raises_error() -> None:
 # Inline Choice Blocks
 # ---------------------------------------------------------------------------
 
-def _run_inline(script: str, choice: int = 0) -> tuple[StoryVM, list]:
+def _run_inline(script: str, choice: int = 0) -> tuple[StoryVM, list[object]]:
     graph = eager_script.parse_graph(script)
     vm = StoryVM(graph)
-    events: list = []
+    events: list[object] = []
     while not vm.is_ended:
         event = vm.step()
         if event is None:

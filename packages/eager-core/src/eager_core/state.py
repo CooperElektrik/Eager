@@ -27,7 +27,7 @@ class CallFrame:
     beat_index: int
     kind: str = "call"  # "call" for '>>', "inline" for an optional inline choice block
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize call frame to a dictionary."""
         return {
             "scene_id": self.scene_id,
@@ -66,7 +66,7 @@ class StorySnapshot:
     preamble_done: bool = False
     version: int = 1
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize snapshot to a JSON-compatible dictionary."""
         return {
             "version": self.version,
@@ -136,9 +136,9 @@ class Checkpoint:
     active_input_prompt: dict[str, Any] | None = None
     backlog: list[dict[str, Any]] | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize checkpoint to a JSON-compatible dictionary."""
-        d: dict[str, Any] = {
+        d: dict[str, object] = {
             "story": copy.deepcopy(self.story),
             "visual": copy.deepcopy(self.visual),
             "audio": copy.deepcopy(dict(self.audio)),

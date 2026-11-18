@@ -1,14 +1,18 @@
+# pyright: reportImportCycles=false
 """Diagnostic telemetry and cache-reporting helpers for PILRenderer."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ._compat import PIL, PIL_AVAILABLE, _detect_pillow_simd
 from ._imaging import get_fade_lut, get_rgba_lut
 
+if TYPE_CHECKING:
+    from .renderer import PILRenderer
 
-def build_cache_info(renderer: Any) -> dict[str, Any]:
+
+def build_cache_info(renderer: PILRenderer) -> dict[str, int | float]:
     """Return diagnostic metrics about sprite cache hits, misses, and current size."""
     total = renderer._cache_hits + renderer._cache_misses
     hit_ratio = (renderer._cache_hits / total) if total > 0 else 0.0
@@ -21,7 +25,7 @@ def build_cache_info(renderer: Any) -> dict[str, Any]:
     }
 
 
-def build_debug_info(renderer: Any) -> dict[str, Any]:
+def build_debug_info(renderer: PILRenderer) -> dict[str, Any]:
     """Return a structured diagnostic snapshot of the PIL renderer's optimization and cache state."""
     total_hits_misses = renderer._cache_hits + renderer._cache_misses
     hit_ratio = (renderer._cache_hits / total_hits_misses) if total_hits_misses > 0 else 0.0

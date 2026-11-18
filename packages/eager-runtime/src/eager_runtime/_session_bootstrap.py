@@ -1,9 +1,10 @@
+# pyright: reportImportCycles=false
 """Subsystem factory, theme resolution, and graph registration helpers for GameSession."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from eager_core.headless import NullScreenManager, NullStage, NullUI
 from eager_core.protocols import (
@@ -12,6 +13,9 @@ from eager_core.protocols import (
     get_default_registry,
     load_providers,
 )
+
+if TYPE_CHECKING:
+    from eager_runtime.session import GameSession
 
 _CHARACTER_KNOWN_KEYS = frozenset({
     "asset_prefix",
@@ -105,7 +109,7 @@ def create_default_ui(
 
 def create_default_screens(
     config: Any,
-    session: Any,
+    session: GameSession,
     *,
     registry: ProviderRegistry | None = None,
 ) -> Any:

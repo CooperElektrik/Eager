@@ -58,9 +58,11 @@ def test_snapshot_serialization() -> None:
     d = snapshot.to_dict()
     assert d["current_scene"] == "scene_1"
     assert d["beat_index"] == 2
-    assert len(d["call_stack"]) == 1
-    assert d["call_stack"][0]["scene_id"] == "main"
-    assert d["variables"]["hp"] == 100
+    call_stack = d["call_stack"]
+    variables = d["variables"]
+    assert isinstance(call_stack, list) and len(call_stack) == 1
+    assert isinstance(call_stack[0], dict) and call_stack[0]["scene_id"] == "main"
+    assert isinstance(variables, dict) and variables["hp"] == 100
 
     # JSON round-trip
     json_str = snapshot.to_json(indent=2)

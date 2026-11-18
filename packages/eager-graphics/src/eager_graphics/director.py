@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable
+from typing import Any, Protocol, overload
 
 from eager_core.audio import AudioMixer
 from eager_core.characters import CharacterConfig
@@ -30,7 +31,15 @@ __all__ = [
 ]
 
 
-def _parse_hook_color(args: HookArgs, key: str, default: Color) -> Color:
+@overload
+def _parse_hook_color(args: HookArgs, key: str, default: Color) -> Color: ...
+
+
+@overload
+def _parse_hook_color(args: HookArgs, key: str, default: None) -> Color | None: ...
+
+
+def _parse_hook_color(args: HookArgs, key: str, default: Color | None) -> Color | None:
     raw = args.kwargs.get(key)
     if raw is None:
         return default
@@ -38,6 +47,12 @@ def _parse_hook_color(args: HookArgs, key: str, default: Color) -> Color:
         return Color.from_hex(raw)
     except (ValueError, TypeError):
         return default
+
+
+class _EventDispatcherLike(Protocol):
+    def on_hook(self, hook_name: str, /) -> Callable[[Callable[[str], object]], object]: ...
+
+    def on_event(self, event_type: Any, /) -> Callable[[Callable[[Any], object]], object]: ...
 
 
 class StageDirector:
@@ -48,7 +63,7 @@ class StageDirector:
         compositor: StageCompositor,
         *,
         audio: AudioMixer | None = None,
-        skip_mode_cb: Any = None,
+        skip_mode_cb: Callable[[], bool] | None = None,
         auto_highlight_speaker: bool = False,
         dim_color: Color | None = None,
         highlight_duration: float = 0.25,
@@ -174,9 +189,9 @@ class StageDirector:
         """Map a scene ID to automatically trigger a background change on SceneEnterEvent."""
         self.scene_backgrounds[scene_id] = (asset_id, transition, duration)
 
-    def bind(self, dispatcher: Any) -> None:
+    def bind(self, dispatcher: _EventDispatcherLike) -> None:
         """Register hook handlers and event listeners on an Eager EventDispatcher."""
-        def _wrap_hook(handler: Any) -> Any:
+        def _wrap_hook(handler: Callable[[str], None]) -> Callable[[str], None]:
             def _wrapped(args: str) -> None:
                 handler(args)
             return _wrapped
@@ -796,7 +811,7 @@ class StageDirector:
         if token in ("clear", "reset", "off", "none"):
             self.compositor.set_ambient_light(WHITE, 1.0)
             return
-        color = _parse_hook_color(parsed, "color", None)  # type: ignore[arg-type]
+        color = _parse_hook_color(parsed, "color", None)
         if color is None:
             try:
                 color = Color.from_hex(token)

@@ -1,8 +1,9 @@
+# pyright: reportImportCycles=false
 """Headless and stub implementations for stage, UI, screen manager, and renderer."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from eager_core.characters import CharacterConfig
 from eager_core.events import (
@@ -27,6 +28,9 @@ from eager_core.timing import FrameClock
 from eager_core.types import BLACK, WHITE, Color
 from eager_core.ui_state import NVLEntry, UIState
 
+if TYPE_CHECKING:
+    from eager_core.dispatcher import EventDispatcher
+
 __all__ = [
     "NullCompositor",
     "NullRenderer",
@@ -34,6 +38,10 @@ __all__ = [
     "NullStage",
     "NullUI",
 ]
+
+
+class _CompositorLike(Protocol):
+    def render_list(self) -> list[RenderItem]: ...
 
 
 class NullRenderer(RenderBackend, UIDrawBackend):
@@ -69,7 +77,7 @@ class NullRenderer(RenderBackend, UIDrawBackend):
             raise RuntimeError(msg)
         self._frame_buffer.append(item)
 
-    def draw_particles(self, batch: Any) -> None:
+    def draw_particles(self, batch: object) -> None:
         """Record a particle batch draw call."""
         if not self._in_frame:
             msg = "draw_particles called outside of begin_frame/end_frame block"
@@ -78,7 +86,7 @@ class NullRenderer(RenderBackend, UIDrawBackend):
         particles = getattr(batch, "particles", [])
         self.last_particle_batches.append((emitter_id, len(particles)))
 
-    def render_lightmap(self, lightmap: Any) -> None:
+    def render_lightmap(self, lightmap: object) -> None:
         """Record a screen-space lightmap draw call."""
         if not self._in_frame:
             msg = "render_lightmap called outside of begin_frame/end_frame block"
@@ -112,7 +120,7 @@ class NullRenderer(RenderBackend, UIDrawBackend):
 
     def render_compositor(
         self,
-        compositor: Any,
+        compositor: _CompositorLike,
         window_width: int,
         window_height: int,
     ) -> None:
@@ -121,12 +129,15 @@ class NullRenderer(RenderBackend, UIDrawBackend):
         items = compositor.render_list()
         for item in items:
             self.draw_item(item)
-        if hasattr(compositor, "get_particle_batches") and hasattr(compositor, "layout"):
-            transform = compositor.layout.compute_viewport_transform(window_width, window_height)
-            for batch in compositor.get_particle_batches(transform):
+        get_batches = getattr(compositor, "get_particle_batches", None)
+        layout = getattr(compositor, "layout", None)
+        if get_batches is not None and layout is not None:
+            transform = layout.compute_viewport_transform(window_width, window_height)
+            for batch in get_batches(transform):
                 self.draw_particles(batch)
-        if hasattr(compositor, "lighting") and compositor.lighting.enabled:
-            self.render_lightmap(compositor.lighting)
+        lighting = getattr(compositor, "lighting", None)
+        if lighting is not None and lighting.enabled:
+            self.render_lightmap(lighting)
         self.end_frame()
 
     def draw_rect(
@@ -275,10 +286,10 @@ class NullCompositor:
     def clear(self, color: Color | None = None) -> None:
         pass
 
-    def render_list(self) -> list[Any]:
+    def render_list(self) -> list[RenderItem]:
         return []
 
-    def save_state(self) -> dict[str, Any]:
+    def save_state(self) -> dict[str, object]:
         return {}
 
     def load_state(self, state: dict[str, Any]) -> None:
@@ -363,7 +374,7 @@ class NullStage(StageProtocol):
             return f"{cfg.asset_prefix}_{expr}"
         return None
 
-    def bind(self, dispatcher: Any) -> None:
+    def bind(self, dispatcher: EventDispatcher) -> None:
         dispatcher.on_event(DialogueEvent)(self._on_dialogue)
         dispatcher.on_event(NarrationEvent)(self._on_narration)
         dispatcher.on_event(AppendEvent)(self._on_append)

@@ -27,6 +27,9 @@ def _create_dummy_wav(path: str, duration_sec: float = 0.5, sample_rate: int = 4
 
 
 class TestHardwareAudioBackends:
+    tmp_dir: tempfile.TemporaryDirectory[str]  # pyright: ignore[reportUninitializedInstanceVariable]
+    wav_path: str  # pyright: ignore[reportUninitializedInstanceVariable]
+
     @pytest.fixture(autouse=True)
     def setup_teardown(self) -> Generator[None, None, None]:
         self.tmp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
