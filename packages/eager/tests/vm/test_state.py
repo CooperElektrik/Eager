@@ -176,13 +176,13 @@ def test_save_after_jump_exit_load_preserves_transition() -> None:
     assert enter_evt.scene_id == "scene_2"
 
 
-def test_prng_state_restoration_mersenne_twister() -> None:
+def test_prng_state_restoration_pcg32() -> None:
     graph = eager.script.parse_graph(SAMPLE_SCRIPT)
-    vm1 = StoryVM(graph)
-    # Consume some random numbers to advance the MT state
+    vm1 = StoryVM(graph, rng_seed=42)
+    # Consume some random numbers to advance the PCG32 state
     _ = [vm1._rng.random() for _ in range(10)]
 
-    # Save snapshot and round-trip through JSON (which converts inner tuples to lists)
+    # Save snapshot and round-trip through JSON
     import json
 
     snap = vm1.save()
@@ -190,20 +190,36 @@ def test_prng_state_restoration_mersenne_twister() -> None:
     json_str = json.dumps(snap.to_dict())
     restored_snap = StorySnapshot.from_dict(json.loads(json_str))
 
-    # Confirm that JSON deserialized the MT state vector as a list
+    # Confirm compact 2-element [state, inc] PCG32 state
     assert restored_snap.rng_state is not None
-    assert isinstance(restored_snap.rng_state[1], list)
+    assert len(restored_snap.rng_state) == 2
+    assert all(isinstance(v, int) and not isinstance(v, bool) for v in restored_snap.rng_state)
 
     # Generate expected future random stream from original VM
     expected_next = [vm1._rng.random() for _ in range(10)]
 
-    # Load snapshot into new VM - should recursively restore nested tuples for setstate
+    # Load snapshot into new VM - should restore exact PCG32 sequence
     vm2 = StoryVM(graph)
     vm2.load(restored_snap)
 
     # Verify new VM generates exactly identical numbers in sequence
     actual_next = [vm2._rng.random() for _ in range(10)]
     assert expected_next == actual_next
+
+
+def test_pcg32_determinism_and_bounds() -> None:
+    from eager.vm.rng import PCG32
+
+    rng_a = PCG32(12345)
+    rng_b = PCG32(12345)
+    assert [rng_a.randint(1, 6) for _ in range(20)] == [rng_b.randint(1, 6) for _ in range(20)]
+    assert [rng_a.uniform(-2.5, 5.0) for _ in range(20)] == [rng_b.uniform(-2.5, 5.0) for _ in range(20)]
+
+    for _ in range(50):
+        v = rng_a.randint(-3, 3)
+        assert -3 <= v <= 3
+        f = rng_a.random()
+        assert 0.0 <= f < 1.0
 
 
 def test_load_pending_choice() -> None:

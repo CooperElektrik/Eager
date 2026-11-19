@@ -4,19 +4,11 @@ from __future__ import annotations
 
 import copy
 import logging
-import random
 import re
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
-
-
-def _to_nested_tuple(obj: Any) -> Any:
-    """Recursively convert lists and tuples to tuples for random.setstate compatibility."""
-    if isinstance(obj, (list, tuple)):
-        return tuple(_to_nested_tuple(x) for x in obj)
-    return obj
 
 from eager.core.events import (
     AppendEvent,
@@ -48,6 +40,7 @@ from eager.script import (
     ParsedSet,
 )
 from eager.script.expr import ExprError, compile_expr
+from eager.vm.rng import PCG32
 
 if TYPE_CHECKING:
     from eager.script.graph import SceneGraph
@@ -98,7 +91,7 @@ class StoryVM:
             self._variables.update(initial_variables)
         self._visited_scenes: set[str] = set()
 
-        self._rng = random.Random(rng_seed)
+        self._rng = PCG32(rng_seed)
 
         self._pending_choice: ChoicePromptEvent | None = None
         self._is_ended: bool = False
@@ -373,7 +366,7 @@ class StoryVM:
             next_transition_target=self._next_transition_target,
             just_entered_scene=self._just_entered_scene,
             is_ended=self._is_ended,
-            rng_state=list(self._rng.getstate()),
+            rng_state=self._rng.getstate(),
             preamble_index=self._preamble_index,
             preamble_done=self._preamble_done,
         )
@@ -396,7 +389,7 @@ class StoryVM:
 
         if snapshot.rng_state is not None:
             try:
-                self._rng.setstate(_to_nested_tuple(snapshot.rng_state))
+                self._rng.setstate(snapshot.rng_state)
             except (TypeError, ValueError) as exc:
                 logger.warning("Failed to restore PRNG state: %s", exc)
 
