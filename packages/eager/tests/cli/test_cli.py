@@ -198,3 +198,55 @@ Narrator: All good.
     captured = capsys.readouterr()
     assert "Script validation PASSED" in captured.out
     assert "All referenced assets resolved successfully" in captured.out
+
+
+def test_cli_test_run_all_paths_cyclic_hub_and_random_choice(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    cyclic_script = """## Hub --- hub
+Narrator: Investigation hub.
+? Inspect desk (desk)
+? Leave (leave)
+
+## Desk --- desk
+Narrator: Nothing new here.
+> hub
+
+## Leave --- leave
+Narrator: Goodbye.
+"""
+    sf = tmp_path / "cyclic.es"
+    sf.write_text(cyclic_script, encoding="utf-8")
+
+    code = main(["test-run", str(sf), "--all-paths"])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "All-paths exploration completed: 2 paths explored" in captured.out
+
+    random_script = """## Start --- start
+Narrator: Roll the dice.
+? Lucky [chance(0.5)] (win)
+? Safe (safe)
+
+## Win --- win
+Narrator: Won!
+
+## Safe --- safe
+Narrator: Safe!
+"""
+    rf = tmp_path / "random_choice.es"
+    rf.write_text(random_script, encoding="utf-8")
+    assert main(["test-run", str(rf), "--all-paths"]) == 0
+
+
+def test_cli_test_run_handles_errors_and_entry_traversal(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    bad_toml = tmp_path / "game.toml"
+    bad_toml.write_text('[game]\nentry_script = "../outside.es"\n', encoding="utf-8")
+    (tmp_path / "main.es").write_text("## Start --- start\nNarrator: Hi.\n", encoding="utf-8")
+
+    code = main(["test-run", str(tmp_path)])
+    assert code == 1
+    captured = capsys.readouterr()
+    assert "Path traversal detected" in captured.err
+
+    broken_es = tmp_path / "broken.es"
+    broken_es.write_text("@include \"missing_file.es\"\n## Start --- start\nNarrator: Hi.\n", encoding="utf-8")
+    assert main(["test-run", str(broken_es)]) == 1

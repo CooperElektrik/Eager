@@ -88,7 +88,7 @@ def _resolve_save_game_id(config: Any, script_path: Path | None) -> str:
             parent_slug = slugify(script_path.parent.resolve().name)
             if parent_slug:
                 return parent_slug
-        return slugify(script_path.stem) or script_path.stem
+        return slugify(script_path.stem) or "default"
     return "default"
 
 
@@ -149,7 +149,10 @@ class GameSession:
             target = Path(project_or_script)
             if target.is_dir():
                 entry_name = getattr(config, "entry_script", None) or "main.es"
-                target = target / entry_name
+                project_root = target.resolve()
+                target = (project_root / entry_name).resolve()
+                if not target.is_relative_to(project_root):
+                    raise ValueError(f"Path traversal detected in entry_script: {entry_name!r}")
             self.script_path = target
             items = parse(target.read_text(encoding="utf-8"))
             self.graph: SceneGraph = to_graph(

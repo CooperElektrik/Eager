@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
 
+from eager.core.exceptions import StorageError
 from eager.core.state import Checkpoint
 from eager.core.storage import atomic_write_json, safe_read_json
 
@@ -146,6 +147,8 @@ class SaveData:
 class SaveManager:
     """Manages reading, writing, listing, and organizing game save files."""
 
+    RESERVED_SLOT_NAMES: frozenset[str] = frozenset({"persistent", "preferences"})
+
     def __init__(
         self,
         save_dir: Path,
@@ -162,6 +165,8 @@ class SaveManager:
         safe_name = "".join(c for c in slot_name if c.isalnum() or c in ("-", "_"))
         if not safe_name:
             safe_name = "slot"
+        if safe_name.lower() in self.RESERVED_SLOT_NAMES:
+            raise StorageError(f"Reserved slot name cannot be used: {slot_name!r}")
         return self.save_dir / f"{safe_name}.json"
 
     def save_slot(

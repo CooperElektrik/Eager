@@ -17,7 +17,7 @@ import eager.script
 from eager.script.graph import to_graph
 from eager.script.includes import resolve_includes
 from eager.script.project import ProjectConfig
-from eager.vm.runtime import StoryVM
+from eager.vm.runtime import StoryRuntimeError, StoryVM
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,11 @@ def _resolve_entry_script(target: Path) -> tuple[Path, ProjectConfig]:
     if target.is_dir():
         toml_path = target / "game.toml"
         cfg = ProjectConfig.load(toml_path) if toml_path.exists() else ProjectConfig()
-        script_path = target / cfg.entry_script
+        project_root = target.resolve()
+        script_path = (project_root / cfg.entry_script).resolve()
+        if not script_path.is_relative_to(project_root):
+            msg = f"Path traversal detected in entry_script: {cfg.entry_script!r}"
+            raise ValueError(msg)
         if not script_path.exists():
             es_files = sorted(target.glob("*.es"))
             if not es_files:
@@ -152,6 +156,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     test_p.add_argument("script", help="Path to the .es screenplay file or project directory.")
     test_p.add_argument("--max-steps", type=int, default=5000, help="Maximum VM steps per path.")
+    test_p.add_argument(
+        "--max-paths",
+        type=int,
+        default=1000,
+        help="Maximum paths to explore with --all-paths.",
+    )
     test_p.add_argument(
         "--all-paths",
         action="store_true",
@@ -339,6 +349,14 @@ def _cmd_check(args: argparse.Namespace) -> int:
     return 1 if has_errors else 0
 
 
+def _vm_choice_state_key(vm: StoryVM) -> tuple[Any, ...]:
+    """Build a hashable state key at a choice point for cycle pruning."""
+    snap = vm.save()
+    vars_items = tuple(sorted((k, repr(v)) for k, v in snap.variables.items()))
+    call_stack = tuple((f.scene_id, f.beat_index, f.kind) for f in snap.call_stack)
+    return (snap.current_scene, snap.beat_index, call_stack, vars_items)
+
+
 def run_test_run(args: argparse.Namespace) -> int:
     """Perform headless test run, optionally exploring all branching paths."""
     target_path = Path(args.script)
@@ -346,79 +364,105 @@ def run_test_run(args: argparse.Namespace) -> int:
         print(f"Error: Screenplay file '{target_path}' not found.", file=sys.stderr)
         return 1
 
-    script_file, _ = _resolve_entry_script(target_path)
-    raw_items = eager.script.parse(script_file.read_text(encoding="utf-8"))
-    graph = to_graph(resolve_includes(raw_items, base_dir=script_file.parent, visited={script_file.resolve()}))
+    try:
+        script_file, _ = _resolve_entry_script(target_path)
+        raw_items = eager.script.parse(script_file.read_text(encoding="utf-8"))
+        graph = to_graph(resolve_includes(raw_items, base_dir=script_file.parent, visited={script_file.resolve()}))
+    except (eager.script.EagerScriptError, FileNotFoundError, OSError, ValueError, TypeError) as err:
+        sys.stderr.write(f"Test run failed with error: {err}\n")
+        return 1
 
     if getattr(args, "all_paths", False):
+        max_paths = max(1, int(getattr(args, "max_paths", 1000)))
         paths_completed = 0
         total_steps = 0
         total_events = 0
         frontier: list[list[int]] = [[]]
         visited_choice_sequences: set[tuple[int, ...]] = set()
+        visited_choice_states: set[tuple[tuple[Any, ...], int]] = set()
 
-        while frontier:
-            decision_path = frontier.pop()
-            vm = StoryVM(graph)
-            steps = 0
-            decision_idx = 0
-            current_decisions: list[int] = []
+        try:
+            while frontier and paths_completed < max_paths:
+                decision_path = frontier.pop()
+                vm = StoryVM(graph, rng_seed=0)
+                steps = 0
+                decision_idx = 0
+                current_decisions: list[int] = []
 
-            while not vm.is_ended and steps < args.max_steps:
-                event = vm.step()
-                if event is None:
-                    break
-                total_events += 1
-                steps += 1
-                total_steps += 1
-
-                if vm.pending_choice is not None:
-                    prompt = vm.pending_choice
-                    enabled_indices = [opt.index for opt in prompt.options if opt.enabled]
-                    if not enabled_indices:
+                while not vm.is_ended and steps < args.max_steps:
+                    event = vm.step()
+                    if event is None:
                         break
+                    total_events += 1
+                    steps += 1
+                    total_steps += 1
 
-                    if decision_idx < len(decision_path):
-                        chosen = decision_path[decision_idx]
-                        decision_idx += 1
-                        current_decisions.append(chosen)
-                        vm.choose(chosen)
-                    else:
-                        first_opt = enabled_indices[0]
-                        for alt in enabled_indices[1:]:
-                            alt_seq = tuple(current_decisions + [alt])
-                            if alt_seq not in visited_choice_sequences:
-                                visited_choice_sequences.add(alt_seq)
-                                frontier.append(list(alt_seq))
-                        current_decisions.append(first_opt)
-                        decision_idx += 1
-                        vm.choose(first_opt)
+                    if vm.pending_choice is not None:
+                        prompt = vm.pending_choice
+                        enabled_indices = [opt.index for opt in prompt.options if opt.enabled]
+                        if not enabled_indices:
+                            break
 
-            paths_completed += 1
+                        state_key = _vm_choice_state_key(vm)
 
+                        if decision_idx < len(decision_path):
+                            chosen = decision_path[decision_idx]
+                            if chosen not in enabled_indices:
+                                break
+                            decision_idx += 1
+                            current_decisions.append(chosen)
+                            visited_choice_states.add((state_key, chosen))
+                            vm.choose(chosen)
+                        else:
+                            first_opt = enabled_indices[0]
+                            for alt in enabled_indices[1:]:
+                                if (state_key, alt) in visited_choice_states:
+                                    continue
+                                alt_seq = tuple(current_decisions + [alt])
+                                if alt_seq not in visited_choice_sequences:
+                                    visited_choice_sequences.add(alt_seq)
+                                    visited_choice_states.add((state_key, alt))
+                                    frontier.append(list(alt_seq))
+                            if (state_key, first_opt) in visited_choice_states:
+                                break
+                            visited_choice_states.add((state_key, first_opt))
+                            current_decisions.append(first_opt)
+                            decision_idx += 1
+                            vm.choose(first_opt)
+
+                paths_completed += 1
+        except (StoryRuntimeError, eager.script.EagerScriptError, ValueError, TypeError) as err:
+            sys.stderr.write(f"Test run failed with error: {err}\n")
+            return 1
+
+        truncated_msg = f" (capped at max_paths={max_paths})" if frontier else ""
         print(
-            f"All-paths exploration completed: {paths_completed} paths explored, "
+            f"All-paths exploration completed: {paths_completed} paths explored{truncated_msg}, "
             f"{total_steps} steps, {total_events} events dispatched."
         )
         return 0
 
-    vm = StoryVM(graph)
+    vm = StoryVM(graph, rng_seed=0)
     steps = 0
     events_count = 0
 
-    while not vm.is_ended and steps < args.max_steps:
-        event = vm.step()
-        if event is None:
-            break
-        events_count += 1
-        steps += 1
-
-        if vm.pending_choice is not None:
-            first_enabled = next((opt.index for opt in vm.pending_choice.options if opt.enabled), None)
-            if first_enabled is not None:
-                vm.choose(first_enabled)
-            else:
+    try:
+        while not vm.is_ended and steps < args.max_steps:
+            event = vm.step()
+            if event is None:
                 break
+            events_count += 1
+            steps += 1
+
+            if vm.pending_choice is not None:
+                first_enabled = next((opt.index for opt in vm.pending_choice.options if opt.enabled), None)
+                if first_enabled is not None:
+                    vm.choose(first_enabled)
+                else:
+                    break
+    except (StoryRuntimeError, eager.script.EagerScriptError, ValueError, TypeError) as err:
+        sys.stderr.write(f"Test run failed with error: {err}\n")
+        return 1
 
     print(f"Test run completed: {steps} steps, {events_count} events dispatched, ended: {vm.is_ended}.")
     return 0

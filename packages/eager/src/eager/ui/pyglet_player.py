@@ -71,6 +71,8 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):  # pyright: ignore[reportU
             uncapped=uncapped,
         )
 
+        self._closing: bool = False
+        self._quit_dispatched: bool = False
         self._ui_batch = Batch()
 
         self.renderer = PygletRenderer(
@@ -112,10 +114,26 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):  # pyright: ignore[reportU
         if renderer is not None:
             renderer.on_resize(width, height)
 
+    def on_request_quit(self) -> None:
+        """Handle quit request from session input without re-entering request_quit."""
+        self._quit_dispatched = True
+        self.close()
+
     def close(self) -> None:
-        """Close window and release audio mixer resources."""
-        BasePlayer.close(self)
-        pyglet.window.Window.close(self)
+        """Close window, flush session quit state, unschedule clock, and release audio."""
+        if getattr(self, "_closing", False):
+            return
+        self._closing = True
+        try:
+            if not getattr(self, "_quit_dispatched", False):
+                self._quit_dispatched = True
+                session = getattr(self, "session", None)
+                if session is not None and hasattr(session, "request_quit"):
+                    session.request_quit()
+        finally:
+            pyglet.clock.unschedule(self.tick)
+            BasePlayer.close(self)
+            pyglet.window.Window.close(self)
 
     def run(self) -> None:
         """Run the interactive visual-novel main loop (blocks until window closes)."""

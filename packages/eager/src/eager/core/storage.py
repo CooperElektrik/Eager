@@ -35,7 +35,12 @@ def get_default_save_dir(game_name: str = "default") -> Path:
         base = Path(xdg_data)
     else:
         base = Path.home() / ".local" / "share"
-    save_dir = base / "eager" / game_name
+    eager_root = (base / "eager").resolve()
+    if not game_name or game_name in (".", "..") or "/" in game_name or "\\" in game_name:
+        raise StorageError(f"Invalid game_name for save directory: {game_name!r}")
+    save_dir = (eager_root / game_name).resolve()
+    if save_dir == eager_root or not save_dir.is_relative_to(eager_root):
+        raise StorageError(f"Path traversal detected in save directory: {game_name!r}")
     save_dir.mkdir(parents=True, exist_ok=True)
     return save_dir
 

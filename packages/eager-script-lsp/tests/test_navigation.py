@@ -185,3 +185,32 @@ def test_include_directive_definition_and_links():
         assert any(link.target is not None and normalize_uri(link.target) == normalize_uri(f_inc.as_uri()) for link in links)
 
 
+def test_include_and_asset_traversal_blocked():
+    from eager_script_lsp.features.tokens import compute_document_links
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        outer = Path(tmpdir).resolve()
+        outside_es = outer / "secret.es"
+        outside_es.write_text("## Secret --- sec\nNarrator: Secret\n", encoding="utf-8")
+        outside_asset = outer / "secret.png"
+        outside_asset.write_bytes(b"PNG")
+
+        project = outer / "project"
+        assets = project / "assets"
+        assets.mkdir(parents=True)
+        f_main = project / "main.es"
+        f_main.write_text(
+            '@include "../secret.es"\n## Start --- start\n~ bg ../secret.png\nNarrator: Hi\n',
+            encoding="utf-8",
+        )
+
+        index = WorkspaceIndex(project)
+        index.initialize()
+        doc = index.get_document(f_main.as_uri())
+        assert doc is not None
+
+        assert compute_definition(doc, index, Position(line=0, character=12)) is None
+        assert compute_document_links(doc, index) == []
+        assert index.asset_index.resolve_asset_path("background", "../secret.png") is None
+
+

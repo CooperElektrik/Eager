@@ -36,6 +36,7 @@ __all__ = [
     "WorkspaceIndex",
     "normalize_uri",
     "path_to_uri",
+    "resolve_include_path",
     "uri_to_path",
 ]
 
@@ -59,6 +60,20 @@ def normalize_uri(uri: str) -> str:
     if uri.startswith("file://"):
         return path_to_uri(uri_to_path(uri))
     return uri
+
+
+def resolve_include_path(doc_uri: str, include_value: str, root_path: Path | None) -> Path | None:
+    """Resolve an @include path safely within the workspace root (or document directory)."""
+    doc_path = uri_to_path(doc_uri)
+    boundary = root_path.resolve() if root_path is not None else doc_path.parent.resolve()
+    target_path = (doc_path.parent / include_value).resolve()
+    if target_path.is_relative_to(boundary) and target_path.is_file():
+        return target_path
+    if root_path is not None:
+        root_target = (boundary / include_value).resolve()
+        if root_target.is_relative_to(boundary) and root_target.is_file():
+            return root_target
+    return None
 
 
 @dataclass
@@ -133,6 +148,7 @@ class AssetIndex:
             return hit
 
         if self.asset_dir is not None:
+            resolved_base = self.asset_dir.resolve()
             ref = AssetReference(
                 kind=asset_kind,
                 identifier=value,
@@ -141,7 +157,9 @@ class AssetIndex:
                 expression=value if asset_kind == "character" else None,
             )
             for rel_candidate in resolve_candidate_paths(ref):
-                candidate = self.asset_dir / rel_candidate
+                candidate = (resolved_base / rel_candidate).resolve()
+                if not candidate.is_relative_to(resolved_base):
+                    continue
                 if candidate.is_file():
                     return candidate
         return None
@@ -281,7 +299,7 @@ class WorkspaceIndex:
             es_files.sort(key=lambda p: str(p))
             if getattr(self.config, "entry_script", None):
                 entry_file = (self.root_path / self.config.entry_script).resolve()
-                if entry_file in es_files:
+                if entry_file.is_relative_to(project_root) and entry_file in es_files:
                     es_files.remove(entry_file)
                     es_files.insert(0, entry_file)
 

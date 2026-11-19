@@ -80,3 +80,14 @@ def test_safe_read_json_valid_does_not_create_backup(tmp_path: Path):
 
     expected_bak = tmp_path / "valid.json.corrupt.bak"
     assert not expected_bak.exists()
+
+
+def test_get_default_save_dir_rejects_traversal(monkeypatch, tmp_path: Path):
+    import pytest
+
+    from eager.core.exceptions import StorageError
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    for bad_name in ("", ".", "..", "../evil", "a/b", "a\\b", "/tmp/evil"):
+        with pytest.raises(StorageError):
+            get_default_save_dir(bad_name)

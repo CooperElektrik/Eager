@@ -206,3 +206,22 @@ def test_extract_asset_references_ambient_and_track_kwarg() -> None:
     assert ("ambient", "rain_loop") in audio_refs
     assert ("music", "theme_main") in audio_refs
 
+
+def test_check_assets_blocks_path_traversal(tmp_path: Path) -> None:
+    import eager.script
+    from eager.core.assets import check_assets
+
+    asset_dir = tmp_path / "assets"
+    asset_dir.mkdir()
+    outside = tmp_path / "secret.png"
+    outside.write_bytes(b"PNG")
+
+    script = """## Start --- start
+~ bg ../secret.png
+Narrator: Hello.
+"""
+    graph = eager.script.parse_graph(script)
+    report = check_assets(graph, asset_dir)
+    assert report.resolved_count == 0
+    assert len(report.missing) == 1
+

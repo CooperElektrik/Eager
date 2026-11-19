@@ -180,3 +180,38 @@ def test_base_player_shift_tab_and_resize() -> None:
 
     session.handle_input.assert_any_call(InputAction.QUIT)
     player.close.assert_not_called()
+
+
+def test_pyglet_player_close_flushes_session_and_unschedules_clock(tmp_path, monkeypatch) -> None:
+    import pyglet
+
+    from eager.session import GameSession
+    from eager.ui.pyglet_player import PygletPlayer
+
+    screenplay = """
+    ## Start --- start
+    Alice: Hello!
+    """
+    graph = parse_graph(screenplay)
+    session = GameSession(graph, save_dir=tmp_path)
+    player = PygletPlayer(session=session, visible=False)
+
+    unscheduled: list[object] = []
+    orig_unschedule = pyglet.clock.unschedule
+
+    def spy_unschedule(func: object) -> None:
+        unscheduled.append(func)
+        orig_unschedule(func)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(pyglet.clock, "unschedule", spy_unschedule)
+
+    # Mark persistent dirty so request_quit() has observable side effects
+    session.persistent.unlocked = True
+    session._persistent_dirty = True
+
+    player.close()
+
+    assert player.tick in unscheduled
+    assert not session._persistent_dirty
+    assert (tmp_path / "persistent.json").is_file()
+    assert (tmp_path / "auto_1.json").is_file()

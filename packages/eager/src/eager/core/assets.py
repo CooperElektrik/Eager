@@ -422,6 +422,17 @@ def resolve_candidate_paths(
     return unique_candidates
 
 
+def _find_asset_file(base_dir: Path, candidates: list[str]) -> Path | None:
+    """Return the first existing file under *base_dir* from *candidates*, guarding against traversal."""
+    for cand in candidates:
+        cand_path = (base_dir / cand).resolve()
+        if not cand_path.is_relative_to(base_dir):
+            continue
+        if cand_path.is_file():
+            return cand_path
+    return None
+
+
 def check_assets(
     graph_or_items: Any,
     asset_dir: str | Path,
@@ -469,12 +480,7 @@ def check_assets(
                 found_layer_files: list[Path] = []
                 for layer in layers:
                     layer_cands = _candidate_paths_for_character_layer(cid, layer, cfg)
-                    layer_file: Path | None = None
-                    for cand in layer_cands:
-                        cand_path = path_asset_dir / cand
-                        if cand_path.is_file():
-                            layer_file = cand_path
-                            break
+                    layer_file = _find_asset_file(path_asset_dir, layer_cands)
                     if layer_file is not None:
                         found_layer_files.append(layer_file)
                     else:
@@ -499,13 +505,7 @@ def check_assets(
                 continue
 
         candidates = resolve_candidate_paths(ref, char_configs)
-        found_file: Path | None = None
-
-        for cand in candidates:
-            cand_path = path_asset_dir / cand
-            if cand_path.is_file():
-                found_file = cand_path
-                break
+        found_file = _find_asset_file(path_asset_dir, candidates)
 
         if found_file is not None:
             resolved_count += 1

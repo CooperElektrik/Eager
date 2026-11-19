@@ -245,28 +245,33 @@ class AudioMixer:
 
     def _resolve_asset(self, asset_path: str, channel: str | None = None) -> Path | str:
         """Resolve audio file relative to asset_dir if configured."""
-        if self.asset_dir is not None:
-            resolved_base = self.asset_dir.resolve()
-            raw_cand = (self.asset_dir / asset_path).resolve()
-            if not raw_cand.is_relative_to(resolved_base):
+        normalized = asset_path.replace("\\", "/")
+        if self.asset_dir is None:
+            if Path(asset_path).is_absolute() or Path(normalized).is_absolute() or ".." in Path(normalized).parts:
                 raise AudioError(f"Path traversal detected in audio asset path: {asset_path}")
+            return asset_path
 
-            candidates: list[str] = [asset_path, f"audio/{asset_path}"]
-            if channel:
-                candidates.extend([f"{channel}/{asset_path}", f"audio/{channel}/{asset_path}"])
-            kind = AssetKind.VOICE if channel == "voice" else AssetKind.AUDIO
-            candidates.extend(
-                resolve_candidate_paths(
-                    AssetReference(kind=kind, identifier=asset_path, channel=channel, line_number=0)
-                )
+        resolved_base = self.asset_dir.resolve()
+        raw_cand = (resolved_base / asset_path).resolve()
+        if not raw_cand.is_relative_to(resolved_base):
+            raise AudioError(f"Path traversal detected in audio asset path: {asset_path}")
+
+        candidates: list[str] = [asset_path, f"audio/{asset_path}"]
+        if channel:
+            candidates.extend([f"{channel}/{asset_path}", f"audio/{channel}/{asset_path}"])
+        kind = AssetKind.VOICE if channel == "voice" else AssetKind.AUDIO
+        candidates.extend(
+            resolve_candidate_paths(
+                AssetReference(kind=kind, identifier=asset_path, channel=channel, line_number=0)
             )
-            for rel_cand in candidates:
-                cand = (self.asset_dir / rel_cand).resolve()
-                if not cand.is_relative_to(resolved_base):
-                    raise AudioError(f"Path traversal detected in audio asset path: {asset_path}")
-                if cand.is_file():
-                    return cand
-        return asset_path
+        )
+        for rel_cand in candidates:
+            cand = (resolved_base / rel_cand).resolve()
+            if not cand.is_relative_to(resolved_base):
+                raise AudioError(f"Path traversal detected in audio asset path: {asset_path}")
+            if cand.is_file():
+                return cand
+        return raw_cand
 
     def _effective_volume(self, channel: str) -> float:
         """Compute final output volume = master * channel_type * track_vol."""

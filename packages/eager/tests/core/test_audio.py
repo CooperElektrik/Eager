@@ -242,3 +242,19 @@ def test_audio_mixer_resolves_extensionless_and_channel_subdirs(tmp_path: Path) 
     play_calls = [c for c in backend.calls if c[0] == "play"]
     assert play_calls[0][2] == str(theme.resolve())
     assert play_calls[1][2] == str(line.resolve())
+
+
+def test_audio_mixer_blocks_traversal_without_asset_dir_and_cwd_fallback(tmp_path: Path) -> None:
+    from eager.core.exceptions import AudioError
+
+    backend = NullAudioBackend()
+    mixer_no_dir = AudioMixer(backend=backend, asset_dir=None)
+    with pytest.raises(AudioError, match="Path traversal detected"):
+        mixer_no_dir._resolve_asset("../outside.ogg")
+    with pytest.raises(AudioError, match="Path traversal detected"):
+        mixer_no_dir._resolve_asset("/etc/passwd")
+
+    mixer_with_dir = AudioMixer(backend=backend, asset_dir=tmp_path)
+    resolved_missing = mixer_with_dir._resolve_asset("missing.ogg")
+    assert isinstance(resolved_missing, Path)
+    assert resolved_missing.is_relative_to(tmp_path.resolve())

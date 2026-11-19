@@ -74,3 +74,29 @@ def test_saves(tmp_path: Path) -> None:
     loaded_cp = mgr.load_slot("slot1")
     assert loaded_cp is not None
     assert loaded_cp.story["current_scene"] == "s1"
+
+
+def test_save_manager_blocks_reserved_slot_names(tmp_path: Path):
+    import pytest
+
+    from eager.core.exceptions import StorageError
+    from eager.core.saves import SaveManager
+    from eager.core.state import Checkpoint
+
+    mgr = SaveManager(tmp_path)
+    persistent_file = tmp_path / "persistent.json"
+    prefs_file = tmp_path / "preferences.json"
+    persistent_file.write_text('{"unlocks": true}', encoding="utf-8")
+    prefs_file.write_text('{"volume": 0.5}', encoding="utf-8")
+
+    cp = Checkpoint(story={"current_scene": "s1"}, visual={}, audio={}, ui={}, backlog_len=0)
+    for reserved in ("persistent", "preferences", "Persistent", "../preferences"):
+        with pytest.raises(StorageError, match="Reserved slot name"):
+            mgr.save_slot(reserved, cp)
+        with pytest.raises(StorageError, match="Reserved slot name"):
+            mgr.delete_slot(reserved)
+        with pytest.raises(StorageError, match="Reserved slot name"):
+            mgr.load_slot(reserved)
+
+    assert persistent_file.read_text(encoding="utf-8") == '{"unlocks": true}'
+    assert prefs_file.read_text(encoding="utf-8") == '{"volume": 0.5}'

@@ -78,15 +78,10 @@ def compute_definition(
 
     # 5. Include directive -> target .es file
     if token.kind == "include_path":
-        from eager_script_lsp.workspace import uri_to_path
+        from eager_script_lsp.workspace import resolve_include_path
 
-        doc_path = uri_to_path(doc.uri)
-        target_path = (doc_path.parent / token.value).resolve()
-        if not target_path.is_file() and workspace.root_path:
-            root_target = (workspace.root_path / token.value).resolve()
-            if root_target.is_file():
-                target_path = root_target
-        if target_path.is_file():
+        target_path = resolve_include_path(doc.uri, token.value, workspace.root_path)
+        if target_path is not None:
             zero_range = Range(start=Position(line=0, character=0), end=Position(line=0, character=0))
             return Location(uri=target_path.as_uri(), range=zero_range)
 
