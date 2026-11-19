@@ -258,3 +258,42 @@ def test_audio_mixer_blocks_traversal_without_asset_dir_and_cwd_fallback(tmp_pat
     resolved_missing = mixer_with_dir._resolve_asset("missing.ogg")
     assert isinstance(resolved_missing, Path)
     assert resolved_missing.is_relative_to(tmp_path.resolve())
+
+
+def test_audio_mixer_channel_aliases_and_fade_lifecycle() -> None:
+    backend = NullAudioBackend()
+    mixer = AudioMixer(backend=backend)
+    mixer.set_channel_volume("music", 0.5)
+
+    # Alias 'bgm' -> 'music' defaults to loop=True and uses music channel volume
+    resolved_chan = mixer.play("bgm", "theme.ogg", fade_in=1.0, volume=1.0)
+    assert resolved_chan == "music"
+    assert mixer.channels["music"].loop is True
+
+    # Instant stop mid-fade-in resets fade state so is_playing() is False
+    mixer.stop("music", fade_out=0.0)
+    assert not mixer.is_playing("music")
+    calls_before = len(backend.calls)
+    mixer.update(0.5)
+    assert not any(c[0] == "set_volume" for c in backend.calls[calls_before:])
+
+    # Paused channel does not advance fade_timer
+    mixer.play("music", "theme.ogg", fade_in=1.0, volume=1.0)
+    mixer.pause("music")
+    mixer.update(0.5)
+    assert mixer.channels["music"].fade_timer == 0.0
+    mixer.resume("music")
+
+    # set_volume() cancels active fade
+    mixer.set_volume("music", 0.4)
+    assert mixer.channels["music"].fade_duration == 0.0
+    mixer.update(0.5)
+    assert mixer.channels["music"].volume == pytest.approx(0.4)
+
+    # load_state() updates backend volume when master_volume changed even if track volume matches
+    state = mixer.save_state()
+    state["master_volume"] = 0.25
+    calls_before_load = len(backend.calls)
+    mixer.load_state(state)
+    vol_calls = [c for c in backend.calls[calls_before_load:] if c[0] == "set_volume" and c[1] == "music"]
+    assert vol_calls and vol_calls[-1][2] == pytest.approx(0.4 * 0.5 * 0.25)

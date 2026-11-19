@@ -75,10 +75,12 @@ def create_server() -> EagerLanguageServer:
                 logger.debug("Could not sync doc from workspace for %s: %s", uri, e)
         return doc
 
-    def _validate_and_publish(uri: str) -> None:
+    def _validate_and_publish(uri: str, *, check_disk_assets: bool = True) -> None:
         doc = _get_or_sync_doc(uri)
         if doc is not None:
-            diags = compute_diagnostics(doc, server.workspace_index)
+            diags = compute_diagnostics(
+                doc, server.workspace_index, check_disk_assets=check_disk_assets
+            )
             server.text_document_publish_diagnostics(
                 types.PublishDiagnosticsParams(uri=uri, diagnostics=diags)
             )
@@ -107,12 +109,12 @@ def create_server() -> EagerLanguageServer:
             pygls_doc = server.workspace.get_text_document(uri)
             text = pygls_doc.source
         except (KeyError, ValueError, OSError):
-            if params.content_changes:
+            if params.content_changes and getattr(params.content_changes[-1], "range", None) is None:
                 text = params.content_changes[-1].text
             else:
                 return
         server.workspace_index.update_document(uri, text)
-        _validate_and_publish_all()
+        _validate_and_publish(uri, check_disk_assets=False)
 
     @server.feature(types.TEXT_DOCUMENT_DID_SAVE)
     def on_did_save(params: types.DidSaveTextDocumentParams) -> None:

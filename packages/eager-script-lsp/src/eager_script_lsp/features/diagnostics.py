@@ -24,7 +24,12 @@ __all__ = [
 ]
 
 
-def compute_diagnostics(doc: ScriptDocument, workspace: WorkspaceIndex) -> list[Diagnostic]:
+def compute_diagnostics(
+    doc: ScriptDocument,
+    workspace: WorkspaceIndex,
+    *,
+    check_disk_assets: bool = True,
+) -> list[Diagnostic]:
     """Compute all diagnostics for the given document within the workspace."""
     diagnostics: list[Diagnostic] = []
 
@@ -119,12 +124,15 @@ def compute_diagnostics(doc: ScriptDocument, workspace: WorkspaceIndex) -> list[
             )
 
     # Cross-file duplicate scene label detection
+    from eager_script_lsp.workspace import normalize_uri
+
+    norm_doc_uri = normalize_uri(doc.uri)
     for occ in doc.occurrences:
         if occ.kind == "label_def":
             scene_id = occ.name
             # Check other documents for the same scene_id
             for other_uri, other_doc in workspace.documents.items():
-                if other_uri == doc.uri:
+                if normalize_uri(other_uri) == norm_doc_uri:
                     continue
                 if scene_id in other_doc.scene_spans:
                     diagnostics.append(
@@ -137,8 +145,8 @@ def compute_diagnostics(doc: ScriptDocument, workspace: WorkspaceIndex) -> list[
                     )
                     break
 
-    # 3. Asset consistency linter
-    if workspace.asset_dir.is_dir() and (doc.scene_graph or doc.ast_items):
+    # 3. Asset consistency linter (disk checks deferred on incremental keystrokes)
+    if check_disk_assets and workspace.asset_dir.is_dir() and (doc.scene_graph or doc.ast_items):
         target_items = doc.scene_graph if doc.scene_graph else doc.ast_items
         report = check_assets(target_items, workspace.asset_dir)
         for issue in report.missing:

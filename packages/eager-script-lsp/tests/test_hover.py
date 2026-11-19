@@ -111,11 +111,9 @@ $ score += 10
         assert isinstance(h_shake.contents, MarkupContent)
         assert "Camera shake effect" in h_shake.contents.value
 
-        # Hover on '~ weather' (line 6, col 3)
+        # Hover on unimplemented '~ weather' (line 6, col 3) returns None
         h_weather = compute_hover(doc, index, Position(line=6, character=3))
-        assert h_weather is not None
-        assert isinstance(h_weather.contents, MarkupContent)
-        assert "Engine Hook: `~ weather`" in h_weather.contents.value
+        assert h_weather is None
 
         # Hover on '~ play_bgm' (line 7, col 4)
         h_play = compute_hover(doc, index, Position(line=7, character=4))

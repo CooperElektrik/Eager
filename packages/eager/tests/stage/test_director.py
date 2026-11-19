@@ -551,6 +551,37 @@ class TestDirectorAudioHooks:
         dispatcher.dispatch(HookEvent(hook_name="stop", args="music fade=0.5", line_number=6))
         assert audio.channels["music"].fade_duration == 0.5
 
+    def test_stage_director_shorthand_audio_hooks_and_aliases(self) -> None:
+        """Verify ~ play_bgm, ~ play_sfx, ~ stop_bgm, ~ volume_bgm, and channel= kwargs."""
+        backend = NullAudioBackend()
+        audio = AudioMixer(backend=backend)
+        comp = StageCompositor(1920, 1080)
+        director = StageDirector(comp, audio=audio)
+        dispatcher = EventDispatcher()
+        director.bind(dispatcher)
+
+        dispatcher.dispatch(HookEvent(hook_name="play_bgm", args="theme.ogg", line_number=1))
+        assert audio.channels["music"].is_playing
+        assert audio.channels["music"].loop is True
+
+        dispatcher.dispatch(HookEvent(hook_name="volume_bgm", args="0.4", line_number=2))
+        assert audio.channels["music"].volume == pytest.approx(0.4)
+
+        dispatcher.dispatch(HookEvent(hook_name="pause_bgm", args="", line_number=3))
+        assert audio.channels["music"].is_paused is True
+
+        dispatcher.dispatch(HookEvent(hook_name="resume_bgm", args="", line_number=4))
+        assert audio.channels["music"].is_paused is False
+
+        dispatcher.dispatch(HookEvent(hook_name="stop_bgm", args="", line_number=5))
+        assert not audio.channels["music"].is_playing
+
+        dispatcher.dispatch(HookEvent(hook_name="play", args="channel=music track=theme2.ogg", line_number=6))
+        assert audio.channels["music"].current_asset == "theme2.ogg"
+
+        dispatcher.dispatch(HookEvent(hook_name="play_sfx", args="click.ogg", line_number=7))
+        assert audio.channels["sound"].is_playing
+
     def test_director_hide_image_and_hide_element(self) -> None:
         """Verify ~ image, ~ hide_image, and ~ hide_element hooks."""
         from eager.core.dispatcher import EventDispatcher

@@ -130,7 +130,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--no-audio", action="store_true", help="Disable audio playback.")
     run_p.add_argument(
         "--scale-mode",
-        choices=("letterbox", "stretch", "cover"),
+        choices=("letterbox", "stretch", "crop", "fit_width", "fit_height", "cover"),
         help="Viewport scaling mode.",
     )
     run_p.add_argument("--skip-title", action="store_true", help="Jump directly into the story.")
@@ -258,10 +258,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if scale_arg:
         from eager.core.types import ScaleMode
 
+        normalized_scale = scale_arg.strip().lower()
+        if normalized_scale == "cover":
+            normalized_scale = ScaleMode.CROP.value
         try:
-            player_kwargs["scale_mode"] = ScaleMode(scale_arg.lower())
-        except (ValueError, KeyError):
-            pass
+            player_kwargs["scale_mode"] = ScaleMode(normalized_scale)
+        except ValueError as err:
+            sys.stderr.write(f"Error: Invalid scale_mode {scale_arg!r}: {err}\n")
+            return 1
     if getattr(args, "uncapped", False):
         player_kwargs["uncapped"] = True
 

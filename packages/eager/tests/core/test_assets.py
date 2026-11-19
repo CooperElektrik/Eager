@@ -225,3 +225,39 @@ Narrator: Hello.
     assert report.resolved_count == 0
     assert len(report.missing) == 1
 
+
+def test_side_image_not_double_counted_and_subdir_assets_resolve(tmp_path: Path) -> None:
+    import eager.script
+    from eager.backends._assets import resolve_visual_asset_candidates
+    from eager.core.assets import check_assets, extract_asset_references
+
+    asset_dir = tmp_path / "assets"
+    (asset_dir / "characters").mkdir(parents=True)
+    (asset_dir / "bg" / "interiors").mkdir(parents=True)
+    (asset_dir / "images" / "ui").mkdir(parents=True)
+    (asset_dir / "audio" / "music").mkdir(parents=True)
+    (asset_dir / "characters" / "hero_side.png").write_bytes(b"PNG")
+    (asset_dir / "bg" / "interiors" / "room.png").write_bytes(b"PNG")
+    (asset_dir / "images" / "ui" / "badge.png").write_bytes(b"PNG")
+    (asset_dir / "audio" / "music" / "theme.ogg").write_bytes(b"OggS")
+
+    script = """@character hero "Hero" side_image=hero_side
+## Start --- start
+~ bg interiors/room
+~ image badge ui/badge
+~ play_bgm theme
+Hero: Hello!
+"""
+    graph = eager.script.parse_graph(script)
+    refs, _ = extract_asset_references(graph)
+    side_refs = [r for r in refs if r.identifier == "hero_side"]
+    assert len(side_refs) == 1
+    assert any(r.kind == "audio" and r.channel == "music" and r.identifier == "theme" for r in refs)
+
+    report = check_assets(graph, asset_dir)
+    assert report.missing == ()
+    assert report.resolved_count == 4
+
+    assert "bg/interiors/room.png" in resolve_visual_asset_candidates("interiors/room")
+    assert "images/ui/badge.png" in resolve_visual_asset_candidates("ui/badge")
+

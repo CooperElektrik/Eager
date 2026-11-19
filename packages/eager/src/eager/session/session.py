@@ -679,6 +679,8 @@ class GameSession:
 
         if self.compositor is not None and hasattr(ui_backend, "render_compositor"):
             ui_backend.render_compositor(self.compositor, width, height)
+        elif hasattr(ui_backend, "begin_frame"):
+            ui_backend.begin_frame()
 
         status_badge: str | None = None
         if self.skip_mode:
@@ -702,6 +704,9 @@ class GameSession:
         if include_screens and self.screens.active_screen:
             self.screens.set_viewport(width, height)
             self.screens.draw(ui_backend, width, height)
+
+        if hasattr(ui_backend, "flush_ui"):
+            ui_backend.flush_ui()
 
     def take_screenshot(
         self,

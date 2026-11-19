@@ -157,6 +157,9 @@ def extract_asset_references(
         collect_items(graph_or_items, None)
 
     # First pass: collect all character definitions from items_to_scan
+    has_graph_characters = hasattr(graph_or_items, "characters") and isinstance(
+        graph_or_items.characters, dict
+    )
     for item, _ in items_to_scan:
         if getattr(item, "type", None) == "character":
             c_id = item.id.strip().lower()
@@ -164,17 +167,18 @@ def extract_asset_references(
             if item.name:
                 attrs_dict["name"] = item.name
             character_configs[c_id] = attrs_dict
-            side_img = attrs_dict.get("side_image")
-            if side_img:
-                references.append(
-                    AssetReference(
-                        kind="character",
-                        identifier=side_img,
-                        line_number=item.line_number,
-                        scene_id=None,
-                        character_id=c_id,
+            if not has_graph_characters:
+                side_img = attrs_dict.get("side_image")
+                if side_img:
+                    references.append(
+                        AssetReference(
+                            kind="character",
+                            identifier=side_img,
+                            line_number=item.line_number,
+                            scene_id=None,
+                            character_id=c_id,
+                        )
                     )
-                )
 
     def resolve_char_id(raw_name: str) -> str:
         clean = raw_name.strip().lower()
@@ -271,18 +275,29 @@ def extract_asset_references(
                         )
                     )
 
-            elif hook_cmd == "play":
+            elif hook_cmd in ("play", "play_bgm", "play_music", "play_sfx", "play_sound", "play_ambient", "play_voice"):
                 track_kw = hook_kwargs.get("track")
                 chan_kw = hook_kwargs.get("channel")
                 chan: str | None = None
                 track: str | None = None
-                if positional:
-                    chan = positional[0].strip().lower()
+                if hook_cmd != "play":
+                    shorthand_chan = hook_cmd.removeprefix("play_")
+                    chan = {"bgm": "music", "sfx": "sound"}.get(shorthand_chan, shorthand_chan)
+                    if positional:
+                        track = positional[0].strip()
+                    elif track_kw:
+                        track = track_kw.strip()
+                elif positional:
+                    raw_chan = positional[0].strip().lower()
+                    chan = {"bgm": "music", "sfx": "sound"}.get(raw_chan, raw_chan)
                     if len(positional) >= 2:
                         track = positional[1].strip()
                     elif track_kw:
                         track = track_kw.strip()
                 elif chan_kw and track_kw:
+                    raw_chan = chan_kw.strip().lower()
+                    chan = {"bgm": "music", "sfx": "sound"}.get(raw_chan, raw_chan)
+                    track = track_kw.strip()
                     chan = chan_kw.strip().lower()
                     track = track_kw.strip()
                 if chan and track:
@@ -383,11 +398,29 @@ def resolve_candidate_paths(
 
     elif ref.kind == "character":
         cid = ref.character_id or ref.identifier.split("/")[0]
-        expr = ref.expression or (ref.identifier.split("/")[1] if "/" in ref.identifier else "default")
-        cfg = configs.get(cid, {})
-        layers = _expand_character_expression(expr, cfg)
-        for layer in layers:
-            candidates.extend(_candidate_paths_for_character_layer(cid, layer, cfg))
+        if ref.expression is None and "/" not in ref.identifier and ref.identifier != cid:
+            # Explicit side_image or flat character asset identifier (e.g. side_image="hoshiko_side")
+            side_name = ref.identifier.strip()
+            for ext in IMAGE_EXTENSIONS:
+                candidates.append(f"{side_name}{ext}")
+                candidates.append(f"characters/{side_name}{ext}")
+                candidates.append(f"{cid}/{side_name}{ext}")
+                candidates.append(f"characters/{cid}/{side_name}{ext}")
+        elif ref.expression is None and "/" in ref.identifier:
+            side_path = ref.identifier.strip()
+            for ext in IMAGE_EXTENSIONS:
+                candidates.append(f"{side_path}{ext}")
+                if not side_path.startswith("characters/"):
+                    candidates.append(f"characters/{side_path}{ext}")
+                if not side_path.startswith(f"{cid}/"):
+                    candidates.append(f"{cid}/{side_path}{ext}")
+                    candidates.append(f"characters/{cid}/{side_path}{ext}")
+        else:
+            expr = ref.expression or (ref.identifier.split("/")[1] if "/" in ref.identifier else "default")
+            cfg = configs.get(cid, {})
+            layers = _expand_character_expression(expr, cfg)
+            for layer in layers:
+                candidates.extend(_candidate_paths_for_character_layer(cid, layer, cfg))
 
     elif ref.kind == "audio":
         track = ref.identifier

@@ -637,6 +637,43 @@ def test_pyglet_renderer_draw_text_updates_pooled_label_font_name(monkeypatch: p
     assert renderer._label_pool[0].font_name == "FontB"
 
 
+def test_pyglet_renderer_gradient_reapplied_after_hide_and_session_draw_flushes(tmp_path: Path) -> None:
+    from eager.backends.renderers.pyglet import PygletRenderer
+    from eager.core.types import Color
+    from eager.script import parse_graph
+    from eager.session import GameSession
+
+    renderer = PygletRenderer(width=320, height=180)
+    top = Color(0.0, 0.0, 0.0, 0.0)
+    bot = Color(0.0, 0.0, 0.0, 1.0)
+
+    renderer.begin_frame()
+    renderer.draw_gradient_rect(0, 0, 100, 50, top, bot)
+    renderer.flush_ui()
+
+    # Frame with no gradient hides pooled rect and clears cached color state
+    renderer.begin_frame()
+    renderer.flush_ui()
+    rect, cached = renderer._grad_pool[0]
+    assert rect.visible is False
+    assert cached is None
+
+    # Reusing pooled rect with same colors re-applies vertex gradient
+    renderer.begin_frame()
+    renderer.draw_gradient_rect(0, 0, 100, 50, top, bot)
+    _, cached_after = renderer._grad_pool[0]
+    assert cached_after == (top.to_rgba_bytes(), bot.to_rgba_bytes())
+    renderer.flush_ui()
+
+    # GameSession.draw() flushes UI even when compositor is None
+    graph = parse_graph("## Start --- start\nNarrator: Hello.\n")
+    session = GameSession(graph, save_dir=tmp_path)
+    session.compositor = None  # type: ignore[assignment]
+    session.advance()
+    session.draw(renderer, 320, 180)
+    assert renderer._ui_flushed is True
+
+
 
 
 

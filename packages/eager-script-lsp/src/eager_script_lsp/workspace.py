@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -128,6 +129,13 @@ class AssetIndex:
     voice: set[str] = field(default_factory=set)
     file_paths: dict[str, Path] = field(default_factory=dict)
     asset_dir: Path | None = None
+    _scanned_characters: dict[str, set[str]] = field(default_factory=dict)
+    _has_scanned: bool = False
+
+    def reset_script_aliases(self) -> None:
+        """Restore character expressions to the last disk scan, clearing script aliases."""
+        if self._has_scanned:
+            self.characters = {k: set(v) for k, v in self._scanned_characters.items()}
 
     def resolve_asset_path(self, asset_kind: str | None, value: str, *, character: str = "") -> Path | None:
         """Resolve an indexed asset reference to its disk Path, if known."""
@@ -167,6 +175,8 @@ class AssetIndex:
     def scan_assets(self, asset_dir: Path) -> None:
         """Scan directory and index all background, character, image, audio, and voice assets."""
         self.asset_dir = asset_dir
+        self._scanned_characters.clear()
+        self._has_scanned = True
         self.backgrounds.clear()
         self.images.clear()
         self.characters.clear()
@@ -247,6 +257,9 @@ class AssetIndex:
                     self.audio.add(rel_str)
                     self.file_paths[f"audio:{stem}"] = p
                     self.file_paths[f"audio:{rel_str}"] = p
+
+        self._scanned_characters = {k: set(v) for k, v in self.characters.items()}
+        self._has_scanned = True
 
 
 class WorkspaceIndex:
@@ -330,17 +343,25 @@ class WorkspaceIndex:
         compiled copies of screenplay files do not produce false duplicate
         scene label diagnostics against their source counterparts.
         """
-        if self._is_excluded_uri(uri):
-            return self.documents.get(uri, ScriptDocument(uri, text))
-        doc = ScriptDocument(uri, text)
-        self.documents[uri] = doc
+        norm_uri = normalize_uri(uri)
+        if self._is_excluded_uri(norm_uri):
+            return self.documents.get(norm_uri, ScriptDocument(norm_uri, text))
+        doc = ScriptDocument(norm_uri, text)
+        self.documents[norm_uri] = doc
         self._rebuild_index()
         return doc
 
     def remove_document(self, uri: str) -> None:
         """Remove a document from the workspace and refresh symbols."""
+        norm_uri = normalize_uri(uri)
+        removed = False
+        if norm_uri in self.documents:
+            del self.documents[norm_uri]
+            removed = True
         if uri in self.documents:
             del self.documents[uri]
+            removed = True
+        if removed:
             self._rebuild_index()
 
     def get_document(self, uri: str) -> ScriptDocument | None:
@@ -366,6 +387,7 @@ class WorkspaceIndex:
         self.variables.clear()
         self.references.clear()
         self.merge_errors.clear()
+        self.asset_index.reset_script_aliases()
 
         # Step 1: Collect symbols from each document
         path_to_doc = {uri_to_path(uri).resolve(): doc for uri, doc in self.documents.items()}
@@ -449,11 +471,17 @@ class WorkspaceIndex:
                     attrs_dict: dict[str, str] = {}
                     raw_attrs = occ.metadata.get("raw_attrs", "")
                     if raw_attrs:
-                        for tok in raw_attrs.split():
+                        try:
+                            tokens = shlex.split(raw_attrs)
+                        except ValueError:
+                            tokens = raw_attrs.split()
+                        for tok in tokens:
                             if "=" in tok:
                                 k, _, v = tok.partition("=")
                                 attrs_dict[k.strip()] = v.strip()
 
+                    existing_char = self.characters.get(char_id)
+                    prior_lines = existing_char.dialogue_lines if existing_char is not None else 0
                     self.characters[char_id] = CharacterSymbol(
                         id=char_id,
                         name=occ.metadata.get("name", char_id.capitalize()),
@@ -461,6 +489,7 @@ class WorkspaceIndex:
                         range=occ.span.range,
                         attrs=attrs_dict,
                         is_defined=True,
+                        dialogue_lines=prior_lines,
                     )
                     # Register expression aliases (e.g., happy=base+uniform+smile) in asset_index
                     non_expr_keys = {
@@ -497,12 +526,18 @@ class WorkspaceIndex:
 
                 elif occ.kind == "variable_def":
                     var_name = occ.name
-                    self.variables[var_name] = VariableSymbol(
-                        name=var_name,
-                        default_val=occ.metadata.get("default_value"),
-                        default_uri=uri,
-                        default_range=occ.span.range,
-                    )
+                    existing_var = self.variables.get(var_name)
+                    if existing_var is not None:
+                        existing_var.default_val = occ.metadata.get("default_value")
+                        existing_var.default_uri = uri
+                        existing_var.default_range = occ.span.range
+                    else:
+                        self.variables[var_name] = VariableSymbol(
+                            name=var_name,
+                            default_val=occ.metadata.get("default_value"),
+                            default_uri=uri,
+                            default_range=occ.span.range,
+                        )
 
                 elif occ.kind == "variable_mutation":
                     var_name = occ.name

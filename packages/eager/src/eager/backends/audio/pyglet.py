@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import weakref
 from collections import OrderedDict
 from pathlib import Path
 
@@ -48,7 +49,8 @@ class PygletAudioBackend:
         """Start playback of an audio asset using Pyglet media player."""
         path_str = str(asset_path)
         if channel in self._players:
-            old_player = self._players[channel]
+            old_player = self._players.pop(channel)
+            self._loop_points.pop(channel, None)
             try:
                 old_player.pause()
                 old_player.delete()
@@ -113,13 +115,27 @@ class PygletAudioBackend:
                 else:
                     player.loop = False
 
+                    player_ref = weakref.ref(player)
+                    is_static = isinstance(source, pyglet.media.StaticSource)
+                    static_ref = weakref.ref(source) if is_static else None
+
                     @player.event
                     def on_player_eos() -> None:
+                        active_player = player_ref()
+                        if active_player is None:
+                            return
                         seek_pos = loop_start if loop_start is not None else 0.0
                         try:
-                            player.queue(source)
-                            player.seek(seek_pos)
-                            player.play()
+                            next_source = (
+                                static_ref()
+                                if static_ref is not None
+                                else pyglet.media.load(path_str, streaming=True)
+                            )
+                            if next_source is None:
+                                return
+                            active_player.queue(next_source)
+                            active_player.seek(seek_pos)
+                            active_player.play()
                         except Exception as exc:  # noqa: BLE001
                             logger.warning(
                                 "Failed to seek/loop audio on EOS for channel %r: %s",

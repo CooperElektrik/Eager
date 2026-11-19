@@ -3,6 +3,7 @@
 import io
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -250,3 +251,24 @@ def test_cli_test_run_handles_errors_and_entry_traversal(tmp_path: Path, capsys:
     broken_es = tmp_path / "broken.es"
     broken_es.write_text("@include \"missing_file.es\"\n## Start --- start\nNarrator: Hi.\n", encoding="utf-8")
     assert main(["test-run", str(broken_es)]) == 1
+
+
+def test_cli_run_scale_mode_cover_and_crop(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from eager.core.types import ScaleMode
+
+    script = tmp_path / "main.es"
+    script.write_text("## Start --- start\nNarrator: Hi.\n", encoding="utf-8")
+
+    captured_modes: list[ScaleMode] = []
+
+    class FakePlayer:
+        def __init__(self, **kwargs: Any) -> None:
+            captured_modes.append(kwargs["scale_mode"])
+
+        def run(self) -> None:
+            pass
+
+    monkeypatch.setattr("eager.ui.pyglet_player.PygletPlayer", FakePlayer)
+    assert main(["run", str(script), "--backend", "pyglet", "--scale-mode", "cover"]) == 0
+    assert main(["run", str(script), "--backend", "pyglet", "--scale-mode", "fit_width"]) == 0
+    assert captured_modes == [ScaleMode.CROP, ScaleMode.FIT_WIDTH]

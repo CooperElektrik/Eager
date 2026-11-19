@@ -44,6 +44,16 @@ def resolve_visual_asset_candidates(asset_id: str) -> list[str]:
                 )
             )
         )
+        candidates.extend(
+            resolve_candidate_paths(
+                AssetReference(kind=AssetKind.IMAGE, identifier=asset_id, line_number=0)
+            )
+        )
+        candidates.extend(
+            resolve_candidate_paths(
+                AssetReference(kind=AssetKind.BACKGROUND, identifier=asset_id, line_number=0)
+            )
+        )
     else:
         candidates.extend(
             resolve_candidate_paths(

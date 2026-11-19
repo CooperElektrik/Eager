@@ -212,6 +212,32 @@ class StageDirector:
         dispatcher.on_hook("pause")(_wrap_hook(self.handle_pause))
         dispatcher.on_hook("resume")(_wrap_hook(self.handle_resume))
         dispatcher.on_hook("volume")(_wrap_hook(self.handle_volume))
+        for raw_ch, canonical_ch in (
+            ("bgm", "music"),
+            ("music", "music"),
+            ("sfx", "sound"),
+            ("sound", "sound"),
+            ("ambient", "ambient"),
+            ("voice", "voice"),
+        ):
+            dispatcher.on_hook(f"play_{raw_ch}")(
+                lambda args, _ch=canonical_ch: self.handle_play(args, channel=_ch)
+            )
+            dispatcher.on_hook(f"stop_{raw_ch}")(
+                lambda args, _ch=canonical_ch: self.handle_stop(args, channel=_ch)
+            )
+            dispatcher.on_hook(f"pause_{raw_ch}")(
+                lambda args, _ch=canonical_ch: self.handle_pause(args, channel=_ch)
+            )
+            dispatcher.on_hook(f"resume_{raw_ch}")(
+                lambda args, _ch=canonical_ch: self.handle_resume(args, channel=_ch)
+            )
+            dispatcher.on_hook(f"volume_{raw_ch}")(
+                lambda args, _ch=canonical_ch: self.handle_volume(args, channel=_ch)
+            )
+        dispatcher.on_hook("volume_master")(
+            lambda args: self.handle_volume(args, channel="master")
+        )
 
         # 2. Narrative Event Listeners
         dispatcher.on_event(DialogueEvent)(self.handle_dialogue_event)
@@ -492,13 +518,20 @@ class StageDirector:
         parsed = parse_hook_args(args)
         track_arg = parsed.get_str("track")
         if channel is None:
-            if not parsed.positional:
+            chan_kw = parsed.get_str("channel")
+            if parsed.positional:
+                raw_channel = parsed.positional[0].strip().lower()
+                track = track_arg or (parsed.positional[1].strip() if len(parsed.positional) > 1 else "")
+            elif chan_kw:
+                raw_channel = chan_kw.strip().lower()
+                track = track_arg or ""
+            else:
                 return
-            target_channel = parsed.positional[0].strip().lower()
-            track = track_arg or (parsed.positional[1].strip() if len(parsed.positional) > 1 else "")
         else:
-            target_channel = channel.strip().lower()
+            raw_channel = channel.strip().lower()
             track = track_arg or (parsed.positional[0].strip() if parsed.positional else "")
+
+        target_channel = {"bgm": "music", "sfx": "sound"}.get(raw_channel, raw_channel)
 
         if not track:
             return

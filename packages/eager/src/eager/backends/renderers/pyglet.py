@@ -542,6 +542,7 @@ class PygletRenderer(RenderBackend):
             g, _ = self._grad_pool[i]
             if g.visible:
                 g.visible = False
+            self._grad_pool[i] = (g, None)
         for i in range(self._label_cursor, len(self._label_pool)):
             l = self._label_pool[i]
             if l.visible:
@@ -760,6 +761,8 @@ class PygletRenderer(RenderBackend):
         idx = self._grad_cursor
         self._grad_cursor += 1
 
+        group_changed = rect.group is not group
+        was_hidden = not rect.visible
         if rect.x != fx:
             rect.x = fx
         if rect.y != fy:
@@ -768,16 +771,20 @@ class PygletRenderer(RenderBackend):
             rect.width = w
         if rect.height != h:
             rect.height = h
-        if rect.group is not group:
+        if group_changed:
             rect.group = group
-        if not rect.visible:
+        if was_hidden:
             rect.visible = True
 
-        if last_colors != grad_colors:
+        if last_colors != grad_colors or group_changed or was_hidden:
             bot = list(bot_rgba)
             top = list(top_rgba)
             vlist: Any = rect._vertex_list
-            vlist.colors[:] = bot + bot + top + bot + top + top
+            n_verts = len(vlist.colors) // 4
+            if n_verts == 4:
+                vlist.colors[:] = bot + bot + top + top
+            else:
+                vlist.colors[:] = bot + bot + top + bot + top + top
             self._grad_pool[idx] = (rect, grad_colors)
 
     def draw_text(

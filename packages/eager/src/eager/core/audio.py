@@ -6,7 +6,7 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, TypedDict, cast
+from typing import ClassVar, Protocol, TypedDict, cast
 
 from eager.core.assets import AssetKind, AssetReference, resolve_candidate_paths
 from eager.core.exceptions import AudioError
@@ -223,6 +223,13 @@ class AudioMixer:
     """Manages audio playback across music, sound, voice, and ambient channels."""
 
     STANDARD_CHANNELS: tuple[str, ...] = ("music", "sound", "voice", "ambient")
+    CHANNEL_ALIASES: ClassVar[dict[str, str]] = {"bgm": "music", "sfx": "sound"}
+
+    @classmethod
+    def normalize_channel(cls, channel: str) -> str:
+        """Normalize channel aliases (e.g. 'bgm' -> 'music', 'sfx' -> 'sound')."""
+        lowered = channel.strip().lower()
+        return cls.CHANNEL_ALIASES.get(lowered, lowered)
 
     def __init__(
         self,
@@ -282,6 +289,7 @@ class AudioMixer:
 
     def is_playing(self, channel: str) -> bool:
         """Return True if *channel* is audibly active."""
+        channel = self.normalize_channel(channel)
         chan = self.channels.get(channel)
         if chan is None:
             return False
@@ -301,6 +309,7 @@ class AudioMixer:
         loop_end: float | None = None,
     ) -> str:
         """Play an audio asset on the specified channel."""
+        channel = self.normalize_channel(channel)
         if channel not in self.channels:
             self.channels[channel] = ChannelState(name=channel)
             _ = self.channel_volumes.setdefault(channel, 1.0)
@@ -345,6 +354,7 @@ class AudioMixer:
 
     def stop(self, channel: str, *, fade_out: float = 0.0) -> None:
         """Stop playback on a channel."""
+        channel = self.normalize_channel(channel)
         chan = self.channels.get(channel)
         if chan is None:
             return
@@ -357,7 +367,13 @@ class AudioMixer:
             chan.stop_on_fade_complete = True
         else:
             chan.is_playing = False
+            chan.is_paused = False
             chan.current_asset = None
+            chan.fade_duration = 0.0
+            chan.fade_timer = 0.0
+            chan.fade_start_vol = 0.0
+            chan.fade_target_vol = 0.0
+            chan.stop_on_fade_complete = False
             self.backend.stop(channel)
 
     def stop_all(self, *, fade_out: float = 0.0) -> None:
@@ -367,6 +383,7 @@ class AudioMixer:
 
     def pause(self, channel: str) -> None:
         """Pause playback on a channel."""
+        channel = self.normalize_channel(channel)
         chan = self.channels.get(channel)
         if chan and chan.is_playing:
             chan.is_paused = True
@@ -374,6 +391,7 @@ class AudioMixer:
 
     def resume(self, channel: str) -> None:
         """Resume playback on a paused channel."""
+        channel = self.normalize_channel(channel)
         chan = self.channels.get(channel)
         if chan and chan.is_paused:
             chan.is_paused = False
@@ -391,10 +409,16 @@ class AudioMixer:
 
     def set_volume(self, channel: str, volume: float) -> None:
         """Set track volume for a channel."""
+        channel = self.normalize_channel(channel)
         clamped = max(0.0, min(1.0, volume))
         chan = self.channels.get(channel)
         if chan is not None:
             chan.volume = clamped
+            chan.fade_duration = 0.0
+            chan.fade_timer = 0.0
+            chan.fade_start_vol = 0.0
+            chan.fade_target_vol = 0.0
+            chan.stop_on_fade_complete = False
             self.backend.set_volume(channel, self._effective_volume(channel))
 
     def set_master_volume(self, volume: float) -> None:
@@ -405,13 +429,14 @@ class AudioMixer:
 
     def set_channel_volume(self, channel: str, volume: float) -> None:
         """Set type volume for a channel."""
+        channel = self.normalize_channel(channel)
         self.channel_volumes[channel] = max(0.0, min(1.0, volume))
         self.backend.set_volume(channel, self._effective_volume(channel))
 
     def update(self, dt: float) -> None:
         """Process fade automations and pump audio backend."""
         for chan in self.channels.values():
-            if chan.fade_duration > 0.0:
+            if chan.fade_duration > 0.0 and not chan.is_paused:
                 chan.fade_timer += dt
                 progress = min(1.0, chan.fade_timer / chan.fade_duration)
                 new_vol = chan.fade_start_vol + (chan.fade_target_vol - chan.fade_start_vol) * progress
@@ -512,8 +537,7 @@ class AudioMixer:
             was_paused = bool(data.get("is_paused", False))
             self.channels[name] = chan
             if is_same_track and existing is not None:
-                if abs(existing.volume - chan.volume) > 1e-4:
-                    self.backend.set_volume(name, self._effective_volume(name))
+                self.backend.set_volume(name, self._effective_volume(name))
                 if chan.is_paused and not existing.is_paused:
                     self.backend.pause(name)
                 elif not chan.is_paused and existing.is_paused:

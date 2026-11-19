@@ -115,3 +115,36 @@ def test_workspace_index_inlines_scene_include(tmp_path: Path):
     body_texts = [getattr(item, "text", "") for item in index.merged_graph.nodes["prologue"].body]
     assert body_texts == ["Shared intro.", "Main line."]
 
+
+def test_workspace_normalizes_uri_and_merges_cross_file_symbols(tmp_path: Path):
+    from eager_script_lsp.features.diagnostics import compute_diagnostics
+
+    f_a = tmp_path / "a_use.es"
+    f_b = tmp_path / "b_def.es"
+    f_a.write_text("## SceneA --- sa\nHero: Hi\n$ score += 1\n", encoding="utf-8")
+    f_b.write_text('@character hero "Hero Name" happy="smile_1"\n@default score = 0\n## SceneB --- sb\n> sa\n', encoding="utf-8")
+
+    index = WorkspaceIndex(tmp_path)
+    index.initialize()
+
+    # Updating with unnormalized URI (percent-encoded / different form) must not create duplicate doc
+    raw_uri = f_a.as_uri().replace("a_use", "a%5Fuse")
+    index.update_document(raw_uri, f_a.read_text(encoding="utf-8"))
+    assert len(index.documents) == 2
+
+    doc_a = index.get_document(f_a.as_uri())
+    assert doc_a is not None
+    dupes = [d for d in compute_diagnostics(doc_a, index) if "Duplicate scene label" in d.message]
+    assert dupes == []
+
+    # Cross-file character dialogue_lines and variable mutations preserved even though a_use came before b_def
+    hero_sym = index.get_character("hero")
+    assert hero_sym is not None and hero_sym.is_defined and hero_sym.dialogue_lines == 1
+    assert hero_sym.attrs.get("happy") == "smile_1"
+    score_sym = index.get_variable("score")
+    assert score_sym is not None and len(score_sym.mutations) == 1
+
+    # Stale character aliases are cleared when removed from @character
+    index.update_document(f_b.as_uri(), '@character hero "Hero Name"\n@default score = 0\n## SceneB --- sb\n> sa\n')
+    assert "happy" not in index.asset_index.characters.get("hero", set())
+
