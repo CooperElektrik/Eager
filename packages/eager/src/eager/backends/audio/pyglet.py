@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -27,10 +28,12 @@ class PygletAudioBackend:
     Caches StaticSource for short SFX sounds to avoid repeated disk reads and decodes.
     """
 
+    MAX_STATIC_SOURCES: int = 64
+
     def __init__(self) -> None:
         self._players: dict[str, pyglet.media.Player] = {}
         self._loop_points: dict[str, tuple[float | None, float | None]] = {}
-        self._static_sources: dict[str, pyglet.media.Source] = {}
+        self._static_sources: OrderedDict[str, pyglet.media.Source] = OrderedDict()
 
     def play(
         self,
@@ -54,12 +57,14 @@ class PygletAudioBackend:
                     "Failed to release previous player on channel %r: %s", channel, exc
                 )
 
-        is_sfx = not loop or channel in ("sfx", "voice", "ui", "sound")
+        is_sfx = channel in ("sfx", "ui", "sound")
         source: pyglet.media.Source | None = None
 
         if is_sfx:
             source = self._static_sources.get(path_str)
-            if source is None:
+            if source is not None:
+                self._static_sources.move_to_end(path_str)
+            else:
                 try:
                     loaded = pyglet.media.load(path_str, streaming=False)
                     static_src = (
@@ -67,6 +72,8 @@ class PygletAudioBackend:
                         if not isinstance(loaded, pyglet.media.StaticSource)
                         else loaded
                     )
+                    if len(self._static_sources) >= self.MAX_STATIC_SOURCES:
+                        self._static_sources.popitem(last=False)
                     self._static_sources[path_str] = static_src
                     source = static_src
                 except Exception as exc:  # noqa: BLE001
@@ -98,9 +105,9 @@ class PygletAudioBackend:
             player = pyglet.media.Player()
             player.queue(source)
             player.volume = max(0.0, min(1.0, volume))
-            self._loop_points[channel] = (loop_start, loop_end)
 
             if loop:
+                self._loop_points[channel] = (loop_start, loop_end)
                 if loop_start is None and loop_end is None:
                     player.loop = True
                 else:
@@ -110,6 +117,7 @@ class PygletAudioBackend:
                     def on_player_eos() -> None:
                         seek_pos = loop_start if loop_start is not None else 0.0
                         try:
+                            player.queue(source)
                             player.seek(seek_pos)
                             player.play()
                         except Exception as exc:  # noqa: BLE001
@@ -119,6 +127,7 @@ class PygletAudioBackend:
                                 exc,
                             )
             else:
+                self._loop_points.pop(channel, None)
                 player.loop = False
 
             self._players[channel] = player
@@ -197,9 +206,9 @@ class PygletAudioBackend:
             dt: Delta time elapsed in seconds.
         """
         for ch, player in list(self._players.items()):
-            if not player.playing:
+            if not player.playing or ch not in self._loop_points:
                 continue
-            loop_start, loop_end = self._loop_points.get(ch, (None, None))
+            loop_start, loop_end = self._loop_points[ch]
             if loop_end is not None and player.time >= loop_end:
                 seek_pos = loop_start if loop_start is not None else 0.0
                 try:

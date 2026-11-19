@@ -1,5 +1,6 @@
 """Tests for eager.core audio: AudioBackend, NullAudioBackend, and AudioMixer."""
 
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -203,3 +204,41 @@ def test_audio_update_preserves_paused_channel() -> None:
     assert mixer.channels["music"].is_playing is True
     assert mixer.channels["music"].is_paused is False
 
+
+
+def test_audio_mixer_save_state_settles_fades(tmp_path: Path) -> None:
+    from eager.core.audio import AudioMixer, NullAudioBackend
+
+    backend = NullAudioBackend()
+    mixer = AudioMixer(backend=backend, asset_dir=tmp_path)
+    mixer.play("music", "theme.ogg", fade_in=2.0, volume=0.8)
+    mixer.play("ambient", "rain.ogg", fade_in=0.0, volume=0.6)
+    mixer.stop("ambient", fade_out=1.0)
+
+    state = mixer.save_state()
+    music_state = state["channels"]["music"]
+    ambient_state = state["channels"]["ambient"]
+    assert music_state["volume"] == pytest.approx(0.8)
+    assert music_state["fade_duration"] == 0.0
+    assert ambient_state["is_playing"] is False
+    assert ambient_state["current_asset"] is None
+
+
+def test_audio_mixer_resolves_extensionless_and_channel_subdirs(tmp_path: Path) -> None:
+    from eager.core.audio import AudioMixer, NullAudioBackend
+
+    (tmp_path / "audio" / "music").mkdir(parents=True)
+    (tmp_path / "audio" / "voice").mkdir(parents=True)
+    theme = tmp_path / "audio" / "music" / "theme.ogg"
+    line = tmp_path / "audio" / "voice" / "line01.wav"
+    theme.write_bytes(b"OggS")
+    line.write_bytes(b"RIFF")
+
+    backend = NullAudioBackend()
+    mixer = AudioMixer(backend=backend, asset_dir=tmp_path)
+    mixer.play("music", "theme")
+    mixer.play("voice", "line01")
+
+    play_calls = [c for c in backend.calls if c[0] == "play"]
+    assert play_calls[0][2] == str(theme.resolve())
+    assert play_calls[1][2] == str(line.resolve())

@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from eager.script.ast import ParsedChoiceSet, ParsedInclude, ParsedItem
+from eager.script.ast import EagerScriptError, ParsedChoiceSet, ParsedInclude, ParsedItem
 from eager.script.parser import parse
 
 __all__ = [
@@ -17,7 +17,7 @@ __all__ = [
 ]
 
 
-class IncludeError(Exception):
+class IncludeError(EagerScriptError):
     """Raised when an include cannot be resolved, is circular, or violates bounds."""
 
 

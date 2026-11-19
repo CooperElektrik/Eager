@@ -22,6 +22,7 @@ from eager.backends._assets import resolve_visual_asset_candidates, validate_ass
 from eager.backends.audio.pyglet import PygletAudioBackend
 from eager.backends.exceptions import AssetSecurityError, RenderError
 from eager.backends.types import RenderBackend, RenderItem
+from eager.core.assets import IMAGE_EXTENSIONS
 from eager.core.layout import LayoutResolver, ViewportTransform
 from eager.core.types import BLACK, WHITE, Anchor, Color, ScaleMode
 
@@ -45,15 +46,15 @@ class PygletAssetResolver:
             self._index_asset_dir(self.asset_dir)
 
     def _index_asset_dir(self, dir_path: Path) -> None:
-        """Pre-index asset directory once at startup with a single directory walk."""
+        """Pre-index image assets in asset directory once at startup."""
         try:
             for p in dir_path.rglob("*"):
-                if p.is_file():
+                if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS:
                     rel = p.relative_to(dir_path).as_posix()
                     self._asset_index[rel] = p
                     rel_no_ext = Path(rel).with_suffix("").as_posix()
-                    self._asset_index[rel_no_ext] = p
-                    self._asset_index[p.stem] = p
+                    self._asset_index.setdefault(rel_no_ext, p)
+                    self._asset_index.setdefault(p.stem, p)
         except OSError:
             pass
 
@@ -129,9 +130,11 @@ class PygletAssetResolver:
                 except (OSError, ImageDecodeException):
                     pass
 
-        # 2. Missing asset fallback (1x1 solid color)
-        logger.warning("Missing visual asset %r; using solid fallback texture", asset_id)
-        img = pyglet.image.ImageData(1, 1, "RGBA", bytes([48, 56, 72, 255]))
+        # 2. Missing asset fallback (sized to default_width x default_height)
+        w = max(1, int(default_width))
+        h = max(1, int(default_height))
+        logger.warning("Missing visual asset %r; using %dx%d solid fallback texture", asset_id, w, h)
+        img = pyglet.image.ImageData(w, h, "RGBA", bytes([48, 56, 72, 255]) * (w * h))
         tex = self._clamp_texture(img.get_texture())
         self._cache[asset_id] = tex
         return tex
@@ -212,6 +215,7 @@ class PygletRenderer(RenderBackend):
         self._box_pool: list[Box] = []
         self._grad_pool: list[tuple[Rectangle, tuple[tuple[int, int, int, int], tuple[int, int, int, int]] | None]] = []
         self._label_pool: list[Label] = []
+        self._label_groups: list[Group | None] = []
         self._ui_sprite_pool: list[pyglet.sprite.Sprite] = []
 
         self._rect_cursor: int = 0
@@ -815,6 +819,7 @@ class PygletRenderer(RenderBackend):
 
         if self._label_cursor < len(self._label_pool):
             label = self._label_pool[self._label_cursor]
+            last_group = self._label_groups[self._label_cursor]
         else:
             label = Label(
                 text,
@@ -831,7 +836,10 @@ class PygletRenderer(RenderBackend):
                 batch=self._ui_batch,
                 group=group,
             )
+            last_group = group
             self._label_pool.append(label)
+            self._label_groups.append(last_group)
+        idx = self._label_cursor
         self._label_cursor += 1
 
         # Guard property mutations behind equality checks to avoid layout recomputes
@@ -855,8 +863,9 @@ class PygletRenderer(RenderBackend):
             label.anchor_y = pyglet_anchor_y
         if label.color != col_rgba:
             label.color = col_rgba
-        if label.group is not group:
+        if last_group is not group:
             label.group = group
+            self._label_groups[idx] = group
         if not label.visible:
             label.visible = True
 

@@ -32,6 +32,7 @@ from eager.script.ast import (
     ParsedSet,
     ParseError,
 )
+from eager.script.expr import ExprError, compile_expr
 from eager.script.tokens import (
     _TOKEN_PATTERN,
     ParseResult,
@@ -147,6 +148,29 @@ def _parse_label(line: str, line_number: int, start_col: int = 0, end_col: int =
     )
 
 
+def _split_inline_choice(line: str) -> tuple[str, str | None, int, int, int, int] | None:
+    """Split an inline choice line into (raw_text, cond, text_start, text_end, cond_start, cond_end)."""
+    full = re.match(r"^\?\s+(.+?)\s*$", line)
+    if not full:
+        return None
+    cond_match = re.match(r"^\?\s+(.+)\s+if\s+(.+?)\s*$", line)
+    if cond_match:
+        cond = cond_match.group(2).strip()
+        try:
+            compile_expr(cond)
+            return (
+                cond_match.group(1),
+                cond,
+                cond_match.start(1),
+                cond_match.end(1),
+                cond_match.start(2),
+                cond_match.end(2),
+            )
+        except ExprError:
+            pass
+    return (full.group(1), None, full.start(1), full.end(1), 0, 0)
+
+
 def _parse_choice(line: str, line_number: int, start_col: int = 0, end_col: int = 0) -> ParsedChoiceOption:
     """Parse a single choice line.
 
@@ -160,17 +184,17 @@ def _parse_choice(line: str, line_number: int, start_col: int = 0, end_col: int 
         raw_target: str | None = match.group(2).strip()
         condition = match.group(3).strip() if match.group(3) else None
     else:
-        inline_match = CHOICE_INLINE_PATTERN.match(line)
-        if not inline_match:
+        inline_parts = _split_inline_choice(line)
+        if inline_parts is None:
             raise ParseError(
                 "Invalid choice syntax. Expected '? Text (target_label)' or '? Text' with an indented block",
                 line_number,
                 start_col,
                 end_col,
             )
-        text = _unescape(inline_match.group(1).strip())
+        raw_opt_text, condition, _, _, _, _ = inline_parts
+        text = _unescape(raw_opt_text.strip())
         raw_target = None
-        condition = inline_match.group(2).strip() if inline_match.group(2) else None
 
     if not text:
         raise ParseError("Empty choice text", line_number, start_col, end_col)
@@ -266,24 +290,26 @@ class ScreenplayParser:
             first_start = self._choice_buffer[0].start_col
             last_end = self._choice_buffer[-1].end_col
             options: list[ParsedChoiceOption] = []
-            for opt, body in zip(self._choice_buffer, self._choice_bodies):
-                if opt.target is None and not body:
-                    raise ParseError(
-                        f"Invalid choice syntax: option '{opt.text}' needs a '(target)' or an indented block",
-                        opt.line_number,
-                        opt.start_col,
-                        opt.end_col,
-                    )
-                if opt.target is not None and body:
-                    raise ParseError(
-                        f"Choice option '{opt.text}' cannot combine a '(target)' with an indented block",
-                        opt.line_number,
-                        opt.start_col,
-                        opt.end_col,
-                    )
-                options.append(replace(opt, body=tuple(body)) if body else opt)
-            self._choice_buffer.clear()
-            self._choice_bodies.clear()
+            try:
+                for opt, body in zip(self._choice_buffer, self._choice_bodies):
+                    if opt.target is None and not body:
+                        raise ParseError(
+                            f"Invalid choice syntax: option '{opt.text}' needs a '(target)' or an indented block",
+                            opt.line_number,
+                            opt.start_col,
+                            opt.end_col,
+                        )
+                    if opt.target is not None and body:
+                        raise ParseError(
+                            f"Choice option '{opt.text}' cannot combine a '(target)' with an indented block",
+                            opt.line_number,
+                            opt.start_col,
+                            opt.end_col,
+                        )
+                    options.append(replace(opt, body=tuple(body)) if body else opt)
+            finally:
+                self._choice_buffer.clear()
+                self._choice_bodies.clear()
             return [
                 ParsedChoiceSet(
                     options=tuple(options),
@@ -410,30 +436,30 @@ class ScreenplayParser:
                     )
                     emit_expression_spans(self.tokens, line_0, cond, c_start)
             else:
-                m_inline = CHOICE_INLINE_PATTERN.match(clean)
-                if m_inline and m_inline.group(1).strip():
-                    raw_opt_text = m_inline.group(1).strip()
-                    t_start = start_col + m_inline.start(1)
+                inline_parts = _split_inline_choice(clean)
+                if inline_parts and inline_parts[0].strip():
+                    raw_opt_grp, cond_grp, m_t_start, m_t_end, m_c_start, m_c_end = inline_parts
+                    raw_opt_text = raw_opt_grp.strip()
+                    t_start = start_col + m_t_start
                     self.tokens.append(
                         TokenSpan(
-                            "choice_text", line_0, t_start, line_0, start_col + m_inline.end(1), raw_opt_text
+                            "choice_text", line_0, t_start, line_0, start_col + m_t_end, raw_opt_text
                         )
                     )
                     emit_inline_text_spans(self.tokens, line_0, raw_opt_text, t_start)
-                    if m_inline.group(2):
-                        cond = m_inline.group(2).strip()
-                        c_start = start_col + m_inline.start(2)
+                    if cond_grp:
+                        c_start = start_col + m_c_start
                         self.tokens.append(
                             TokenSpan(
                                 "choice_condition",
                                 line_0,
                                 c_start,
                                 line_0,
-                                start_col + m_inline.end(2),
-                                cond,
+                                start_col + m_c_end,
+                                cond_grp,
                             )
                         )
-                        emit_expression_spans(self.tokens, line_0, cond, c_start)
+                        emit_expression_spans(self.tokens, line_0, cond_grp, c_start)
         return _parse_choice(clean, idx, start_col=start_col, end_col=end_col)
 
     def _parse_prefixed(
@@ -1012,6 +1038,22 @@ class ScreenplayParser:
             end_col = start_col + len(clean)
             c0 = clean[0]
 
+            # ── Flush choices before processing non-choice lines ──────
+            if c0 != "?" and self._choice_buffer:
+                try:
+                    yield from self._flush_choices()
+                except ParseError as pe:
+                    if self.recovery:
+                        yield ParsedError(
+                            message=str(pe),
+                            line_number=pe.line_number,
+                            line_text=clean,
+                            start_col=getattr(pe, "start_col", start_col),
+                            end_col=getattr(pe, "end_col", end_col),
+                        )
+                    else:
+                        raise
+
             try:
                 # ── Choice (?) ──────────────────────────────────────────
                 if c0 == "?":
@@ -1070,11 +1112,9 @@ class ScreenplayParser:
                             )
                         self._choice_buffer.append(choice_opt)
                         self._choice_bodies.append([])
+                        if leading_blanks:
+                            yield from self._flush_choices()
                     continue
-
-                # ── Flush choices before processing non-choice lines ──
-                if self._choice_buffer:
-                    yield from self._flush_choices()
 
                 # ── Prefixed control lines (## >> << > ~ - / $ @) ─────
                 if c0 in "#><~-/$@":

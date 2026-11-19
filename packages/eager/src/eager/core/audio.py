@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, TypedDict, cast
 
+from eager.core.assets import AssetKind, AssetReference, resolve_candidate_paths
 from eager.core.exceptions import AudioError
 
 __all__ = [
@@ -242,20 +243,29 @@ class AudioMixer:
         self.channel_volumes: dict[str, float] = {name: 1.0 for name in self.STANDARD_CHANNELS}
         self._serial_counter: int = 0
 
-    def _resolve_asset(self, asset_path: str) -> Path | str:
+    def _resolve_asset(self, asset_path: str, channel: str | None = None) -> Path | str:
         """Resolve audio file relative to asset_dir if configured."""
         if self.asset_dir is not None:
             resolved_base = self.asset_dir.resolve()
-            cand = (self.asset_dir / asset_path).resolve()
-            if not cand.is_relative_to(resolved_base):
+            raw_cand = (self.asset_dir / asset_path).resolve()
+            if not raw_cand.is_relative_to(resolved_base):
                 raise AudioError(f"Path traversal detected in audio asset path: {asset_path}")
-            if cand.exists():
-                return cand
-            audio_cand = (self.asset_dir / "audio" / asset_path).resolve()
-            if not audio_cand.is_relative_to(resolved_base):
-                raise AudioError(f"Path traversal detected in audio asset path: {asset_path}")
-            if audio_cand.exists():
-                return audio_cand
+
+            candidates: list[str] = [asset_path, f"audio/{asset_path}"]
+            if channel:
+                candidates.extend([f"{channel}/{asset_path}", f"audio/{channel}/{asset_path}"])
+            kind = AssetKind.VOICE if channel == "voice" else AssetKind.AUDIO
+            candidates.extend(
+                resolve_candidate_paths(
+                    AssetReference(kind=kind, identifier=asset_path, channel=channel, line_number=0)
+                )
+            )
+            for rel_cand in candidates:
+                cand = (self.asset_dir / rel_cand).resolve()
+                if not cand.is_relative_to(resolved_base):
+                    raise AudioError(f"Path traversal detected in audio asset path: {asset_path}")
+                if cand.is_file():
+                    return cand
         return asset_path
 
     def _effective_volume(self, channel: str) -> float:
@@ -316,7 +326,7 @@ class AudioMixer:
             chan.fade_target_vol = 0.0
         chan.stop_on_fade_complete = False
 
-        resolved = self._resolve_asset(asset_path)
+        resolved = self._resolve_asset(asset_path, channel=channel)
         initial_vol = self._effective_volume(channel)
         self.backend.play(
             channel,
@@ -423,11 +433,27 @@ class AudioMixer:
         self.backend.shutdown()
 
     def save_state(self) -> AudioMixerSaveState:
-        """Save mixer state for checkpoints and saves."""
+        """Save mixer state for checkpoints and saves, settling active fades."""
+        channels_dict: dict[str, dict[str, object]] = {}
+        for name, chan in self.channels.items():
+            chan_data = chan.to_dict()
+            if chan.fade_duration > 0.0:
+                if chan.stop_on_fade_complete:
+                    chan_data["is_playing"] = False
+                    chan_data["current_asset"] = None
+                    chan_data["volume"] = 0.0
+                else:
+                    chan_data["volume"] = chan.fade_target_vol
+                chan_data["fade_timer"] = 0.0
+                chan_data["fade_duration"] = 0.0
+                chan_data["fade_start_vol"] = 0.0
+                chan_data["fade_target_vol"] = 0.0
+                chan_data["stop_on_fade_complete"] = False
+            channels_dict[name] = chan_data
         result: AudioMixerSaveState = {
             "master_volume": self.master_volume,
             "channel_volumes": dict(self.channel_volumes),
-            "channels": {name: chan.to_dict() for name, chan in self.channels.items()},
+            "channels": channels_dict,
             "serial_counter": self._serial_counter,
         }
         return result

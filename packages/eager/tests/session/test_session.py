@@ -484,18 +484,19 @@ Alice: Line 3
     # 1. Initially seen_beats should be empty
     assert session.persistent.get("seen_beats") is None
 
-    # Advance through Line 1
+    # Advance through Line 1 (unread on first playthrough)
     ev1 = session.advance()
     assert isinstance(ev1, DialogueEvent)
     seen1 = session.persistent.get("seen_beats")
     assert isinstance(seen1, list)
-    assert len(seen1) == 2  # SceneEnter + Line 1
-    assert session.is_current_beat_read() is True
+    assert len(seen1) == 1  # Interactive Line 1 only
+    assert session.is_current_beat_read() is False
 
-    # 2. Advance through Line 2
+    # 2. Advance through Line 2 and flush persistent state (e.g. on quit/exit)
     ev2 = session.advance()
     assert isinstance(ev2, DialogueEvent)
-    assert len(session.persistent["seen_beats"]) == 3
+    assert len(session.persistent["seen_beats"]) == 2
+    session.persistent.save()
 
     # 3. Create a fresh session with same persistent data (playthrough 2)
     # Line 1 and 2 are seen, but Line 3 has not been seen yet
@@ -516,10 +517,12 @@ Alice: Line 3
     # But Line 3 was NOT seen previously in session.persistent!
     # Therefore skip_mode must automatically drop out at Line 3!
     assert session2.director.ui_state.text == "Line 3"
+    assert session2.is_current_beat_read() is False
     assert session2.skip_mode is False
 
     # 4. Now Line 3 has been recorded into seen_beats
-    assert len(session2.persistent["seen_beats"]) == 4
+    assert len(session2.persistent["seen_beats"]) == 3
+    session2.advance()  # Finishes story and flushes persistent.save()
 
     # 5. Playthrough 3: with all lines now seen, skip mode should skip through to the end
     session3 = GameSession(script_file, save_dir=save_dir)
@@ -1279,3 +1282,54 @@ def test_quit_action_works_on_active_screen_and_fullscreen_not_double_toggled(tm
     assert session.screens.is_active is True
     assert session.handle_input(InputAction.QUIT) is True
     assert quit_calls == 1
+
+
+def test_session_save_dir_per_project_and_modal_pause_and_restart(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg_data"))
+    proj_a = tmp_path / "proj_a"
+    proj_b = tmp_path / "proj_b"
+    proj_a.mkdir()
+    proj_b.mkdir()
+    (proj_a / "main.es").write_text("## Start --- start\nAlice: A1\nAlice: A2\n<<\n", encoding="utf-8")
+    (proj_b / "main.es").write_text("## Start --- start\nAlice: B1\n<<\n", encoding="utf-8")
+
+    # H1: Projects with main.es must not share ~/.local/share/eager/main/
+    sess_a = GameSession(proj_a, config=SimpleNamespace(title="Project Alpha", entry_script="main.es"))
+    sess_b = GameSession(proj_b, config=SimpleNamespace(title="", entry_script="main.es"))
+    assert sess_a.save_manager.save_dir != sess_b.save_manager.save_dir
+    assert sess_a.save_manager.save_dir.name == "project_alpha"
+    assert sess_b.save_manager.save_dir.name == "proj_b"
+
+    # H2: Restoring checkpoint preserves user audio volume preferences
+    sess_a.advance()
+    sess_a.preferences.master_volume = 0.25
+    sess_a.apply_preferences()
+    sess_a.advance()
+    assert sess_a.rollback() is True
+    assert sess_a.audio.master_volume == pytest.approx(0.25)
+
+    # H3: Modal screen or title mode pauses playtime and auto/skip progression
+    sess_a.mode = "title"
+    playtime_before = sess_a.playtime
+    sess_a.update(1.5)
+    assert sess_a.playtime == pytest.approx(playtime_before)
+
+    sess_a.mode = "game"
+    sess_a.screens.show("game_menu", sess_a)
+    sess_a.auto_mode = True
+    sess_a.update(5.0)
+    assert sess_a.playtime == pytest.approx(playtime_before)
+    assert sess_a.director.ui_state.text == "A1"
+    sess_a.screens.hide(sess_a)
+
+    # H11: restart_story resets ui_state.is_finished and _playtime
+    sess_a.update(2.0)
+    assert sess_a.playtime == pytest.approx(2.0)
+    while not sess_a.is_finished:
+        sess_a.advance()
+    assert sess_a.director.ui_state.is_finished is True
+    sess_a.restart_story()
+    assert sess_a.director.ui_state.is_finished is False
+    assert sess_a.playtime == pytest.approx(0.0)

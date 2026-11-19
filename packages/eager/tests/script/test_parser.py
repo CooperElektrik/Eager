@@ -898,3 +898,42 @@ def test_parse_with_tokens_inline_block_and_recovery() -> None:
     assert len(errors) == 1
     assert errors[0].line_number == 4
 
+
+
+def test_parser_choice_edge_cases_and_recovery_cascade() -> None:
+    # 1. Blank lines between choice options split them into separate ParsedChoiceSet items
+    script_blanks = (
+        "## Start --- start\n"
+        "? First (a)\n"
+        "\n"
+        "? Second (b)\n"
+    )
+    items_blanks = parse(script_blanks)
+    choice_sets = [it for it in items_blanks if isinstance(it, ParsedChoiceSet)]
+    assert len(choice_sets) == 2
+
+    # 2. Recovery mode must not cascade forever after an indented comment under an empty '?'
+    script_recovery = (
+        "## Start --- start\n"
+        "? Broken option\n"
+        "    # indented comment\n"
+        "Alice: Next line should still parse\n"
+    )
+    recovered = parse(script_recovery, recovery=True)
+    errors = [it for it in recovered if isinstance(it, ParsedError)]
+    dialogues = [it for it in recovered if isinstance(it, ParsedDialogue)]
+    assert len(errors) == 1
+    assert len(dialogues) == 1
+    assert dialogues[0].text == "Next line should still parse"
+
+    # 3. English 'if' inside choice prose must not be hijacked as a condition
+    script_prose = (
+        "## Start --- start\n"
+        "? Ask if she is okay\n"
+        "    Alice: I'm fine.\n"
+    )
+    prose_items = parse(script_prose)
+    prose_choices = [it for it in prose_items if isinstance(it, ParsedChoiceSet)]
+    assert len(prose_choices) == 1
+    assert prose_choices[0].options[0].text == "Ask if she is okay"
+    assert prose_choices[0].options[0].condition is None

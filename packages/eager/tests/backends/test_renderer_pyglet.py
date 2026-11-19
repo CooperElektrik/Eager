@@ -38,8 +38,8 @@ def test_pyglet_asset_resolver_placeholders() -> None:
     # 1. Background fallback
     bg_tex = resolver.get_texture("bg/castle_gate")
     assert bg_tex is not None
-    assert bg_tex.width == 1
-    assert bg_tex.height == 1
+    assert bg_tex.width == 400
+    assert bg_tex.height == 800
 
     # Cache should return exact same instance
     assert resolver.get_texture("bg/castle_gate") is bg_tex
@@ -47,8 +47,8 @@ def test_pyglet_asset_resolver_placeholders() -> None:
     # 2. Character fallback
     char_tex = resolver.get_texture("alice/cheerful", default_width=400, default_height=800)
     assert char_tex is not None
-    assert char_tex.width == 1
-    assert char_tex.height == 1
+    assert char_tex.width == 400
+    assert char_tex.height == 800
     assert resolver.get_texture("alice/cheerful") is char_tex
 
     # Different asset_id should yield different texture

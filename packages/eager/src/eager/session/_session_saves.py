@@ -34,6 +34,7 @@ def restore_checkpoint(session: GameSession, checkpoint: Checkpoint) -> None:
     session.vm.load(snap)
     session.director.load_visual_state(checkpoint.visual)
     session.audio.load_state(checkpoint.audio)
+    session.apply_preferences()
     session.director.restore_ui_state(checkpoint.ui)
     session.director.ui_state.visible_chars = None
     session.text_reveal = None
@@ -47,6 +48,15 @@ def restore_checkpoint(session: GameSession, checkpoint: Checkpoint) -> None:
     session.active_choice_prompt = session.vm.pending_choice
     session.is_finished = session.vm.is_ended
     session.mode = "ended" if session.is_finished else "game"
+
+    scene_id = session.vm.current_scene_id
+    if scene_id is not None:
+        beat_key = f"{scene_id}:{session.vm.beat_index}"
+        session._last_beat_key = beat_key
+        session._current_beat_previously_seen = beat_key in session._seen_beats_set
+    else:
+        session._last_beat_key = None
+        session._current_beat_previously_seen = False
 
     session.notify_state_restored()
 

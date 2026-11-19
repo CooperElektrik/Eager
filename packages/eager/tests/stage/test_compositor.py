@@ -367,3 +367,41 @@ def test_snapshot_serialization_with_extreme_values() -> None:
     assert restored_elem.state.rotation == 1440.5
 
 
+
+
+def test_compositor_overlapping_transitions_and_z_cache() -> None:
+    comp = StageCompositor(1920, 1080)
+
+    # Overlapping smooth backgrounds should not delete the newer incoming background
+    comp.set_background("bg/a", transition="crossfade", duration=1.0)
+    comp.timeline.update(0.2)
+    comp.set_background("bg/b", transition="crossfade", duration=1.0)
+    comp.timeline.update(1.1)
+
+    bg_layer = comp.stage.get_layer("background")
+    assert bg_layer is not None
+    main_bg = bg_layer.get_element("bg_main")
+    assert main_bg is not None
+    assert main_bg.asset_id == "bg/b"
+    assert bg_layer.get_element("bg_incoming") is None
+
+    # clear_background followed by set_background should not wipe the new background
+    comp.clear_background(transition="fade", duration=1.0)
+    comp.set_background("bg/c", transition="cut")
+    comp.timeline.update(1.1)
+    main_bg = bg_layer.get_element("bg_main")
+    assert main_bg is not None
+    assert main_bg.asset_id == "bg/c"
+
+    # show_element after hide_element cancels removal tween and invalidates z-sort cache
+    comp.show_element("foreground", "prop_a", "a.png", z_index=10, duration=0.0)
+    comp.show_element("foreground", "prop_b", "b.png", z_index=20, duration=0.0)
+    fg = comp.stage.get_layer("foreground")
+    assert fg is not None
+    assert [e.element_id for e in fg.get_sorted_elements()] == ["prop_a", "prop_b"]
+
+    comp.hide_element("foreground", "prop_a", duration=1.0)
+    comp.show_element("foreground", "prop_a", "a.png", z_index=30, duration=0.0)
+    comp.timeline.update(1.1)
+    assert fg.get_element("prop_a") is not None
+    assert [e.element_id for e in fg.get_sorted_elements()] == ["prop_b", "prop_a"]

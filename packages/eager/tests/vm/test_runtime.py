@@ -735,3 +735,18 @@ The end.
     assert getattr(ev_second, "text", None) == "Already saw ending!"
 
 
+
+
+def test_vm_load_preserves_is_ended() -> None:
+    graph = eager.script.parse_graph("## Start --- start\nHello.\n<<\n")
+    vm = StoryVM(graph)
+    while vm.step() is not None:
+        pass
+    assert vm.is_ended is True
+
+    snap = vm.save()
+    assert snap.is_ended is True
+
+    vm2 = StoryVM(graph)
+    vm2.load(snap)
+    assert vm2.is_ended is True

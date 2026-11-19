@@ -78,3 +78,10 @@ def test_to_graph_ignores_parsed_include():
     graph = parse_graph('@include "other.es"\n## Start --- start\nHello\n<<\n')
     assert not any(isinstance(item, ParsedInclude) for item in graph.preamble)
     assert not any(isinstance(item, ParsedInclude) for item in graph.nodes["start"].body)
+
+
+def test_include_error_inherits_from_eager_script_error() -> None:
+    from eager.script.ast import EagerScriptError
+    from eager.script.includes import IncludeError
+
+    assert issubclass(IncludeError, EagerScriptError)

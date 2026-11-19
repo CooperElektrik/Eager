@@ -405,7 +405,7 @@ class StoryVM:
         self._just_entered_scene = snapshot.just_entered_scene
         self._preamble_index = snapshot.preamble_index
         self._preamble_done = snapshot.preamble_done
-        self._is_ended = False
+        self._is_ended = snapshot.is_ended
 
         # If saved while waiting on a choice prompt, re-materialize the ChoicePromptEvent
         if snapshot.pending_choice_beat is not None and self._current_scene_id is not None:

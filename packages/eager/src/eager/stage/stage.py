@@ -207,6 +207,10 @@ class Layer:
         self.elements.clear()
         self._sorted_cache = None
 
+    def invalidate_sort_cache(self) -> None:
+        """Invalidate cached z-index sort order after element z-index mutations."""
+        self._sorted_cache = None
+
     def get_sorted_elements(self) -> list[StageElement]:
         """Return elements sorted by their internal z-index (cached until structure changes)."""
         if self._sorted_cache is None:

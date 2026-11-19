@@ -84,6 +84,7 @@ class StageDirector:
         self.compositor.clear()
         self.ui_state.clear_dialogue()
         self.ui_state.clear_choices()
+        self.ui_state.is_finished = False
 
     def save_ui_state(self) -> dict[str, Any]:
         """Serialize current UI state."""
@@ -172,7 +173,12 @@ class StageDirector:
         duration: float = 0.5,
     ) -> None:
         """Map a scene ID to automatically trigger a background change on SceneEnterEvent."""
-        self.scene_backgrounds[scene_id] = (asset_id, transition, duration)
+        normalized_id = (
+            f"bg/{asset_id}"
+            if "/" not in asset_id and not asset_id.startswith(("bg/", "backgrounds/"))
+            else asset_id
+        )
+        self.scene_backgrounds[scene_id] = (normalized_id, transition, duration)
 
     def bind(self, dispatcher: _EventDispatcherLike) -> None:
         """Register hook handlers and event listeners on an Eager EventDispatcher."""
@@ -246,9 +252,11 @@ class StageDirector:
 
     def handle_scene(self, args: str) -> None:
         """Handle `~ scene asset_name [with transition] [duration=X]`: clears characters and sets background."""
-        # Clear all character sprites
+        # Clear all character sprites after canceling any active character tweens
         char_layer = self.compositor.stage.get_layer("characters")
         if char_layer:
+            for elem in list(char_layer.elements.values()):
+                self.compositor.timeline.cancel_tweens_for(elem.state)
             char_layer.clear()
         # Set background
         self.handle_bg(args)

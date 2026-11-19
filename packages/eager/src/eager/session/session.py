@@ -13,6 +13,7 @@ from eager.core.events import (
     FreshBoxEvent,
     NarrationEvent,
     SceneEnterEvent,
+    SceneExitEvent,
     StoryEndEvent,
     StoryEvent,
 )
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
 
 from eager.script.graph import to_graph
 from eager.script.includes import resolve_includes
-from eager.script.parser import parse
+from eager.script.parser import parse, slugify
 from eager.session._session_bootstrap import (
     create_default_screens,
     create_default_stage,
@@ -69,6 +70,23 @@ from eager.vm.runtime import StoryVM
 __all__ = [
     "GameSession",
 ]
+
+
+def _resolve_save_game_id(config: Any, script_path: Path | None) -> str:
+    """Derive a per-project save folder name from config title or project directory."""
+    title = getattr(config, "title", None)
+    if isinstance(title, str) and title.strip():
+        slug = slugify(title)
+        if slug:
+            return slug
+    if script_path is not None:
+        entry_script = getattr(config, "entry_script", None)
+        if script_path.name == "main.es" or entry_script == "main.es":
+            parent_slug = slugify(script_path.parent.resolve().name)
+            if parent_slug:
+                return parent_slug
+        return slugify(script_path.stem) or script_path.stem
+    return "default"
 
 
 class GameSession:
@@ -145,9 +163,14 @@ class GameSession:
         resolved_save_dir = (
             self._custom_save_dir
             if self._custom_save_dir is not None
-            else get_default_save_dir(self.script_path.stem if self.script_path else "default")
+            else get_default_save_dir(_resolve_save_game_id(config, self.script_path))
         )
         self.persistent = PersistentData(resolved_save_dir / "persistent.json")
+        raw_seen = self.persistent.get("seen_beats")
+        self._seen_beats_set: set[str] = (
+            {str(item) for item in raw_seen} if isinstance(raw_seen, (list, set, tuple)) else set()
+        )
+        self._persistent_dirty: bool = False
         self.preferences = Preferences.load(resolved_save_dir / "preferences.json")
         self.save_manager = SaveManager(resolved_save_dir)
 
@@ -242,8 +265,15 @@ class GameSession:
             self.preferences.fullscreen = not prev_fs
             self.save_preferences()
 
+    def _flush_persistent(self) -> None:
+        """Persist dirty persistent data (e.g. seen_beats) to disk."""
+        if self._persistent_dirty:
+            self.persistent.save()
+            self._persistent_dirty = False
+
     def request_quit(self) -> bool:
         """Autosave if enabled and notify registered host listeners to terminate."""
+        self._flush_persistent()
         if getattr(self.preferences, "autosave_enabled", True) and self.has_started:
             cp = self.checkpoints.get_latest() or self._capture_checkpoint()
             self.save_manager.autosave(cp, playtime_seconds=self._playtime)
@@ -383,26 +413,30 @@ class GameSession:
             self.dispatcher.dispatch(event)
             self._last_event = event
 
-            # Record (scene_id, beat_index) into persistent seen_beats
-            scene_id = self.vm.current_scene_id
-            if scene_id is not None:
-                beat_key = f"{scene_id}:{self.vm.beat_index}"
-                self._last_beat_key = beat_key
-                seen_beats = self.persistent.get("seen_beats")
-                if not isinstance(seen_beats, list):
-                    seen_beats = []
-                    self.persistent["seen_beats"] = seen_beats
-                self._current_beat_previously_seen = beat_key in seen_beats
-                if not self._current_beat_previously_seen:
-                    seen_beats.append(beat_key)
-                    self.persistent.save()
-            else:
-                self._last_beat_key = None
-                self._current_beat_previously_seen = False
-
             self._record_backlog_event(event)
 
+            if isinstance(event, SceneExitEvent):
+                self._flush_persistent()
+
             if event.type in self.INTERACTION_TYPES:
+                # Record (scene_id, beat_index) into persistent seen_beats for interactive beats
+                scene_id = self.vm.current_scene_id
+                if scene_id is not None:
+                    beat_key = f"{scene_id}:{self.vm.beat_index}"
+                    self._last_beat_key = beat_key
+                    seen_beats = self.persistent.get("seen_beats")
+                    if not isinstance(seen_beats, list):
+                        seen_beats = list(self._seen_beats_set)
+                        self.persistent["seen_beats"] = seen_beats
+                    self._current_beat_previously_seen = beat_key in self._seen_beats_set
+                    if not self._current_beat_previously_seen:
+                        self._seen_beats_set.add(beat_key)
+                        seen_beats.append(beat_key)
+                        self._persistent_dirty = True
+                else:
+                    self._last_beat_key = None
+                    self._current_beat_previously_seen = False
+
                 if event.type in ("dialogue", "narration", "fresh_box"):
                     self._setup_text_reveal(getattr(event, "text", ""))
                 elif event.type == "append":
@@ -423,6 +457,7 @@ class GameSession:
                 elif isinstance(event, StoryEndEvent):
                     self.is_finished = True
                     self.mode = "ended"
+                    self._flush_persistent()
 
                 cp = self._capture_checkpoint()
                 self.checkpoints.push(cp)
@@ -437,6 +472,7 @@ class GameSession:
         if self.vm.is_ended:
             self.is_finished = True
             self.mode = "ended"
+            self._flush_persistent()
             cp = self._capture_checkpoint()
             self.checkpoints.push(cp)
             if getattr(self.preferences, "autosave_enabled", True) and not self.skip_mode:
@@ -507,6 +543,7 @@ class GameSession:
         self.backlog.clear()
         self.is_finished = False
         self.mode = "game"
+        self._playtime = 0.0
         self.skip_mode = False
         self._skip_timer = 0.0
         self.auto_mode = False
@@ -524,6 +561,7 @@ class GameSession:
 
     def return_to_title(self) -> bool:
         """Halt story execution and return to the main TitleScreen."""
+        self._flush_persistent()
         self.audio.stop_all()
         self.skip_mode = False
         self._skip_timer = 0.0
@@ -535,30 +573,30 @@ class GameSession:
 
     def is_current_beat_read(self) -> bool:
         """Return True if the current beat was already seen in a previous playthrough."""
-        if not self._last_beat_key:
-            return False
-        seen_beats = self.persistent.get("seen_beats")
-        if isinstance(seen_beats, (list, set, tuple)):
-            return self._last_beat_key in seen_beats
-        return False
+        return self._current_beat_previously_seen
 
     def update(self, dt: float) -> None:
         """Update animation timelines, compositor, audio, typewriter reveal, timers, and playtime."""
-        if dt > 0.0:
-            self._playtime += dt
+        safe_dt = max(0.0, dt)
+        self.audio.update(safe_dt)
 
-        self.director.step(dt)
-        self.audio.update(dt)
+        if bool(getattr(self.screens, "is_active", False)) or self.mode == "title":
+            return
+
+        if safe_dt > 0.0:
+            self._playtime += safe_dt
+
+        self.director.step(safe_dt)
 
         if self.text_reveal is not None and not self.text_reveal.is_complete:
-            self.text_reveal.update(dt)
+            self.text_reveal.update(safe_dt)
             if self.text_reveal.is_complete:
                 self.director.ui_state.visible_chars = None
             else:
                 self.director.ui_state.visible_chars = int(self.text_reveal.visible_chars)
 
         if hasattr(self.overlay, "update_toast"):
-            self.overlay.update_toast(dt)
+            self.overlay.update_toast(safe_dt)
 
         if self.skip_mode and not self.is_finished:
             if self.text_reveal is not None:
@@ -567,17 +605,21 @@ class GameSession:
             if self.active_choice_prompt is not None:
                 self.skip_mode = False
             else:
-                self._skip_timer += dt
+                self._skip_timer += safe_dt
                 step_interval = getattr(self, "skip_interval", 0.03)
                 if step_interval <= 0.0:
                     step_interval = 0.001
+                max_skip_per_frame = 32
+                advances = 0
                 while (
                     self.skip_mode
                     and not self.is_finished
                     and self.active_choice_prompt is None
                     and self._skip_timer >= step_interval
+                    and advances < max_skip_per_frame
                 ):
                     self._skip_timer -= step_interval
+                    advances += 1
                     if not getattr(self.preferences, "skip_unseen", False) and not self._current_beat_previously_seen:
                         self.skip_mode = False
                         break
@@ -586,6 +628,8 @@ class GameSession:
                     if not getattr(self.preferences, "skip_unseen", False) and not self._current_beat_previously_seen:
                         self.skip_mode = False
                         break
+                if advances >= max_skip_per_frame and self._skip_timer >= step_interval:
+                    self._skip_timer = step_interval * 0.5
         elif (
             self.auto_mode
             and not self.is_finished
@@ -594,7 +638,7 @@ class GameSession:
             reveal_done = self.text_reveal is None or self.text_reveal.is_complete
             voice_playing = self.audio.is_playing("voice")
             if reveal_done and not voice_playing:
-                self.auto_timer += dt
+                self.auto_timer += safe_dt
                 base_time = float(getattr(self.preferences, "auto_forward_time", 3.0))
                 cur_text = self.director.ui_state.text or ""
                 extra_pause = min(2.0, len(cur_text) * 0.02)

@@ -92,7 +92,22 @@ class StageCompositor:
             bg_layer.add_element(new_elem)
             return
 
-        # Smooth transitions
+        # Smooth transitions: cancel any in-flight background tweens first
+        self.timeline.cancel_tweens_for(bg_layer)
+        for elem in list(bg_layer.elements.values()):
+            self.timeline.cancel_tweens_for(elem.state)
+
+        existing_incoming = bg_layer.get_element("bg_incoming")
+        if existing_incoming is not None:
+            bg_layer.remove_element("bg_incoming")
+            for old_id in list(bg_layer.elements):
+                bg_layer.remove_element(old_id)
+            existing_incoming.element_id = "bg_main"
+            existing_incoming.state.z_index = 0
+            existing_incoming.state.opacity = 1.0
+            existing_incoming.state.position = bg_pos
+            bg_layer.add_element(existing_incoming)
+
         old_elems = list(bg_layer.elements.values())
 
         is_slide = trans_kind in (
@@ -209,6 +224,7 @@ class StageCompositor:
                 bg_layer.clear()
 
         for elem in list(bg_layer.elements.values()):
+            self.timeline.cancel_tweens_for(elem.state)
             self.timeline.add_tween(
                 target=elem.state,
                 property_name="opacity",
@@ -266,7 +282,9 @@ class StageCompositor:
             existing.asset_id = asset_id
             existing.state.flip_h = flip_h
             existing.state.flip_v = flip_v
-            existing.state.z_index = z_index
+            if existing.state.z_index != z_index:
+                existing.state.z_index = z_index
+                char_layer.invalidate_sort_cache()
             existing.state.scale = scale_vec
             existing.state.rotation = rotation
             existing.state.tint = tint
@@ -503,10 +521,13 @@ class StageCompositor:
             elem = StageElement(element_id=element_id, state=state)
             st_layer.add_element(elem)
         else:
+            self.timeline.cancel_tweens_for(elem.state)
             elem.asset_id = asset_id
             elem.state.anchor = anchor
             elem.state.tint = tint
-            elem.state.z_index = z_index
+            if elem.state.z_index != z_index:
+                elem.state.z_index = z_index
+                st_layer.invalidate_sort_cache()
 
         if duration > 0.0:
             self.timeline.add_tween(
@@ -641,6 +662,9 @@ class StageCompositor:
     ) -> None:
         """Trigger an instant full-screen flash that quickly decays to transparent."""
         overlay_layer = self.stage.get_or_create_layer("overlay", z_order=400)
+        existing_flash = overlay_layer.get_element("__screen_flash__")
+        if existing_flash is not None:
+            self.timeline.cancel_tweens_for(existing_flash.state)
         flash_color = color if color is not None else WHITE
         elem = StageElement(
             element_id="__screen_flash__",

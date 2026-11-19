@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -29,9 +29,15 @@ class EdgeKind(str, Enum):
     CHOICE = "choice"
 
 
-def _anon_scene_id(scene_id: str, line_number: int) -> str:
-    """Build the stable id of an anonymous scene lowered from an inline choice block."""
-    return f"{scene_id}__anon_{line_number}"
+def _anon_scene_id(scene_id: str, line_number: int, existing_nodes: Mapping[str, SceneNode] | None = None) -> str:
+    """Build a unique id for an anonymous scene lowered from an inline choice block."""
+    base = f"{scene_id}__anon_{line_number}"
+    if not existing_nodes or base not in existing_nodes:
+        return base
+    counter = 2
+    while f"{base}_{counter}" in existing_nodes:
+        counter += 1
+    return f"{base}_{counter}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -362,7 +368,7 @@ def _process_scene_body(
                 if active:
                     opt_cond = f"{active} and ({opt.condition})" if opt.condition else active
                 if opt.body:
-                    anon_id = _anon_scene_id(scene_id, opt.line_number)
+                    anon_id = _anon_scene_id(scene_id, opt.line_number, nodes)
                     edges.append(
                         SceneEdge(scene_id, anon_id, EdgeKind.CHOICE, opt.text, opt.line_number, condition=opt_cond)
                     )
