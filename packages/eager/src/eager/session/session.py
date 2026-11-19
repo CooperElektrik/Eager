@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -66,6 +67,8 @@ from eager.session._session_saves import (
     take_screenshot as _take_screenshot,
 )
 from eager.vm.runtime import StoryVM
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "GameSession",
@@ -173,6 +176,12 @@ class GameSession:
         self._persistent_dirty: bool = False
         self.preferences = Preferences.load(resolved_save_dir / "preferences.json")
         self.save_manager = SaveManager(resolved_save_dir)
+        logger.debug(
+            "Initialized GameSession (backend=%r, save_dir=%s, asset_dir=%s)",
+            self.backend,
+            resolved_save_dir,
+            self.asset_dir,
+        )
 
         if isinstance(project_or_script, StoryVM):
             self.vm = project_or_script
@@ -531,6 +540,7 @@ class GameSession:
 
     def restart_story(self) -> StoryEvent | None:
         """Reset the session to the beginning of the screenplay and advance the initial beat."""
+        logger.info("Restarting story session")
         self.vm = StoryVM(
             self.graph,
             persistent=self.persistent,
@@ -561,6 +571,7 @@ class GameSession:
 
     def return_to_title(self) -> bool:
         """Halt story execution and return to the main TitleScreen."""
+        logger.info("Returning to title screen")
         self._flush_persistent()
         self.audio.stop_all()
         self.skip_mode = False

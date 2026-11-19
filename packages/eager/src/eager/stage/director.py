@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any, Protocol, overload
 
@@ -23,6 +24,8 @@ from eager.core.types import BLACK, WHITE, Color
 from eager.core.ui_state import UIState
 from eager.script.hooks import HookArgs, parse_hook_args
 from eager.stage.compositor import StageCompositor
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "CharacterConfig",
@@ -81,6 +84,7 @@ class StageDirector:
 
     def clear_stage(self) -> None:
         """Clear all stage compositor elements, sprite state, and dialogue UI."""
+        logger.debug("Clearing stage and resetting UI state")
         self.compositor.clear()
         self.ui_state.clear_dialogue()
         self.ui_state.clear_choices()
@@ -735,6 +739,7 @@ class StageDirector:
         scene_id = event.scene_id
         if scene_id and scene_id in self.scene_backgrounds:
             asset_id, trans, dur = self.scene_backgrounds[scene_id]
+            logger.debug("Applying scene_bg %r for scene %r", asset_id, scene_id)
             self.compositor.set_background(asset_id, transition=trans, duration=dur)
 
     def handle_scene_exit_event(self, event: SceneExitEvent) -> None:

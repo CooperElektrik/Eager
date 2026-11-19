@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "ProjectConfig",
@@ -28,7 +31,9 @@ class ProjectConfig:
     def load(cls, toml_path: Path) -> ProjectConfig:
         """Load and parse game.toml configuration file."""
         if not toml_path.exists():
+            logger.debug("Project config %s not found; using defaults", toml_path)
             return cls()
+        logger.debug("Loading project config from %s", toml_path)
         with open(toml_path, "rb") as f:
             data = tomllib.load(f)
 

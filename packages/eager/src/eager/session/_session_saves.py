@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import datetime
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -11,6 +12,8 @@ from eager.core.state import Checkpoint, StorySnapshot
 
 if TYPE_CHECKING:
     from eager.session.session import GameSession
+
+logger = logging.getLogger(__name__)
 
 
 def capture_checkpoint(session: GameSession) -> Checkpoint:
@@ -94,6 +97,7 @@ def take_screenshot(
 
 def save_game(session: GameSession, slot_name: str) -> Any:
     """Save current checkpoint to named slot."""
+    logger.info("Saving game to slot %r", slot_name)
     cp = session.checkpoints.get_latest() or capture_checkpoint(session)
     return session.save_manager.save_slot(
         slot_name,
@@ -109,7 +113,9 @@ def load_game(session: GameSession, slot_name: str) -> bool:
     meta = session.save_manager.get_slot_metadata(slot_name)
     cp = session.save_manager.load_slot(slot_name)
     if cp is None:
+        logger.debug("Load failed: slot %r not found or empty", slot_name)
         return False
+    logger.info("Loaded game from slot %r", slot_name)
     if meta is not None:
         session._playtime = meta.playtime_seconds
     restore_checkpoint(session, cp)
@@ -149,6 +155,7 @@ def rollback(session: GameSession) -> bool:
     """Roll back to the previous interactive checkpoint."""
     if not session.checkpoints.can_rollback:
         return False
+    logger.debug("Rolling back to previous checkpoint")
 
     session.checkpoints.pop()
     prev = session.checkpoints.get_latest()

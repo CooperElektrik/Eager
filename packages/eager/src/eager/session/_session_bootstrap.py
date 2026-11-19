@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -10,6 +11,8 @@ if TYPE_CHECKING:
     from eager.stage.director import StageDirector
     from eager.ui.components import UIOverlay
     from eager.ui.screens.screen import ScreenManager
+
+logger = logging.getLogger(__name__)
 
 _CHARACTER_KNOWN_KEYS = frozenset({
     "asset_prefix",
@@ -90,6 +93,7 @@ def register_scene_backgrounds(director: Any, config: Any) -> None:
     ):
         return
     for sc_id, bg_info in config.scene_backgrounds.items():
+        logger.debug("Registering scene background for %r", sc_id)
         if isinstance(bg_info, (tuple, list)) and len(bg_info) >= 3:
             director.register_scene_bg(
                 sc_id, str(bg_info[0]), transition=str(bg_info[1]), duration=float(bg_info[2])

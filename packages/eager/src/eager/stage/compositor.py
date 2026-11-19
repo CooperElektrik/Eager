@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from typing import Any
 
@@ -11,6 +12,8 @@ from eager.core.layout import LayoutResolver
 from eager.core.timeline import Timeline
 from eager.core.types import BLACK, WHITE, Anchor, Color, TransitionKind, Vec2
 from eager.stage.stage import ElementState, Stage, StageElement
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "StageCompositor",
@@ -66,6 +69,7 @@ class StageCompositor:
         trans_kind = (
             TransitionKind.from_str(transition) if isinstance(transition, str) else transition
         )
+        logger.debug("Setting background %r (transition=%s, duration=%.2f)", asset_id, trans_kind.value, duration)
         bg_layer = self.stage.get_or_create_layer("background", z_order=0)
 
         # Full-screen default position & anchor

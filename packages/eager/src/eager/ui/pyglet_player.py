@@ -91,6 +91,7 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):  # pyright: ignore[reportU
             pyglet.clock.schedule(self.tick)
         else:
             pyglet.clock.schedule_interval(self.tick, 1.0 / 60.0)
+        logger.debug("PygletPlayer initialized (%dx%d, uncapped=%s)", width, height, uncapped)
 
     def toggle_fullscreen(self) -> None:
         """Toggle fullscreen mode."""

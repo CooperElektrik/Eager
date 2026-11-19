@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from typing import Any as GameSessionProtocol
 
 from eager.backends.types import UIDrawBackend
 from eager.ui.screens.widgets import Button, Label, Slider
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "Screen",
@@ -214,7 +217,9 @@ class ScreenManager:
             True if the screen was found and displayed, False otherwise.
         """
         if name not in self.screens:
+            logger.warning("Requested unknown screen %r", name)
             return False
+        logger.debug("Showing screen %r", name)
         if self.active_screen is not None:
             if self.active_screen.name != name:
                 self._history_stack.append(self.active_screen.name)
@@ -227,6 +232,7 @@ class ScreenManager:
     def hide(self, session: GameSessionProtocol) -> None:
         """Hide current screen and pop previous screen from history if present."""
         if self.active_screen is not None:
+            logger.debug("Hiding screen %r", self.active_screen.name)
             self.active_screen.on_exit(session)
             if self._history_stack:
                 prev_name = self._history_stack.pop()
@@ -241,6 +247,7 @@ class ScreenManager:
     def hide_all(self, session: GameSessionProtocol) -> None:
         """Hide all screens and clear navigation history stack."""
         if self.active_screen is not None:
+            logger.debug("Hiding screen %r", self.active_screen.name)
             self.active_screen.on_exit(session)
             self.active_screen = None
         self._history_stack.clear()

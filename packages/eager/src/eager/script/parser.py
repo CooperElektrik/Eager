@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import shlex
 import sys
@@ -42,6 +43,8 @@ from eager.script.tokens import (
     emit_inline_text_spans,
     strip_inline_comment,
 )
+
+logger = logging.getLogger(__name__)
 
 CHOICE_PATTERN = re.compile(r"^\?\s+(.+?)\s*\(([^()]+)\)(?:\s+if\s+(.+))?\s*$")
 CHOICE_INLINE_PATTERN = re.compile(r"^\?\s+(.+?)(?:\s+if\s+(.+))?\s*$")
@@ -1205,6 +1208,7 @@ class ScreenplayParser:
                 self._narration_buffer.append(clean)
             except ParseError as pe:
                 if self.recovery:
+                    logger.debug("Recovered parse error at line %d: %s", pe.line_number, pe)
                     yield ParsedError(
                         message=str(pe),
                         line_number=pe.line_number,

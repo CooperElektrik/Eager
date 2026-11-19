@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 
 from eager.script.ast import EagerScriptError, ParsedChoiceSet, ParsedInclude, ParsedItem
 from eager.script.parser import parse
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "IncludeError",
@@ -36,15 +39,19 @@ def _resolve_include_target(
             f"Line {inc.line_number}: Path traversal detected: "
             f"@include '{inc.path}' resolves outside root '{root_path}'"
         )
+        logger.warning("%s", msg)
         raise IncludeError(msg)
     if not inc_target.is_file():
         if missing_ok:
             return None
         msg = f"Line {inc.line_number}: Included file not found: '{inc.path}' (looked at {inc_target})"
+        logger.warning("%s", msg)
         raise IncludeError(msg)
     if inc_target in visited:
         msg = f"Line {inc.line_number}: Circular include detected for '{inc.path}'"
+        logger.warning("%s", msg)
         raise IncludeError(msg)
+    logger.debug("Resolved @include %r -> %s", inc.path, inc_target)
     return inc_target
 
 

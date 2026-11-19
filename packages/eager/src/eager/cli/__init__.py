@@ -7,6 +7,7 @@ Single entry point is provided: ``eager`` with subcommands ``run``, ``check``,
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -17,6 +18,8 @@ from eager.script.graph import to_graph
 from eager.script.includes import resolve_includes
 from eager.script.project import ProjectConfig
 from eager.vm.runtime import StoryVM
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "build_parser",
@@ -72,7 +75,8 @@ def _create_audio_backend(backend: str, *, no_audio: bool = False) -> Any:
         from eager.backends.audio.pyglet import PygletAudioBackend
 
         return PygletAudioBackend()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to initialize PygletAudioBackend, falling back to NullAudioBackend: %s", exc)
         return NullAudioBackend()
 
 
@@ -86,6 +90,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--version",
         action="version",
         version=_version_string(),
+    )
+    parser.add_argument(
+        "--log-level",
+        default="WARNING",
+        choices=("DEBUG", "INFO", "WARNING", "ERROR"),
+        help="Set logging verbosity (default: WARNING)",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable debug logging (shorthand for --log-level DEBUG)",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -462,4 +478,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point."""
     parser = build_parser()
     args = parser.parse_args(argv)
+    level_name = "DEBUG" if getattr(args, "verbose", False) else getattr(args, "log_level", "WARNING")
+    logging.basicConfig(
+        level=getattr(logging, level_name, logging.WARNING),
+        format="%(levelname)s %(name)s: %(message)s",
+    )
+    logger.debug("Executing CLI command %r", getattr(args, "command", None))
     return int(args.func(args))
