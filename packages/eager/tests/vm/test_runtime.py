@@ -699,3 +699,39 @@ Hello world.
     assert not isinstance(ev4, HookEvent)
 
 
+def test_seen_builtin_persists_across_playthroughs() -> None:
+    from eager.core.persistent import PersistentData
+
+    script = """
+## Start --- start
+@if seen('ending')
+  Already saw ending!
+@else
+  First time here.
+@end
+> ending
+
+## Ending --- ending
+The end.
+<<
+"""
+    graph = eager.script.parse_graph(script)
+    persistent = PersistentData()
+
+    # First playthrough: ending not seen yet
+    vm1 = StoryVM(graph, persistent=persistent)
+    ev1 = vm1.step()
+    assert isinstance(ev1, SceneEnterEvent)
+    ev2 = vm1.step()
+    assert getattr(ev2, "text", None) == "First time here."
+    # Advance into ending
+    while vm1.step() is not None:
+        pass
+
+    # Second playthrough with same PersistentData: ending is now seen
+    vm2 = StoryVM(graph, persistent=persistent)
+    vm2.step()  # SceneEnterEvent
+    ev_second = vm2.step()
+    assert getattr(ev_second, "text", None) == "Already saw ending!"
+
+

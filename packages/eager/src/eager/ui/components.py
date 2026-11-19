@@ -460,8 +460,12 @@ class ChoiceMenu:
 
     def set_options(self, options: Sequence[ChoiceOption] | None) -> None:
         """Set the active options; *None* or an empty sequence clears the menu."""
-        self.options = tuple(options) if options else ()
-        self.selected_index = None
+        new_options = tuple(options) if options else ()
+        if new_options != self.options:
+            self.options = new_options
+            self.selected_index = None
+        elif self.selected_index is not None and not (0 <= self.selected_index < len(self.options)):
+            self.selected_index = None
 
     def clear(self) -> None:
         """Remove all options."""

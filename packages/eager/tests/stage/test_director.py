@@ -600,6 +600,30 @@ class TestDirectorAudioHooks:
         assert bg_elem is not None
         assert bg_elem.asset_id == "bg/forest"
 
+    def test_director_invalid_colors_do_not_crash(self) -> None:
+        """Verify invalid color hex strings in hooks and UIState.from_dict fall back safely."""
+        from eager.core.dispatcher import EventDispatcher
+        from eager.core.events import HookEvent
+        from eager.core.types import WHITE
+        from eager.core.ui_state import UIState
+
+        comp = StageCompositor()
+        director = StageDirector(comp)
+        dispatcher = EventDispatcher()
+        director.bind(dispatcher)
+
+        dispatcher.dispatch(HookEvent(hook_name="fade_out", args="color=notacolor", line_number=1))
+        dispatcher.dispatch(HookEvent(hook_name="show", args="alice at center tint=notacolor", line_number=2))
+
+        chars = comp.stage.get_layer("characters")
+        assert chars is not None
+        elem = chars.get_element("alice")
+        assert elem is not None
+        assert elem.state.tint == WHITE
+
+        ui = UIState.from_dict({"text": "hi", "speaker_color": "#xyz"})
+        assert ui.speaker_color is None
+
 
 
 

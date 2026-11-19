@@ -6,6 +6,7 @@ import copy
 import logging
 import random
 import re
+from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
@@ -132,11 +133,20 @@ class StoryVM:
                     val = self._evaluate_expr(d.expr_src)
                     self.set_variable(d.name, val)
 
+    def _is_seen(self, scene_id: str) -> bool:
+        """Return True if *scene_id* has been visited across playthroughs."""
+        if isinstance(self._persistent, MutableMapping):
+            seen_list = self._persistent.get("_seen_scenes")
+            if isinstance(seen_list, (list, set, tuple)):
+                return scene_id in seen_list
+        return scene_id in self._visited_scenes
+
     def _get_eval_env(self) -> dict[str, Any]:
         """Build evaluation environment for expression evaluation."""
         env = dict(self._variables)
         env["persistent"] = self._persistent
         env["visited"] = lambda scene_id: scene_id in self._visited_scenes
+        env["seen"] = self._is_seen
         env["random"] = lambda a=0, b=1: self._rng.randint(a, b) if isinstance(a, int) and isinstance(b, int) else self._rng.uniform(a, b)
         env["chance"] = lambda p: self._rng.random() < (p / 100.0 if p > 1 else p)
         return env
@@ -489,6 +499,13 @@ class StoryVM:
         self._current_scene_id = scene_id
         self._beat_index = 0
         self._visited_scenes.add(scene_id)
+        if isinstance(self._persistent, MutableMapping):
+            seen_list = self._persistent.get("_seen_scenes")
+            if not isinstance(seen_list, list):
+                seen_list = []
+                self._persistent["_seen_scenes"] = seen_list
+            if scene_id not in seen_list:
+                seen_list.append(scene_id)
         self._just_entered_scene = True
         self._is_ended = False
         self._next_transition_target = None

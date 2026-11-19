@@ -181,3 +181,25 @@ def test_audio_pause_resume_all() -> None:
     assert mixer.channels["music"].is_paused is False
     assert mixer.channels["ambient"].is_paused is False
 
+
+def test_audio_update_preserves_paused_channel() -> None:
+    backend = NullAudioBackend()
+    mixer = AudioMixer(backend=backend)
+    mixer.play("music", "bgm.ogg")
+    assert mixer.channels["music"].is_playing is True
+
+    mixer.pause("music")
+    assert backend.is_playing("music") is False
+
+    # Updating while paused must not wipe is_playing or current_asset
+    mixer.update(0.016)
+    assert mixer.channels["music"].is_playing is True
+    assert mixer.channels["music"].is_paused is True
+    assert mixer.channels["music"].current_asset == "bgm.ogg"
+
+    mixer.resume("music")
+    assert backend.is_playing("music") is True
+    mixer.update(0.016)
+    assert mixer.channels["music"].is_playing is True
+    assert mixer.channels["music"].is_paused is False
+

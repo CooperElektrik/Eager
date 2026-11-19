@@ -203,3 +203,18 @@ def test_compile_expr_lru_cache() -> None:
     info = compile_expr.cache_info()
     assert info.hits >= 1
 
+
+def test_persistent_mapping_keys_not_shadowed_by_methods() -> None:
+    from eager.core.persistent import PersistentData
+
+    p = PersistentData()
+    p["clear"] = False
+    p["items"] = 42
+    p["save"] = "custom"
+
+    assert compile_expr("persistent.clear").evaluate({"persistent": p}) is False
+    assert compile_expr("persistent.clear == true").evaluate({"persistent": p}) is False
+    assert compile_expr("persistent.items").evaluate({"persistent": p}) == 42
+    assert compile_expr("persistent.save").evaluate({"persistent": p}) == "custom"
+    assert compile_expr("persistent.unset_key").evaluate({"persistent": p}) is None
+

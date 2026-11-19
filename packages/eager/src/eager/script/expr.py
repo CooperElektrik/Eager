@@ -6,7 +6,7 @@ import ast
 import functools
 import operator
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from eager.script.ast import EagerScriptError
@@ -191,10 +191,10 @@ def _eval_node(node: ast.AST, env: dict[str, Any]) -> Any:
         persistent = env.get("persistent")
         if persistent is None:
             return None
+        if isinstance(persistent, Mapping):
+            return persistent.get(node.attr)
         if hasattr(persistent, node.attr):
             return getattr(persistent, node.attr)
-        if isinstance(persistent, dict):
-            return persistent.get(node.attr)
         return None
 
     if isinstance(node, ast.UnaryOp):

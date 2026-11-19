@@ -818,3 +818,30 @@ def test_ui_overlay_hit_test_quick_action_syncs_with_visibility() -> None:
     finished_state = UIState(speaker="Alice", text="End", is_finished=True)
     overlay.sync(finished_state)
     assert overlay.hit_test_quick_action(qx, qy) is None
+
+
+def test_choice_menu_preserves_selection_when_options_unchanged() -> None:
+    from eager.core.events import ChoiceOption, ChoicePromptEvent
+
+    overlay = UIOverlay(1280, 720)
+    opts = (
+        ChoiceOption(index=0, text="Alpha", target="a"),
+        ChoiceOption(index=1, text="Beta", target="b"),
+    )
+    prompt = ChoicePromptEvent(options=opts, line_number=1)
+    state = UIState(speaker="Alice", text="Choose:")
+
+    overlay.sync(state, choice_prompt=prompt)
+    overlay.choice_menu.selected_index = 1
+
+    # Syncing again with identical options must preserve selected_index
+    overlay.sync(state, choice_prompt=prompt)
+    assert overlay.choice_menu.selected_index == 1
+
+    # Syncing with different options must reset selected_index
+    new_prompt = ChoicePromptEvent(
+        options=(ChoiceOption(index=0, text="Gamma", target="c"),),
+        line_number=2,
+    )
+    overlay.sync(state, choice_prompt=new_prompt)
+    assert overlay.choice_menu.selected_index is None

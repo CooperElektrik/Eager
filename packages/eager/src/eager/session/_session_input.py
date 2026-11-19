@@ -53,6 +53,8 @@ def _complete_text_reveal(session: GameSession) -> bool:
 
 def _handle_screen_input(session: GameSession, action: InputAction, payload: dict[str, Any]) -> Any:
     """Route input while a modal screen (title, save, load, history, prefs) is active."""
+    if action == InputAction.QUIT:
+        return session.request_quit()
     if action in (InputAction.GAME_MENU, InputAction.CANCEL):
         if getattr(session.screens.active_screen, "name", "") == "title":
             return True

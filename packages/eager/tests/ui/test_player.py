@@ -132,6 +132,12 @@ def test_pyglet_player_inherits_base_player() -> None:
         assert isinstance(pyglet_player, BasePlayer)
         assert hasattr(pyglet_player, "advance_story")
         assert hasattr(pyglet_player, "normalize_keysym")
+
+        # C8: PygletPlayer.on_resize must propagate to overlay & renderer even after Window updates width/height
+        pyglet_player.on_resize(1600, 900)
+        assert pyglet_player.overlay.choice_menu.viewport_width == 1600
+        assert pyglet_player.renderer.width == 1600
+        assert pyglet_player.renderer.height == 900
     finally:
         pyglet_player.close()
 
@@ -167,3 +173,10 @@ def test_base_player_shift_tab_and_resize() -> None:
     player.on_resize(1920, 1080)
     assert mgr.viewport_width == 1920
     assert mgr.viewport_height == 1080
+
+    # C2: InputAction.QUIT routes through session.handle_input(InputAction.QUIT)
+    assert player.handle_key_press("q") is True
+    from eager.core.input import InputAction
+
+    session.handle_input.assert_any_call(InputAction.QUIT)
+    player.close.assert_not_called()

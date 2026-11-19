@@ -18,6 +18,7 @@ from eager.core.events import (
     SceneExitEvent,
     StoryEndEvent,
 )
+from eager.core.exceptions import ColorParseError
 from eager.core.types import BLACK, WHITE, Color
 from eager.core.ui_state import UIState
 from eager.script.hooks import HookArgs, parse_hook_args
@@ -43,7 +44,7 @@ def _parse_hook_color(args: HookArgs, key: str, default: Color | None) -> Color 
         return default
     try:
         return Color.from_hex(raw)
-    except (ValueError, TypeError):
+    except (ColorParseError, ValueError, TypeError):
         return default
 
 
@@ -354,7 +355,12 @@ class StageDirector:
             scale_y = None
         rotation = parsed.get_float("rotation", 0.0)
         tint_str = parsed.get_str("tint", None)
-        tint = Color.from_hex(tint_str) if tint_str else WHITE
+        tint = WHITE
+        if tint_str:
+            try:
+                tint = Color.from_hex(tint_str)
+            except (ColorParseError, ValueError, TypeError):
+                tint = WHITE
         z_index = parsed.get_int("z", 0)
 
         asset_prefix = cfg.asset_prefix if cfg and cfg.asset_prefix else None

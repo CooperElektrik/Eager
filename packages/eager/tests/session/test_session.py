@@ -1239,3 +1239,43 @@ def test_request_fullscreen_no_double_flip_and_ui_hidden_unhides_on_click(tmp_pa
     assert session.handle_input(InputAction.POINTER_CLICK, x=100.0, y=100.0) is True
     assert session.ui_hidden is False
     assert session.director.ui_state.text == "Line 1"
+
+
+def test_quit_action_works_on_active_screen_and_fullscreen_not_double_toggled(tmp_path: Path) -> None:
+    from eager.core.input import InputAction
+
+    script_file = tmp_path / "story.es"
+    script_file.write_text("## Start --- start\nLine 1\n<<\n", encoding="utf-8")
+    session = GameSession(script_file, save_dir=tmp_path / "saves")
+
+    quit_calls = 0
+    renderer_fs_calls = 0
+
+    class Listener:
+        def on_request_fullscreen(self) -> None:
+            session.preferences.fullscreen = not session.preferences.fullscreen
+
+        def on_request_quit(self) -> None:
+            nonlocal quit_calls
+            quit_calls += 1
+
+        def on_state_restored(self) -> None:
+            pass
+
+    def fake_renderer_fs() -> None:
+        nonlocal renderer_fs_calls
+        renderer_fs_calls += 1
+
+    session.renderer.toggle_fullscreen = fake_renderer_fs  # type: ignore[attr-defined]
+    session.add_lifecycle_listener(Listener())
+
+    # C3: renderer.toggle_fullscreen must not fire when a lifecycle listener handles it
+    session.request_fullscreen()
+    assert session.preferences.fullscreen is True
+    assert renderer_fs_calls == 0
+
+    # C2: InputAction.QUIT must work even when a modal screen is active
+    session.screens.show("title", session)
+    assert session.screens.is_active is True
+    assert session.handle_input(InputAction.QUIT) is True
+    assert quit_calls == 1

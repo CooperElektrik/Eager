@@ -56,7 +56,7 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):  # pyright: ignore[reportU
             caption=title,
             resizable=True,
             vsync=vsync,
-            visible=visible,
+            visible=False,
         )
         BasePlayer.__init__(
             self,
@@ -82,6 +82,9 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):  # pyright: ignore[reportU
             ui_batch=self._ui_batch,
         )
 
+        if visible:
+            self.set_visible(True)
+
         self.step_initial_beat()
 
         if self.uncapped:
@@ -104,7 +107,9 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):  # pyright: ignore[reportU
         """Keep the UI components laid out against the new window size."""
         pyglet.window.Window.on_resize(self, width, height)
         BasePlayer.on_resize(self, width, height)
-        self.renderer.on_resize(width, height)
+        renderer = getattr(self, "renderer", None)
+        if renderer is not None:
+            renderer.on_resize(width, height)
 
     def close(self) -> None:
         """Close window and release audio mixer resources."""

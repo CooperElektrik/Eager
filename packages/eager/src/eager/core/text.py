@@ -8,6 +8,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any
 
+from eager.core.exceptions import ColorParseError
 from eager.core.types import Color
 
 __all__ = [
@@ -138,7 +139,7 @@ def parse_text_tags(raw: str) -> FormattedText:
             try:
                 c = Color.from_hex(hex_val)
                 color_stack.append(c)
-            except ValueError:
+            except (ColorParseError, ValueError):
                 logger.debug("Invalid color tag {color=%s}, ignoring", hex_val)
         elif tag_content == "/color":
             if color_stack:

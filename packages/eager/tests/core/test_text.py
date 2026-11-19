@@ -232,3 +232,8 @@ def test_negative_dt_edge_case_observation() -> None:
     assert observed_text == "Hello world, this is a test st"
 
 
+def test_parse_text_tags_ignores_invalid_color_tag() -> None:
+    fmt = parse_text_tags("Hello {color=notacolor}world{/color}!")
+    assert fmt.plain_text == "Hello world!"
+
+

@@ -162,6 +162,7 @@ class NullAudioBackend:
     def __init__(self) -> None:
         self.calls: list[tuple[object, ...]] = []
         self._playing_channels: set[str] = set()
+        self._paused_channels: set[str] = set()
         self.shutdown_called: bool = False
 
     def play(
@@ -176,12 +177,14 @@ class NullAudioBackend:
     ) -> None:
         """Record a play call and mark the channel as playing."""
         self.calls.append(("play", channel, str(asset_path), loop, volume, loop_start, loop_end))
+        self._paused_channels.discard(channel)
         self._playing_channels.add(channel)
 
     def stop(self, channel: str) -> None:
         """Record a stop call and remove the channel from playing set."""
         self.calls.append(("stop", channel))
         self._playing_channels.discard(channel)
+        self._paused_channels.discard(channel)
 
     def set_volume(self, channel: str, volume: float) -> None:
         """Record a volume update for a channel."""
@@ -190,10 +193,16 @@ class NullAudioBackend:
     def pause(self, channel: str) -> None:
         """Record a pause call for a channel."""
         self.calls.append(("pause", channel))
+        if channel in self._playing_channels:
+            self._playing_channels.discard(channel)
+            self._paused_channels.add(channel)
 
     def resume(self, channel: str) -> None:
         """Record a resume call for a channel."""
         self.calls.append(("resume", channel))
+        if channel in self._paused_channels:
+            self._paused_channels.discard(channel)
+            self._playing_channels.add(channel)
 
     def is_playing(self, channel: str) -> bool:
         """Check whether the channel is currently recorded as playing."""
@@ -402,7 +411,7 @@ class AudioMixer:
                         chan.current_asset = None
                         self.backend.stop(chan.name)
 
-            if chan.is_playing and not self.backend.is_playing(chan.name):
+            if chan.is_playing and not chan.is_paused and not self.backend.is_playing(chan.name):
                 chan.is_playing = False
                 chan.current_asset = None
 

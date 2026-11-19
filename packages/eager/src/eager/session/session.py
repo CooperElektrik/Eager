@@ -232,9 +232,10 @@ class GameSession:
     def request_fullscreen(self) -> None:
         """Notify registered host listeners to toggle fullscreen."""
         prev_fs = bool(getattr(self.preferences, "fullscreen", False))
-        for listener in list(self._lifecycle_listeners):
+        listeners = list(self._lifecycle_listeners)
+        for listener in listeners:
             listener.on_request_fullscreen()
-        if hasattr(self.renderer, "toggle_fullscreen"):
+        if not listeners and hasattr(self.renderer, "toggle_fullscreen"):
             self.renderer.toggle_fullscreen()
         # Only flip preference here if no host listener/renderer already toggled it
         if bool(getattr(self.preferences, "fullscreen", False)) == prev_fs:

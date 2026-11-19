@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from eager.core.events import ChoiceOption
+from eager.core.exceptions import ColorParseError
 from eager.core.types import Color
 
 __all__ = [
@@ -65,11 +66,14 @@ class UIState:
             for c in choices_raw
         ]
         speaker_color_raw = data.get("speaker_color")
-        speaker_color = (
-            Color.from_hex(speaker_color_raw)
-            if isinstance(speaker_color_raw, str) and speaker_color_raw.startswith("#")
-            else (speaker_color_raw if isinstance(speaker_color_raw, Color) else None)
-        )
+        speaker_color: Color | None = None
+        if isinstance(speaker_color_raw, str) and speaker_color_raw.startswith("#"):
+            try:
+                speaker_color = Color.from_hex(speaker_color_raw)
+            except (ColorParseError, ValueError):
+                speaker_color = None
+        elif isinstance(speaker_color_raw, Color):
+            speaker_color = speaker_color_raw
         return cls(
             speaker=data.get("speaker"),
             text=data.get("text", ""),

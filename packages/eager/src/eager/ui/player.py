@@ -38,6 +38,8 @@ class BasePlayer:
             session.add_lifecycle_listener(self)
         self.width: int = width
         self.height: int = height
+        self._viewport_width: int = width
+        self._viewport_height: int = height
         self.title: str = title
         self.asset_dir: str | Path | None = asset_dir
         self.scale_mode: ScaleMode = scale_mode
@@ -110,12 +112,18 @@ class BasePlayer:
 
     def on_resize(self, width: int, height: int) -> None:
         """Keep the UI components laid out against the new window size."""
-        if width == self.width and height == self.height:
+        if width == self._viewport_width and height == self._viewport_height:
             return
-        self.width = width
-        self.height = height
-        self.overlay.set_viewport(width, height)
-        screens = getattr(self.session, "screens", None)
+        self._viewport_width = width
+        self._viewport_height = height
+        if not isinstance(getattr(type(self), "width", None), property):
+            self.width = width
+            self.height = height
+        overlay = getattr(self, "overlay", None)
+        if overlay is not None:
+            overlay.set_viewport(width, height)
+        session = getattr(self, "session", None)
+        screens = getattr(session, "screens", None) if session is not None else None
         if screens is not None and hasattr(screens, "set_viewport"):
             screens.set_viewport(width, height)
 
@@ -181,7 +189,7 @@ class BasePlayer:
 
         action = self.keymap.map_key(combo) or self.keymap.map_key(keysym)
         if action == InputAction.QUIT:
-            self.close()
+            self.session.handle_input(InputAction.QUIT)
             return True
         if action == InputAction.FULLSCREEN:
             self.toggle_fullscreen()
