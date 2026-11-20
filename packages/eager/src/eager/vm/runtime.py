@@ -93,6 +93,7 @@ class StoryVM:
 
         self._rng = PCG32(rng_seed)
 
+        self._persistent_dirty: bool = False
         self._pending_choice: ChoicePromptEvent | None = None
         self._is_ended: bool = False
         self._just_entered_scene: bool = False
@@ -138,10 +139,17 @@ class StoryVM:
         """Build evaluation environment for expression evaluation."""
         env = dict(self._variables)
         env["persistent"] = self._persistent
-        env["visited"] = lambda scene_id: scene_id in self._visited_scenes
-        env["seen"] = self._is_seen
-        env["random"] = lambda a=0, b=1: self._rng.randint(a, b) if isinstance(a, int) and isinstance(b, int) else self._rng.uniform(a, b)
-        env["chance"] = lambda p: self._rng.random() < (p / 100.0 if p > 1 else p)
+        env.setdefault("visited", lambda scene_id: scene_id in self._visited_scenes)
+        env.setdefault("seen", self._is_seen)
+        env.setdefault(
+            "random",
+            lambda a=0, b=1: (
+                self._rng.randint(a, b)
+                if isinstance(a, int) and isinstance(b, int)
+                else self._rng.uniform(a, b)
+            ),
+        )
+        env.setdefault("chance", lambda p: self._rng.random() < (p / 100.0 if p > 1 else p))
         return env
 
     def _evaluate_expr(self, expr_src: str) -> Any:
@@ -385,6 +393,7 @@ class StoryVM:
             for k, v in snapshot.variables.items()
             if k != "persistent" and not k.startswith("persistent.")
         }
+        self.apply_graph_defaults()
         self._visited_scenes = set(snapshot.visited_scenes)
 
         if snapshot.rng_state is not None:
@@ -497,8 +506,10 @@ class StoryVM:
             if not isinstance(seen_list, list):
                 seen_list = []
                 self._persistent["_seen_scenes"] = seen_list
+                self._persistent_dirty = True
             if scene_id not in seen_list:
                 seen_list.append(scene_id)
+                self._persistent_dirty = True
         self._just_entered_scene = True
         self._is_ended = False
         self._next_transition_target = None
@@ -565,39 +576,53 @@ class StoryVM:
             if isinstance(item, ParsedSet):
                 val = self._evaluate_expr(item.expr_src)
                 target = item.target
-                if target.startswith("persistent."):
-                    key = target[len("persistent."):]
-                    cur = self._get_persistent_var(key, 0 if item.op in ("+=", "-=") else 1)
-                    if cur is None and item.op != "=":
-                        cur = 0 if item.op in ("+=", "-=") else 1
-                    if item.op == "=":
-                        new_val = val
-                    elif item.op == "+=":
-                        new_val = cur + val
-                    elif item.op == "-=":
-                        new_val = cur - val
-                    elif item.op == "*=":
-                        new_val = cur * val
-                    elif item.op == "/=":
-                        new_val = cur / val
-                    elif item.op == "%=":
-                        new_val = cur % val
+                try:
+                    if target.startswith("persistent."):
+                        key = target[len("persistent.") :]
+                        if not key or "." in key or key.startswith("_"):
+                            raise StoryRuntimeError(
+                                f"Invalid persistent variable target '{target}' at line {item.line_number}"
+                            )
+                        cur = self._get_persistent_var(key, 0 if item.op in ("+=", "-=") else 1)
+                        if cur is None and item.op != "=":
+                            cur = 0 if item.op in ("+=", "-=") else 1
+                        if item.op == "=":
+                            new_val = val
+                        elif item.op == "+=":
+                            new_val = cur + val
+                        elif item.op == "-=":
+                            new_val = cur - val
+                        elif item.op == "*=":
+                            new_val = cur * val
+                        elif item.op == "/=":
+                            new_val = cur / val
+                        elif item.op == "%=":
+                            new_val = cur % val
+                        else:
+                            new_val = val
+                        self._set_persistent_var(key, new_val)
+                        self._persistent_dirty = True
                     else:
-                        new_val = val
-                    self._set_persistent_var(key, new_val)
-                else:
-                    if item.op == "=":
-                        self._variables[target] = val
-                    elif item.op == "+=":
-                        self._variables[target] = self._variables.get(target, 0) + val
-                    elif item.op == "-=":
-                        self._variables[target] = self._variables.get(target, 0) - val
-                    elif item.op == "*=":
-                        self._variables[target] = self._variables.get(target, 1) * val
-                    elif item.op == "/=":
-                        self._variables[target] = self._variables.get(target, 1) / val
-                    elif item.op == "%=":
-                        self._variables[target] = self._variables.get(target, 1) % val
+                        if "." in target or not target.isidentifier():
+                            raise StoryRuntimeError(
+                                f"Invalid variable target '{target}' at line {item.line_number}"
+                            )
+                        if item.op == "=":
+                            self._variables[target] = val
+                        elif item.op == "+=":
+                            self._variables[target] = self._variables.get(target, 0) + val
+                        elif item.op == "-=":
+                            self._variables[target] = self._variables.get(target, 0) - val
+                        elif item.op == "*=":
+                            self._variables[target] = self._variables.get(target, 1) * val
+                        elif item.op == "/=":
+                            self._variables[target] = self._variables.get(target, 1) / val
+                        elif item.op == "%=":
+                            self._variables[target] = self._variables.get(target, 1) % val
+                except (ZeroDivisionError, TypeError, ValueError) as exc:
+                    raise StoryRuntimeError(
+                        f"Error executing '{target} {item.op} ...' at line {item.line_number}: {exc}"
+                    ) from exc
                 self._beat_index += 1
                 continue
 

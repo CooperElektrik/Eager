@@ -218,13 +218,19 @@ def compute_completions(
     speaker_paren_match = re.search(r"^([A-Za-z_][A-Za-z0-9_\s\.\-\'\"]*?)\s*\(([^)]*)$", line_prefix)
     if speaker_paren_match:
         speaker_name = speaker_paren_match.group(1).strip().lower()
-        expressions = workspace.asset_index.characters.get(speaker_name, set())
+        char_id = speaker_name
+        if char_id not in workspace.asset_index.characters:
+            for cid, sym in workspace.characters.items():
+                if sym.name.lower() == speaker_name:
+                    char_id = cid
+                    break
+        expressions = workspace.asset_index.characters.get(char_id, set())
         for expr in sorted(expressions):
             items.append(
                 CompletionItem(
                     label=expr,
                     kind=CompletionItemKind.EnumMember,
-                    detail=f"Sprite expression for '{speaker_name}'",
+                    detail=f"Sprite expression for '{char_id}'",
                 )
             )
         return CompletionList(is_incomplete=False, items=items)
@@ -396,12 +402,18 @@ def compute_completions(
 
     # 5. Inline text tags inside dialogue: '{<cursor>'
     if line_prefix.endswith("{") or re.search(r"\{[a-zA-Z0-9_]*$", line_prefix):
+        brace_col = line_prefix.rfind("{")
+        edit_range = Range(
+            start=Position(line=line_0, character=brace_col),
+            end=Position(line=line_0, character=char_0),
+        )
         for label, snippet, doc_str in INLINE_TAGS:
             items.append(
                 CompletionItem(
                     label=label,
                     kind=CompletionItemKind.Snippet,
-                    insert_text=snippet.lstrip("{") if line_prefix.endswith("{") else snippet,
+                    text_edit=TextEdit(range=edit_range, new_text=snippet),
+                    filter_text=f"{{{label.lstrip('{')}",
                     insert_text_format=InsertTextFormat.Snippet,
                     documentation=doc_str,
                 )
@@ -412,7 +424,8 @@ def compute_completions(
                 CompletionItem(
                     label=f"voice:{v}",
                     kind=CompletionItemKind.File,
-                    insert_text=f"voice:{v}}}" if line_prefix.endswith("{") else f"{{voice:{v}}}",
+                    text_edit=TextEdit(range=edit_range, new_text=f"{{voice:{v}}}"),
+                    filter_text=f"{{voice:{v}",
                     detail="Voice Clip Asset",
                 )
             )
@@ -420,13 +433,19 @@ def compute_completions(
 
     # 6. Variable interpolation: '[<cursor>'
     if line_prefix.endswith("[") or re.search(r"\[[A-Za-z0-9_]*$", line_prefix):
+        bracket_col = line_prefix.rfind("[")
+        edit_range = Range(
+            start=Position(line=line_0, character=bracket_col),
+            end=Position(line=line_0, character=char_0),
+        )
         for var_name, sym in workspace.variables.items():
             items.append(
                 CompletionItem(
                     label=var_name,
                     kind=CompletionItemKind.Variable,
                     detail=f"Default: {sym.default_val or 'none'}",
-                    insert_text=f"{var_name}]" if line_prefix.endswith("[") else f"[{var_name}]",
+                    text_edit=TextEdit(range=edit_range, new_text=f"[{var_name}]"),
+                    filter_text=f"[{var_name}",
                 )
             )
         return CompletionList(is_incomplete=False, items=items)

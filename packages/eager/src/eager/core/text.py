@@ -134,6 +134,8 @@ def parse_text_tags(raw: str) -> FormattedText:
             italic_depth = max(0, italic_depth - 1)
         elif tag_content == "fast":
             fast_index = current_char_offset
+        elif tag_content.startswith("id="):
+            pass  # Line identifier metadata tag; strip from visible text
         elif tag_content.startswith("color="):
             hex_val = tag_content.split("=", 1)[1]
             try:
@@ -262,6 +264,7 @@ class TextReveal:
         if self.is_complete:
             return
 
+        dt = max(0.0, dt)
         if self._pause_timer > 0.0:
             self._pause_timer -= dt
             if self._pause_timer > 0.0:
@@ -284,12 +287,12 @@ class TextReveal:
 
         while self._current_pause_idx < len(self.formatted.pauses):
             p = self.formatted.pauses[self._current_pause_idx]
-            if start_idx <= p.char_index < target_idx:
+            if start_idx <= p.char_index <= target_idx:
                 self.visible_chars = float(p.char_index)
                 self._pause_timer = p.duration
                 self._current_pause_idx += 1
                 return
-            elif p.char_index >= target_idx:
+            elif p.char_index > target_idx:
                 break
             else:
                 self._current_pause_idx += 1
@@ -347,6 +350,11 @@ def wrap_text(
         pos = m.end()
     paragraphs.append((text[pos:], pos, len(text)))
 
+    def _measure_w(s: str) -> float:
+        if font_family is not None:
+            return float(measure(s, font_size=font_size, font_family=font_family)[0])
+        return float(measure(s, font_size=font_size)[0])
+
     for para_text, para_start, para_end in paragraphs:
         if not para_text:
             lines.append(("", para_start, para_end))
@@ -365,7 +373,7 @@ def wrap_text(
             w_end = para_start + wm.end()
 
             if not cur_line_words:
-                w, _ = measure(w_text, font_size=font_size)
+                w = _measure_w(w_text)
                 if w <= max_width:
                     cur_line_words.append((w_text, w_start, w_end))
                 else:
@@ -374,7 +382,7 @@ def wrap_text(
                     sub_str = ""
                     for ch in w_text:
                         cand = sub_str + ch
-                        cw, _ = measure(cand, font_size=font_size)
+                        cw = _measure_w(cand)
                         if cw <= max_width:
                             sub_str = cand
                         else:
@@ -387,7 +395,7 @@ def wrap_text(
             else:
                 line_start = cur_line_words[0][1]
                 candidate = text[line_start:w_end]
-                w, _ = measure(candidate, font_size=font_size)
+                w = _measure_w(candidate)
                 if w <= max_width:
                     cur_line_words.append((w_text, w_start, w_end))
                 else:
@@ -396,7 +404,7 @@ def wrap_text(
                     lines.append((text[l_start:l_end], l_start, l_end))
                     cur_line_words = []
 
-                    ww, _ = measure(w_text, font_size=font_size)
+                    ww = _measure_w(w_text)
                     if ww <= max_width:
                         cur_line_words.append((w_text, w_start, w_end))
                     else:
@@ -404,7 +412,7 @@ def wrap_text(
                         sub_str = ""
                         for ch in w_text:
                             cand = sub_str + ch
-                            cw, _ = measure(cand, font_size=font_size)
+                            cw = _measure_w(cand)
                             if cw <= max_width:
                                 sub_str = cand
                             else:

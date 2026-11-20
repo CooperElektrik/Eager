@@ -254,24 +254,20 @@ def _eval_node(node: ast.AST, env: dict[str, Any]) -> Any:
     if isinstance(node, ast.Call):
         assert isinstance(node.func, ast.Name)
         fn_name = node.func.id
-        fn = env.get(fn_name)
+        builtin_funcs = {
+            "min": min,
+            "max": max,
+            "abs": abs,
+            "len": len,
+            "int": int,
+            "str": str,
+            "round": round,
+        }
+        fn = builtin_funcs.get(fn_name)
         if fn is None:
-            if fn_name == "min":
-                fn = min
-            elif fn_name == "max":
-                fn = max
-            elif fn_name == "abs":
-                fn = abs
-            elif fn_name == "len":
-                fn = len
-            elif fn_name == "int":
-                fn = int
-            elif fn_name == "str":
-                fn = str
-            elif fn_name == "round":
-                fn = round
-            else:
-                raise ExprError(f"Function '{fn_name}' is not provided in execution environment")
+            fn = env.get(fn_name)
+        if fn is None:
+            raise ExprError(f"Function '{fn_name}' is not provided in execution environment")
 
         args = [_eval_node(arg, env) for arg in node.args]
         kwargs = {kw.arg: _eval_node(kw.value, env) for kw in node.keywords if kw.arg is not None}

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+import math
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
+from typing import Any
 
 from eager.core.storage import atomic_write_json, safe_read_json
 
@@ -29,12 +31,27 @@ class Preferences:
 
     @classmethod
     def load(cls, file_path: Path) -> Preferences:
-        """Load preferences from disk, filling in missing defaults."""
+        """Load preferences from disk, filling in missing or invalid fields with defaults."""
         data = safe_read_json(file_path, default={})
         if not isinstance(data, dict):
             return cls()
-        # Filter keys matching fields
-        kwargs = {k: v for k, v in data.items() if hasattr(cls, k)}
+        defaults = cls()
+        kwargs: dict[str, Any] = {}
+        for f in fields(cls):
+            if f.name not in data:
+                continue
+            val = data[f.name]
+            default_val = getattr(defaults, f.name)
+            if isinstance(default_val, bool):
+                if isinstance(val, bool):
+                    kwargs[f.name] = val
+            elif (
+                isinstance(default_val, float)
+                and isinstance(val, (int, float))
+                and not isinstance(val, bool)
+                and math.isfinite(float(val))
+            ):
+                kwargs[f.name] = float(val)
         return cls(**kwargs)
 
     def save(self, file_path: Path) -> None:

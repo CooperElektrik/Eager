@@ -148,7 +148,12 @@ def compute_diagnostics(
     # 3. Asset consistency linter (disk checks deferred on incremental keystrokes)
     if check_disk_assets and workspace.asset_dir.is_dir() and (doc.scene_graph or doc.ast_items):
         target_items = doc.scene_graph if doc.scene_graph else doc.ast_items
-        report = check_assets(target_items, workspace.asset_dir)
+        extra_chars = {
+            cid: {"name": sym.name, "attrs": dict(sym.attrs)}
+            for cid, sym in workspace.characters.items()
+            if sym.is_defined
+        }
+        report = check_assets(target_items, workspace.asset_dir, extra_characters=extra_chars)
         for issue in report.missing:
             ref = issue.reference
             line_0 = max(0, ref.line_number - 1)

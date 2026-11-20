@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from eager.core.state import Checkpoint, StorySnapshot
+from eager.vm.runtime import StoryRuntimeError
 
 if TYPE_CHECKING:
     from eager.session.session import GameSession
@@ -19,6 +20,9 @@ logger = logging.getLogger(__name__)
 def capture_checkpoint(session: GameSession) -> Checkpoint:
     """Generate a unified checkpoint of the current session state."""
     visual_state = session.director.save_visual_state()
+    if isinstance(visual_state, dict) and "ui_state" in visual_state:
+        visual_state = dict(visual_state)
+        visual_state.pop("ui_state", None)
     ui_state_dict = session.director.save_ui_state()
 
     return Checkpoint(
@@ -95,15 +99,25 @@ def take_screenshot(
     return resolved_path
 
 
+def _current_scene_display_name(session: GameSession) -> str:
+    """Return the display name for the VM's current scene, or empty string."""
+    scene_id = session.vm.current_scene_id
+    if scene_id is None:
+        return ""
+    node = session.vm.graph.nodes.get(scene_id)
+    return node.display_name if node is not None else ""
+
+
 def save_game(session: GameSession, slot_name: str) -> Any:
-    """Save current checkpoint to named slot."""
+    """Save current live checkpoint to named slot."""
     logger.info("Saving game to slot %r", slot_name)
-    cp = session.checkpoints.get_latest() or capture_checkpoint(session)
+    cp = capture_checkpoint(session)
     return session.save_manager.save_slot(
         slot_name,
         cp,
         metadata_extra={
             "playtime_seconds": session._playtime,
+            "scene_name": _current_scene_display_name(session),
         },
     )
 
@@ -115,19 +129,29 @@ def load_game(session: GameSession, slot_name: str) -> bool:
     if cp is None:
         logger.debug("Load failed: slot %r not found or empty", slot_name)
         return False
+    prev_playtime = session._playtime
+    try:
+        restore_checkpoint(session, cp)
+    except (StoryRuntimeError, KeyError, ValueError) as exc:
+        logger.warning("Failed to restore save slot %r: %s", slot_name, exc)
+        session._playtime = prev_playtime
+        return False
     logger.info("Loaded game from slot %r", slot_name)
     if meta is not None:
         session._playtime = meta.playtime_seconds
-    restore_checkpoint(session, cp)
     session.checkpoints.clear()
     session.checkpoints.push(cp)
     return True
 
 
 def quicksave(session: GameSession) -> Any:
-    """Quicksave current checkpoint."""
-    cp = session.checkpoints.get_latest() or capture_checkpoint(session)
-    result = session.save_manager.quicksave(cp, playtime_seconds=session._playtime)
+    """Quicksave current live checkpoint."""
+    cp = capture_checkpoint(session)
+    result = session.save_manager.quicksave(
+        cp,
+        playtime_seconds=session._playtime,
+        scene_name=_current_scene_display_name(session),
+    )
     if hasattr(session.overlay, "show_toast"):
         session.overlay.show_toast("Saved to quickslot", 2.0)
     return result
@@ -136,14 +160,20 @@ def quicksave(session: GameSession) -> Any:
 def quickload(session: GameSession) -> bool:
     """Quickload from quicksave slot."""
     slot = session.save_manager._latest_rotated_slot("quick", session.save_manager.max_quicksaves)
+    cp = session.save_manager.quickload()
+    if cp is None:
+        return False
+    prev_playtime = session._playtime
+    try:
+        restore_checkpoint(session, cp)
+    except (StoryRuntimeError, KeyError, ValueError) as exc:
+        logger.warning("Failed to restore quickload slot %r: %s", slot, exc)
+        session._playtime = prev_playtime
+        return False
     if slot is not None:
         meta = session.save_manager.get_slot_metadata(slot)
         if meta is not None:
             session._playtime = meta.playtime_seconds
-    cp = session.save_manager.quickload()
-    if cp is None:
-        return False
-    restore_checkpoint(session, cp)
     session.checkpoints.clear()
     session.checkpoints.push(cp)
     if hasattr(session.overlay, "show_toast"):

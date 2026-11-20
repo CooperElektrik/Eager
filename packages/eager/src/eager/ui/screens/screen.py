@@ -121,32 +121,50 @@ class Screen:
                     slider.on_change(slider.value)
                 return True
 
-        if k in ("up", "nav_up", "left", "nav_left", "shift+tab"):
-            if not enabled_buttons:
-                return False
-            self._focused_slider_index = -1
-            if self._focused_button_index in enabled_buttons:
-                pos = enabled_buttons.index(self._focused_button_index)
-                new_idx = enabled_buttons[(pos - 1) % len(enabled_buttons)]
+        focus_items: list[tuple[str, int]] = [
+            *[("button", i) for i in enabled_buttons],
+            *[("slider", i) for i in range(len(self.sliders))],
+        ]
+
+        def _apply_focus(target: tuple[str, int]) -> None:
+            kind, idx = target
+            if kind == "button":
+                self._focused_slider_index = -1
+                self._focused_button_index = idx
+                for i, b in enumerate(self.buttons):
+                    b.hovered = (i == idx)
             else:
-                new_idx = enabled_buttons[-1]
-            self._focused_button_index = new_idx
-            for i, b in enumerate(self.buttons):
-                b.hovered = (i == new_idx)
+                self._focused_button_index = -1
+                for b in self.buttons:
+                    b.hovered = False
+                self._focused_slider_index = idx
+
+        current_focus: tuple[str, int] | None = None
+        if 0 <= self._focused_slider_index < len(self.sliders):
+            current_focus = ("slider", self._focused_slider_index)
+        elif self._focused_button_index in enabled_buttons:
+            current_focus = ("button", self._focused_button_index)
+
+        if k in ("up", "nav_up", "left", "nav_left", "shift+tab"):
+            if not focus_items:
+                return False
+            if current_focus in focus_items:
+                pos = focus_items.index(current_focus)
+                new_focus = focus_items[(pos - 1) % len(focus_items)]
+            else:
+                new_focus = focus_items[-1]
+            _apply_focus(new_focus)
             return True
 
         if k in ("down", "nav_down", "right", "nav_right", "tab"):
-            if not enabled_buttons:
+            if not focus_items:
                 return False
-            self._focused_slider_index = -1
-            if self._focused_button_index in enabled_buttons:
-                pos = enabled_buttons.index(self._focused_button_index)
-                new_idx = enabled_buttons[(pos + 1) % len(enabled_buttons)]
+            if current_focus in focus_items:
+                pos = focus_items.index(current_focus)
+                new_focus = focus_items[(pos + 1) % len(focus_items)]
             else:
-                new_idx = enabled_buttons[0]
-            self._focused_button_index = new_idx
-            for i, b in enumerate(self.buttons):
-                b.hovered = (i == new_idx)
+                new_focus = focus_items[0]
+            _apply_focus(new_focus)
             return True
 
         if k in ("enter", "return", "space", "confirm"):

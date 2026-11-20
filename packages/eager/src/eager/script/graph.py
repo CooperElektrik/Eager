@@ -170,7 +170,9 @@ def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:
     # where condition is None for @else.
     
     # Recursive lowering helper
-    def parse_blocks(items: list[ParsedItem], idx: int = 0) -> tuple[list[Any], int]:
+    def parse_blocks(
+        items: list[ParsedItem], idx: int = 0, *, in_if: bool = False
+    ) -> tuple[list[Any], int]:
         out: list[Any] = []
         i = idx
         while i < len(items):
@@ -189,7 +191,7 @@ def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:
                     sub = items[i]
                     if isinstance(sub, ParsedIf):
                         # Nested if!
-                        nested_blocks, next_i = parse_blocks(items, i)
+                        nested_blocks, next_i = parse_blocks(items, i, in_if=True)
                         curr_branch_body.extend(nested_blocks)
                         i = next_i
                     elif isinstance(sub, ParsedElif):
@@ -220,8 +222,11 @@ def _lower_scene_body(body: list[ParsedItem]) -> tuple[ParsedItem, ...]:
                     branches.append((curr_cond, curr_branch_body, curr_line, curr_start, curr_end))
                 out.append(("if_structure", branches))
             elif isinstance(item, (ParsedElif, ParsedElse, ParsedEnd)):
-                # Return out to parent if-block parser
-                return out, i
+                if in_if:
+                    # Return out to parent if-block parser
+                    return out, i
+                # Stray top-level directive: skip it instead of truncating the scene
+                i += 1
             else:
                 out.append(item)
                 i += 1
@@ -475,7 +480,7 @@ def to_graph(items: Sequence[ParsedItem] | Iterable[ParsedItem]) -> SceneGraph:
             continue
 
         if isinstance(item, ParsedCharacter):
-            characters[item.id] = {
+            characters[item.id.lower()] = {
                 "name": item.name,
                 "attrs": dict(item.attrs),
                 "line_number": item.line_number,

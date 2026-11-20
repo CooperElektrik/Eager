@@ -132,7 +132,7 @@ class Keymap:
             action: Semantic InputAction to assign.
         """
         logger.debug("Binding %r -> %s", key_name, action.value)
-        self.bindings[key_name.lower()] = action
+        self.bindings[normalize_keysym(key_name)] = action
 
     def unbind(self, key_name: str) -> None:
         """Unbind a key name, removing its semantic mapping.
@@ -141,4 +141,4 @@ class Keymap:
             key_name: Key identifier string to remove.
         """
         logger.debug("Unbinding %r", key_name)
-        _ = self.bindings.pop(key_name.lower(), None)
+        _ = self.bindings.pop(normalize_keysym(key_name), None)

@@ -268,20 +268,31 @@ class GameSession:
         """Notify registered host listeners to toggle fullscreen."""
         prev_fs = bool(getattr(self.preferences, "fullscreen", False))
         listeners = list(self._lifecycle_listeners)
+        toggled_ok = True
         for listener in listeners:
-            listener.on_request_fullscreen()
-        if not listeners and hasattr(self.renderer, "toggle_fullscreen"):
-            self.renderer.toggle_fullscreen()
-        # Only flip preference here if no host listener/renderer already toggled it
-        if bool(getattr(self.preferences, "fullscreen", False)) == prev_fs:
+            if listener.on_request_fullscreen() is False or getattr(
+                listener, "_fullscreen_toggle_failed", False
+            ):
+                toggled_ok = False
+        if (
+            not listeners
+            and hasattr(self.renderer, "toggle_fullscreen")
+            and self.renderer.toggle_fullscreen() is False
+        ):
+            toggled_ok = False
+        # Only flip preference here if toggle succeeded and no host listener/renderer already toggled it
+        if toggled_ok and bool(getattr(self.preferences, "fullscreen", False)) == prev_fs:
             self.preferences.fullscreen = not prev_fs
             self.save_preferences()
 
     def _flush_persistent(self) -> None:
-        """Persist dirty persistent data (e.g. seen_beats) to disk."""
-        if self._persistent_dirty:
+        """Persist dirty persistent data (e.g. seen_beats, _seen_scenes) to disk."""
+        vm_dirty = bool(getattr(self.vm, "_persistent_dirty", False))
+        if self._persistent_dirty or vm_dirty:
             self.persistent.save()
             self._persistent_dirty = False
+            if vm_dirty:
+                self.vm._persistent_dirty = False
 
     def request_quit(self) -> bool:
         """Autosave if enabled and notify registered host listeners to terminate."""
@@ -581,6 +592,8 @@ class GameSession:
         self._skip_timer = 0.0
         self.auto_mode = False
         self.mode = "title"
+        if hasattr(self.screens, "hide_all"):
+            self.screens.hide_all(self)
         if hasattr(self.screens, "show"):
             return bool(self.screens.show("title", self))
         return False

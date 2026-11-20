@@ -115,15 +115,42 @@ def compute_references(
         return locations
 
     # 2. Character references
-    if token.kind in ("character_id", "character_name", "speaker"):
-        char_id = token.value.lower()
-        for doc_uri, d in workspace.documents.items():
-            for occ in d.occurrences:
-                if occ.kind in ("character_def", "character_ref") and occ.name == char_id:
-                    if not include_declaration and occ.kind == "character_def":
-                        continue
-                    locations.append(Location(uri=doc_uri, range=occ.span.range))
-        return locations
+    if token.kind in ("character_id", "character_name", "speaker", "hook_arg"):
+        char_id: str | None = None
+        if token.kind == "character_name":
+            char_id = (
+                token.metadata.get("character_id", "").lower()
+                if token.metadata
+                else None
+            ) or token.value.lower()
+        elif token.kind == "speaker":
+            raw_lower = token.value.lower()
+            if raw_lower in workspace.characters:
+                char_id = raw_lower
+            else:
+                for cid, sym in workspace.characters.items():
+                    if sym.name.lower() == raw_lower:
+                        char_id = cid
+                        break
+                if char_id is None:
+                    char_id = raw_lower
+        elif token.kind == "hook_arg":
+            meta_cid = token.metadata.get("character_id") if token.metadata else None
+            if isinstance(meta_cid, str) and meta_cid:
+                char_id = meta_cid.lower()
+            elif token.value.lower() in workspace.characters:
+                char_id = token.value.lower()
+        else:
+            char_id = token.value.lower()
+
+        if char_id is not None:
+            for doc_uri, d in workspace.documents.items():
+                for occ in d.occurrences:
+                    if occ.kind in ("character_def", "character_ref") and occ.name == char_id:
+                        if not include_declaration and occ.kind == "character_def":
+                            continue
+                        locations.append(Location(uri=doc_uri, range=occ.span.range))
+            return locations
 
     # 3. Variable references
     if token.kind == "variable":
@@ -164,22 +191,39 @@ def compute_document_symbols(doc: ScriptDocument) -> list[DocumentSymbol]:
         elif span.kind == "variable" and span.start_line < (
             next((s.start_line for s in doc.spans if s.kind == "label_header"), 999999)
         ):
-            preamble_children.append(
-                DocumentSymbol(
-                    name=f"${span.value}",
-                    kind=SymbolKind.Constant,
-                    range=span.range,
-                    selection_range=span.range,
-                    detail="Default variable",
+            if span.metadata and span.metadata.get("role") == "def":
+                preamble_children.append(
+                    DocumentSymbol(
+                        name=f"${span.value}",
+                        kind=SymbolKind.Constant,
+                        range=span.range,
+                        selection_range=span.range,
+                        detail="Default variable",
+                    )
                 )
-            )
         elif span.kind == "label_title":
-            # Flush previous scene
+            # Flush previous scene, ending its range on the line before this scene
             if current_scene_sym is not None:
+                prev_end_line = max(current_scene_sym.range.start.line, span.start_line - 1)
+                prev_end_char = len(doc.lines[prev_end_line]) if prev_end_line < len(doc.lines) else 0
+                current_scene_sym.range = Range(
+                    start=current_scene_sym.range.start,
+                    end=Position(line=prev_end_line, character=prev_end_char),
+                )
                 current_scene_sym.children = current_scene_children
                 symbols.append(current_scene_sym)
 
-            label_span = doc.scene_spans.get(_slug_for_title(span.value, doc, span.start_line)) or span
+            line_label_id = next(
+                (s for s in doc.spans if s.kind == "label_id" and s.start_line == span.start_line),
+                None,
+            )
+            label_span = (
+                line_label_id
+                or doc.scene_spans.get(_slug_for_title(span.value, doc, span.start_line))
+                or span
+            )
+            if label_span.start_line < span.start_line:
+                label_span = span
             whole_scene_range = Range(
                 start=Position(line=span.start_line, character=0),
                 end=Position(line=len(doc.lines) - 1, character=len(doc.lines[-1]) if doc.lines else 0),
@@ -214,9 +258,10 @@ def compute_document_symbols(doc: ScriptDocument) -> list[DocumentSymbol]:
                     )
                 )
             elif span.kind == "variable" and span.start_line > current_scene_sym.selection_range.start.line:
-                # Mutation
+                # Mutation only (ignore read references on the RHS)
+                role = span.metadata.get("role") if span.metadata else None
                 parent_line = doc.lines[span.start_line]
-                if parent_line.strip().startswith("$"):
+                if parent_line.strip().startswith("$") and role in ("mutation", "def"):
                     current_scene_children.append(
                         DocumentSymbol(
                             name=f"${span.value}",

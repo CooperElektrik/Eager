@@ -210,26 +210,15 @@ def test_rapid_delta_time_ticks() -> None:
 
 
 def test_negative_dt_edge_case_observation() -> None:
-    """EMPIRICAL FINDING: Negative dt causes visible_chars to decrement below 0.
-
-    In TextReveal.update(dt), chars_to_reveal is dt * chars_per_second, which is negative
-    when dt < 0. Without a max(0.0, ...) clamp on next_visible or current_visible_plain_text,
-    Python's negative string slice plain_text[:int(visible_chars)] slices from the end of the
-    string instead of yielding an empty string.
-    """
+    """Negative dt in TextReveal.update(dt) is clamped so visible_chars never goes negative."""
     fmt = parse_text_tags("Hello world, this is a test string.")
     tr = TextReveal(fmt, chars_per_second=50.0)
     assert tr.visible_chars == 0.0
     assert tr.current_visible_plain_text == ""
 
-    # Applying negative delta time
     tr.update(-0.1)
-    # visible_chars becomes -5.0
-    assert tr.visible_chars == -5.0
-
-    # String slicing with negative index: text[:-5] returns text omitting the last 5 chars!
-    observed_text = tr.current_visible_plain_text
-    assert observed_text == "Hello world, this is a test st"
+    assert tr.visible_chars == 0.0
+    assert tr.current_visible_plain_text == ""
 
 
 def test_parse_text_tags_ignores_invalid_color_tag() -> None:

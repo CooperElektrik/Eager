@@ -863,8 +863,10 @@ class StageCompositor:
             self.stage = Stage.from_dict(state["stage"])
         if "virtual_width" in state:
             self.virtual_width = int(state["virtual_width"])
+            self.layout.virtual_width = self.virtual_width
         if "virtual_height" in state:
             self.virtual_height = int(state["virtual_height"])
+            self.layout.virtual_height = self.virtual_height
 
     def clear(self) -> None:
         """Clear all animations and reset all stage layers."""

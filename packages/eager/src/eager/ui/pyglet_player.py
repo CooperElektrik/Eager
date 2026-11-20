@@ -97,14 +97,15 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):  # pyright: ignore[reportU
 
     def toggle_fullscreen(self) -> None:
         """Toggle fullscreen mode."""
+        self._fullscreen_toggle_failed = False
         try:
             self.set_fullscreen(not self.fullscreen)
             if hasattr(self.session, "preferences") and self.session.preferences is not None:
                 self.session.preferences.fullscreen = bool(self.fullscreen)
                 if hasattr(self.session, "save_preferences"):
                     self.session.save_preferences()
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception:  # noqa: BLE001
+            self._fullscreen_toggle_failed = True
 
     def on_resize(self, width: int, height: int) -> None:
         """Keep the UI components laid out against the new window size."""
@@ -189,8 +190,14 @@ class PygletPlayer(BasePlayer, pyglet.window.Window):  # pyright: ignore[reportU
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         """Handle key releases (e.g. releasing Ctrl stops fast-forward skip)."""
-        sym_str = key.symbol_string(symbol).lower()
-        if sym_str in ("ctrl", "lctrl", "rctrl"):
+        sym_str = key.symbol_string(symbol)
+        keymap = getattr(self, "keymap", None)
+        if keymap is not None:
+            action = keymap.map_key(sym_str)
+            if action in (InputAction.SKIP_RELEASE, InputAction.SKIP_HOLD):
+                self.handle_skip_release()
+                return
+        if sym_str.lower() in ("ctrl", "lctrl", "rctrl"):
             self.handle_skip_release()
 
     def on_mouse_scroll(self, x: int, y: int, scroll_x: float, scroll_y: float) -> None:

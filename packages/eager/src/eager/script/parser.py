@@ -54,7 +54,9 @@ SPEAKER_PATTERN = re.compile(
 
 SET_PATTERN = re.compile(r"^\$\s*([A-Za-z_][A-Za-z0-9_\.]*)\s*(\+=|-=|\*=|/=|%=|=)\s*(.+)$")
 DEFAULT_PATTERN = re.compile(r"^@default\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$")
-CHARACTER_PATTERN = re.compile(r"^@character\s+([A-Za-z_][A-Za-z0-9_]*)\s+(?:\"([^\"]*)\"|'([^']*)')?(.*)$")
+CHARACTER_PATTERN = re.compile(
+    r"^@character\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+(?:\"([^\"]*)\"|'([^']*)')?(.*))?$"
+)
 IF_PATTERN = re.compile(r"^@if\s+(.+)$")
 ELIF_PATTERN = re.compile(r"^@elif\s+(.+)$")
 ELSE_PATTERN = re.compile(r"^@else\s*$")
@@ -88,28 +90,43 @@ def _leading_indent(raw_line: str) -> int:
     return len(leading.expandtabs(4))
 
 
-def _adjust_span(item: ParsedItem, col_offset: int) -> ParsedItem:
+def _adjust_span(
+    item: ParsedItem,
+    col_offset: int,
+    col_deltas: dict[int, int] | None = None,
+) -> ParsedItem:
     """Recursively adjust column offsets for an AST item."""
+    delta = col_deltas.get(item.line_number - 1, col_offset) if col_deltas is not None else col_offset
     if isinstance(item, ParsedChoiceSet):
         new_options = tuple(
             replace(
                 opt,
-                start_col=opt.start_col + col_offset,
-                end_col=opt.end_col + col_offset,
-                body=tuple(_adjust_span(b, col_offset) for b in opt.body),
+                start_col=opt.start_col
+                + (
+                    col_deltas.get(opt.line_number - 1, col_offset)
+                    if col_deltas is not None
+                    else col_offset
+                ),
+                end_col=opt.end_col
+                + (
+                    col_deltas.get(opt.line_number - 1, col_offset)
+                    if col_deltas is not None
+                    else col_offset
+                ),
+                body=tuple(_adjust_span(b, col_offset, col_deltas) for b in opt.body),
             )
             for opt in item.options
         )
         return replace(
             item,
-            start_col=item.start_col + col_offset,
-            end_col=item.end_col + col_offset,
+            start_col=item.start_col + delta,
+            end_col=item.end_col + delta,
             options=new_options,
         )
     return replace(
         item,
-        start_col=item.start_col + col_offset,
-        end_col=item.end_col + col_offset,
+        start_col=item.start_col + delta,
+        end_col=item.end_col + delta,
     )
 
 
@@ -151,6 +168,9 @@ def _parse_label(line: str, line_number: int, start_col: int = 0, end_col: int =
     )
 
 
+_EXPR_SYNTAX_HINT = re.compile(r"[=<>!+\-*/%()\[\].:&|^~\"'0-9]")
+
+
 def _split_inline_choice(line: str) -> tuple[str, str | None, int, int, int, int] | None:
     """Split an inline choice line into (raw_text, cond, text_start, text_end, cond_start, cond_end)."""
     full = re.match(r"^\?\s+(.+?)\s*$", line)
@@ -161,6 +181,12 @@ def _split_inline_choice(line: str) -> tuple[str, str | None, int, int, int, int
         cond = cond_match.group(2).strip()
         try:
             compile_expr(cond)
+            is_cond = True
+        except ExprError:
+            # Preserve malformed expressions (e.g. `a === b`) for validation,
+            # while allowing plain English prose (e.g. `? Ask if she is okay`).
+            is_cond = bool(_EXPR_SYNTAX_HINT.search(cond))
+        if is_cond:
             return (
                 cond_match.group(1),
                 cond,
@@ -169,8 +195,6 @@ def _split_inline_choice(line: str) -> tuple[str, str | None, int, int, int, int
                 cond_match.start(2),
                 cond_match.end(2),
             )
-        except ExprError:
-            pass
     return (full.group(1), None, full.start(1), full.end(1), 0, 0)
 
 
@@ -655,7 +679,8 @@ class ScreenplayParser:
                 end_col=end_col,
             )
         elif line.startswith("@"):
-            if line.startswith("@default"):
+            directive = line.split(None, 1)[0]
+            if directive == "@default":
                 match = DEFAULT_PATTERN.match(line)
                 if not match:
                     raise ParseError(
@@ -701,7 +726,7 @@ class ScreenplayParser:
                     start_col=start_col,
                     end_col=end_col,
                 )
-            elif line.startswith("@character"):
+            elif directive == "@character":
                 match = CHARACTER_PATTERN.match(line)
                 if not match:
                     raise ParseError(
@@ -777,7 +802,7 @@ class ScreenplayParser:
                     start_col=start_col,
                     end_col=end_col,
                 )
-            elif line.startswith("@if"):
+            elif directive == "@if":
                 match = IF_PATTERN.match(line)
                 if not match or not match.group(1).strip():
                     raise ParseError("Empty @if expression", idx, start_col, end_col)
@@ -797,7 +822,7 @@ class ScreenplayParser:
                     start_col=start_col,
                     end_col=end_col,
                 )
-            elif line.startswith("@elif"):
+            elif directive == "@elif":
                 match = ELIF_PATTERN.match(line)
                 if not match or not match.group(1).strip():
                     raise ParseError("Empty @elif expression", idx, start_col, end_col)
@@ -817,7 +842,7 @@ class ScreenplayParser:
                     start_col=start_col,
                     end_col=end_col,
                 )
-            elif line.startswith("@else"):
+            elif directive == "@else":
                 if not ELSE_PATTERN.match(line):
                     raise ParseError("Invalid @else syntax. Expected '@else'", idx, start_col, end_col)
                 if collect:
@@ -825,7 +850,7 @@ class ScreenplayParser:
                         TokenSpan("directive", line_0, start_col, line_0, start_col + 5, "@else")
                     )
                 return ParsedElse(line_number=idx, start_col=start_col, end_col=end_col)
-            elif line.startswith("@end"):
+            elif directive == "@end":
                 if not END_PATTERN.match(line):
                     raise ParseError("Invalid @end syntax. Expected '@end'", idx, start_col, end_col)
                 if collect:
@@ -833,7 +858,7 @@ class ScreenplayParser:
                         TokenSpan("directive", line_0, start_col, line_0, start_col + 4, "@end")
                     )
                 return ParsedEnd(line_number=idx, start_col=start_col, end_col=end_col)
-            elif line.startswith("@include"):
+            elif directive == "@include":
                 match = INCLUDE_PATTERN.match(line)
                 if not match:
                     raise ParseError(
@@ -962,22 +987,24 @@ class ScreenplayParser:
         inline_errors: list[ParsedError] = []
         for item in nested:
             if isinstance(item, ParsedError):
+                delta = col_deltas.get(item.line_number - 1, base_indent)
                 inline_errors.append(
                     replace(
                         item,
-                        start_col=item.start_col + base_indent,
-                        end_col=item.end_col + base_indent,
+                        start_col=item.start_col + delta,
+                        end_col=item.end_col + delta,
                     )
                 )
                 continue
             if isinstance(item, (ParsedLabel, ParsedDefault, ParsedCharacter)):
+                delta = col_deltas.get(item.line_number - 1, base_indent)
                 if self.recovery:
                     inline_errors.append(
                         ParsedError(
                             message="Scene labels and preamble directives are not allowed inside an inline choice block",
                             line_number=item.line_number,
-                            start_col=item.start_col + base_indent,
-                            end_col=item.end_col + base_indent,
+                            start_col=item.start_col + delta,
+                            end_col=item.end_col + delta,
                         )
                     )
                     continue
@@ -987,7 +1014,7 @@ class ScreenplayParser:
                     item.start_col,
                     item.end_col,
                 )
-            valid_items.append(_adjust_span(item, base_indent))
+            valid_items.append(_adjust_span(item, base_indent, col_deltas))
         return tuple(valid_items), inline_errors
 
     def _parse(self, text: str) -> Iterator[ParsedItem]:
@@ -1089,8 +1116,10 @@ class ScreenplayParser:
                             pending = (nidx, nraw)
                             break
 
+                    had_trailing_blanks = False
                     while block and not block[-1][1].strip():
                         block.pop()
+                        had_trailing_blanks = True
 
                     if block:
                         if choice_opt.target is not None:
@@ -1105,6 +1134,8 @@ class ScreenplayParser:
                         self._choice_bodies.append(list(body_items))
                         if inline_errors:
                             yield from inline_errors
+                        if had_trailing_blanks:
+                            yield from self._flush_choices()
                     else:
                         if choice_opt.target is None:
                             raise ParseError(

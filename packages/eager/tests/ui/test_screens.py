@@ -844,7 +844,11 @@ height = 720
                 self.player.on_state_restored()
 
             def load_game(self, slot_name: str) -> bool:
-                return self.save_manager.load_slot(slot_name)
+                if self.save_manager.load_slot(slot_name):
+                    self.mode = "game"
+                    self.notify_state_restored()
+                    return True
+                return False
 
         session = DummySession()
         saveload = SaveLoadScreen(mode="load")
@@ -1063,6 +1067,8 @@ def test_screen_handle_key_slider_and_resize_focus_preservation() -> None:
 
     # Focus highlight survives rebuild_layout and set_viewport
     pref.handle_key("down")
+    while pref._focused_button_index < 0:
+        pref.handle_key("down")
     focused_idx = pref._focused_button_index
     assert focused_idx >= 0
     pref.set_viewport(1920, 1080)

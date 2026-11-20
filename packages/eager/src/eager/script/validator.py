@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -38,6 +39,30 @@ class ValidationResult:
         return len(self.errors) == 0
 
 
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_PERSISTENT_KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+
+
+def _validate_set_target(target: str, line_number: int) -> ValidationError | None:
+    """Validate that a `$ target = ...` assignment target is a legal variable name."""
+    if target.startswith("persistent."):
+        key = target[len("persistent.") :]
+        if not key or not _PERSISTENT_KEY_RE.match(key):
+            return ValidationError(
+                message=f"Invalid persistent variable target '{target}'",
+                line_number=line_number,
+                level="error",
+            )
+        return None
+    if not _IDENT_RE.match(target):
+        return ValidationError(
+            message=f"Invalid variable target '{target}'",
+            line_number=line_number,
+            level="error",
+        )
+    return None
+
+
 def _iter_choice_bodies(items: Sequence[Any]) -> Iterator[Any]:
     """Yield every item nested inside inline choice option bodies (depth-first)."""
     from eager.script.ast import ParsedChoiceSet
@@ -55,12 +80,14 @@ def validate(items: Sequence[ParsedItem]) -> ValidationResult:
         ParsedCall,
         ParsedChoiceSet,
         ParsedDefault,
+        ParsedDialogue,
         ParsedElif,
         ParsedElse,
         ParsedEnd,
         ParsedIf,
         ParsedJump,
         ParsedLabel,
+        ParsedNarration,
         ParsedReturn,
         ParsedSet,
     )
@@ -130,6 +157,9 @@ def validate(items: Sequence[ParsedItem]) -> ValidationResult:
                 if not any(opt.body for opt in sub.options):
                     terminator = ("choice menu", sub.line_number)
             elif isinstance(sub, ParsedSet):
+                target_err = _validate_set_target(sub.target, sub.line_number)
+                if target_err is not None:
+                    errors.append(target_err)
                 try:
                     compile_expr(sub.expr_src)
                 except ExprError as e:
@@ -247,15 +277,56 @@ def validate(items: Sequence[ParsedItem]) -> ValidationResult:
             else:
                 labels[item.name] = item.line_number
         elif isinstance(item, ParsedJump):
+            if not current_label_seen:
+                errors.append(
+                    ValidationError(
+                        message="Jump statement ('->') must appear inside a scene, not in preamble",
+                        line_number=item.line_number,
+                        level="error",
+                    )
+                )
             references.append((item.target, item.line_number, "jump"))
         elif isinstance(item, ParsedCall):
+            if not current_label_seen:
+                errors.append(
+                    ValidationError(
+                        message="Call statement ('>>') must appear inside a scene, not in preamble",
+                        line_number=item.line_number,
+                        level="error",
+                    )
+                )
             has_call = True
             if first_call_line == 0:
                 first_call_line = item.line_number
             references.append((item.target, item.line_number, "call"))
         elif isinstance(item, ParsedReturn):
+            if not current_label_seen:
+                errors.append(
+                    ValidationError(
+                        message="Return statement ('<<') must appear inside a scene, not in preamble",
+                        line_number=item.line_number,
+                        level="error",
+                    )
+                )
             has_return = True
+        elif isinstance(item, (ParsedDialogue, ParsedNarration)):
+            if not current_label_seen:
+                errors.append(
+                    ValidationError(
+                        message="Dialogue and narration must appear inside a scene, not in preamble",
+                        line_number=item.line_number,
+                        level="error",
+                    )
+                )
         elif isinstance(item, ParsedChoiceSet):
+            if not current_label_seen:
+                errors.append(
+                    ValidationError(
+                        message="Choice menu ('?') must appear inside a scene, not in preamble",
+                        line_number=item.line_number,
+                        level="error",
+                    )
+                )
             for opt in item.options:
                 if opt.target is not None:
                     references.append((opt.target, opt.line_number, "choice"))
@@ -281,6 +352,9 @@ def validate(items: Sequence[ParsedItem]) -> ValidationResult:
                         level="error",
                     )
                 )
+            target_err = _validate_set_target(item.target, item.line_number)
+            if target_err is not None:
+                errors.append(target_err)
             try:
                 compile_expr(item.expr_src)
             except ExprError as e:
@@ -415,9 +489,29 @@ def validate(items: Sequence[ParsedItem]) -> ValidationResult:
     # Check for unreferenced / orphan labels (excluding first label in script)
     # Check for unreachable statements within scene blocks (dead code after terminating statements)
     terminator_info: tuple[str, int] | None = None
+    if_term_stack: list[tuple[str, int] | None] = []
     for item in items:
-        if isinstance(item, (ParsedLabel, ParsedIf, ParsedElif, ParsedElse, ParsedEnd)):
+        if isinstance(item, ParsedLabel):
             terminator_info = None
+            if_term_stack.clear()
+        elif isinstance(item, ParsedIf):
+            if terminator_info is not None:
+                term_desc, term_line = terminator_info
+                warnings.append(
+                    ValidationError(
+                        message=(
+                            f"Unreachable code: statement after {term_desc} "
+                            f"(line {term_line}) will never execute"
+                        ),
+                        line_number=item.line_number,
+                        level="warning",
+                    )
+                )
+            if_term_stack.append(terminator_info)
+        elif isinstance(item, (ParsedElif, ParsedElse)):
+            terminator_info = if_term_stack[-1] if if_term_stack else None
+        elif isinstance(item, ParsedEnd):
+            terminator_info = if_term_stack.pop() if if_term_stack else None
         elif terminator_info is not None:
             term_desc, term_line = terminator_info
             warnings.append(
@@ -443,13 +537,19 @@ def validate(items: Sequence[ParsedItem]) -> ValidationResult:
     scene_targets: dict[str, list[str]] = {name: [] for name in labels}
     curr_scene: str | None = None
     curr_terminated = False
+    reach_if_stack: list[bool] = []
 
     for item in items:
         if isinstance(item, ParsedLabel):
             curr_scene = item.name
             curr_terminated = False
-        elif isinstance(item, (ParsedIf, ParsedElif, ParsedElse, ParsedEnd)):
-            curr_terminated = False
+            reach_if_stack.clear()
+        elif isinstance(item, ParsedIf):
+            reach_if_stack.append(curr_terminated)
+        elif isinstance(item, (ParsedElif, ParsedElse)):
+            curr_terminated = reach_if_stack[-1] if reach_if_stack else False
+        elif isinstance(item, ParsedEnd):
+            curr_terminated = reach_if_stack.pop() if reach_if_stack else False
         elif curr_scene is not None and not curr_terminated:
             if isinstance(item, (ParsedJump, ParsedCall)):
                 scene_targets[curr_scene].append(item.target)

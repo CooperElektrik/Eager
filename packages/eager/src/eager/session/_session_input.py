@@ -55,6 +55,9 @@ def _handle_screen_input(session: GameSession, action: InputAction, payload: dic
     """Route input while a modal screen (title, save, load, history, prefs) is active."""
     if action == InputAction.QUIT:
         return session.request_quit()
+    if action == InputAction.SKIP_RELEASE:
+        session.skip_mode = False
+        return True
     if action in (InputAction.GAME_MENU, InputAction.CANCEL):
         if getattr(session.screens.active_screen, "name", "") == "title":
             return True
@@ -250,6 +253,9 @@ def handle_input(session: GameSession, action: InputAction, **payload: Any) -> A
         return True
     if action == InputAction.QUIT:
         return session.request_quit()
+    if action == InputAction.SKIP_RELEASE:
+        session.skip_mode = False
+        return True
     if action == InputAction.SCREENSHOT:
         return session.take_screenshot(**payload)
     if action == InputAction.POINTER_CLICK:

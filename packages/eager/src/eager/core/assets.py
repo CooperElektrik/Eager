@@ -108,10 +108,23 @@ class AssetCheckReport:
 
 def extract_asset_references(
     graph_or_items: Any,
+    *,
+    extra_characters: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[list[AssetReference], dict[str, dict[str, str]]]:
     """Extract all asset references and character definitions from a graph or AST items."""
     references: list[AssetReference] = []
     character_configs: dict[str, dict[str, str]] = {}
+    if extra_characters:
+        for cid, cdef in extra_characters.items():
+            c_id = str(cid).strip().lower()
+            extra_attrs_dict: dict[str, str] = {}
+            if isinstance(cdef, dict):
+                raw_attrs = cdef.get("attrs")
+                if isinstance(raw_attrs, dict):
+                    extra_attrs_dict.update({str(k): str(v) for k, v in raw_attrs.items()})
+                if "name" in cdef and cdef["name"] is not None:
+                    extra_attrs_dict["name"] = str(cdef["name"])
+            character_configs[c_id] = extra_attrs_dict
 
     items_to_scan: list[tuple[Any, str | None]] = []
 
@@ -471,10 +484,14 @@ def check_assets(
     asset_dir: str | Path,
     *,
     check_unused: bool = False,
+    extra_characters: dict[str, dict[str, Any]] | None = None,
 ) -> AssetCheckReport:
     """Validate screenplay asset references against an asset directory."""
     path_asset_dir = Path(asset_dir).resolve()
-    references, char_configs = extract_asset_references(graph_or_items)
+    references, char_configs = extract_asset_references(
+        graph_or_items,
+        extra_characters=extra_characters,
+    )
 
     missing: list[MissingAssetIssue] = []
     used_files: set[Path] = set()

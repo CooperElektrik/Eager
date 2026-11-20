@@ -99,16 +99,25 @@ class StageDirector:
         self.ui_state = UIState.from_dict(state)
 
     def save_visual_state(self) -> dict[str, Any]:
-        """Serialize compositor and UI state."""
+        """Serialize compositor, dynamic scene background, and UI state."""
         return {
             "compositor": self.compositor.save_state(),
+            "scene_backgrounds": {
+                k: [v[0], v[1], float(v[2])] for k, v in self.scene_backgrounds.items()
+            },
             "ui_state": self.save_ui_state(),
         }
 
     def load_visual_state(self, state: dict[str, Any]) -> None:
-        """Restore compositor and UI state from a serialized dictionary."""
+        """Restore compositor and dynamic scene background state from a serialized dictionary."""
         if comp_state := state.get("compositor"):
             self.compositor.load_state(comp_state)
+        if isinstance(bg_state := state.get("scene_backgrounds"), dict):
+            self.scene_backgrounds = {
+                str(k): (str(v[0]), str(v[1]), float(v[2]))
+                for k, v in bg_state.items()
+                if isinstance(v, (list, tuple)) and len(v) == 3
+            }
         if ui_state := state.get("ui_state"):
             self.ui_state = UIState.from_dict(ui_state)
 
@@ -363,7 +372,7 @@ class StageDirector:
 
         # Expression
         if len(parsed.positional) > 1:
-            expr = parsed.positional[1]
+            expr = parsed.positional[1].strip().lower()
         elif cfg is not None:
             expr = cfg.default_expression
         else:
@@ -453,12 +462,21 @@ class StageDirector:
         duration = parsed.get_float("duration", 0.5)
         easing = parsed.get_str("easing", "ease_in_out_quad") or "ease_in_out_quad"
 
-        self.compositor.move_character(
-            character_id=char_id,
-            position=destination,
-            duration=duration,
-            easing=easing,
-        )
+        try:
+            self.compositor.move_character(
+                character_id=char_id,
+                position=destination,
+                duration=duration,
+                easing=easing,
+            )
+        except ValueError:
+            logger.warning("Unknown easing %r in ~ move; falling back to 'ease_in_out_quad'", easing)
+            self.compositor.move_character(
+                character_id=char_id,
+                position=destination,
+                duration=duration,
+                easing="ease_in_out_quad",
+            )
 
     def handle_expr(self, args: str) -> None:
         """Handle `~ expr character expression`."""

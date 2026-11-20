@@ -163,28 +163,36 @@ def compute_folding_ranges(doc: ScriptDocument) -> list[FoldingRange]:
     # 3. Choice menu folding
     in_choice = False
     choice_start = 0
+    choice_indent = 0
+    last_nonblank_choice = 0
     for line_idx, line in enumerate(doc.lines):
         stripped = line.strip()
-        if stripped.startswith("?") or (in_choice and line.startswith(("    ", "\t"))):
+        indent = len(line[: len(line) - len(line.lstrip(" \t"))].expandtabs(4))
+        if stripped.startswith("?") and (not in_choice or indent <= choice_indent):
             if not in_choice:
                 in_choice = True
                 choice_start = line_idx
+                choice_indent = indent
+            last_nonblank_choice = line_idx
+        elif in_choice and (not stripped or indent > choice_indent):
+            if stripped:
+                last_nonblank_choice = line_idx
         else:
             if in_choice:
                 in_choice = False
-                if line_idx - 1 > choice_start:
+                if last_nonblank_choice > choice_start:
                     ranges.append(
                         FoldingRange(
                             start_line=choice_start,
-                            end_line=line_idx - 1,
+                            end_line=last_nonblank_choice,
                             kind=FoldingRangeKind.Region,
                         )
                     )
-    if in_choice and len(doc.lines) - 1 > choice_start:
+    if in_choice and last_nonblank_choice > choice_start:
         ranges.append(
             FoldingRange(
                 start_line=choice_start,
-                end_line=len(doc.lines) - 1,
+                end_line=last_nonblank_choice,
                 kind=FoldingRangeKind.Region,
             )
         )

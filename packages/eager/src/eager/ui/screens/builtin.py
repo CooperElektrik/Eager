@@ -353,10 +353,6 @@ class SaveLoadScreen(Screen):
                             screens = getattr(self.session, "screens", None)
                             if screens is not None:
                                 screens.hide_all(self.session)
-                            if hasattr(self.session, "mode"):
-                                self.session.mode = "game"
-                            if hasattr(self.session, "notify_state_restored"):
-                                self.session.notify_state_restored()
                 return slot_action
 
             self.buttons.append(
@@ -1066,6 +1062,10 @@ class HistoryScreen(Screen):
                 rendered_lines = min(len(lines), 3)
                 entry_height = max(step_y, (rendered_lines * line_h) + vh * (15.0 / 720.0))
                 curr_y += entry_height
+
+            for unused_btn in voice_buttons[voice_btn_idx:]:
+                if unused_btn in self.buttons:
+                    self.buttons.remove(unused_btn)
 
         for b in self.buttons:
             b.draw(
